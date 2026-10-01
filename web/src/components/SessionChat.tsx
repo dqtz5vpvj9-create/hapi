@@ -42,6 +42,7 @@ import {
 import { codexModelAdvertisesFastTier, getEffectiveCodexServiceTier } from '@/components/AssistantChat/codexFastMode'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import { resolvePendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
+import { NativeDependencyProvider } from '@/components/ToolCard/nativeDependencies'
 import { HappyThread } from '@/components/AssistantChat/HappyThread'
 import { QueuedMessagesBar } from '@/components/AssistantChat/QueuedMessagesBar'
 import { ScratchlistDrawer } from '@/components/AssistantChat/ScratchlistPanel'
@@ -468,9 +469,19 @@ export function ScratchlistDrawerHost(props: {
     disabled?: boolean
 }) {
     const assistantApi = useAui()
+    const { t } = useTranslation()
     const handlePromoteToComposer = useCallback(async (entry: ScratchlistEntry) => {
         if (props.disabled) return
-        assistantApi.composer().setText(entry.text)
+        const composer = assistantApi.composer()
+        const current = composer.getState()
+        if ((current.text.length > 0 || current.attachments.length > 0)
+            && !window.confirm(t('scratchlist.confirmMergeIntoComposer'))) return
+        // Copy preserves the current unsent draft. A repeated copy of the
+        // exact text already in the composer does not append that text again.
+        const text = current.text && entry.text && current.text !== entry.text
+            ? `${current.text}\n\n${entry.text}`
+            : current.text || entry.text
+        composer.setText(text)
         // Exit scratchlist mode before rehydrating attachments so addAttachment
         // uses the normal chat upload adapter (not the scratchlist hub adapter).
         flushSync(() => {
@@ -484,7 +495,7 @@ export function ScratchlistDrawerHost(props: {
                 assistantApi.composer()
             )
         }
-    }, [assistantApi, props.api, props.disabled, props.onExitScratchlistMode, props.sessionId])
+    }, [assistantApi, props.api, props.disabled, props.onExitScratchlistMode, props.sessionId, t])
     const handlePromoteToQueue = useCallback(async (entry: ScratchlistEntry) => {
         if (props.disabled) return false
         let attachments: AttachmentMetadata[] | undefined
@@ -569,6 +580,7 @@ type SessionChatProps = {
     reopenDisabledReason?: string
     reopenHint?: string
     messages: DecryptedMessage[]
+    messagesEpoch: number | null
     messagesWarning: string | null
     hasMoreMessages: boolean
     isSyncingTail: boolean
@@ -592,11 +604,13 @@ type SessionChatProps = {
         attachments?: AttachmentMetadata[],
         scheduledAt?: number | null,
         deliveryMode?: MessageDeliveryMode,
+        attachmentDrafts?: AttachmentDraftInput[],
     ) => Promise<SendMessageAcceptance | false>
     resolveSessionIdForUpload?: (sessionId: string) => Promise<string>
     onUploadSessionResolved?: (sessionId: string) => void
     onViewModeChange: (mode: 'tail' | 'history') => void
     onRetryMessage?: (localId: string) => void
+    onDiscardFailedMessage?: (localId: string) => void
     autocompleteSuggestions?: (query: string) => Promise<Suggestion[]>
     availableSlashCommands?: readonly SlashCommand[]
     // The latest send the hub rejected (4xx/5xx/network).  When set, the
@@ -682,6 +696,7 @@ function SessionChatInner(props: SessionChatProps) {
         await onForkConversation(rewindForkFallback)
         setRewindForkFallback(null)
     }, [onForkConversation, rewindForkFallback])
+    const nativeHistoryOnly = props.session.metadata?.codexNativeConnection === 'history'
     const sessionInactive = !props.session.active
     const inactiveCanResume = inactiveSessionCanResume(
         props.session,
@@ -709,6 +724,7 @@ function SessionChatInner(props: SessionChatProps) {
         text: '',
         attachments: [],
     })
+    const submittedAttachmentDraftsRef = useRef<AttachmentDraftInput[]>([])
     const [outlineOpen, setOutlineOpen] = useState(props.initialOutlineOpen ?? false)
     const [terminalVisible, setTerminalVisible] = useState(false)
     useEffect(() => {
@@ -918,6 +934,7 @@ function SessionChatInner(props: SessionChatProps) {
             attachments?: AttachmentMetadata[],
             scheduledAt?: number | null,
             deliveryMode: MessageDeliveryMode = 'queue',
+            attachmentDrafts?: AttachmentDraftInput[],
         ): Promise<{ attemptId: string | null } | false> => {
             if (
                 scratchlistMode
@@ -956,6 +973,7 @@ function SessionChatInner(props: SessionChatProps) {
                     ordered,
                     scheduledAt,
                     deliveryMode,
+                    attachmentDrafts,
                 )
                 if (accepted) {
                     // Hub blobs were copied into the normal upload dir; drop the
@@ -972,7 +990,7 @@ function SessionChatInner(props: SessionChatProps) {
                 await navigate({ to: '/sessions/$sessionId', params: { sessionId: result.sessionId }, ...PRESERVE_SESSION_SIDEBAR_SCROLL })
                 return { attemptId: null }
             }
-            return props.onSend(text, attachments, scheduledAt, deliveryMode)
+            return props.onSend(text, attachments, scheduledAt, deliveryMode, attachmentDrafts)
         },
         [props.onSend, props.api, props.session.id, props.session.metadata?.capabilities?.concurrentClients, navigate, scratchlist, scratchlistMode],
     )
@@ -1801,7 +1819,7 @@ function SessionChatInner(props: SessionChatProps) {
             scheduledAt,
             routesToScratchlist: routedToScratchlist,
         })
-        const accepted = await onSendForComposer(text, attachments, scheduledAt, deliveryMode)
+        const accepted = await onSendForComposer(text, attachments, scheduledAt, deliveryMode, submittedAttachmentDraftsRef.current)
         if (!accepted) return
         setSendAcceptance({ attemptId: accepted.attemptId })
         if (!routedToScratchlist) {
@@ -1928,12 +1946,15 @@ function SessionChatInner(props: SessionChatProps) {
 
             {sessionInactive ? (
                 <div className="mx-auto w-full max-w-content bg-[var(--app-subtle-bg)] p-3 text-center text-sm text-[var(--app-hint)]">
-                    {inactiveCanResume
+                    {props.session.metadata?.codexNativeSession
+                        ? t('session.inactive.nativeReconnect')
+                        : inactiveCanResume
                         ? t('session.inactive.autoResume')
                         : t('session.inactive.cannotResume')}
                 </div>
             ) : null}
 
+            {nativeHistoryOnly ? <div role="status" className="px-3 py-2 text-sm text-[var(--app-hint)]">{t('codexConnect.historyOnly')}</div> : null}
             <AssistantRuntimeProvider runtime={runtime}>
                 <ShareSeedConsumer sessionId={props.session.id} sessionActive={props.session.active} />
                 <AbortRestoreConsumer messages={normalizedMessages} onAbortRestore={props.onAbortRestore ?? (() => {})} />
@@ -1949,6 +1970,7 @@ function SessionChatInner(props: SessionChatProps) {
                         )}
                         <div className={(terminalVisible && canViewAgentTerminal) ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
 
+                    <NativeDependencyProvider api={props.api} sessionId={props.session.id} epoch={props.messagesEpoch} enabled={props.session.metadata?.codexNativeSession === true} messages={props.messages}>
                     <HappyThread
                         // Key with prefix: different components under the same session
                         // (thread, scratchlist, composer) must have distinct keys to avoid
@@ -1960,9 +1982,10 @@ function SessionChatInner(props: SessionChatProps) {
                         serviceTier={effectiveCodexServiceTier}
                         sessionId={props.session.id}
                         metadata={props.session.metadata}
-                        disabled={sessionInactive}
+                        disabled={sessionInactive || nativeHistoryOnly}
                         onRefresh={props.onRefresh}
                         onRetryMessage={props.onRetryMessage}
+                        onDiscardFailedMessage={props.onDiscardFailedMessage}
                         onContinuePlan={() => focusComposerRef.current?.()}
                         historyActionPending={historyActionPending}
                         onForkConversation={controlledByUser ? undefined : onForkConversation}
@@ -1983,8 +2006,10 @@ function SessionChatInner(props: SessionChatProps) {
                         forceScrollToken={forceScrollToken}
                         outlineOpen={outlineOpen}
                         outlineItems={outlineItems}
+                        outlineEpoch={props.messagesEpoch}
                         onOutlineOpenChange={setOutlineOpen}
                     />
+                    </NativeDependencyProvider>
                     </div>
 
                     <div className={outlineOpen ? 'max-sm:hidden' : undefined}>
@@ -2054,6 +2079,7 @@ function SessionChatInner(props: SessionChatProps) {
                         onUploadDraftSnapshot={(text, attachments) => {
                             uploadDraftSnapshotRef.current = { text, attachments }
                         }}
+                        onSendAttachmentDrafts={(attachments) => { submittedAttachmentDraftsRef.current = attachments }}
                         attachmentOrderRef={attachmentOrderRef}
                         resolveSessionMentionTooltip={resolveSessionMentionTooltip}
                         disabled={props.isSending}

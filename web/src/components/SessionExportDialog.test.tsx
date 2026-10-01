@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, type ApiClient } from '@/api/client'
@@ -7,16 +8,18 @@ import { SessionExportDialog } from './SessionExportDialog'
 
 function renderDialog(api: ApiClient, onClose: () => void) {
     return render(
-        <I18nProvider>
-            <ToastProvider>
-                <SessionExportDialog
-                    isOpen={true}
-                    onClose={onClose}
-                    sessionId="session-1"
-                    api={api}
-                />
-            </ToastProvider>
-        </I18nProvider>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+            <I18nProvider>
+                <ToastProvider>
+                    <SessionExportDialog
+                        isOpen={true}
+                        onClose={onClose}
+                        sessionId="session-1"
+                        api={api}
+                    />
+                </ToastProvider>
+            </I18nProvider>
+        </QueryClientProvider>
     )
 }
 

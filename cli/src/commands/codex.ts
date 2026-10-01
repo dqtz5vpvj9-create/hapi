@@ -37,6 +37,7 @@ export const codexCommand: CommandDefinition = {
 
             const options: {
                 startedBy?: 'runner' | 'terminal'
+                nativeEndpoint?: string
                 codexArgs?: string[]
                 permissionMode?: CodexPermissionMode
                 resumeSessionId?: string
@@ -54,7 +55,12 @@ export const codexCommand: CommandDefinition = {
 
             for (let i = 0; i < commandArgs.length; i++) {
                 const arg = commandArgs[i]
-                if (i === 0 && arg === 'resume') {
+                if (arg === '--native-daemon') {
+                    const endpoint = commandArgs[++i]
+                    if (!endpoint) throw new Error('Missing --native-daemon endpoint')
+                    options.nativeEndpoint = endpoint
+                    continue
+                } else if (i === 0 && arg === 'resume') {
                     const candidate = commandArgs[i + 1]
                     if (!candidate || candidate.startsWith('-')) {
                         if (!commandArgs.includes('--last')) throw new Error('Use hapi resume to choose a HAPI session, or hapi codex resume <native-id> / --last')

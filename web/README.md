@@ -54,6 +54,8 @@ See `src/router.tsx` for route definitions.
 
 ### Session list (`src/components/SessionList.tsx`)
 
+- Quick session switcher: Ctrl/Cmd+K or **Switch** in the list toolbar; search
+  titles, paths, machines, agents, and IDs, then use arrow keys and Enter to open.
 - Active/inactive status indicator.
 - Session title from name, summary, or path.
 - Todo progress display.

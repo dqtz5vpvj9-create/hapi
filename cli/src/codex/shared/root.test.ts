@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import type { ApiSessionClient } from '@/api/apiSession';
-import type { AgentState, Metadata } from '@/api/types';
+import type { AgentState, Metadata, UserMessage } from '@/api/types';
 import type { SessionBootstrapResult } from '@/agent/sessionFactory';
 import { SharedCodexRoot, type RootHost } from './root';
 import { codexPlanProposalId } from './plan';
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods';
+import { NativeStopFixture } from '@/test/nativeStopFixture';
 
 type NativeTurn = { id: string; status: string; items: unknown[] };
 
@@ -15,21 +16,29 @@ vi.mock('../codexAppServerClient', () => ({
         thread = { id: 'thread', turns: [] as NativeTurn[] };
         settings: Record<string, unknown> = { model: 'mock', collaborationMode: { mode: 'default' } };
         queue: Array<{ id: string; clientUserMessageId: unknown; input: unknown }> = [];
+        items: unknown[] = [];
         notify?: (method: string, params: unknown) => void;
         abandoned?: () => void;
         setNotificationHandler(handler: typeof this.notify) { this.notify = handler; }
         setTransportAbandonedHandler(handler: (() => void) | null) { this.abandoned = handler ?? undefined; }
-        setServerRequestHandler() {}
+        serverRequest?: (request: { id: string | number; method: string; params: unknown }) => void;
+        respond = vi.fn();
+        setServerRequestHandler(handler: typeof this.serverRequest) { this.serverRequest = handler; }
         async connect() {}
         async initialize() { this.initialized = true; }
         isInitialized() { return this.initialized; }
         async disconnect() { this.initialized = false; }
         async request(method: string, params: Record<string, unknown> = {}) {
             if (method === 'thread/read' || method === 'thread/resume') return { ...this.settings, thread: structuredClone(this.thread) };
+            if (method === 'thread/turns/list') return { data: this.thread.turns.slice(-1), nextCursor: null };
+            if (method === 'thread/items/list') return { data: this.items, nextCursor: null };
             if (method === 'thread/list') return { data: [] };
             if (method === 'thread/queue/list') return { data: this.queue };
             if (method === 'thread/settings/update') {
-                this.settings = { ...this.settings, ...params };
+                const updated = { ...this.settings, ...params,
+                    ...('serviceTier' in params ? { serviceTier: params.serviceTier ?? 'default' } : {}) };
+                if (JSON.stringify(updated) === JSON.stringify(this.settings)) return {};
+                this.settings = updated;
                 this.notify?.('thread/settings/updated', { threadId: 'thread', threadSettings: this.settings });
                 return {};
             }
@@ -53,11 +62,12 @@ afterEach(async () => {
     finally { vi.useRealTimers(); }
 });
 
-async function fixture(opts?: { hubArchived?: boolean; end?: RootHost['end'] }) {
-    const directory = await mkdtemp('/tmp/hapi-shared-root-');
+async function fixture(opts?: { hubArchived?: boolean; external?: boolean; nativeHistory?: boolean; end?: RootHost['end'] }) {
+    const directory = await mkdtemp(`${process.env.TMPDIR ?? '/mnt/cache/data-cache'}/hapi-shared-root-`);
     let state: AgentState = { steeringActive: true };
     let metadata: Metadata = { path: directory, host: 'test', flavor: 'codex' };
     let reconnect: (() => void) | null = null;
+    let userMessage: ((message: UserMessage, localId?: string) => void) | undefined;
     const updateState = vi.fn((fn: (value: AgentState) => AgentState) => { state = fn(state); });
     const rpc = new Map<string, (raw: unknown) => Promise<unknown>>();
     const send = vi.fn();
@@ -67,19 +77,19 @@ async function fixture(opts?: { hubArchived?: boolean; end?: RootHost['end'] }) 
         hubArchived: opts?.hubArchived ?? false,
         updateMetadata: (fn: (value: Metadata) => Metadata) => { metadata = fn(metadata); },
         updateAgentState: updateState, keepAlive() {},
-        onUserMessage() {}, onCancelQueuedMessage() {}, onRetryQueuedMessage() {},
+        onUserMessage(handler: typeof userMessage) { userMessage = handler; }, onCancelQueuedMessage() {}, onRetryQueuedMessage() {},
         onReconnect: (fn: (() => void) | null) => { reconnect = fn; },
         on(event: string, listener: () => void) {
             if (event === 'hub-archived') hubArchivedListeners.push(listener);
         },
         rpcHandlerManager: { registerHandler: (name: string, handler: (raw: unknown) => Promise<unknown>) => rpc.set(name, handler) },
-        sendSessionEvent() {}, sendAgentMessage: send, emitSessionReady() {},
-        sendUserMessage() {}, emitMessagesConsumed() {}, emitSteerIndeterminate() {}, syncNativeQueuedMessage() {},
+        emitNativeHistoryChanged: vi.fn(), sendSessionEvent: vi.fn(), sendAgentMessage: send, emitSessionReady() {},
+        sendUserMessage() {}, emitMessagesConsumed: vi.fn(), emitSteerIndeterminate() {}, syncNativeQueuedMessage() {}, syncNativeQueueSnapshot: vi.fn(),
         sendSessionDeath() {}, async flush() {}, close() {}
     } as unknown as ApiSessionClient;
     const end = opts?.end ?? (async () => { throw new Error('Unexpected root archive'); });
     const root = new SharedCodexRoot({ session, workingDirectory: directory } as SessionBootstrapResult, {
-        directory, generation: 'test', endpoint: 'mock', settingsFor: () => undefined,
+        directory, generation: 'test', endpoint: 'mock', external: opts?.external, codexHome: directory, settingsFor: () => undefined,
         create: async () => { throw new Error('Unexpected root creation'); },
         end
     } satisfies RootHost);
@@ -90,17 +100,79 @@ async function fixture(opts?: { hubArchived?: boolean; end?: RootHost['end'] }) 
         initialized: boolean;
         thread: { id: string; turns: NativeTurn[] };
         queue: Array<{ id: string; clientUserMessageId: string; input: unknown }>;
+        items: unknown[];
         notify(method: string, params: unknown): void;
         abandoned(): void;
+        serverRequest(request: { id: string | number; method: string; params: unknown }): void;
+        respond: ReturnType<typeof vi.fn>;
     };
+    const stopSource = opts?.nativeHistory ? new NativeStopFixture(directory) : undefined;
+    if (stopSource) {
+        const request = root.client.request.bind(root.client);
+        root.client.request = (async (method: string, params: Record<string, unknown> = {}) => {
+            if (method === 'thread/items/list' || method === 'thread/turns/list' && params.itemsView === 'notLoaded')
+                return stopSource.request(method, params);
+            return request(method, params);
+        }) as typeof root.client.request;
+        cleanups.unshift(async () => { stopSource.close(); });
+    }
     return {
-        root, native, rpc, send, metadata: () => metadata, state: () => state, updateState,
+        root, native, rpc, send, stopSource, metadata: () => metadata, state: () => state, updateState,
+        userMessage: (message: UserMessage, localId: string) => userMessage?.(message, localId),
         reconnect: () => reconnect?.(),
         emitHubArchived: () => { for (const listener of hubArchivedListeners) listener(); },
         hubArchivedListenerCount: () => hubArchivedListeners.length,
         end,
     };
 }
+
+it('waits for native YOLO confirmation before submitting an old-turn approval and then suppresses later prompts', async () => {
+    const f = await fixture();
+    await f.root.activate();
+    f.root.acceptSettings({ model: 'mock', approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite' } });
+    const request = { id: 9, method: 'item/commandExecution/requestApproval', params: {
+        threadId: 'thread', turnId: 'running', itemId: 'command', command: 'printf probe'
+    } };
+    f.native.serverRequest(request);
+    await vi.waitFor(() => expect(Object.keys(f.state().requests!)).toHaveLength(1));
+    const nativeRequest = f.root.client.request.bind(f.root.client);
+    let confirm!: () => void;
+    f.root.client.request = (async (method: string, params: Record<string, unknown>) => {
+        if (method !== 'thread/settings/update') return nativeRequest(method, params);
+        confirm = () => f.native.notify('thread/settings/updated', { threadId: 'thread', threadSettings: { model: 'mock', ...params } });
+        return {};
+    }) as typeof f.root.client.request;
+    const applying = f.root.applySettings({ permissionMode: 'yolo' });
+    await vi.waitFor(() => expect(confirm).toBeTypeOf('function'));
+    expect(f.native.respond).not.toHaveBeenCalled();
+    confirm();
+    expect((await applying).applied.permissionMode).toBe('yolo');
+    await vi.waitFor(() => expect(f.native.respond).toHaveBeenCalledExactlyOnceWith(9, { decision: 'accept' }));
+    expect(Object.keys(f.state().requests!)).toHaveLength(1);
+    f.native.notify('serverRequest/resolved', { threadId: 'thread', requestId: 9 });
+    expect(Object.keys(f.state().requests!)).toHaveLength(0);
+    f.native.serverRequest({ ...request, id: 10 });
+    await vi.waitFor(() => expect(f.native.respond).toHaveBeenLastCalledWith(10, { decision: 'accept' }));
+    expect(Object.keys(f.state().requests!)).toHaveLength(0);
+});
+
+it('does not infer YOLO from an unrestricted sandbox whose approval policy still prompts', async () => {
+    const f = await fixture();
+    await f.root.activate();
+    f.root.acceptSettings({ model: 'mock', approvalPolicy: 'on-request', sandboxPolicy: { type: 'dangerFullAccess' } });
+    expect((await f.root.applySettings({})).applied.permissionMode).toBe('default');
+    f.native.serverRequest({ id: 9, method: 'item/commandExecution/requestApproval', params: { threadId: 'thread', itemId: 'command' } });
+    await vi.waitFor(() => expect(Object.keys(f.state().requests!)).toHaveLength(1));
+    expect(f.native.respond).not.toHaveBeenCalled();
+});
+
+it.each(['standard', null] as const)('confirms native standard tier when requested as %s', async serviceTier => {
+    const f = await fixture();
+    await f.root.applySettings({ serviceTier: 'fast' });
+    const result = await f.root.applySettings({ serviceTier });
+    expect(result.applied.serviceTier).toBe('standard');
+    expect((await f.root.applySettings({ serviceTier })).applied.serviceTier).toBe('standard');
+});
 
 async function completePlan(f: Awaited<ReturnType<typeof fixture>>, status = 'completed') {
     await f.root.applySettings({ collaborationMode: 'plan' });
@@ -116,6 +188,21 @@ async function completePlan(f: Awaited<ReturnType<typeof fixture>>, status = 'co
 }
 
 describe('shared plan actions', () => {
+    it('queues uploaded images as native image inputs while retaining file references', async () => {
+        const f = await fixture({ external: true });
+        await f.root.activate();
+        f.userMessage({ role: 'user', content: { type: 'text', text: 'Inspect these', attachments: [
+            { id: 'image', filename: 'my image.png', path: '/uploads/my image.png', mimeType: 'image/png', size: 123 },
+            { id: 'file', filename: 'notes.txt', path: '/uploads/notes.txt', mimeType: 'text/plain', size: 12 }
+        ] } }, 'uploaded-message');
+        await vi.waitFor(() => expect(f.native.queue).toHaveLength(1));
+        expect(f.native.queue[0].clientUserMessageId).toBe('uploaded-message');
+        expect(f.native.queue[0].input).toEqual([
+            { type: 'text', text: '@/uploads/my image.png @/uploads/notes.txt\n\nInspect these' },
+            { type: 'localImage', path: '/uploads/my image.png' }
+        ]);
+    });
+
     it('applies remote change_title as metadata.name then lets native terminal rename win', async () => {
         const f = await fixture();
         const item = { id: 'title', type: 'mcpToolCall', server: 'hapi', tool: 'change_title',
@@ -320,5 +407,62 @@ describe('shared steering availability', () => {
         const f = await fixture({ hubArchived: true, end });
         await f.root.activate();
         await vi.waitFor(() => expect(end).toHaveBeenCalledTimes(1));
+    });
+});
+
+
+describe('external native lifecycle', () => {
+    it('confirms actual native page user identities before the RPC response, without persisting the transcript', async () => {
+        const f = await fixture({ external: true, nativeHistory: true });
+        await f.root.activate();
+        f.stopSource!.addTurn('turn', 'completed');
+        f.stopSource!.items[0].item.clientId = 'web-client';
+        const response = await f.rpc.get(RPC_METHODS.ReadCodexHistory)!({ limit: 20 }) as { messages: Array<{ localId: string }> };
+        expect(response.messages[0].localId).toBe('web-client');
+        expect(f.root.session.emitMessagesConsumed).toHaveBeenCalledWith(['web-client'], { steered: undefined });
+        expect(f.send).not.toHaveBeenCalled();
+    });
+
+    it('external notification recovers native stopped history after persistence, without Hub transcript emissions', async () => {
+        const f = await fixture({ external: true, nativeHistory: true });
+        const turn = f.stopSource!.addTurn('stopped', 'inProgress');
+        await f.root.activate();
+        const read = () => f.rpc.get(RPC_METHODS.ReadCodexHistory)!({ limit: 20 }) as Promise<{ messages: any[] }>;
+        expect((await read()).messages.some(row => row.content.content.type === 'event')).toBe(false);
+        f.stopSource!.complete(turn, 'interrupted', false);
+        f.native.notify('turn/completed', { threadId: 'thread', turn: { id: turn.id, status: 'interrupted' } });
+        await vi.waitFor(() => expect(f.root.session.emitNativeHistoryChanged).toHaveBeenCalled());
+        await expect(read()).rejects.toMatchObject({ retryable: true });
+        f.stopSource!.persist(turn);
+        const interrupted = await read();
+        expect(interrupted.messages.filter(row => row.content.content.type === 'event')).toHaveLength(1);
+        f.stopSource!.addTurn('next', 'completed');
+        f.native.notify('turn/completed', { threadId: 'thread', turn: { id: 'next', status: 'completed' } });
+        await vi.waitFor(() => expect(f.root.session.emitNativeHistoryChanged).toHaveBeenCalledTimes(2));
+        const next = await read();
+        expect(next.messages.filter(row => row.content.content.type === 'event').map(row => row.id))
+            .toEqual(['native-turn-status:thread:stopped:turn_aborted']);
+        expect(f.send).not.toHaveBeenCalled();
+        expect(f.root.session.sendSessionEvent).not.toHaveBeenCalled();
+    });
+
+    it('settles live external user acceptance while keeping direct history nonpersisting', async () => {
+        const f = await fixture({ external: true });
+        f.native.notify('item/started', { threadId: 'thread', turnId: 'turn', item: {
+            type: 'userMessage', id: 'native-item', clientId: 'external-client', content: [{ type: 'text', text: 'processed' }]
+        } });
+        await vi.waitFor(() => expect(f.root.session.emitMessagesConsumed).toHaveBeenCalledWith(['external-client'], { steered: undefined }));
+        expect(f.send).not.toHaveBeenCalled();
+    });
+
+    it('does not inject settings or delete native queued work when detaching', async () => {
+        const { root, native } = await fixture({ external: true });
+        const params = { threadId: 'thread' };
+        expect(root.config(params)).toEqual(params);
+        native.queue.push({ id: 'native-entry', clientUserMessageId: 'web-entry', input: [{ type: 'text', text: 'keep working' }] });
+        await root.refresh();
+        await root.suspend();
+        await root.close(false);
+        expect(native.queue).toHaveLength(1);
     });
 });

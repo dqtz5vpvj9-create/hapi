@@ -74,7 +74,7 @@ describe('traceMessages — Task tool name (preserved)', () => {
         const result = traceMessages([taskMsg, sidechainRoot])
         const sc = result.find(m => m.id === 'sc-root')
         expect(sc).toBeDefined()
-        expect(sc!.sidechainId).toBe('msg-task')
+        expect(sc!.sidechainId).toBe('tc-msg-task')
     })
 
     it('does not assign sidechainId when prompt does not match', () => {
@@ -102,7 +102,7 @@ describe('traceMessages — Agent tool name (regression fix)', () => {
         const sc = result.find(m => m.id === 'sc-root')
         expect(sc).toBeDefined()
         // Before fix: sidechainId would be undefined because 'Agent' was not indexed
-        expect(sc!.sidechainId).toBe('msg-agent')
+        expect(sc!.sidechainId).toBe('tc-msg-agent')
     })
 
     it('does not assign sidechainId when Agent prompt does not match', () => {
@@ -125,8 +125,8 @@ describe('traceMessages — Agent tool name (regression fix)', () => {
         const result = traceMessages([taskMsg, agentMsg, scForTask, scForAgent])
         const scTaskResult = result.find(m => m.id === 'sc-task')
         const scAgentResult = result.find(m => m.id === 'sc-agent')
-        expect(scTaskResult!.sidechainId).toBe('msg-task')
-        expect(scAgentResult!.sidechainId).toBe('msg-agent')
+        expect(scTaskResult!.sidechainId).toBe('tc-msg-task')
+        expect(scAgentResult!.sidechainId).toBe('tc-msg-agent')
     })
 })
 
@@ -173,7 +173,7 @@ describe('traceMessages — parentToolUseId direct grouping (broken subagent cas
 
         const result = traceMessages([agentMsg, summary])
 
-        expect(result.find(m => m.id === 'sc-summary')?.sidechainId).toBe('msg-agent')
+        expect(result.find(m => m.id === 'sc-summary')?.sidechainId).toBe('tc-msg-agent')
     })
 
     it('groups an orphaned sidechain child directly via parentToolUseId when no prompt-root sidechain message exists', () => {
@@ -186,7 +186,7 @@ describe('traceMessages — parentToolUseId direct grouping (broken subagent cas
         const result = traceMessages([agentMsg, orphanChild])
         const grouped = result.find(m => m.id === 'sc-child')
         expect(grouped).toBeDefined()
-        expect(grouped!.sidechainId).toBe('msg-agent')
+        expect(grouped!.sidechainId).toBe('tc-msg-agent')
     })
 
     it('groups every descendant independently by parentToolUseId, even when their own parentUuid chain is broken', () => {
@@ -199,8 +199,8 @@ describe('traceMessages — parentToolUseId direct grouping (broken subagent cas
         const child2 = makeSidechainChildMsg('sc-child-2', 'tc-msg-agent', 'uuid-sc-child-1')
 
         const result = traceMessages([agentMsg, child1, child2])
-        expect(result.find(m => m.id === 'sc-child-1')!.sidechainId).toBe('msg-agent')
-        expect(result.find(m => m.id === 'sc-child-2')!.sidechainId).toBe('msg-agent')
+        expect(result.find(m => m.id === 'sc-child-1')!.sidechainId).toBe('tc-msg-agent')
+        expect(result.find(m => m.id === 'sc-child-2')!.sidechainId).toBe('tc-msg-agent')
     })
 
     it('still falls back to prompt-root matching when parentToolUseId is absent (old stored messages)', () => {
@@ -209,7 +209,7 @@ describe('traceMessages — parentToolUseId direct grouping (broken subagent cas
         const sidechainRoot = makeSidechainRootMsg('sc-root', prompt)
 
         const result = traceMessages([agentMsg, sidechainRoot])
-        expect(result.find(m => m.id === 'sc-root')!.sidechainId).toBe('msg-agent')
+        expect(result.find(m => m.id === 'sc-root')!.sidechainId).toBe('tc-msg-agent')
     })
 
     it('groups nested subagents: a grandchild resolves to its mid-level (sidechain) Agent tool_use', () => {
@@ -237,7 +237,7 @@ describe('traceMessages — parentToolUseId direct grouping (broken subagent cas
         const grandchild = makeSidechainChildMsg('sc-grandchild', 'tc-msg-mid')
 
         const result = traceMessages([topAgent, midAgent, grandchild])
-        expect(result.find(m => m.id === 'msg-mid')!.sidechainId).toBe('msg-top')
-        expect(result.find(m => m.id === 'sc-grandchild')!.sidechainId).toBe('msg-mid')
+        expect(result.find(m => m.id === 'msg-mid')!.sidechainId).toBe('tc-msg-top')
+        expect(result.find(m => m.id === 'sc-grandchild')!.sidechainId).toBe('tc-msg-mid')
     })
 })

@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { AttachmentMetadata, DecryptedMessage } from '@/types/api'
 import { makeClientSideId } from '@/lib/messages'
@@ -12,6 +12,7 @@ import {
 import { usePlatform } from '@/hooks/usePlatform'
 import type { MessageDeliveryMode } from '@hapi/protocol'
 import { getRetryDeliveryMode } from '@/lib/messageDelivery'
+import type { AttachmentDraftInput } from '@/lib/composer-attachment-drafts'
 
 type SendMessageInput = {
     sessionId: string
@@ -21,6 +22,7 @@ type SendMessageInput = {
     attachments?: AttachmentMetadata[]
     scheduledAt?: number | null
     deliveryMode: MessageDeliveryMode
+    attachmentDrafts?: AttachmentDraftInput[]
 }
 
 export type SendMessageAcceptance = {
@@ -61,11 +63,8 @@ type BlockedReason = 'no-api' | 'no-session' | 'pending'
  *   recovery retains queue, while turn-scoped steer safely degrades to queue
  *   because the original Pi generation can no longer be proven.
  *
- * Only fired for text-only sends.  Sends with attachments fall back to
- * the legacy failed-bubble UX (the optimistic row stays as `failed` and
- * the user retries via the in-thread retry button); the composer-restore
- * path can't reinstate uploaded attachment metadata, so doing the swap
- * for attachment sends would silently drop the attachments.
+ * Attachment sends also return to the composer when their submitted File
+ * snapshot is available. Older failed rows without blobs retain bubble retry.
  */
 export type SendErrorInfo = {
     sessionId: string
@@ -75,6 +74,7 @@ export type SendErrorInfo = {
     deliveryMode: MessageDeliveryMode
     /** True only after the message mutation was started. */
     mutationStarted: boolean
+    attachmentDrafts?: AttachmentDraftInput[]
 }
 
 export type ResolvedSession = {
@@ -199,12 +199,19 @@ export function useSendMessage(
         attachments?: AttachmentMetadata[],
         scheduledAt?: number | null,
         deliveryMode?: MessageDeliveryMode,
+        attachmentDrafts?: AttachmentDraftInput[],
     ) => Promise<SendMessageAcceptance | false>
     retryMessage: (localId: string) => boolean
+    discardFailedMessage: (localId: string) => boolean
     isSending: boolean
     sendSettlement: SendMessageSettlement | null
 } {
     const { haptic } = usePlatform()
+    const mountedRef = useRef(true)
+    useEffect(() => {
+        mountedRef.current = true
+        return () => { mountedRef.current = false }
+    }, [])
     const [isResolving, setIsResolving] = useState(false)
     const [sendSettlement, setSendSettlement] = useState<SendMessageSettlement | null>(null)
     const resolveGuardRef = useRef(false)
@@ -212,6 +219,10 @@ export function useSendMessage(
     isSessionThinkingRef.current = options?.isSessionThinking ?? false
 
     const mutation = useMutation({
+        // HAPI's queue is server-owned. Never keep a paused browser send that
+        // can silently resume after the operator has moved on from its draft.
+        networkMode: 'always',
+        retry: false,
         mutationFn: async (input: SendMessageInput) => {
             if (!api) {
                 throw new Error('API unavailable')
@@ -242,14 +253,20 @@ export function useSendMessage(
         },
         onError: (error, input) => {
             setSendSettlement({ attemptId: input.localId, status: 'error' })
-            // Attachment sends keep the legacy failed-bubble UX: the
-            // composer-restore path can only re-seat text + scheduledAt,
-            // not the uploaded attachment metadata.  Removing the row
-            // would destroy the attachment preview AND leave the operator
-            // with no retry surface for it.  Keep the row as `failed` so
-            // the in-thread retry button can re-fire the send (with
-            // attachments) via retryMessage.
-            if (input.attachments && input.attachments.length > 0) {
+            const current = findMessageByLocalId(input.sessionId, input.localId)
+            // An echo/consumption may win the response race. It owns delivery;
+            // a transport error must not remove it or restore a duplicate draft.
+            if (current && (current.id !== input.localId || current.invokedAt != null
+                || current.status === 'queued' || current.status === 'sent')) return
+            // Every submitted attachment needs its actual File snapshot before
+            // this row can be replaced by an editable draft. Empty/partial
+            // snapshots must retain the only available attachment references.
+            const canRestoreAttachments = input.attachments?.every((attachment) =>
+                input.attachmentDrafts?.some((draft) => draft.id === attachment.id && draft.file),
+            ) ?? true
+            // A route state callback cannot recover a draft after unmount.
+            // Retain the existing local failed bubble and its full payload.
+            if (!canRestoreAttachments || !mountedRef.current || !options?.onError) {
                 updateMessageStatus(input.sessionId, input.localId, 'failed')
                 haptic.notification('error')
                 return
@@ -270,6 +287,7 @@ export function useSendMessage(
                 scheduledAt: input.scheduledAt ?? null,
                 deliveryMode: input.deliveryMode,
                 mutationStarted: true,
+                attachmentDrafts: input.attachmentDrafts,
             })
         },
     })
@@ -279,6 +297,7 @@ export function useSendMessage(
         attachments?: AttachmentMetadata[],
         scheduledAt?: number | null,
         deliveryMode: MessageDeliveryMode = 'queue',
+        attachmentDrafts?: AttachmentDraftInput[],
     ): Promise<SendMessageAcceptance | false> => {
         if (!api) {
             options?.onBlocked?.('no-api')
@@ -340,6 +359,7 @@ export function useSendMessage(
                     scheduledAt: scheduledAt ?? null,
                     deliveryMode,
                     mutationStarted: false,
+                    attachmentDrafts,
                 })
                 return false
             } finally {
@@ -355,6 +375,17 @@ export function useSendMessage(
             attachments: sendAttachments,
             scheduledAt,
             deliveryMode,
+            // Freeze the submitted blobs and use the actual send paths (hub
+            // staging may have replaced paths since the composer snapshot).
+            attachmentDrafts: sendAttachments?.length && attachmentDrafts
+                && sendAttachments.every((item) => attachmentDrafts.some((draft) => draft.id === item.id))
+                ? sendAttachments.map((item) => ({
+                    ...attachmentDrafts.find((draft) => draft.id === item.id)!,
+                    path: item.path,
+                    previewUrl: item.previewUrl,
+                    uploadSessionId: targetSessionId,
+                }))
+                : undefined,
         })
         return { attemptId: localId }
     }
@@ -376,7 +407,7 @@ export function useSendMessage(
         }
 
         const message = findMessageByLocalId(sessionId, localId)
-        if (!message?.originalText) return false
+        if (!message?.originalText || message.status !== 'failed' || message.id !== localId) return false
 
         updateMessageStatus(sessionId, localId, 'sending')
 
@@ -392,9 +423,20 @@ export function useSendMessage(
         return true
     }
 
+    const discardFailedMessage = (localId: string): boolean => {
+        if (!sessionId || mutation.isPending || resolveGuardRef.current) return false
+        const message = findMessageByLocalId(sessionId, localId)
+        // Only a terminal local failure can be dismissed. Server-owned rows
+        // must still use the authoritative queued cancel path.
+        if (message?.status !== 'failed' || message.id !== localId) return false
+        removeOptimisticMessage(sessionId, localId)
+        return true
+    }
+
     return {
         sendMessage,
         retryMessage,
+        discardFailedMessage,
         isSending: mutation.isPending || isResolving,
         sendSettlement,
     }

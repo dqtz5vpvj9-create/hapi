@@ -4,6 +4,23 @@ import { SharedCodexProjection, inputText } from './projection';
 import { codexPlanProposalId } from './plan';
 
 describe('shared history projection', () => {
+    it.each([undefined, 'root'])('retains a failed empty turn across reconnect as an error (parent: %s)', async parentThreadId => {
+        const send = vi.fn();
+        const session = { getMetadata: () => ({}), sendAgentMessage: send } as unknown as ApiSessionClient;
+        const projection = new SharedCodexProjection(session, 'thread', async () => {}, parentThreadId);
+        const turn = { id: 'failed-turn', status: 'failed', items: [], error: { message: 'Bad Request' } };
+        await projection.notification('turn/completed', { threadId: 'thread', turn });
+        const failure = send.mock.calls.find(([body]) => (parentThreadId ? body.message : body)?.type === 'error');
+        expect(failure).toBeDefined();
+        expect(parentThreadId ? failure![0].message : failure![0]).toMatchObject({ type: 'error', message: 'Codex error: Bad Request' });
+        projection.reset();
+        send.mockClear();
+        await projection.history({ turns: [turn] });
+        expect(send.mock.calls).toContainEqual(failure);
+        const count = send.mock.calls.length;
+        await projection.history({ turns: [turn] });
+        expect(send).toHaveBeenCalledTimes(count);
+    });
     it.each([undefined, 'root'])('persists proposals without approval and replays the same IDs (parent: %s)', async parentThreadId => {
         const send = vi.fn();
         const session = { getMetadata: () => ({}), sendAgentMessage: send } as unknown as ApiSessionClient;
@@ -105,5 +122,35 @@ describe('shared history projection', () => {
         expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'agent-run-trace', agentId: 'child', message: expect.objectContaining({ message: 'child answer' }) }), expect.any(String));
         await projection.notification('item/completed', { threadId: 'child', turnId: 'turn', item: { id: 'prompt', type: 'userMessage', content: [{ type: 'text', text: 'child prompt' }], clientId: 'cid' } });
         expect(user).not.toHaveBeenCalled(); expect(committed).not.toHaveBeenCalled();
+    });
+});
+
+describe('native assistant text streaming', () => {
+    it.each([undefined, 'parent'])('streams before completion and settles the same identity (parent: %s)', async parent => {
+        const send = vi.fn();
+        const projection = new SharedCodexProjection({ getMetadata: () => ({}), sendAgentMessage: send } as unknown as ApiSessionClient, 'thread', async () => {}, parent);
+        const scope = { threadId: 'thread', turnId: 'turn', itemId: 'item' };
+        await projection.notification('item/agentMessage/delta', { ...scope, delta: 'hello' });
+        expect(send).toHaveBeenCalledTimes(1);
+        const body = (n: number) => parent ? send.mock.calls[n][0].message : send.mock.calls[n][0];
+        expect(body(0)).toMatchObject({ type: 'message', message: 'hello', streamSnapshot: true });
+        await projection.notification('item/agentMessage/delta', { ...scope, delta: ' hello' });
+        await projection.notification('item/completed', { ...scope, item: { id: 'item', type: 'agentMessage', text: 'hello hello!' } });
+        expect(body(send.mock.calls.length - 1)).toMatchObject({ id: body(0).id, message: 'hello hello!' });
+        const count = send.mock.calls.length;
+        await projection.notification('item/agentMessage/delta', { ...scope, delta: 'late' });
+        expect(send).toHaveBeenCalledTimes(count);
+    });
+    it('seeds a resumed partial item and preserves identical consecutive deltas', async () => {
+        const send = vi.fn();
+        const projection = new SharedCodexProjection({ getMetadata: () => ({}), sendAgentMessage: send } as unknown as ApiSessionClient, 'thread', async () => {});
+        await projection.history({ turns: [{ id: 'turn', status: 'inProgress', items: [{ id: 'item', type: 'agentMessage', text: 'prefix ' }] }] });
+        vi.spyOn(Date, 'now').mockReturnValue(1000);
+        try {
+            await projection.notification('item/agentMessage/delta', { turnId: 'turn', itemId: 'item', delta: 'ha' });
+            vi.mocked(Date.now).mockReturnValue(1200);
+            await projection.notification('item/agentMessage/delta', { turnId: 'turn', itemId: 'item', delta: 'ha' });
+            expect(send.mock.lastCall?.[0].message).toBe('prefix haha');
+        } finally { vi.restoreAllMocks(); }
     });
 });

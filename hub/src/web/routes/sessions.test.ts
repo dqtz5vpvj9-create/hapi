@@ -1687,7 +1687,7 @@ describe('sessions routes', () => {
         expect(response.status).toBe(400)
     })
 
-    it('honors optional limit on GET /sessions after sort', async () => {
+    it('honors optional limit on GET /sessions after sort without awaiting lineage lookup', async () => {
         const sessions = [
             createSession({ id: 'older-active', active: true, updatedAt: 10 }),
             createSession({ id: 'newer-active', active: true, updatedAt: 20 }),
@@ -1695,6 +1695,7 @@ describe('sessions routes', () => {
         ]
         const scheduledIds: string[][] = []
         const engine = {
+            refreshCodexSessionLineage: () => new Promise<void>(() => {}),
             getSessionsByNamespace: () => sessions,
             getFutureScheduledMessageCounts: (ids: string[]) => {
                 scheduledIds.push(ids)
@@ -1730,6 +1731,7 @@ describe('sessions routes', () => {
             createSession({ id: 'mid-active', active: true, updatedAt: 20 })
         ]
         const engine = {
+            refreshCodexSessionLineage: async () => {},
             getSessionsByNamespace: () => sessions,
             getFutureScheduledMessageCounts: (ids: string[]) => new Map(ids.map((id) => [id, 0])),
             getNextScheduledAtBySessionIds: (_ids: string[]) => new Map<string, number>(),

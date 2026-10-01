@@ -36,6 +36,18 @@ describe('CodexSessionSyncDialog', () => {
         window.localStorage.clear()
     })
 
+    it('shows list failures with a retry action instead of an empty list', () => {
+        const retry = vi.fn()
+        render(<I18nProvider><CodexSessionSyncDialog isOpen onClose={vi.fn()} sessions={[]} currentCodexSessionId={null}
+            onConfirm={vi.fn()} onRestartCodexDesktop={vi.fn()} isPending={false} isRestartingCodexDesktop={false}
+            isLoading={false} error="Runner unavailable" onRetry={retry} /></I18nProvider>)
+        expect(screen.getByRole('alert')).toHaveTextContent('Runner unavailable')
+        expect(screen.queryByText('No local Codex sessions found')).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+        expect(retry).toHaveBeenCalledOnce()
+        expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled()
+    })
+
     it('shows the working directory for local Codex sessions', () => {
         renderDialog([
             {
@@ -232,7 +244,7 @@ describe('CodexSessionSyncDialog', () => {
 
         const header = screen.getByTestId('codex-import-dialog-header')
         expect(header).toHaveClass('flex')
-        expect(header).toHaveClass('pr-10')
+        expect(header).toHaveClass('flex-col', 'sm:flex-row')
         expect(screen.getByRole('button', { name: 'Restart Codex client' })).toHaveClass('shrink-0')
     })
 

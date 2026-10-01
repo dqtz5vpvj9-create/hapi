@@ -186,7 +186,13 @@ vi.mock('../../utils/formatRunnerSpawnError', () => ({
     formatRunnerSpawnError: () => null
 }))
 vi.mock('@/components/CodexSessionSyncDialog', () => ({
-    CodexSessionSyncDialog: () => null
+    CodexSessionSyncDialog: (props: { isOpen: boolean; isLoading: boolean; sessions: Array<{ id: string }>; error?: string | null; onRetry: () => void; onConfirm: (ids: string[]) => Promise<void> }) => props.isOpen ? (
+        <>
+            <div data-testid="codex-list-error">{props.error}</div>
+            <button data-testid="codex-retry" onClick={props.onRetry}>retry</button>
+            <button data-testid="import-codex" disabled={props.isLoading || props.sessions.length === 0} onClick={() => void props.onConfirm(props.sessions.map((s) => s.id))}>import</button>
+        </>
+    ) : null
 }))
 vi.mock('@/components/PiSessionImportDialog', () => ({
     PiSessionImportDialog: (props: { isOpen: boolean; sessions: Array<{ id: string }>; onClose: () => void; onConfirm: (ids: string[]) => Promise<void> }) => props.isOpen ? (
@@ -329,6 +335,51 @@ describe('NewSession launch preferences', () => {
         mocks.refetchSessions.mockResolvedValue(undefined)
         mocks.addToast.mockReset()
         savePreferredAgent('codex')
+    })
+
+    it('connects the selected native thread and opens its binding without importing or spawning', async () => {
+        const codexApi = {
+            getCodexSessions: vi.fn().mockResolvedValue({ success: true, machineId: 'machine-1', sessions: [{ id: 'native-1', title: 'History', cwd: '/project', file: '/fixture.jsonl', modifiedAt: 1 }] }),
+            connectCodexSession: vi.fn().mockResolvedValue({ sessionId: 'native-binding-1', threadId: 'native-1', connectionState: 'attached' }),
+            syncCodexSession: vi.fn(),
+            getCodexDuplicateSessions: vi.fn().mockResolvedValue({ success: true, duplicates: [] }),
+            resumeSession: vi.fn()
+        } as unknown as ApiClient
+        render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
+        await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
+        fireEvent.click(screen.getByTestId('import-codex'))
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('native-binding-1'))
+        expect(codexApi.connectCodexSession).toHaveBeenCalledWith('native-1', 'machine-1')
+        expect(codexApi.syncCodexSession).not.toHaveBeenCalled()
+        expect(codexApi.resumeSession).not.toHaveBeenCalled()
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+    })
+
+    it('ignores a late native connection result after the selected machine changes', async () => {
+        let resolve!: (value: unknown) => void;
+        const codexApi = {
+            getCodexSessions: vi.fn().mockResolvedValue({ success: true, sessions: [{ id: 'native-1' }] }),
+            connectCodexSession: vi.fn().mockImplementation(() => new Promise(done => { resolve = done; })),
+            getCodexDuplicateSessions: vi.fn().mockResolvedValue({ success: true, duplicates: [] })
+        } as unknown as ApiClient;
+        render(<NewSession api={codexApi} machines={[machine, { ...machine, id: 'machine-2' }]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />);
+        fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }));
+        await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled());
+        fireEvent.click(screen.getByTestId('import-codex'));
+        fireEvent.change(screen.getByRole('combobox', { name: 'machine-selector' }), { target: { value: 'machine-2' } });
+        await act(async () => resolve({ sessionId: 'late-binding', threadId: 'native-1', connectionState: 'attached' }));
+        expect(mocks.onSuccess).not.toHaveBeenCalled();
+    });
+
+    it('surfaces an unavailable Codex list in the dialog and retries successfully', async () => {
+        const codexApi = { getCodexSessions: vi.fn().mockRejectedValueOnce(new Error('Runner unavailable')).mockResolvedValueOnce({ success: true, sessions: [{ id: 'native-1' }] }) } as unknown as ApiClient
+        render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
+        await waitFor(() => expect(screen.getByTestId('codex-list-error')).toHaveTextContent('Runner unavailable'))
+        fireEvent.click(screen.getByTestId('codex-retry'))
+        await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
+        expect(screen.getByTestId('codex-list-error')).toBeEmptyDOMElement()
     })
 
     it('hides unavailable Agents and falls back to the first available Agent', async () => {

@@ -24,11 +24,12 @@ import { usePointerFocusRing } from '@/hooks/usePointerFocusRing'
 import { getInputStringAny, truncate } from '@/lib/toolInputUtils'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
+import { useNativeToolDetail, NativeDependencyStatus } from '@/components/ToolCard/nativeDependencies'
 import { TraceSection } from '@/components/ToolCard/trace'
 import { isSubagentToolName } from '@/chat/subagentTool'
 
 const ELAPSED_INTERVAL_MS = 1000
-const TERMINAL_RELATED_TOOL_NAMES = new Set(['Bash', 'CodexBash', 'shell_command', 'run_shell_command'])
+const TERMINAL_RELATED_TOOL_NAMES = new Set(['Bash', 'CodexBash', 'shell_command', 'run_shell_command', 'ssh'])
 
 export function shouldUseCompactTerminalToolCard(toolName: string, terminalToolDisplayMode: TerminalToolDisplayMode): boolean {
     return TERMINAL_RELATED_TOOL_NAMES.has(toolName) && terminalToolDisplayMode === 'compact'
@@ -40,10 +41,8 @@ export function shouldShowInlineToolCardBody(
     terminalToolDisplayMode: TerminalToolDisplayMode
 ): boolean {
     if (isSubagentToolName(toolName)) return false
-    if (TERMINAL_RELATED_TOOL_NAMES.has(toolName)) {
-        return terminalToolDisplayMode === 'detailed'
-    }
-    return !presentationMinimal
+    if (toolName === 'ExitPlanMode' || toolName === 'exit_plan_mode') return true
+    return toolName === 'CodexDiff' && terminalToolDisplayMode === 'detailed' && !presentationMinimal
 }
 
 export function getToolTimingDetails(tool: ChatToolCall, now: number): {
@@ -302,7 +301,6 @@ export function ToolStatusIcon(props: { state: ToolCallBlock['tool']['state'] })
     if (props.state === 'completed') {
         return (
             <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" />
                 <path d="M5.2 8.3l1.8 1.8 3.8-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
         )
@@ -366,11 +364,13 @@ type ToolCardProps = {
     block: ToolCallBlock
 }
 
-export function ToolDetailDialogContent(props: {
+export function ToolDetailDialogContent(input: {
     block: ToolCallBlock
     metadata: SessionMetadataSummary | null
 }) {
     const { t } = useTranslation()
+    const detail = useNativeToolDetail(input.block)
+    const props = { ...input, block: detail.block }
     const toolName = props.block.tool.name
     const FullToolView = getToolFullViewComponent(toolName)
     const ResultToolView = getToolResultViewComponent(toolName)
@@ -383,6 +383,7 @@ export function ToolDetailDialogContent(props: {
         && Object.keys(permission.answers).length > 0
     return (
         <div className="mt-3 flex max-h-[75vh] flex-col gap-4 overflow-auto">
+            <NativeDependencyStatus {...detail} />
             <ToolTimingDetails block={props.block} />
             <div>
                 <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">
@@ -429,13 +430,21 @@ function ToolCardInner(props: ToolCardProps) {
     const toolName = props.block.tool.name
     const toolTitle = presentation.title
     const subtitle = presentation.subtitle ?? props.block.tool.description
-    const taskSummary = renderTaskSummary(props.block, props.metadata, t)
+    const taskSummary = props.block.tool.permission?.status === 'pending' ? renderTaskSummary(props.block, props.metadata, t) : null
     const subagentModel = isSubagentToolName(toolName)
         ? getSubagentModel(props.block.children, getInputStringAny(props.block.tool.input, ['model']))
         : null
     const isCodexAgentCard = toolName === 'CodexAgent'
     const useCompactTerminalCard = shouldUseCompactTerminalToolCard(toolName, props.terminalToolDisplayMode)
+    const isPlan = toolName === 'ExitPlanMode' || toolName === 'exit_plan_mode'
+    const needsApproval = props.block.tool.permission?.status === 'pending'
     const showInline = shouldShowInlineToolCardBody(toolName, presentation.minimal, props.terminalToolDisplayMode)
+        || (needsApproval && !isSubagentToolName(toolName) && !isAskUserQuestionToolName(toolName) && !isRequestUserInputToolName(toolName))
+    const terminalCommand = TERMINAL_RELATED_TOOL_NAMES.has(toolName)
+        ? (Array.isArray((props.block.tool.input as { command?: unknown } | null)?.command)
+            ? (props.block.tool.input as { command: string[] }).command.join(' ')
+            : getInputStringAny(props.block.tool.input, ['command', 'cmd'])) : null
+    const showCommandSummary = !showInline && Boolean(terminalCommand) && props.terminalToolDisplayMode === 'detailed'
     const CompactToolView = showInline ? getToolViewComponent(toolName) : null
     const compactViewOwnsInteractions = toolName === 'CodexDiff'
     const ResultToolView = getToolResultViewComponent(toolName)
@@ -444,10 +453,10 @@ function ToolCardInner(props: ToolCardProps) {
     const isRequestUserInput = isRequestUserInputToolName(toolName)
     const isQuestionTool = isAskUserQuestion || isRequestUserInput
     const showsPermissionFooter = Boolean(permission && (
-        permission.status === 'resolved' || permission.status === 'pending'
+        permission.status === 'pending'
         || ((permission.status === 'denied' || permission.status === 'canceled') && Boolean(permission.reason))
     ))
-    const hasBody = showInline || taskSummary !== null || showsPermissionFooter
+    const hasBody = showInline || taskSummary !== null || showsPermissionFooter || isPlan
     // Header/content padding already supplies 12-16px below timing; add only
     // the remainder needed to match the detail dialog's 16px section gap.
     const inlineBodySpacing = props.block.tool.state === 'pending'
@@ -472,56 +481,20 @@ function ToolCardInner(props: ToolCardProps) {
     }
 
     const header = (
-        <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 flex flex-1 flex-col gap-1">
-                <div className="min-w-0 flex items-center gap-2">
-                    <div className="shrink-0 flex h-3.5 w-3.5 items-center justify-center text-[var(--app-tool-card-accent)] leading-none">
-                        {presentation.icon}
-                    </div>
-                    <CardTitle className={cn(
-                        'min-w-0 text-sm font-medium leading-tight text-[var(--app-fg)]',
-                        isCodexAgentCard ? 'truncate whitespace-nowrap' : 'break-words'
-                    )}>
-                        {toolTitle}
-                    </CardTitle>
-                </div>
-
-                {subtitle ? (
-                    <CardDescription className={cn(
-                        'font-mono text-xs text-[var(--app-tool-card-subtitle)]',
-                        isCodexAgentCard || useCompactTerminalCard ? 'truncate whitespace-nowrap' : 'break-all'
-                    )}>
-                        {truncate(subtitle, 160)}
-                    </CardDescription>
-                ) : null}
-                <ToolCardTimingSummary tool={props.block.tool} />
-            </div>
-
-            <div className={cn(
-                'flex shrink-0 items-center gap-2 self-center text-[var(--app-hint)]',
-                subtitle ? '-translate-y-0.5' : null
-            )}>
-                {subagentModel ? (
-                    <span
-                        className="inline-block max-w-28 truncate rounded-full bg-[var(--app-subtle-bg)] px-1.5 py-px font-mono text-[10px] leading-tight text-[var(--app-hint)] sm:max-w-40"
-                        title={subagentModel}
-                    >
-                        {subagentModel}
-                    </span>
-                ) : null}
-                <span className={stateColor}>
-                    <ToolStatusIcon state={props.block.tool.state} />
-                </span>
-                <span className="text-[var(--app-hint)]">
-                    <DetailsIcon />
-                </span>
-            </div>
+        <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--app-hint)]">
+            <span className="shrink-0"><DetailsIcon /></span>
+            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">{presentation.icon}</span>
+            <span className="min-w-0 truncate font-mono text-sm" title={toolTitle}>{isCodexAgentCard ? toolTitle : toolName}</span>
+            <span className={cn('shrink-0', stateColor)} aria-label={props.block.tool.state}><ToolStatusIcon state={props.block.tool.state} /></span>
+            <time className="shrink-0 tabular-nums opacity-65" dateTime={new Date(props.block.createdAt).toISOString()}>
+                {new Date(props.block.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+            </time>
         </div>
     )
 
     return (
-        <Card className="overflow-hidden rounded-[20px] bg-[var(--app-tool-card-bg)] shadow-none">
-            <CardHeader className={cn('space-y-0 p-3', subtitle ? 'pb-2' : null)}>
+        <Card data-hapi-tool-state={props.block.tool.state} className="min-w-0 max-w-full overflow-hidden rounded-md border-0 bg-transparent shadow-none">
+            <CardHeader className="space-y-0 px-0 py-1">
                 <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
                     <DialogTrigger asChild>
                         <button
@@ -535,6 +508,7 @@ function ToolCardInner(props: ToolCardProps) {
                             onBlur={onTriggerBlur}
                         >
                             {header}
+                            {showCommandSummary ? <div className="ml-9 truncate font-mono text-xs text-[var(--app-hint)] opacity-75" title={terminalCommand!}>{terminalCommand}</div> : null}
                         </button>
                     </DialogTrigger>
                     <DialogContent

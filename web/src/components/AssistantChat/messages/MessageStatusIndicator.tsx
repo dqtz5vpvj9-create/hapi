@@ -1,4 +1,5 @@
 import type { MessageStatus } from '@/types/api'
+import { useTranslation } from '@/lib/use-translation'
 
 function ErrorIcon() {
     return (
@@ -31,7 +32,9 @@ function SendingIcon() {
 export function MessageStatusIndicator(props: {
     status?: MessageStatus
     onRetry?: () => void
+    onDiscard?: () => void
 }) {
+    const { t } = useTranslation()
     if (props.status === 'queued') {
         return (
             <span role="status" aria-label="Queued" className="inline-flex h-4 w-4 items-center justify-center text-[var(--app-fg-muted)]">
@@ -64,6 +67,11 @@ export function MessageStatusIndicator(props: {
                     className="text-xs text-blue-500 hover:underline"
                 >
                     Retry
+                </button>
+            ) : null}
+            {props.onDiscard ? (
+                <button type="button" onClick={props.onDiscard} className="text-xs text-red-500 hover:underline">
+                    {t('chat.discardFailedMessage')}
                 </button>
             ) : null}
         </span>

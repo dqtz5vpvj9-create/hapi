@@ -42,30 +42,24 @@ function renderDetailedBash(command: string, state: 'pending' | 'completed' = 'c
         </I18nProvider>
     )
 
-    return screen.getByText('Input').parentElement?.parentElement
+    return screen.getByRole('button', { expanded: false })
 }
 
-describe('ToolCard spacing', () => {
-    it('matches the dialog gap when the timing header has a subtitle', () => {
-        const inlineBody = renderDetailedBash('echo hello && pwd')
-
-        expect(inlineBody).toHaveClass('mt-1')
-        expect(inlineBody).toHaveClass('gap-4')
-        expect(inlineBody).not.toHaveClass('mt-3')
-        expect(inlineBody).not.toHaveClass('gap-3')
+describe('ToolCard command summary and details', () => {
+    it('keeps command output hidden until the user opens details', () => {
+        const trigger = renderDetailedBash('echo hello && pwd')
+        expect(screen.queryByText('Input')).not.toBeInTheDocument()
+        expect(screen.queryByText('ok')).not.toBeInTheDocument()
+        fireEvent.click(trigger)
+        expect(screen.getByRole('dialog')).toHaveTextContent('echo hello && pwd')
+        expect(screen.getByRole('dialog')).toHaveTextContent('ok')
     })
 
-    it('matches the dialog gap when the timing header has no subtitle', () => {
-        const inlineBody = renderDetailedBash('pwd')
-
-        expect(inlineBody).toHaveClass('mt-0')
-        expect(inlineBody).not.toHaveClass('mt-3')
-    })
-
-    it('keeps the original body spacing when pending tools have no timing summary', () => {
-        const inlineBody = renderDetailedBash('pwd', 'pending')
-
-        expect(inlineBody).toHaveClass('mt-3')
+    it('keeps a pending non-approval execution collapsed too', () => {
+        const trigger = renderDetailedBash('pwd', 'pending')
+        expect(screen.queryByText('Input')).not.toBeInTheDocument()
+        fireEvent.click(trigger)
+        expect(screen.getByRole('dialog')).toHaveTextContent('pwd')
     })
 })
 

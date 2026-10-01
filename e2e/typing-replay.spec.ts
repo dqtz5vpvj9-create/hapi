@@ -4,6 +4,28 @@ const EXISTING_ASSISTANT_TEXT = 'This response was generated before the session 
 const EXISTING_REASONING_TEXT = 'This reasoning was generated before the session was opened again.'
 const NEW_ASSISTANT_TEXT = 'This is newly generated output and it must still appear with the typewriter animation enabled.'
 
+for (const [name, replacement] of [
+    ['same length', EXISTING_ASSISTANT_TEXT.replace('before', 'during')],
+    ['shorter', 'The response has been revised.'],
+    ['longer replacement', `Updated response: ${EXISTING_ASSISTANT_TEXT}`],
+    ['append', `${EXISTING_ASSISTANT_TEXT} Additional details.`],
+] as const) {
+    test(`renders a ${name} update when a hydrated response resumes streaming`, async ({ page }) => {
+        const errors: string[] = []
+        page.on('pageerror', (error) => errors.push(error.message))
+        await page.goto(`/e2e-fixtures/typing-replay-fixture.html?running=1&replacement=${encodeURIComponent(replacement)}`)
+        await expect(page.getByTestId('assistant-text')).toHaveText(EXISTING_ASSISTANT_TEXT)
+        await expect.poll(() => page.evaluate(() => window.__typingReplayProbe?.statusTypes?.at(-1)))
+            .toBe('complete')
+        await page.getByTestId('replace-text').click()
+        await expect.poll(() => page.evaluate(() => window.__typingReplayProbe?.statusTypes?.at(-1)))
+            .toBe('running')
+        await expect(page.getByTestId('assistant-text')).toHaveText(replacement)
+        await expect(page.getByTestId('assistant-message')).toHaveCount(1)
+        expect(errors).toEqual([])
+    })
+}
+
 test('keeps the typewriter for newly generated assistant output', async ({ page }) => {
     await page.goto('/e2e-fixtures/typing-replay-fixture.html?stream-new=1')
 

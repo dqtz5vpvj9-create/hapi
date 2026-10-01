@@ -9,6 +9,8 @@ import {
     appendOptimisticMessage,
     clearMessageWindow,
     fetchOlderMessages,
+    fetchNewerHistory,
+    openMessageContext,
     getMessageWindowState,
     getQueuedReconcileCandidateLocalIds,
     ingestIncomingMessages,
@@ -286,6 +288,8 @@ describe('message tail synchronization', () => {
         expect(getMessages).toHaveBeenLastCalledWith(id, {
             beforeAt: 1_000,
             beforeSeq: 1,
+            epoch: 1,
+            bounded: true,
             limit: 200
         })
         expect(getMessageWindowState(id).messages.map((message) => message.id)).toEqual([
@@ -503,6 +507,8 @@ describe('message tail synchronization', () => {
         expect(getMessages.mock.calls[1]?.[1]).toEqual({
             beforeAt: 2_039_000,
             beforeSeq: 2_039,
+            epoch: 3,
+            bounded: true,
             limit: 200
         })
         expect(getMessageWindowState(id).messages.map((message) => message.id)).toEqual([
@@ -709,6 +715,8 @@ describe('message tail synchronization', () => {
         expect(getMessages.mock.calls[1]?.[1]).toEqual({
             beforeAt: 251,
             beforeSeq: 251,
+            epoch: 1,
+            bounded: true,
             limit: 200
         })
     })
@@ -1123,10 +1131,13 @@ describe('history view and older pagination', () => {
 
     it('keeps rows dropped during tail compaction available to older pagination', async () => {
         const id = sessionId('tail-compaction-cursor')
-        ingestIncomingMessages(id, Array.from({ length: VISIBLE_WINDOW_SIZE }, (_, index) => {
+        const initialRows = Array.from({ length: VISIBLE_WINDOW_SIZE }, (_, index) => {
             const seq = index + 1
             return makeAgentMessage({ id: `initial-${seq}`, seq, at: seq })
-        }))
+        })
+        const getMessages = vi.fn().mockResolvedValueOnce(latestResponse(initialRows, { epoch: 0 }))
+        const api = createApi(getMessages)
+        await syncTailMessages(api, id)
         setMessageViewMode(id, 'history')
         ingestIncomingMessages(id, [
             makeAgentMessage({ id: 'new-401', seq: 401, at: 401 }),
@@ -1136,7 +1147,7 @@ describe('history view and older pagination', () => {
         setMessageViewMode(id, 'tail')
         expect(getMessageWindowState(id).hasMore).toBe(true)
 
-        const getMessages = vi.fn(async () => beforeResponse([
+        getMessages.mockResolvedValueOnce(beforeResponse([
             makeAgentMessage({ id: 'initial-1', seq: 1, at: 1 }),
             makeAgentMessage({ id: 'initial-2', seq: 2, at: 2 })
         ], {
@@ -1145,11 +1156,13 @@ describe('history view and older pagination', () => {
             nextBeforeAt: 1,
             nextBeforeSeq: 1
         }))
-        await fetchOlderMessages(createApi(getMessages), id)
+        await fetchOlderMessages(api, id)
 
         expect(getMessages).toHaveBeenCalledWith(id, {
             beforeAt: 3,
             beforeSeq: 3,
+            epoch: 0,
+            bounded: true,
             limit: 200
         })
         expect(getMessageWindowState(id).messages).toHaveLength(VISIBLE_WINDOW_SIZE + 2)
@@ -1204,6 +1217,8 @@ describe('history view and older pagination', () => {
         expect(getMessages.mock.calls[1]?.[1]).toEqual({
             beforeAt: 10_000,
             beforeSeq: 10,
+            epoch: 4,
+            bounded: true,
             limit: 200
         })
         expect(getMessageWindowState(id).messages.map((message) => message.id)).toEqual(['older', 'latest'])
@@ -1598,7 +1613,7 @@ describe('V2 persistence boundary', () => {
         expect(getMessageWindowState(id).messages).toEqual([])
     })
 
-    it('hydrates V2 sending rows as queued reconciliation candidates', () => {
+    it('hydrates interrupted V2 local sends as recoverable authority lookup candidates', () => {
         const id = sessionId('hydrate-sending')
         sessionStorage.setItem(`hapi:message-window:v2:${id}`, JSON.stringify({
             messages: [makeUserMessage({
@@ -1615,7 +1630,7 @@ describe('V2 persistence boundary', () => {
             epoch: null
         }))
 
-        expect(getMessageWindowState(id).messages[0]?.status).toBe('queued')
+        expect(getMessageWindowState(id).messages[0]?.status).toBe('failed')
         expect(getQueuedReconcileCandidateLocalIds(id)).toEqual(['local-1'])
     })
 })
@@ -1702,4 +1717,30 @@ describe('reasoning snapshot compaction', () => {
         expect(state.oldestSeq).toBe(2)
         expect(state.newestSeq).toBe(3)
     })
+    it('does not republish a forward page after the window is cleared during layout handoff', async () => {
+        const id = sessionId('forward-layout-cancel')
+        const api = {
+            getMessageContext: vi.fn().mockResolvedValue({
+                messages: [makeUserMessage({ id: 'old', seq: 10, invokedAt: 10 })],
+                page: { epoch: 1, reset: false, beforeCursor: { at: 10, seq: 10 },
+                    afterCursor: { at: 10, seq: 10 }, hasMoreBefore: true,
+                    hasMoreAfter: true, snapshotHead: { at: 100, seq: 100 } }
+            }),
+            getMessages: vi.fn().mockResolvedValue(afterResponse([
+                makeUserMessage({ id: 'next', seq: 11, invokedAt: 11 })
+            ], { epoch: 1, hasMore: true, nextAfterAt: 11, nextAfterSeq: 11, snapshotHeadAt: 100, snapshotHeadSeq: 100 }))
+        } as unknown as ApiClient
+        await openMessageContext(api, id, 'old', () => true)
+        const frame = deferred<void>()
+        const beforeApply = vi.fn(() => frame.promise)
+        const pending = fetchNewerHistory(api, id, beforeApply)
+        await vi.waitFor(() => expect(beforeApply).toHaveBeenCalledOnce())
+        expect(getMessageWindowState(id).messages.map(row => row.id)).toEqual(['old'])
+        clearMessageWindow(id)
+        frame.resolve()
+        expect(await pending).toBe(false)
+        expect(getMessageWindowState(id).messages).toEqual([])
+        expect(getMessageWindowState(id).isLoadingMore).toBe(false)
+    })
+
 })

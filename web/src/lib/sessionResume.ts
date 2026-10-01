@@ -46,6 +46,7 @@ export function inactiveSessionCanResume(
     if (session.active) {
         return true
     }
+    if (session.metadata?.codexNativeSession) return false
     if (!session.metadata?.path) {
         return false
     }

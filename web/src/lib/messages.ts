@@ -147,7 +147,9 @@ export function mergeMessages(existing: DecryptedMessage[], incoming: DecryptedM
                     // message is delivered immediately — e.g. steered into the active
                     // turn — so its server echo arrives pre-invoked; inheriting 'queued'
                     // would pin the queued clock on an already-delivered message.
-                    if (optimisticStatus !== 'queued' || msg.invokedAt == null) {
+                    // Local transport failure is not authoritative delivery state.
+                    // A real server echo supersedes that recovery affordance.
+                    if (optimisticStatus !== 'failed' && (optimisticStatus !== 'queued' || msg.invokedAt == null)) {
                         update.status = optimisticStatus
                     }
                 }

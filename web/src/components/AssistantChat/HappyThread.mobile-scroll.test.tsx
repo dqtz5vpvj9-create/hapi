@@ -13,7 +13,7 @@ vi.mock('@assistant-ui/react', async (importOriginal) => {
     return {
         ...actual,
         useAuiState: (selector: (state: unknown) => unknown) => selector({
-            thread: { extras: undefined }
+            thread: { extras: undefined, messages: [] }
         }),
         unstable_useThreadMessageIds: () => [],
         ThreadPrimitive: {
@@ -42,6 +42,8 @@ class TestResizeObserver {
     }
 
     observe() {}
+
+    unobserve() {}
 
     disconnect() {}
 }
@@ -75,6 +77,7 @@ function renderThread(onViewModeChange = vi.fn(), unseenCount = 0) {
                     forceScrollToken={forceScrollToken}
                     outlineOpen={false}
                     outlineItems={[]}
+                    outlineEpoch={null}
                     onOutlineOpenChange={vi.fn()}
                 />
             </I18nProvider>
@@ -87,7 +90,9 @@ function renderThread(onViewModeChange = vi.fn(), unseenCount = 0) {
     }
     Object.defineProperties(viewport, {
         scrollHeight: { configurable: true, value: 1_232 },
-        clientHeight: { configurable: true, value: 530 }
+        clientHeight: { configurable: true, value: 530 },
+        // JSDOM has no layout boxes; this harness represents a visible phone.
+        getClientRects: { configurable: true, value: () => [new DOMRect(0, 0, 390, viewport.clientHeight)] }
     })
     act(() => {
         vi.advanceTimersByTime(0)
@@ -303,22 +308,26 @@ describe('explicit tail scrolling', () => {
         expect(scrollIntoView).toHaveBeenCalledWith({ block: 'end', behavior: 'smooth' })
     })
 
-    it('retargets the smooth tail jump when content grows during the animation', () => {
+    it('finishes the native animation before retargeting a growing tail', () => {
         const scrollIntoView = vi.fn()
         Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
             configurable: true,
             writable: true,
             value: scrollIntoView
         })
-        const { rerenderThread } = renderThread()
+        const { viewport, rerenderThread } = renderThread()
 
         rerenderThread(1)
         expect(scrollIntoView).toHaveBeenCalledTimes(1)
 
+        Object.defineProperty(viewport, 'scrollHeight', { configurable: true, value: 1_400 })
         act(() => {
-            resizeCallbacks.at(-1)?.()
+            resizeCallbacks.forEach(callback => callback())
+            resizeCallbacks.forEach(callback => callback())
         })
 
+        expect(scrollIntoView).toHaveBeenCalledTimes(1)
+        fireEvent(viewport, new Event('scrollend'))
         expect(scrollIntoView).toHaveBeenCalledTimes(2)
         expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'end', behavior: 'smooth' })
     })

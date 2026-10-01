@@ -39,7 +39,7 @@ test('cached re-entry keeps the cache visible while refreshing a small latest ta
     await expect(page.getByText('Fixture message 1001', { exact: true })).toBeVisible()
 })
 
-test('cached re-entry resumes an upward history gesture after latest refresh completes', async ({ page }) => {
+test('cached re-entry preserves upward reading across refresh and reuses its context window', async ({ page }) => {
     await page.goto('/e2e-fixtures/history-load-fixture.html?cachedReentry=1&holdLatest=1')
     const viewport = page.locator('.app-scroll-y')
     await expect(viewport).toBeVisible()
@@ -59,11 +59,16 @@ test('cached re-entry resumes an upward history gesture after latest refresh com
     expect(await page.evaluate(() => window.__probe.requests.filter((request) => request.direction === 'before').length)).toBe(0)
 
     await page.evaluate(() => window.__probe.releaseLatest())
-    await expect.poll(async () => await page.evaluate(() => ({
-        beforeRequests: window.__probe.requests.filter((request) => request.direction === 'before').length,
-        beforeLimit: window.__probe.requests.find((request) => request.direction === 'before')?.limit ?? null
-    }))).toEqual({ beforeRequests: 1, beforeLimit: 200 })
-    await expect(page.getByText('Fixture message 1000', { exact: true })).toBeVisible()
+    await expect(page.getByText('Fixture message 1001', { exact: true })).toBeInViewport({ ratio: 0.9 })
+    await expect.poll(() => page.evaluate(() => window.__probe.windowState().viewMode)).toBe('history')
+    await expect.poll(() => page.evaluate(() => window.__probe.requests.filter(request => request.direction === 'context').length)).toBe(1)
+    const box = (await viewport.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.wheel(0, -120)
+    await expect(page.getByText('Fixture message 1000', { exact: true })).toBeInViewport({ ratio: 0.9 })
+    // Context already covers this neighboring page: continue with native input,
+    // without forcing a redundant backward GET after the refresh.
+    expect(await page.evaluate(() => window.__probe.requests.filter(request => request.direction === 'before').length)).toBe(0)
 })
 
 // Regression: loading an older page prepends hundreds of messages at once.
@@ -315,7 +320,7 @@ test('capped prepend has no post-apply stale-DOM reversal window', async ({ page
 // older-page request. That stop is transient: once synchronization drains,
 // coverage must automatically issue a fresh request while the user remains
 // near the top.
-test('ordinary tail synchronization re-arms covered history loading', async ({ page }) => {
+test('tail synchronization re-arms history loading without duplicating its in-flight page', async ({ page }) => {
     await page.goto('/e2e-fixtures/history-load-fixture.html?slowBefore=1')
     const viewport = page.locator('.app-scroll-y')
     await expect(viewport).toBeVisible()
@@ -339,7 +344,7 @@ test('ordinary tail synchronization re-arms covered history loading', async ({ p
         childCount: document.querySelector('.happy-thread-messages')?.childElementCount ?? 0,
         scrollTop: Math.round((document.querySelector('.app-scroll-y') as HTMLElement).scrollTop)
     }))).toEqual({
-        beforeReqs: 2,
+        beforeReqs: 1,
         childCount: 400,
         scrollTop: expect.any(Number)
     })
@@ -350,7 +355,7 @@ test('ordinary tail synchronization re-arms covered history loading', async ({ p
     const idleReqs = await page.evaluate(() =>
         window.__probe.requests.filter((request) => request.direction === 'before').length
     )
-    expect(idleReqs).toBe(2)
+    expect(idleReqs).toBe(1)
 })
 
 // A short page can leave the top sentinel inside the preload margin after
@@ -544,7 +549,9 @@ test('an epoch-reset stop does not auto re-arm older requests', async ({ page })
         beforeReqs: window.__probe.requests.filter((r) => r.direction === 'before').length
     }))
     expect(state.beforeReqs).toBe(1)
-    expect(state.childCount).toBe(200)
+    // Reset now revalidates the reader with a bounded context window, rather
+    // than replacing it with the latest 200 rows. The user stays at 1001.
+    await expect(page.getByText('Fixture message 1001', { exact: true })).toBeInViewport({ ratio: 0.9 })
 
     // Scroll events can be browser/programmatic effects of a reset. Moving
     // downward while the sentinel remains covered is not renewed older-history
@@ -608,6 +615,11 @@ test('touch pull shows staged feedback and loads older on release', async ({ pag
         window.__probe.requests.filter((request) => request.direction === 'before').length
     )).toBe(1)
     await expect(page.getByText('Loading…', { exact: true })).toBeHidden()
+    await expect(page.getByText('Fixture message 902', { exact: true })).toHaveCount(1)
+    // Revalidation preserves 1001 inside its context. Reach the actual covered
+    // start before testing the pull interaction; the restored viewport is not 0.
+    await viewport.evaluate(element => { element.scrollTop = 0; element.dispatchEvent(new Event('scroll')) })
+    await expect.poll(() => viewport.evaluate(element => element.scrollTop)).toBe(0)
 
     const dispatchTouch = async (type: 'touchstart' | 'touchmove' | 'touchend', clientY: number) => {
         await viewport.evaluate((element, eventInit) => {

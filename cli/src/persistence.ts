@@ -4,9 +4,10 @@
  * Handles settings, encryption key, and runner state storage in ~/.hapi/ (or HAPI_HOME override)
  */
 
+import { randomUUID } from 'node:crypto'
 import { FileHandle } from 'node:fs/promises'
-import { readFile, writeFile, mkdir, open, unlink, rename, chmod } from 'node:fs/promises'
-import { existsSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs'
+import { readFile, writeFile, mkdir, open, unlink, rename, chmod, link } from 'node:fs/promises'
+import { existsSync, writeFileSync, readFileSync, unlinkSync, statSync } from 'node:fs'
 import { withSettingsFileLock } from '@hapi/protocol/settingsFileLock'
 import { configuration } from '@/configuration'
 import { isProcessAlive } from '@/utils/process';
@@ -210,38 +211,64 @@ export async function acquireRunnerLock(
   maxAttempts: number = 5,
   delayIncrementMs: number = 200
 ): Promise<FileHandle | null> {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      // 'wx' ensures we only create if it doesn't exist (atomic lock acquisition)
-      const fileHandle = await open(configuration.runnerLockFile, 'wx');
-      // Write PID to lock file for debugging
-      await fileHandle.writeFile(String(process.pid));
-      return fileHandle;
-    } catch (error: any) {
-      if (error.code === 'EEXIST') {
-        // Lock file exists, check if process is still running
+  // Publish a fully written PID atomically. Creating the public lock first
+  // leaves an empty lock if writing fails or the process dies between awaits.
+  const candidate = `${configuration.runnerLockFile}.${process.pid}.${randomUUID()}`;
+  const fileHandle = await open(candidate, 'wx');
+  let acquired = false;
+  try {
+    await fileHandle.writeFile(String(process.pid));
+    let ownerAlive = false;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await link(candidate, configuration.runnerLockFile);
+        acquired = true;
+        return fileHandle;
+      } catch (error: any) {
+        // Disk/permission errors are startup failures, not lock contention.
+        if (error.code !== 'EEXIST') throw error;
+
         try {
+          const observed = statSync(configuration.runnerLockFile);
           const lockPid = readFileSync(configuration.runnerLockFile, 'utf-8').trim();
-          if (lockPid && !isNaN(Number(lockPid))) {
-            if (!isProcessAlive(Number(lockPid))) {
-              // Process doesn't exist, remove stale lock
-              unlinkSync(configuration.runnerLockFile);
-              continue; // Retry acquisition
-            }
+          const pid = Number(lockPid);
+          const validPid = /^\d+$/.test(lockPid) && Number.isSafeInteger(pid) && pid > 0;
+          ownerAlive = validPid && isProcessAlive(pid);
+          let stale = validPid && !ownerAlive;
+          if (!validPid) {
+            // Old versions could publish an empty lock before writing its PID.
+            // Allow their initialization to finish and preserve any live owner
+            // recorded in runner state before reclaiming an abandoned lock.
+            const age = Date.now() - observed.mtimeMs;
+            const state = await readRunnerState();
+            ownerAlive = Boolean(state && isProcessAlive(state.pid));
+            stale = age > 30_000 && !ownerAlive;
           }
-        } catch {
-          // Can't read lock file, might be corrupted
+          const current = statSync(configuration.runnerLockFile);
+          if (stale && current.ino === observed.ino && current.mtimeMs === observed.mtimeMs) {
+            unlinkSync(configuration.runnerLockFile);
+            // Acquisition after reclaiming a stale lock gets its own attempt.
+            attempt--;
+            continue;
+          }
+        } catch (readError: any) {
+          if (readError.code !== 'ENOENT') throw readError;
+          attempt--;
+          continue;
+        }
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, attempt * delayIncrementMs));
         }
       }
-
-      if (attempt === maxAttempts) {
-        return null;
-      }
-      const delayMs = attempt * delayIncrementMs;
-      await new Promise(resolve => setTimeout(resolve, delayMs));
     }
+    if (!ownerAlive) {
+      throw new Error(`Runner lock has no live owner yet: ${configuration.runnerLockFile}; retry startup`);
+    }
+    return null;
+  } finally {
+    if (!acquired) await fileHandle.close();
+    await unlink(candidate);
   }
-  return null;
 }
 
 /**

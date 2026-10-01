@@ -861,6 +861,18 @@ export class AppServerEventConverter {
             const callId = asString(item.call_id ?? item.callId);
             if (!itemType || !callId) return events;
 
+            if (itemType === 'customtoolcall') {
+                const name = asString(item.name);
+                if (!name || this.rawAgentToolCallIds.has(callId)) return events;
+                this.rawAgentToolCallIds.add(callId); this.rawAgentToolNames.set(callId, name);
+                return [scoped({ type: 'codex_tool_call_begin', call_id: callId, name, input: item.input })];
+            }
+            if (itemType === 'customtoolcalloutput') {
+                const name = this.rawAgentToolNames.get(callId);
+                if (!name) return events;
+                this.rawAgentToolNames.delete(callId);
+                return [scoped({ type: 'codex_tool_call_end', call_id: callId, name, output: item.output, is_error: false })];
+            }
             if (itemType === 'functioncall') {
                 const toolName = normalizeCodexAgentToolName(item.name);
                 const input = parseRawToolInput(item.arguments);

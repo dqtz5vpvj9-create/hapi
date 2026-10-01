@@ -19,6 +19,7 @@ export type HappyChatContextValue = {
     onContinuePlan?: (planId: string) => void
     continuedPlanIds?: ReadonlySet<string>
     onRetryMessage?: (localId: string) => void
+    onDiscardFailedMessage?: (localId: string) => void
     historyActionPending?: boolean
     onForkConversation?: (messageLocalId?: string) => Promise<void>
     onRewindConversation?: (messageLocalId: string) => Promise<void>

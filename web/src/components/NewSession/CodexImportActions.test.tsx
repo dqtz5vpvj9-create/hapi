@@ -7,7 +7,7 @@ vi.mock('@/lib/use-translation', () => ({
 }))
 
 describe('CodexImportActions', () => {
-    it('exposes one Codex history entry point', () => {
+    it('opens the existing native Codex session chooser from one entry point', () => {
         const onChooseHistory = vi.fn()
 
         render(
@@ -21,24 +21,29 @@ describe('CodexImportActions', () => {
             />
         )
 
-        fireEvent.click(screen.getByRole('button', { name: 'codexSync.newSessionInline.choose' }))
+        fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
 
         expect(onChooseHistory).toHaveBeenCalledOnce()
         expect(screen.getAllByRole('button')).toHaveLength(1)
     })
 
-    it('disables the import entry point while sessions are loading', () => {
+    it('blocks opening the native session chooser while sessions are loading', () => {
+        const onChooseHistory = vi.fn()
+
         render(
             <CodexImportActions
                 selectedSession={null}
                 isLoading={true}
                 isDisabled={false}
                 error={null}
-                onChooseHistory={vi.fn()}
+                onChooseHistory={onChooseHistory}
                 onClear={vi.fn()}
             />
         )
 
-        expect(screen.getByRole('button', { name: 'codexSync.confirm.loading' })).toBeDisabled()
+        const chooseButton = screen.getByRole('button', { name: 'codexConnect.loading' })
+        expect(chooseButton).toBeDisabled()
+        fireEvent.click(chooseButton)
+        expect(onChooseHistory).not.toHaveBeenCalled()
     })
 })

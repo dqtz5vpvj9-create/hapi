@@ -8,19 +8,8 @@ export type ConversationOutlineItem = {
     createdAt: number
 }
 
-const MAX_OUTLINE_LABEL_LENGTH = 96
-
-function collapseWhitespace(value: string): string {
-    return value.replace(/\s+/g, ' ').trim()
-}
-
-export function truncateOutlineLabel(value: string, maxLength = MAX_OUTLINE_LABEL_LENGTH): string {
-    const normalized = collapseWhitespace(value)
-    if (normalized.length <= maxLength) {
-        return normalized
-    }
-    return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`
-}
+import { truncateOutlineLabel } from '@hapi/protocol/conversationOutline'
+export { truncateOutlineLabel } from '@hapi/protocol/conversationOutline'
 
 function userBlockToOutlineItem(block: UserTextBlock): ConversationOutlineItem {
     const label = truncateOutlineLabel(block.text) || 'Empty message'

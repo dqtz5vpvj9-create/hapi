@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/lib/i18n-context'
@@ -8,9 +9,11 @@ import { UriConfirmDialog } from './UriConfirmDialog'
 
 function renderWithProviders(content: React.ReactNode) {
     return render(
-        <I18nProvider>
-            <ToastProvider>{content}</ToastProvider>
-        </I18nProvider>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+            <I18nProvider>
+                <ToastProvider>{content}</ToastProvider>
+            </I18nProvider>
+        </QueryClientProvider>
     )
 }
 
@@ -137,7 +140,8 @@ describe('session dialog title alignment', () => {
         await waitFor(() => expect(onSuggestTitle).toHaveBeenCalledOnce())
         fireEvent.click(screen.getByRole('button', { name: 'Close' }))
         rerender(
-            <I18nProvider>
+            <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <I18nProvider>
                 <ToastProvider>
                     <RenameSessionDialog
                         isOpen={false}
@@ -150,9 +154,11 @@ describe('session dialog title alignment', () => {
                     />
                 </ToastProvider>
             </I18nProvider>
+        </QueryClientProvider>
         )
         rerender(
-            <I18nProvider>
+            <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <I18nProvider>
                 <ToastProvider>
                     <RenameSessionDialog
                         isOpen={true}
@@ -165,6 +171,7 @@ describe('session dialog title alignment', () => {
                     />
                 </ToastProvider>
             </I18nProvider>
+        </QueryClientProvider>
         )
 
         resolveSuggestion?.('Stale title')
@@ -195,7 +202,8 @@ describe('session dialog title alignment', () => {
         expect(onUpdateSummary).not.toHaveBeenCalled()
 
         rerender(
-            <I18nProvider>
+            <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <I18nProvider>
                 <ToastProvider>
                     <RenameSessionDialog
                         isOpen={true}
@@ -208,6 +216,7 @@ describe('session dialog title alignment', () => {
                     />
                 </ToastProvider>
             </I18nProvider>
+        </QueryClientProvider>
         )
         fireEvent.click(screen.getByRole('button', { name: 'Generate' }))
         await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('Generated title'))

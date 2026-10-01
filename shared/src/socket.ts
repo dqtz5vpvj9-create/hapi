@@ -278,6 +278,7 @@ export interface ClientToServerEvents {
     /** Native shared-engine queue projection. null = positively acknowledged removal. */
     'native-history-changed': (data: { sid: string; updatedAt?: number }) => void
     'native-queue-message': (data: { sid: string; localId: string; text: string | null }) => void
+    'native-queue-snapshot': (data: { sid: string; messages: Array<{ localId: string; text: string }> }) => void
     'messages-steer-state': (data: { sid: string; localIds: string[]; state: 'queued' | 'dispatching' }, cb: (response: { ok: boolean }) => void) => void
     'update-metadata': (data: { sid: string; expectedVersion: number; metadata: unknown }, cb: (answer: UpdateMetadataAck) => void) => void
     'update-state': (data: { sid: string; expectedVersion: number; agentState: unknown | null }, cb: (answer: UpdateStateAck) => void) => void

@@ -251,7 +251,7 @@ describe('ConversationOutlinePanel', () => {
         })
 
         expect(screen.getByText('No matching outline items')).toBeInTheDocument()
-        expect(screen.queryByText('No outline items in loaded messages')).not.toBeInTheDocument()
+        expect(screen.queryByText('No questions in this conversation')).not.toBeInTheDocument()
     })
 
     it('keeps an in-panel close action available', () => {
@@ -268,7 +268,7 @@ describe('ConversationOutlinePanel', () => {
     it('renders an empty state', () => {
         renderPanel({ items: [] })
 
-        expect(screen.getByText('No outline items in loaded messages')).toBeInTheDocument()
+        expect(screen.getByText('No questions in this conversation')).toBeInTheDocument()
     })
 })
 

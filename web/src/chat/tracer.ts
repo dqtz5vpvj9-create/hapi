@@ -3,6 +3,7 @@ import { isObject } from '@hapi/protocol'
 import { isSubagentToolName } from '@/chat/subagentTool'
 
 export type TracedMessage = NormalizedMessage & {
+    /** Task/Agent tool-use ID owning this sidechain. */
     sidechainId?: string
 }
 
@@ -70,10 +71,10 @@ export function traceMessages(messages: NormalizedMessage[]): TracedMessage[] {
         if (message.role !== 'agent') continue
         for (const content of message.content) {
             if (content.type !== 'tool-call' || !isSubagentToolName(content.name)) continue
-            state.toolUseIdToTaskId.set(content.id, message.id)
+            state.toolUseIdToTaskId.set(content.id, content.id)
             const input = content.input
             if (!isObject(input) || typeof input.prompt !== 'string') continue
-            state.promptToTaskId.set(input.prompt, message.id)
+            state.promptToTaskId.set(input.prompt, content.id)
         }
     }
 

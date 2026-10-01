@@ -19,6 +19,11 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('sessionResume', () => {
+    it('never cold-resumes an offline native bridge', () => {
+        const session = makeSession({ metadata: { path: '/project', host: 'local', flavor: 'codex', codexSessionId: 'native', codexNativeSession: true } })
+        expect(inactiveSessionCanResume(session, 4)).toBe(false)
+        expect(inactiveSessionCanResume({ ...session, active: true }, 4)).toBe(true)
+    })
     it('resolveAgentSessionIdFromMetadata picks the id matching the session flavor', () => {
         expect(resolveAgentSessionIdFromMetadata({
             path: '/p',

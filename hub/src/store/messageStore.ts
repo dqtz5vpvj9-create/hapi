@@ -1,5 +1,11 @@
 import type { Database } from 'bun:sqlite'
+import { backfillMessageOutline, readMessageOutline, type OutlinePosition } from './messageOutline'
+import { addNativeAgentMessage } from './nativeTextSnapshots'
+import { syncNativeQueueSnapshot } from './nativeQueueMirrors'
 
+import { getMessageDependencyContext } from './messageDependencyContext'
+import { backfillMessageDependencies, findMessageDependencyCandidates } from './messageDependencies'
+import type { MessageDependencyKind } from '@hapi/protocol/messageDependencies'
 import { hasConversationMessageContent } from '@hapi/protocol/messages'
 import { decodeMessageContent } from './contentCodec'
 
@@ -41,6 +47,7 @@ import {
     getAllMessages,
     getMessagesAfterSeq,
     getMessageSeqById,
+    getMessageContext,
     truncateMessagesFromLocalId,
     type CancelQueuedMessageResult,
     type LookupQueuedMessageResult,
@@ -55,12 +62,50 @@ export class MessageStore {
         this.db = db
     }
 
+    getOutline(sessionId: string, before: OutlinePosition | null = null, limit = 40) {
+        return readMessageOutline(this.db, sessionId, before, limit)
+    }
+
+    backfillOutline(sessionId: string) {
+        return backfillMessageOutline(this.db, sessionId)
+    }
+
+    getMessageDependencyContext(sessionId: string, seedIds: string[], epoch: number) {
+        return getMessageDependencyContext(this.db, sessionId, seedIds, epoch)
+    }
+
+    backfillMessageDependencies(sessionId: string) {
+        return backfillMessageDependencies(this.db, sessionId)
+    }
+
+    findMessageDependencyCandidates(sessionId: string, kind: MessageDependencyKind, key: string, limit?: number) {
+        return findMessageDependencyCandidates(this.db, sessionId, kind, key, limit)
+    }
+
     addMessage(sessionId: string, content: unknown, localId?: string, scheduledAt?: number | null, createdAt?: number): StoredMessage {
         return addMessage(this.db, sessionId, content, localId, scheduledAt, createdAt)
     }
 
+    addAgentMessage(sessionId: string, content: unknown, localId?: string, createdAt?: number): StoredMessage {
+        // CLI transcript ingress proves acceptance, unlike a Web submission or
+        // a native queue snapshot. Commit it with the row so an earlier ACK
+        // that arrived before insertion cannot leave the transcript queued.
+        return this.db.transaction(() => {
+            const message = addNativeAgentMessage(this.db, sessionId, content, localId, createdAt)
+            if (!localId || message.invokedAt !== null) return message
+            const invokedAt = Date.now()
+            markMessagesInvoked(this.db, sessionId, [localId], invokedAt)
+            const { deliveryState: _deliveryState, ...accepted } = message
+            return { ...accepted, invokedAt }
+        })()
+    }
+
     syncNativeQueuedMessage(sessionId: string, localId: string, text: string): StoredMessage {
         return syncNativeQueuedMessage(this.db, sessionId, localId, text)
+    }
+
+    syncNativeQueueSnapshot(sessionId: string, messages: Array<{ localId: string; text: string }>): void {
+        syncNativeQueueSnapshot(this.db, sessionId, messages)
     }
 
     deleteLiveReasoningSnapshots(sessionId: string, streamId: string, keepMessageId?: string): number {
@@ -96,6 +141,10 @@ export class MessageStore {
 
     getSeqById(sessionId: string, messageId: string): number | null {
         return getMessageSeqById(this.db, sessionId, messageId)
+    }
+
+    getMessageContext(sessionId: string, messageId: string, radius: number) {
+        return getMessageContext(this.db, sessionId, messageId, radius)
     }
 
     getMessages(sessionId: string, limit: number = 200): StoredMessage[] {

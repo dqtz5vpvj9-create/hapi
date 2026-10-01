@@ -80,6 +80,8 @@
                 {
                     "beforeAt": 10000,
                     "beforeSeq": 10,
+                    "bounded": true,
+                    "epoch": 1,
                     "limit": 200
                 },
                 {

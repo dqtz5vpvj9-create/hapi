@@ -36,6 +36,7 @@ function metadataHasDisplayTitle(metadata: { name?: string; summary?: { text: st
 export class SharedCodexProjection {
     private converter = new AppServerEventConverter();
     private readonly emitted = new Set<string>();
+    private readonly textStreams = new Map<string, { text: string; sentAt: number }>();
     private readonly turns = new Map<string, string>();
     private readonly turnModels = new Map<string, string>();
     // Unlike transcript emission, title side effects survive reset/replay.
@@ -43,20 +44,20 @@ export class SharedCodexProjection {
     private readonly completedTitles = new Set<string>();
     private titleRevision = 0;
     constructor(private readonly session: ApiSessionClient, readonly threadId: string,
-        private readonly committed: (id: string) => Promise<void>, private readonly parentThreadId?: string) {
+        private readonly committed: (id: string) => Promise<void>, private readonly parentThreadId?: string, private readonly readOnlyHistory = false) {
         if (!parentThreadId) for (const [id, turn] of Object.entries(session.getMetadata()?.conversationHistoryTurns ?? {})) this.turns.set(id, turn);
     }
 
     turnFor(id: string): string | undefined { return this.turns.get(id); }
-    reset(): void { this.converter = new AppServerEventConverter(); this.emitted.clear(); }
-    private send(body: Record<string, unknown>, key: string): void {
+    reset(): void { this.converter = new AppServerEventConverter(); this.emitted.clear(); this.textStreams.clear(); }
+    private send(body: Record<string, unknown>, key: string, snapshot = false): void {
         if (this.emitted.has(key)) return;
-        this.emitted.add(key);
+        if (!snapshot) this.emitted.add(key);
         const id = `codex:${this.threadId}:${key}`;
         this.session.sendAgentMessage(this.parentThreadId && !String(body.type).startsWith('agent-run-') ? {
             type: 'agent-run-trace', agentId: this.threadId, cardId: `codex-agent:${this.threadId}`, message: { ...body, id }, id,
             scope: { role: 'child', threadId: this.threadId, parentThreadId: this.parentThreadId }, scope_role: 'child'
-        } : { ...body, id }, id);
+        } : { ...body, id }, snapshot ? undefined : id);
     }
 
     private applyDisplayRename(title: string, revision: number): void {
@@ -104,6 +105,26 @@ export class SharedCodexProjection {
             this.turnModels.set(turnId, string(p.toModel)!);
         }
         const itemId = string(item.id) ?? string(p.itemId);
+        const textKey = `${turnId ?? 'thread'}:${itemId}:agent_message`;
+        if (method === 'item/started' && item.type === 'agentMessage' && itemId && typeof item.text === 'string'
+            && !this.emitted.has(textKey) && !this.textStreams.has(textKey)) {
+            this.textStreams.set(textKey, { text: item.text, sentAt: 0 });
+        }
+        if (method === 'item/agentMessage/delta' && itemId && typeof p.delta === 'string') {
+            if (this.emitted.has(textKey)) return;
+            const stream = this.textStreams.get(textKey) ?? { text: '', sentAt: 0 };
+            stream.text += p.delta;
+            this.textStreams.set(textKey, stream);
+            // Reuse HAPI's cumulative text snapshot protocol. The stable body ID
+            // joins provisional text and the authoritative completed item in Web.
+            const now = Date.now();
+            if (now - stream.sentAt >= 120 && stream.text.trim()) {
+                this.send({ type: 'message', message: stream.text, streamSnapshot: true }, textKey, true);
+                stream.sentAt = now;
+            }
+            return;
+        }
+
         if (!this.parentThreadId && (method === 'item/started' || method === 'item/completed') && item.type === 'userMessage') {
             const id = string(item.clientId ?? item.clientUserMessageId) ?? (itemId ? `codex:${this.threadId}:user:${itemId}` : undefined);
             if (id) {
@@ -126,7 +147,10 @@ export class SharedCodexProjection {
         for (const event of events) {
             const callId = string(event.call_id);
             const key = `${turnId ?? 'thread'}:${itemId ?? callId ?? createHash('sha256').update(JSON.stringify(event)).digest('hex')}:${event.type}`;
-            if (event.type === 'agent_message') this.send({ type: 'message', message: event.message }, key);
+            if (event.type === 'agent_message') {
+                this.textStreams.delete(key);
+                this.send({ type: 'message', message: event.message, streamSnapshot: true }, key);
+            }
             else if (event.type === 'agent_reasoning') this.send({ type: 'reasoning', message: event.text }, key);
             else if (event.type === 'exec_command_begin' && callId) {
                 this.send({ type: 'tool-call', name: 'CodexBash', callId, input: event }, key);
@@ -157,11 +181,19 @@ export class SharedCodexProjection {
             } else if (event.type === 'plan_update') {
                 this.send({ type: 'tool-call', name: 'update_plan', callId: 'codex-plan-state', input: { plan: event.plan, source: 'codex' } }, key);
                 this.send({ type: 'tool-call-result', callId: 'codex-plan-state', output: { plan: event.plan, source: 'codex', status: 'updated' } }, `${key}:result`);
-            } else if (event.type === 'generated_image' && typeof event.saved_path === 'string') {
+            } else if (!this.readOnlyHistory && event.type === 'generated_image' && typeof event.saved_path === 'string') {
                 const image = await registerGeneratedImageFromPath({ path: event.saved_path, id: createHash('sha256').update(`${this.threadId}:${key}`).digest('hex'), fileName: string(event.file_name) });
                 if (image) this.send({ type: 'generated-image', imageId: image.id, fileName: image.fileName, mimeType: image.mimeType }, key);
+            } else if (event.type === 'turn_aborted' && !this.parentThreadId) {
+                // Reuse the durable session status event, with a turn identity
+                // shared by live notifications and history replay.
+                const stopKey = `${turnId ?? string(event.turn_id)}:turn_aborted`;
+                if (!this.emitted.has(stopKey)) {
+                    this.emitted.add(stopKey);
+                    this.session.sendSessionEvent({ type: 'message', message: 'Aborted by user' }, `codex:${this.threadId}:${stopKey}`);
+                }
             } else if (event.type === 'task_failed') {
-                this.send({ type: 'message', message: `Codex error: ${event.error ?? event.message ?? 'Turn failed'}` }, key);
+                this.send({ type: 'error', message: `Codex error: ${event.error ?? event.message ?? 'Turn failed'}` }, key);
             }
         }
         if (item.type === 'collabAgentToolCall') {
@@ -205,6 +237,11 @@ export class SharedCodexProjection {
                     }
                     await this.project('item/completed', params);
                 }
+            }
+            // A terminal turn may have no assistant item. Replay its status as
+            // well as its items so reconnecting cannot silently hide it.
+            if (['failed', 'error', 'interrupted', 'cancelled', 'canceled'].includes(String(turn.status))) {
+                await this.project('turn/completed', { threadId: this.threadId, turn });
             }
         }
         // Repair sessions created while remote title projection was missing.

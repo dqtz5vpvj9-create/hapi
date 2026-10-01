@@ -313,6 +313,22 @@ function FixtureThread() {
                 >
                     Start running
                 </button>
+                {params.has('replacement') ? (
+                    <button
+                        type="button"
+                        data-testid="replace-text"
+                        onClick={() => {
+                            setIsRunning(true)
+                            setVisibleBlocks((current) => current.map((block) => (
+                                block.kind === 'agent-text'
+                                    ? { ...block, text: params.get('replacement')! }
+                                    : block
+                            )))
+                        }}
+                    >
+                        Update response
+                    </button>
+                ) : null}
                 {params.has('switch-session') ? (
                     <button
                         type="button"

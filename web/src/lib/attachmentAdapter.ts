@@ -25,7 +25,7 @@ export function createAttachmentAdapter(
     // Cancellation is re-checked at transfer save time via isCancelled().
     onSessionResolved?: (sessionId: string, pending: AttachmentDraftHandoff) => Promise<void>,
 ): AttachmentAdapter {
-    const cancelledAttachmentIds = new Set<string>()
+    const uploadAttempts = new Map<string, { cancelled: boolean }>()
 
     const deleteUpload = async (path?: string, uploadSessionId = sessionId) => {
         if (!path) return
@@ -50,6 +50,12 @@ export function createAttachmentAdapter(
             // metadata still supplies a stable id so draft merge cannot
             // duplicate the same File across persistence passes.
             const restored = getRestoredUploadMetadata(file)
+            const id = restored?.id ?? randomId()
+            // Cancellation belongs to an add attempt, not the stable identity:
+            // a removed Scratchlist image can later be copied again. Older
+            // in-flight uploads retain their own cancelled state.
+            const attempt = { cancelled: false }
+            uploadAttempts.set(id, attempt)
             if (!resolveSessionId && restored?.path) {
                 yield {
                     id: restored.id,
@@ -65,7 +71,6 @@ export function createAttachmentAdapter(
                 return
             }
 
-            const id = restored?.id ?? randomId()
             const contentType = file.type || 'application/octet-stream'
 
             try {
@@ -88,7 +93,7 @@ export function createAttachmentAdapter(
                     previewUrl
                 } as PendingUploadAttachment
 
-                if (cancelledAttachmentIds.has(id)) {
+                if (attempt.cancelled) {
                     return
                 }
 
@@ -113,11 +118,11 @@ export function createAttachmentAdapter(
                         id,
                         file,
                         previewUrl,
-                        isCancelled: () => cancelledAttachmentIds.has(id),
+                        isCancelled: () => attempt.cancelled,
                     })
                     return
                 }
-                if (cancelledAttachmentIds.has(id)) {
+                if (attempt.cancelled) {
                     return
                 }
 
@@ -125,7 +130,7 @@ export function createAttachmentAdapter(
                     ? base64FromDataUrl(previewUrl)
                     : await fileToBase64(file)
 
-                if (cancelledAttachmentIds.has(id)) {
+                if (attempt.cancelled) {
                     return
                 }
 
@@ -140,7 +145,7 @@ export function createAttachmentAdapter(
                 } as PendingUploadAttachment
 
                 const result = await api.uploadFile(uploadSessionId, file.name, content, contentType)
-                if (cancelledAttachmentIds.has(id)) {
+                if (attempt.cancelled) {
                     if (result.success && result.path) {
                         await deleteUpload(result.path, uploadSessionId)
                     }
@@ -184,7 +189,8 @@ export function createAttachmentAdapter(
         },
 
         async remove(attachment: Attachment): Promise<void> {
-            cancelledAttachmentIds.add(attachment.id)
+            const attempt = uploadAttempts.get(attachment.id)
+            if (attempt) attempt.cancelled = true
             const path = (attachment as PendingUploadAttachment).path
             const uploadSessionId = (attachment as PendingUploadAttachment).uploadSessionId
             await deleteUpload(path, uploadSessionId)

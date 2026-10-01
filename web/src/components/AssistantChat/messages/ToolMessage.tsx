@@ -136,7 +136,7 @@ export function GeneratedImageCard(props: { block: GeneratedImageBlock }) {
     }, [ctx.api, ctx.sessionId, props.block.imageId, isImage, shouldFetch])
 
     return (
-        <div className="max-w-[92%] rounded-2xl border border-[var(--app-border)] bg-[var(--app-tool-card-bg)] p-3">
+        <div data-hapi-share-media-state={isImage ? (error ? 'error' : objectUrl ? 'ready' : 'loading') : undefined} className="max-w-[92%] rounded-2xl border border-[var(--app-border)] bg-[var(--app-tool-card-bg)] p-3">
             <div className="mb-2 min-w-0 truncate text-xs font-medium text-[var(--app-hint)]">
                 {mediaHeader}
             </div>
@@ -228,6 +228,8 @@ function HappyNestedBlockList(props: {
                     const status = block.status
                     const canRetry = status === 'failed' && typeof block.localId === 'string' && Boolean(ctx.onRetryMessage)
                     const onRetry = canRetry ? () => ctx.onRetryMessage!(block.localId!) : undefined
+                    const onDiscard = status === 'failed' && typeof block.localId === 'string' && ctx.onDiscardFailedMessage
+                        ? () => ctx.onDiscardFailedMessage!(block.localId!) : undefined
                     const showStatus = shouldShowMessageStatus(status)
 
                     return (
@@ -238,7 +240,7 @@ function HappyNestedBlockList(props: {
                                 </div>
                                 {showStatus ? (
                                     <div className="happy-message-actions-first-line shrink-0">
-                                        <MessageStatusIndicator status={status} onRetry={onRetry} />
+                                        <MessageStatusIndicator status={status} onRetry={onRetry} onDiscard={onDiscard} />
                                     </div>
                                 ) : null}
                             </div>
@@ -369,31 +371,13 @@ export function HappyToolMessage(props: ToolCallMessagePartProps) {
 
         return (
             <div data-hapi-share-exclude="true" className="py-1 min-w-0 max-w-full overflow-x-hidden">
-                <div className="overflow-hidden rounded-[20px] bg-[var(--app-tool-card-bg)] p-3 shadow-none">
-                    <div className="flex items-center gap-2 text-xs">
-                        <div className="font-mono text-[var(--app-tool-card-accent)]">
-                            Tool: {props.toolName}
-                        </div>
-                        {props.isError ? (
-                            <span className="text-red-500">Error</span>
-                        ) : null}
-                        {props.status.type === 'running' && !hasResult ? (
-                            <span className="text-[var(--app-hint)]">Running…</span>
-                        ) : null}
-                    </div>
-
-                    {hasArgsText ? (
-                        <div className="mt-2">
-                            <CodeBlock code={argsText} language="json" title="Input" />
-                        </div>
-                    ) : null}
-
-                    {hasResult ? (
-                        <div className="mt-2">
-                            <CodeBlock code={resultText} language={typeof props.result === 'string' ? 'text' : 'json'} title="Output" />
-                        </div>
-                    ) : null}
-                </div>
+                <details className="min-w-0 max-w-full text-xs text-[var(--app-hint)]">
+                    <summary className="cursor-pointer truncate py-1 font-mono">
+                        {props.toolName} <span aria-label={props.isError ? 'error' : props.status.type === 'running' && !hasResult ? 'running' : 'completed'}>{props.isError ? '×' : props.status.type === 'running' && !hasResult ? '◌' : '✓'}</span>
+                    </summary>
+                    {hasArgsText ? <CodeBlock code={argsText} language="json" title="Input" /> : null}
+                    {hasResult ? <CodeBlock code={resultText} language={typeof props.result === 'string' ? 'text' : 'json'} title="Output" /> : null}
+                </details>
             </div>
         )
     }

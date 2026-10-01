@@ -12,6 +12,7 @@ const SEARCH_PLACEHOLDER = 'Search title/path/Agent/machine/ID…'
 
 afterEach(() => {
     cleanup()
+    localStorage.removeItem('hapi.sessionListView')
     localStorage.removeItem('hapi-session-preview-limit')
     localStorage.removeItem('hapi-pin-in-progress-sessions')
 })
@@ -59,6 +60,26 @@ function renderWithProviders(children: ReactNode) {
 }
 
 describe('SessionList directory action', () => {
+    it('switches to one chronological list across folders and remembers the choice', () => {
+        const sessions = [
+            makeSession({ id: 'old', updatedAt: 100, metadata: { name: 'Old entry', path: '/a' } }),
+            makeSession({ id: 'new', updatedAt: 300, metadata: { name: 'Newest entry', path: '/b' } }),
+            makeSession({ id: 'middle', updatedAt: 200, metadata: { name: 'Middle entry', path: '/a' } }),
+        ]
+        const element = <SessionList sessions={sessions} onSelect={vi.fn()} onNewSession={vi.fn()}
+            onRefresh={vi.fn()} isLoading={false} api={null} />
+        const first = renderWithProviders(element)
+        fireEvent.click(screen.getByRole('button', { name: 'Recent' }))
+        const list = screen.getByTestId('recent-session-list').textContent!
+        expect(list.indexOf('Newest entry')).toBeLessThan(list.indexOf('Middle entry'))
+        expect(list.indexOf('Middle entry')).toBeLessThan(list.indexOf('Old entry'))
+        first.unmount()
+        renderWithProviders(element)
+        expect(screen.getByRole('button', { name: 'Recent' }).getAttribute('aria-pressed')).toBe('true')
+        fireEvent.click(screen.getByRole('button', { name: 'Folders' }))
+        expect(screen.queryByTestId('recent-session-list')).toBeNull()
+    })
+
     it('starts a new session with the project machine and directory', () => {
         const onNewSessionInDirectory = vi.fn()
         const session = makeSession({

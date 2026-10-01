@@ -14,6 +14,7 @@ import { codexHome, saveRuntime, runtimeDirectory, runtimeAuthHash, findColdBind
 import { startCodexGateway, record, string, type Envelope } from './gateway';
 import { resolveSharedCodex, sharedLaunchConfig, initializeSharedClient, checkSharedCapabilities, takeReservedSessionId, type SharedLaunchOptions } from './launch';
 import { SharedCodexRoot } from './root';
+import { listLoadedNativeThreads, requireLoadedNativeThread } from './nativeDiscovery';
 
 export type RuntimeReady = { sessionId: string; runtime: CodexRuntimeRecord };
 type Reservation = { root: SharedCodexRoot; resumeId?: string };
@@ -41,6 +42,7 @@ async function freePort(): Promise<number> {
 /** One ordinary CLI execution owns one private engine, with concurrent frontends. */
 export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (ready: RuntimeReady) => void, abortSignal?: AbortSignal): Promise<void> {
     abortSignal?.throwIfAborted();
+    const external = Boolean(options.nativeEndpoint);
     const command = resolveSharedCodex();
     const launch = sharedLaunchConfig(options, options.workingDirectory ?? process.cwd());
     const id = randomUUID();
@@ -48,15 +50,16 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
     const home = await realpath(codexHome());
     await mkdir(runtimeDirectory(), { recursive: true, mode: 0o700 });
     // Unix sockaddr_un has a small path limit; don't nest sockets under CODEX_HOME.
-    const sockets = await mkdtemp(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'hapi-cx-')); await chmod(sockets, 0o700);
+    const sockets = await mkdtemp(join(tmpdir(), 'hapi-cx-')); await chmod(sockets, 0o700);
     const token = randomBytes(32).toString('hex');
-    const upstream = process.platform === 'win32' ? `ws://127.0.0.1:${await freePort()}` : `unix://${join(sockets, 'engine.sock')}`;
-    const upstreamToken = process.platform === 'win32' ? randomBytes(32).toString('hex') : undefined;
+    const upstream = options.nativeEndpoint ?? (process.platform === 'win32' ? `ws://127.0.0.1:${await freePort()}` : `unix://${join(sockets, 'engine.sock')}`);
+    const upstreamToken = !external && process.platform === 'win32' ? randomBytes(32).toString('hex') : undefined;
     const env: NodeJS.ProcessEnv = { ...process.env, CODEX_HOME: home };
     // Every thread injects its own identity. A launch from another agent must not inherit that root's identity.
     delete env.HAPI_SESSION_ID;
     let server: ChildProcess | undefined;
     let gateway: Awaited<ReturnType<typeof startCodexGateway>> | undefined;
+    let discoveryTimer: ReturnType<typeof setInterval> | undefined;
     let stopping = false;
     let failure: unknown;
     let shutdownPromise: Promise<void> | undefined;
@@ -75,6 +78,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
     const prepared = new Set<SharedCodexRoot>();
     const reservations = new Map<string, Reservation>();
     const runtime: CodexRuntimeRecord = { id, pid: process.pid, marker: getProcessStartMarker(process.pid) ?? '',
+        ...(options.nativeEndpoint ? { nativeEndpoint: options.nativeEndpoint } : {}),
         endpoint: '', command: command.command, args: command.args, codexHome: home, hub: configuration.apiUrl, authHash: runtimeAuthHash(), sessions: {} };
     if (!runtime.marker) throw new Error('Cannot verify the runtime process generation');
     let writes = Promise.resolve();
@@ -104,7 +108,11 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                 try {
                     await initializeSharedClient(control);
                     // Roots remain loaded by their independent side-clients.
-                    for (const threadId of roots.keys()) await control.request('thread/resume', { threadId });
+                    for (const [threadId, root] of roots) {
+                        if (external && root.session.getMetadata()?.codexNativeConnection === 'history') continue;
+                        if (external) await requireLoadedNativeThread(control, threadId);
+                        await control.request('thread/resume', { threadId, ...(external ? { excludeTurns: true } : {}) });
+                    }
                     return;
                 } catch (error) {
                     logger.debug('[Codex shared] control reconnect', error);
@@ -116,7 +124,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
 
     const shutdown = (error?: unknown): Promise<void> => {
         if (shutdownPromise) return shutdownPromise;
-        stopping = true; failure = error;
+        stopping = true; failure = error; clearInterval(discoveryTimer);
         if (error) logger.debug('[Codex shared] runtime stopped', error);
         control.setTransportAbandonedHandler(null);
         for (const root of prepared) root.stopAccepting();
@@ -163,14 +171,15 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             void root.close(true).then(async () => {
                 prepared.delete(root);
                 await notifyRunnerSessionStarted(root.session.sessionId, { ...root.bootstrap.metadata, lifecycleState: 'archived' });
-                if (roots.size === 0 && reservations.size === 0) await shutdown();
+                if (!external && roots.size === 0 && reservations.size === 0) await shutdown();
             }).catch(error => logger.debug('[Codex shared] root cleanup', error));
         }, 100);
     };
-    const prepare = async (cwd: string, existingSessionId?: string, parent?: SharedCodexRoot): Promise<SharedCodexRoot> => {
+    const prepare = async (cwd: string, existingSessionId?: string, parent?: SharedCodexRoot, nativeThread?: Record<string, unknown>): Promise<SharedCodexRoot> => {
         assertRunning();
         const shared = { flavor: 'codex', startedBy: options.startedBy ?? 'terminal', workingDirectory: cwd,
-            exportSessionEnv: false, reportStarted: false, metadataOverrides: { capabilities: { terminal: true, concurrentClients: true },
+            exportSessionEnv: false, reportStarted: false, metadataOverrides: { ...(external ? { codexNativeSession: true } : {}),
+                ...(!existingSessionId && nativeThread ? { name: string(nativeThread.name) ?? string(nativeThread.preview)?.slice(0, 120) } : {}), capabilities: { terminal: true, concurrentClients: true },
                 ...(parent ? { forkedFrom: parent.session.sessionId } : {}) } } as const;
         // reservedSessionId names one preallocated hub row — single-use. A second
         // create()/fork must mint a fresh row, not re-adopt (#1911 Opus Major).
@@ -180,9 +189,10 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             : await bootstrapSession({
                 ...shared,
                 reservedSessionId,
+                ...(nativeThread ? { tag: `codex-native:${home}:${nativeThread.id}` } : {}),
                 agentState: { controlledByUser: false },
             });
-        const root = new SharedCodexRoot(bootstrap, { directory: join(runtimeDirectory(), 'queues'), generation: id, endpoint: upstream, token: upstreamToken,
+        const root = new SharedCodexRoot(bootstrap, { directory: join(runtimeDirectory(), 'queues'), generation: id, endpoint: upstream, token: upstreamToken, external, codexHome: home,
             settingsFor: threadId => nativeSettings.get(threadId), create, end });
         prepared.add(root);
         try { assertRunning(); await root.prepare(); assertRunning(); return root; }
@@ -205,14 +215,15 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         if (reserved && reserved.threadId !== threadId) throw new Error('Codex retargeted a reserved thread');
         if (!reserved) await reserve(root, threadId);
         // No fake user turn/name. Metadata write materializes an empty legacy rollout for native resume.
-        await control.request('thread/metadata/update', { threadId, gitInfo: gitInfo(string(record(response.thread).cwd) ?? root.bootstrap.workingDirectory) });
+        if (!external) await control.request('thread/metadata/update', { threadId, gitInfo: gitInfo(string(record(response.thread).cwd) ?? root.bootstrap.workingDirectory) });
         assertRunning();
         roots.set(threadId, root);
         await root.bind(threadId, response, subscribe);
         assertRunning();
         // Cold-resumed threads predate the control connection's automatic
         // new-thread subscription. Subscribe once without changing settings.
-        await control.request('thread/resume', { threadId });
+        if (!external || root.session.getMetadata()?.codexNativeConnection === 'attached')
+            await control.request('thread/resume', { threadId, ...(external ? { excludeTurns: true } : {}) });
         await root.activate(initialOptions);
         await root.session.flush();
         await persist();
@@ -236,6 +247,34 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             throw error;
         }
     });
+    const connectNativeThread = (threadId: string) => operation(async () => {
+        const loaded = (await listLoadedNativeThreads(control)).has(threadId);
+        const existingRoot = roots.get(threadId);
+        if (existingRoot) {
+            await existingRoot.setNativeConnection(loaded);
+            return { sessionId: existingRoot.session.sessionId, threadId, connectionState: loaded ? 'attached' : 'history' };
+        }
+        const thread = record(record(await control.request('thread/read', { threadId, includeTurns: false })).thread);
+        if (thread.parentThreadId) throw new Error('Connect the root Codex thread instead of a subagent');
+        const root = await withThreadOwnership(home, threadId, id, async () => {
+            const existing = await findColdBinding(home, threadId);
+            const root = await prepare(string(thread.cwd) ?? launch.cwd, existing, undefined, thread);
+            await reserveRecord(root, threadId);
+            return root;
+        });
+        try {
+            const response = loaded ? record(await root.client.request('thread/resume', { threadId, excludeTurns: true })) : { thread };
+            await root.setNativeConnection(loaded);
+            await bind(root, response, false);
+            onReady?.({ sessionId: root.session.sessionId, runtime });
+            return { sessionId: root.session.sessionId, threadId, connectionState: loaded ? 'attached' : 'history' };
+        } catch (error) {
+            roots.delete(threadId); prepared.delete(root);
+            const binding = runtime.sessions[root.session.sessionId]; if (binding) binding.active = false;
+            await persist(); await root.close(false); throw error;
+        }
+    });
+
     const key = (connection: string, request: Envelope) => `${connection}:${typeof request.id}:${request.id}`;
     const before = (request: Envelope, connection: string): Promise<Envelope> => operation(async () => {
         const params = record(request.params);
@@ -308,6 +347,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
     startup = (async () => {
         if (abortSignal?.aborted) throw new Error('Codex startup canceled');
         assertRunning();
+        if (!external) {
         server = spawn(command.command, [...command.args, 'app-server', ...launch.serverArgs, '--listen', upstream,
             ...(upstreamToken ? ['--ws-auth', 'capability-token', '--ws-token-sha256', createHash('sha256').update(upstreamToken).digest('hex')] : [])],
             { cwd: launch.cwd, env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
@@ -318,6 +358,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         runtime.serverMarker = server.pid ? getProcessStartMarker(server.pid) ?? undefined : undefined;
         if (!runtime.serverPid || !runtime.serverMarker) throw new Error('Cannot verify app-server generation');
         await persist();
+        }
         const deadline = Date.now() + 20_000;
         for (;;) {
             try { await initializeSharedClient(control); break; }
@@ -335,6 +376,16 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                     logger.debug('[Codex shared] quarantined lifecycle reservation', { runtimeId: id, sessionId: reservation.root.session.sessionId });
                 }
             }, control: (method, params) => operation(async () => {
+                if (method === 'hapi/listThreads') {
+                    if (!external) throw new Error('This runtime is not a native daemon bridge');
+                    return { loaded: [...await listLoadedNativeThreads(control)] };
+                }
+                if (method === 'hapi/connectThread') {
+                    if (!external) throw new Error('This runtime is not a native daemon bridge');
+                    const threadId = string(record(params).threadId);
+                    if (!threadId) throw new Error('Missing native thread ID');
+                    return connectNativeThread(threadId);
+                }
                 const sid = string(record(params).sessionId); const root = [...roots.values()].find(root => root.session.sessionId === sid);
                 if (!root) throw new Error('Shared session not found');
                 if (method === 'hapi/stopSession') { await end(root); return { stopped: true }; }
@@ -343,6 +394,28 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             }) } });
         if (stopping) { await gateway.close(); assertRunning(); }
         runtime.endpoint = gateway.endpoint; if (process.platform === 'win32') runtime.token = token; await persist();
+        if (external) {
+            let scanning = false;
+            const discover = async () => {
+                if (scanning || stopping) return;
+                scanning = true;
+                try {
+                    const loaded = await listLoadedNativeThreads(control);
+                    await Promise.all([...loaded].map(async threadId => {
+                        if (stopping) return;
+                        if (roots.get(threadId)?.session.getMetadata()?.codexNativeConnection === 'attached' || [...ending].some(root => root.threadId === threadId)) return;
+                        try {
+                            await connectNativeThread(threadId);
+                        } catch (error) { logger.debug('[Codex native] attach failed', { threadId, error: error instanceof Error ? error.message : String(error) }); }
+                    }));
+                } catch (error) { logger.debug('[Codex native] discovery unavailable', String(error)); }
+                finally { scanning = false; }
+            };
+            await discover();
+            // Native threads opened in another terminal appear within five seconds.
+            if (!stopping) discoveryTimer = setInterval(() => { void discover(); }, 5_000);
+            return;
+        }
         let root: SharedCodexRoot;
         if (options.resumeLast) {
             const response = record(await control.request('thread/list', { limit: 1, sortKey: 'updated_at', sortDirection: 'desc',

@@ -6,7 +6,7 @@ import {
     saveDraftAttachments,
     type AttachmentDraftInput,
 } from '@/lib/composer-attachment-drafts'
-import { persistInactiveComposerAttachments, composerDraftWasHandedOff } from '@/lib/composer-draft-transfer'
+import { persistInactiveComposerAttachments, composerDraftWasHandedOff, attachmentDraftRevision } from '@/lib/composer-draft-transfer'
 
 export type ComposerDraftHydration = {
     /** Session represented by this status; prevents a previous session's ready state leaking across a key change. */
@@ -23,6 +23,8 @@ export type ComposerDraftHydration = {
  *
  * - On mount: restores saved draft via `setText` (deferred by one animation frame)
  * - On mount: restores saved attachment files through the composer adapter
+ * - After attachment hydration: saves attachment edits while the page is open,
+ *   so a reload does not depend on a last-moment asynchronous IndexedDB write.
  * - On unmount, and whenever the page is hidden: saves current text and
  *   attachment files as a draft. The page-hidden save matters separately from
  *   unmount — an in-app remount (switching sessions) reliably runs React's
@@ -43,6 +45,7 @@ export function useComposerDraft(
     canRestoreAttachments: boolean,
     setText: (text: string) => void,
     addAttachment: (file: File) => Promise<void>,
+    attachmentRecoveryRef?: { current: boolean },
 ): ComposerDraftHydration {
     const composerTextRef = useRef(composerText)
     composerTextRef.current = composerText
@@ -51,6 +54,8 @@ export function useComposerDraft(
 
     const draftReadyRef = useRef(false)
     const attachmentsReadyRef = useRef(false)
+    const savedAttachmentRevisionRef = useRef<string | null>(null)
+    const attachmentRevision = attachmentDraftRevision(attachments)
     const [hydration, setHydration] = useState<ComposerDraftHydration>(() => ({
         sessionId,
         complete: sessionId === undefined,
@@ -71,6 +76,7 @@ export function useComposerDraft(
 
         draftReadyRef.current = false
         attachmentsReadyRef.current = false
+        savedAttachmentRevisionRef.current = null
         setHydration({
             sessionId,
             complete: false,
@@ -181,6 +187,10 @@ export function useComposerDraft(
             if (draftReadyRef.current) {
                 saveDraft(sessionId, composerTextRef.current)
             }
+            // Failed-send recovery already saved its complete submitted blob
+            // snapshot. A partially repopulated adapter must not replace it,
+            // including when navigation unmounts during asynchronous add().
+            if (attachmentRecoveryRef?.current) return
             if (canRestoreAttachments && (attachmentsRef.current.length > 0 || attachmentsReadyRef.current)) {
                 saveDraftAttachments(sessionId, [...attachmentsRef.current])
             } else if (!canRestoreAttachments && attachmentsRef.current.length > 0) {
@@ -215,6 +225,20 @@ export function useComposerDraft(
             attachmentsReadyRef.current = false
         }
     }, [sessionId, canRestoreAttachments]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+        if (!sessionId || !canRestoreAttachments || !attachmentsReadyRef.current || attachmentRecoveryRef?.current
+            || hydration.sessionId !== sessionId || !hydration.complete
+            || composerDraftWasHandedOff(sessionId)) return
+
+        const previous = savedAttachmentRevisionRef.current
+        if (previous === attachmentRevision) return
+        savedAttachmentRevisionRef.current = attachmentRevision
+        // An empty initial adapter is not a removal: stored files may have
+        // failed to restore. Only clear after observing a nonempty live draft.
+        if (previous === null && attachmentsRef.current.length === 0) return
+        saveDraftAttachments(sessionId, [...attachmentsRef.current])
+    }, [sessionId, canRestoreAttachments, hydration.sessionId, hydration.complete, attachmentRevision, attachmentRecoveryRef, attachmentRecoveryRef?.current])
 
     return hydration
 }

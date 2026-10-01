@@ -10,14 +10,15 @@ import { MessageActions } from '@/components/AssistantChat/messages/MessageActio
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { NotifySummaryText } from '@/components/AssistantChat/messages/NotifySummaryText'
 import { useSessionSummaryInChat } from '@/hooks/useSessionSummaryInChat'
+import { withReadingPart } from './ReadingPart'
 
 const TOOL_COMPONENTS = {
-    Fallback: HappyToolMessage
+    Fallback: withReadingPart(HappyToolMessage)
 } as const
 
 const MESSAGE_PART_COMPONENTS = {
-    Text: NotifySummaryText,
-    Reasoning: Reasoning,
+    Text: withReadingPart(NotifySummaryText),
+    Reasoning: withReadingPart(Reasoning),
     ReasoningGroup: ReasoningGroup,
     tools: TOOL_COMPONENTS
 } as const

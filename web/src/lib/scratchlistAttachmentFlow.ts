@@ -6,6 +6,7 @@ import type { ApiClient } from '@/api/client'
 import type { AttachmentMetadata } from '@/types/api'
 import { isImageMimeType } from '@/lib/fileAttachments'
 import { hubAttachmentFromRestoredDraft } from '@/lib/scratchlistAttachmentAdapter'
+import { setRestoredUploadMetadata } from '@/lib/composer-attachment-drafts'
 
 async function blobToBase64(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -237,15 +238,34 @@ export async function stageScratchlistAttachmentsForComposeSend(
     }
 }
 
+// A drawer closes during restoration and may be reopened before uploads finish.
+// Keep only in-flight identities here; visible/durable composer ids handle later copies.
+const restoringComposerAttachmentIds = new Set<string>()
+
 export async function rehydrateScratchlistAttachmentsToComposer(
     api: ApiClient,
     sessionId: string,
     attachments: ScratchlistAttachmentMetadata[],
-    composer: { addAttachment: (file: File) => Promise<void> }
+    composer: {
+        addAttachment: (file: File) => Promise<void>
+        getState: () => { attachments: readonly { id: string }[] }
+    }
 ): Promise<void> {
     for (const attachment of attachments) {
-        const blob = await api.fetchScratchlistAttachmentBlob(sessionId, attachment.id)
-        const file = new File([blob], attachment.filename, { type: attachment.mimeType })
-        await composer.addAttachment(file)
+        const id = `scratchlist:${JSON.stringify([sessionId, attachment.id])}`
+        const alreadyVisible = () => composer.getState().attachments.some((item) => item.id === id)
+        if (alreadyVisible() || restoringComposerAttachmentIds.has(id)) continue
+        restoringComposerAttachmentIds.add(id)
+        try {
+            const blob = await api.fetchScratchlistAttachmentBlob(sessionId, attachment.id)
+            if (alreadyVisible()) continue
+            const file = new File([blob], attachment.filename, { type: attachment.mimeType })
+            // Preserve the hub identity, but never pass its path as a reusable
+            // chat upload: these bytes still need the normal upload adapter.
+            setRestoredUploadMetadata(file, { id })
+            await composer.addAttachment(file)
+        } finally {
+            restoringComposerAttachmentIds.delete(id)
+        }
     }
 }

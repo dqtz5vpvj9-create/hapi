@@ -1,4 +1,4 @@
-import { CodexSessionLineageRpcResponseSchema, CodexSubagentMessagesResponseSchema } from '@hapi/protocol/apiTypes'
+import { CodexSubagentMessagesResponseSchema } from '@hapi/protocol/apiTypes'
 import type { AgentFlavor, CodexCollaborationMode, CopilotAgentMode, PermissionMode } from '@hapi/protocol/types'
 import { PERMISSION_REQUEST_NOT_FOUND_MESSAGE, RPC_METHODS } from '@hapi/protocol/rpcMethods'
 import {
@@ -6,6 +6,7 @@ import {
     AgentAvailabilityResponseSchema,
     CursorChatStoreStatusSchema,
     ListCodexSessionsRpcResponseSchema,
+    CodexSessionLineageRpcResponseSchema,
     ListPiSessionsRpcResponseSchema
 } from '@hapi/protocol/apiTypes'
 import type {
@@ -455,17 +456,25 @@ export class RpcGateway {
         ) as RpcListCodexModelsResponse
     }
 
-    async codexSessionLineageForMachine(machineId: string, sessionIds: string[]) {
-        const result = await this.machineRpc(machineId, RPC_METHODS.CodexSessionLineage, { sessionIds }, 10_000)
-        return CodexSessionLineageRpcResponseSchema.parse(result).sessions
+    async connectCodexSessionForMachine(machineId: string, threadId: string) {
+        return await this.machineRpc(machineId, RPC_METHODS.ConnectCodexSession, { threadId }, 30_000)
     }
 
     async readCodexSubagentMessages(machineId: string, query: { rootThreadId: string; threadId: string; limit: number; before?: number }) {
         return CodexSubagentMessagesResponseSchema.parse(await this.machineRpc(machineId, RPC_METHODS.ReadCodexSubagentMessages, query, 15_000))
     }
 
+    async readCodexHistory(sessionId: string, query: Record<string, unknown>) {
+        return await this.sessionRpc(sessionId, RPC_METHODS.ReadCodexHistory, query, 30_000)
+    }
+
+    async codexSessionLineageForMachine(machineId: string, sessionIds: string[]) {
+        const result = await this.machineRpc(machineId, RPC_METHODS.CodexSessionLineage, { sessionIds }, 10_000)
+        return CodexSessionLineageRpcResponseSchema.parse(result).sessions
+    }
+
     async listCodexSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[]): Promise<RpcListCodexSessionsResponse> {
-        const result = await this.machineRpc(machineId, RPC_METHODS.ListCodexSessions, { cwd: cwd ?? null, sessionIds }, MODEL_LIST_RPC_TIMEOUT_MS)
+        const result = await this.machineRpc(machineId, RPC_METHODS.ListCodexSessions, { cwd: cwd ?? null, sessionIds }, 30_000)
         return ListCodexSessionsRpcResponseSchema.parse(result)
     }
 

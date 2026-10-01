@@ -49,6 +49,8 @@ export function HappyUserMessage() {
     if (role !== 'user') return null
     const canRetry = status === 'failed' && typeof localId === 'string' && Boolean(ctx.onRetryMessage)
     const onRetry = canRetry ? () => ctx.onRetryMessage!(localId) : undefined
+    const onDiscard = status === 'failed' && typeof localId === 'string' && ctx.onDiscardFailedMessage
+        ? () => ctx.onDiscardFailedMessage!(localId) : undefined
     const showStatus = shouldShowMessageStatus(status)
 
     const history = ctx.metadata?.capabilities?.conversationHistory
@@ -109,7 +111,7 @@ export function HappyUserMessage() {
                     </div>
                     {showStatus && (
                         <div className="happy-message-actions-first-line flex shrink-0 items-center gap-1">
-                            {showStatus ? <MessageStatusIndicator status={status} onRetry={onRetry} /> : null}
+                            {showStatus ? <MessageStatusIndicator status={status} onRetry={onRetry} onDiscard={onDiscard} /> : null}
                         </div>
                     )}
                 </div>

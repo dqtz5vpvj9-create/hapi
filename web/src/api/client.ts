@@ -46,6 +46,9 @@ import type {
     CopilotModelsResponse,
     GrokReasoningEffortResponse,
     ListDirectoryResponse,
+    MessageContextResponse,
+    MessageOutlineResponse,
+    MessageDependenciesResponse,
     MachineListDirectoryResponse,
     MachinePathsExistsResponse,
     OpencodeModelsResponse,
@@ -204,7 +207,7 @@ export class ApiClient {
                     return await this.request<T>(path, init, attempt + 1, refreshed)
                 }
             }
-            throw new Error('Session expired. Please sign in again.')
+            throw new ApiError('Session expired. Please sign in again.', 401)
         }
 
         if (!res.ok) {
@@ -282,12 +285,19 @@ export class ApiClient {
         })
     }
 
+    async connectCodexSession(threadId: string, machineId?: string | null): Promise<{ sessionId: string; threadId: string; connectionState: 'attached' | 'history' }> {
+        return await this.request('/api/codex/connect-session', {
+            method: 'POST', body: JSON.stringify({ threadId, ...(machineId ? { machineId } : {}) }),
+            signal: AbortSignal.timeout(30_000)
+        })
+    }
+
     async getCodexSessions(cwd?: string | null, machineId?: string | null): Promise<CodexLocalSessionsResponse> {
         const params = new URLSearchParams()
         if (cwd?.trim()) params.set('cwd', cwd.trim())
         if (machineId?.trim()) params.set('machineId', machineId.trim())
         const query = params.size ? `?${params.toString()}` : ''
-        return await this.request<CodexLocalSessionsResponse>(`/api/codex/sessions${query}`)
+        return await this.request<CodexLocalSessionsResponse>(`/api/codex/sessions${query}`, { signal: AbortSignal.timeout(30_000) })
     }
 
     async getPiSessions(cwd?: string | null, machineId?: string | null): Promise<PiLocalSessionsResponse> {
@@ -392,6 +402,7 @@ export class ApiClient {
             untilSeq?: number | null
             untilAt?: number | null
             epoch?: number | null
+            bounded?: boolean
             limit?: number
         }
     ): Promise<MessagesResponse> {
@@ -420,10 +431,42 @@ export class ApiClient {
         if (options.limit !== undefined && options.limit !== null) {
             params.set('limit', `${options.limit}`)
         }
+        if (options.bounded !== undefined) params.set('bounded', String(options.bounded))
 
         const qs = params.toString()
         const url = `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs ? `?${qs}` : ''}`
         return await this.request<MessagesResponse>(url)
+    }
+
+    async getMessageDependencies(sessionId: string, seedIds: string[], epoch: number, signal?: AbortSignal): Promise<MessageDependenciesResponse> {
+        const params = new URLSearchParams({ seeds: seedIds.join(','), epoch: String(epoch) })
+        return this.request<MessageDependenciesResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/messages/dependencies?${params}`, { signal }
+        )
+    }
+
+    async getMessageOutline(sessionId: string, options: { limit?: number; before?: { at: number; seq: number }; epoch?: number } = {}): Promise<MessageOutlineResponse> {
+        const params = new URLSearchParams()
+        if (options.limit !== undefined) params.set('limit', String(options.limit))
+        if (options.before) {
+            params.set('beforeAt', String(options.before.at))
+            params.set('beforeSeq', String(options.before.seq))
+        }
+        if (options.epoch !== undefined) params.set('epoch', String(options.epoch))
+        const query = params.toString()
+        return this.request<MessageOutlineResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/messages/outline${query ? `?${query}` : ''}`
+        )
+    }
+
+    async getMessageContext(sessionId: string, messageId: string, options: { radius?: number; epoch?: number } = {}): Promise<MessageContextResponse> {
+        const params = new URLSearchParams()
+        if (options.radius !== undefined) params.set('radius', String(options.radius))
+        if (options.epoch !== undefined) params.set('epoch', String(options.epoch))
+        const query = params.toString()
+        return this.request<MessageContextResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/context${query ? `?${query}` : ''}`
+        )
     }
 
     async getGitStatus(sessionId: string): Promise<GitCommandResponse> {

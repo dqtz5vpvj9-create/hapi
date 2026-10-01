@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import {
-    CodexSubagentSchema,
     AttachmentMetadataSchema,
     CodexCollaborationModeSchema,
+    CodexSubagentSchema,
     CopilotAgentModeSchema,
     DecryptedMessageSchema,
     MachineSchema,
@@ -16,6 +16,7 @@ import type {
     Session
 } from './schemas'
 import type { SessionSummary } from './sessionSummary'
+import type { MessageDependencyIssue } from './messageDependencies'
 
 export const CreateOrLoadMachineRequestSchema = z.object({
     id: z.string().min(1),
@@ -140,6 +141,72 @@ export type MessagesResponse = {
     }
 }
 
+/** A bounded, position-ordered window for a saved raw message identity. */
+export const MessageOutlineQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(40),
+    beforeAt: z.coerce.number().int().min(0).optional(),
+    beforeSeq: z.coerce.number().int().min(1).optional(),
+    epoch: z.coerce.number().int().min(0).optional(),
+}).refine(data => (data.beforeAt === undefined) === (data.beforeSeq === undefined), {
+    message: 'beforeAt and beforeSeq must be provided together'
+}).refine(data => data.beforeAt === undefined || data.epoch !== undefined, {
+    message: 'An outline cursor requires its epoch'
+})
+
+export type MessageOutlineResponse = {
+    entries: Array<{ messageId: string; label: string; at: number; seq: number; createdAt: number }>
+    page: {
+        epoch: number
+        reset: boolean
+        hasMore: boolean
+        beforeCursor: { at: number; seq: number } | null
+        scannedThrough: number
+        headSeq: number
+        complete: boolean
+        unreadable: boolean
+        indexing: boolean
+    }
+}
+
+export type MessageContextResponse = {
+    anchor: { messageId: string; position: { at: number; seq: number } }
+    messages: DecryptedMessage[]
+    page: {
+        epoch: number
+        reset: boolean
+        beforeCursor: { at: number; seq: number }
+        afterCursor: { at: number; seq: number }
+        hasMoreBefore: boolean
+        hasMoreAfter: boolean
+        snapshotHead: { at: number; seq: number }
+    }
+}
+
+export const MessageContextQuerySchema = z.object({
+    // At most 199 raw rows, including the anchor; invisible rows still consume
+    // the bound and advance the cursors instead of causing an unbounded scan.
+    radius: z.coerce.number().int().min(1).max(99).default(50),
+    epoch: z.coerce.number().int().min(0).optional(),
+})
+
+/** Sparse projection input, separate from continuous page coverage. Raw
+ * message IDs are UUIDs allocated by the hub; 200 fit in one GET query. */
+export const MessageDependenciesQuerySchema = z.object({
+    seeds: z.string().transform(value => value.split(',')).pipe(z.array(z.union([z.string().uuid(), z.string().regex(/^native:[^:]+:[^:]+:[^:]+:.+$/)])).min(1).max(200)),
+    epoch: z.coerce.number().int().min(0),
+})
+export type MessageDependenciesResponse = {
+    epoch: number
+    reset: boolean
+    indexReady: boolean
+    indexScanned: boolean
+    seedMessageIds: string[]
+    messages: DecryptedMessage[]
+    complete: boolean
+    issues: MessageDependencyIssue[]
+    pendingMessageIds: string[]
+}
+
 export type MachinesResponse = { machines: Machine[] }
 
 export type SpawnResponse =
@@ -205,6 +272,8 @@ export const CodexImportedMessageSchema = z.union([
 ])
 
 export const CodexLocalSessionSummarySchema = z.object({
+    connectionState: z.enum(['attached', 'history', 'unavailable']).optional(),
+    connectionError: z.string().optional(),
     id: z.string().min(1),
     title: z.string(),
     lastUserMessage: z.string().nullable().optional(),
@@ -231,6 +300,23 @@ export const ListCodexSessionsRpcResponseSchema = z.union([
     z.object({ success: z.literal(true), sessions: z.array(z.union([CodexLocalSessionWithMessagesSchema, CodexLocalSessionSummarySchema])) }),
     z.object({ success: z.literal(false), error: z.string() })
 ])
+
+export const CodexSessionLineageRpcRequestSchema = z.object({
+    sessionIds: z.array(z.string().min(1)).max(500)
+})
+export const CodexSessionLineageSchema = z.object({
+    id: z.string().min(1),
+    cwd: z.string().nullable().optional(),
+    // Native activity time, independent of HAPI connection and state updates.
+    codexUpdatedAt: z.number().optional(),
+    codexParentThreadId: z.string().optional(),
+    codexAgentNickname: z.string().optional(),
+    codexAgentRole: z.string().optional(),
+    codexAgentPath: z.string().optional(),
+    codexSubagents: z.array(CodexSubagentSchema).optional()
+})
+export const CodexSessionLineageRpcResponseSchema = z.object({ sessions: z.array(CodexSessionLineageSchema) })
+export type CodexSessionLineage = z.infer<typeof CodexSessionLineageSchema>
 
 export const ArchiveCodexSessionRpcRequestSchema = z.object({ sessionId: z.string().min(1) })
 export const ArchiveCodexSessionRpcResponseSchema = z.union([
@@ -509,6 +595,7 @@ export const MessagesQuerySchema = z.object({
     untilSeq: z.coerce.number().int().min(1).optional(),
     untilAt: z.coerce.number().int().min(0).optional(),
     epoch: z.coerce.number().int().min(0).optional(),
+    bounded: z.enum(['true', 'false']).transform(value => value === 'true').optional(),
 })
     .refine((data) => (data.beforeAt === undefined) === (data.beforeSeq === undefined), {
         message: 'beforeAt and beforeSeq must be provided together',
@@ -530,8 +617,8 @@ export const MessagesQuerySchema = z.object({
         message: 'until cursor requires an after cursor',
         path: ['untilAt'],
     })
-    .refine((data) => data.epoch === undefined || data.afterAt !== undefined, {
-        message: 'epoch requires an after cursor',
+    .refine((data) => data.epoch === undefined || data.afterAt !== undefined || data.beforeAt !== undefined, {
+        message: 'epoch requires a before or after cursor',
         path: ['epoch'],
     })
 
@@ -1008,23 +1095,9 @@ export type UsageSummaryResponse = {
     updatedAt: number
 }
 
-export const CodexSessionLineageRpcRequestSchema = z.object({
-    sessionIds: z.array(z.string().min(1)).max(500)
-})
-export const CodexSessionLineageSchema = z.object({
-    id: z.string().min(1),
-    cwd: z.string().nullable().optional(),
-    // Native activity time, independent of HAPI connection and state updates.
-    codexUpdatedAt: z.number().optional(),
-    codexParentThreadId: z.string().optional(),
-    codexAgentNickname: z.string().optional(),
-    codexAgentRole: z.string().optional(),
-    codexAgentPath: z.string().optional(),
-    codexSubagents: z.array(CodexSubagentSchema).optional()
-})
-export const CodexSessionLineageRpcResponseSchema = z.object({ sessions: z.array(CodexSessionLineageSchema) })
-export type CodexSessionLineage = z.infer<typeof CodexSessionLineageSchema>
-
+export const ConnectCodexSessionRequestSchema = z.object({ threadId: z.string().min(1), machineId: z.string().min(1).optional() })
+export const ConnectCodexSessionResponseSchema = z.object({ sessionId: z.string().min(1), threadId: z.string().min(1), connectionState: z.enum(['attached', 'history']) })
+export type ConnectCodexSessionResponse = z.infer<typeof ConnectCodexSessionResponseSchema>
 
 export const CodexSubagentMessagesQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(40),

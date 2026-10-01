@@ -31,6 +31,7 @@ class MockSession {
     emitSteerIndeterminate() {} keepAlive() {} emitSessionReady() {}
     async setSteerDeliveryState() { return true; }
     syncNativeQueuedMessage() {}
+    syncNativeQueueSnapshot() {}
     sendSessionDeath() { this.dead = true; } async flush() {} close() {} isPending() { return false; }
 }
 vi.mock('@/configuration', () => ({ configuration: { get happyHomeDir() { return state.home; }, apiUrl: 'http://mock-hub', cliApiToken: 'test' } }));

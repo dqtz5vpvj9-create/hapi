@@ -9,6 +9,4 @@
  * The tracer, reducer, and UI surfaces must treat them identically.
  * Keeping both ensures sessions recorded under either name continue to work.
  */
-export function isSubagentToolName(name: string): boolean {
-    return name === 'Task' || name === 'Agent' || name.startsWith('Agent:') || name.startsWith('Task:')
-}
+export { isSubagentToolName } from '@hapi/protocol/messageDependencies'

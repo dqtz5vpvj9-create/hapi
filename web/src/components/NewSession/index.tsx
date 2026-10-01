@@ -144,6 +144,8 @@ export function NewSession(props: {
     const [isImportingPiSession, setIsImportingPiSession] = useState(false)
     const [isBulkImportingPiSessions, setIsBulkImportingPiSessions] = useState(false)
     const [isPiImportDialogOpen, setIsPiImportDialogOpen] = useState(false)
+    const codexConnectGenerationRef = useRef(0)
+    const codexLoadGenerationRef = useRef(0)
     const piLoadGenerationRef = useRef(0)
     const [isCreating, setIsCreating] = useState(false)
     const createInFlightRef = useRef(false)
@@ -1036,22 +1038,37 @@ export function NewSession(props: {
         }
     }, [codexImportMachineId, machineId, props.api, selectedCodexImportSessionId])
 
+    useEffect(() => {
+        codexLoadGenerationRef.current += 1
+        codexConnectGenerationRef.current += 1
+        setIsBulkImportingCodexSessions(false)
+        setCodexImportError(null)
+        setIsLoadingCodexImportSessions(false)
+        setCodexImportSessions([])
+    }, [agent, machineId, trimmedDirectory])
+
+    useEffect(() => () => { codexLoadGenerationRef.current += 1; codexConnectGenerationRef.current += 1 }, [])
+
     const loadCodexImportSessions = useCallback(async () => {
         if (agent !== 'codex' || !machineId) return
+        const generation = ++codexLoadGenerationRef.current
         setIsLoadingCodexImportSessions(true)
         setCodexImportError(null)
         try {
             const result = await props.api.getCodexSessions(trimmedDirectory || null, machineId)
+            if (generation !== codexLoadGenerationRef.current) return
+            if (!result.success) throw new Error(result.error)
             setCodexImportSessions(result.sessions)
             setCodexImportMachineId(result.machineId ?? machineId)
             setSelectedCodexImportSessionId((current) => current && result.sessions.some((session) => session.id === current) ? current : null)
         } catch (e) {
+            if (generation !== codexLoadGenerationRef.current) return
             setCodexImportSessions([])
             setCodexImportMachineId(null)
             setSelectedCodexImportSessionId(null)
             setCodexImportError(e instanceof Error ? e.message : t('codexSync.failed.body'))
         } finally {
-            setIsLoadingCodexImportSessions(false)
+            if (generation === codexLoadGenerationRef.current) setIsLoadingCodexImportSessions(false)
         }
     }, [agent, machineId, props.api, trimmedDirectory, t])
 
@@ -2029,27 +2046,33 @@ export function NewSession(props: {
             />
             <CodexSessionSyncDialog
                 isOpen={isCodexImportDialogOpen}
-                onClose={() => setIsCodexImportDialogOpen(false)}
+                onClose={() => { codexConnectGenerationRef.current += 1; setIsBulkImportingCodexSessions(false); setIsCodexImportDialogOpen(false) }}
                 sessions={codexImportSessions}
                 currentCodexSessionId={selectedCodexImportSessionId}
                 currentWorkDirectory={trimmedDirectory}
-                selectionMode="multiple"
+                mode="connect"
+                selectionMode="single"
                 onConfirm={async (sessionIds) => {
-                    if (sessionIds.length === 1) {
-                        const session = codexImportSessions.find((candidate) => candidate.id === sessionIds[0])
-                        if (session) {
-                            handleSelectCodexImportSession(session)
-                            setIsCodexImportDialogOpen(false)
-                        }
-                        return
-                    }
-                    await handleBulkImportCodexSessions(sessionIds)
+                    if (!sessionIds[0]) return
+                    const generation = ++codexConnectGenerationRef.current
+                    setIsBulkImportingCodexSessions(true)
+                    setCodexImportError(null)
+                    try {
+                        const result = await props.api.connectCodexSession(sessionIds[0], codexImportMachineId ?? machineId)
+                        if (generation !== codexConnectGenerationRef.current) return
+                        setIsCodexImportDialogOpen(false)
+                        props.onSuccess(result.sessionId)
+                    } catch (error) {
+                        if (generation !== codexConnectGenerationRef.current) return
+                        setCodexImportError(error instanceof Error ? error.message : t('dialog.error.default'))
+                    } finally { if (generation === codexConnectGenerationRef.current) setIsBulkImportingCodexSessions(false) }
                 }}
                 onRestartCodexDesktop={handleRestartCodexDesktop}
-                onArchiveSession={handleArchiveCodexImportSession}
                 isPending={isBulkImportingCodexSessions}
                 isRestartingCodexDesktop={isRestartingCodexDesktop}
                 isLoading={isLoadingCodexImportSessions}
+                error={codexImportError}
+                onRetry={() => void loadCodexImportSessions()}
             />
             <PiSessionImportDialog
                 isOpen={isPiImportDialogOpen}

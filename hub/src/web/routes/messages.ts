@@ -1,6 +1,6 @@
-import { CodexSubagentMessagesQuerySchema } from '@hapi/protocol/apiTypes'
 import { Hono } from 'hono'
-import { MessagesQuerySchema, QueuedStateRequestSchema, SendMessageRequestSchema } from '@hapi/protocol'
+import { CodexSubagentMessagesQuerySchema } from '@hapi/protocol/apiTypes'
+import { MessageOutlineQuerySchema, MessageContextQuerySchema, MessageDependenciesQuerySchema, MessagesQuerySchema, QueuedStateRequestSchema, SendMessageRequestSchema } from '@hapi/protocol'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
@@ -26,6 +26,52 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         try { return c.json(await engine.readCodexSubagentMessages(machine.id, { ...query.data,
             rootThreadId: metadata.codexSessionId, threadId: c.req.param('threadId') })) }
         catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Subagent history unavailable' }, 409) }
+    })
+
+    app.get('/sessions/:id/messages/outline', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) return sessionResult
+        const parsed = MessageOutlineQuerySchema.safeParse(c.req.query())
+        if (!parsed.success) return c.json({ error: 'Invalid query', issues: parsed.error.flatten() }, 400)
+        if (sessionResult.session.metadata?.codexNativeSession) {
+            try { return c.json(await engine.readCodexHistory(sessionResult.sessionId, { ...parsed.data, operation: 'outline' })) }
+            catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Native Codex history unavailable' }, 503) }
+        }
+        return c.json(engine.getMessageOutline(sessionResult.sessionId, parsed.data))
+    })
+
+    app.get('/sessions/:id/messages/dependencies', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) return sessionResult
+        const parsed = MessageDependenciesQuerySchema.safeParse(c.req.query())
+        if (!parsed.success) return c.json({ error: 'Invalid query', issues: parsed.error.flatten() }, 400)
+        if (sessionResult.session.metadata?.codexNativeSession) {
+            try { return c.json(await engine.readCodexHistory(sessionResult.sessionId, { ...parsed.data, seeds: parsed.data.seeds.join(','), operation: 'dependencies' })) }
+            catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Native Codex history unavailable' }, 503) }
+        }
+        const context = engine.getMessageDependencies(sessionResult.sessionId, parsed.data.seeds, parsed.data.epoch)
+        return context ? c.json(context) : c.json({ error: 'Message not found' }, 404)
+    })
+
+    app.get('/sessions/:id/messages/:messageId/context', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) return sessionResult
+        const parsed = MessageContextQuerySchema.safeParse(c.req.query())
+        if (!parsed.success) {
+            return c.json({ error: 'Invalid query', issues: parsed.error.flatten() }, 400)
+        }
+        if (sessionResult.session.metadata?.codexNativeSession) {
+            try { return c.json(await engine.readCodexHistory(sessionResult.sessionId, { ...parsed.data, operation: 'context', messageId: c.req.param('messageId') })) }
+            catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Native Codex history unavailable' }, 503) }
+        }
+        const context = engine.getMessageContext(sessionResult.sessionId, c.req.param('messageId'), parsed.data)
+        return context ? c.json(context) : c.json({ error: 'Message not found' }, 404)
     })
 
     app.get('/sessions/:id/messages', async (c) => {
@@ -55,12 +101,17 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         const until = parsed.data.untilAt !== undefined && parsed.data.untilSeq !== undefined
             ? { at: parsed.data.untilAt, seq: parsed.data.untilSeq }
             : null
+        if (sessionResult.session.metadata?.codexNativeSession) {
+            try { return c.json(await engine.readCodexHistory(sessionId, parsed.data)) }
+            catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Native Codex history unavailable' }, 503) }
+        }
         return c.json(engine.getMessagesPage(sessionId, {
             limit,
             before,
             after,
             until,
-            epoch: parsed.data.epoch ?? null
+            epoch: parsed.data.epoch ?? null,
+            bounded: parsed.data.bounded
         }))
     })
 
@@ -151,6 +202,7 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
         const sessionId = sessionResult.sessionId
 
+        if (sessionResult.session.metadata?.codexNativeConnection === 'history') return c.json({ error: 'This native Codex thread is open for history only', code: 'native_history_only' }, 409)
         const body = await c.req.json().catch(() => null)
         const parsed = SendMessageRequestSchema.safeParse(body)
         if (!parsed.success) {

@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { I18nProvider } from '@/lib/i18n-context'
@@ -29,18 +30,20 @@ function renderTree(handlers: {
     const onRequestFileMenu = handlers.onRequestFileMenu ?? vi.fn()
 
     render(
-        <I18nProvider>
-            <ToastProvider>
-                <DirectoryTree
-                    api={{} as never}
-                    sessionId="session-1"
-                    rootLabel="project"
-                    onOpenFile={onOpenFile}
-                    onRequestFileMenu={onRequestFileMenu}
-                    sort={DEFAULT_DIRECTORY_SORT}
-                />
-            </ToastProvider>
-        </I18nProvider>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+            <I18nProvider>
+                <ToastProvider>
+                    <DirectoryTree
+                        api={{} as never}
+                        sessionId="session-1"
+                        rootLabel="project"
+                        onOpenFile={onOpenFile}
+                        onRequestFileMenu={onRequestFileMenu}
+                        sort={DEFAULT_DIRECTORY_SORT}
+                    />
+                </ToastProvider>
+            </I18nProvider>
+        </QueryClientProvider>
     )
 
     return { onOpenFile, onRequestFileMenu }

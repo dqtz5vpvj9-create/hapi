@@ -12,7 +12,7 @@ import { HappyComposer, type ComposerSendError } from './HappyComposer'
  * composer store. This focused harness supplies the small subset of that
  * store necessary to exercise send → user interaction → delayed error races.
  */
-type FakeAttachment = { id: string; status: { type: 'complete' } }
+type FakeAttachment = { id: string; status: { type: 'complete' | 'requires-action' | 'running' | 'incomplete' }; file?: File; path?: string }
 type MockComposerInputProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
     asChild?: boolean
     maxRows?: number
@@ -33,6 +33,10 @@ const runtime = vi.hoisted(() => ({
     pendingSendIntentRef: null as null | { current: ComposerSendIntent },
     sentIntents: [] as ComposerSendIntent[],
     modelChanges: [] as Array<{ provider: string; modelId: string } | string | null>,
+    useRealDraftHook: false,
+    hydrationComplete: false,
+    addAttachment: null as null | ((file: File) => Promise<void>),
+    submittedDrafts: [] as import('@/lib/composer-attachment-drafts').AttachmentDraftInput[],
 }))
 
 vi.mock('@assistant-ui/react', async () => {
@@ -55,7 +59,7 @@ vi.mock('@assistant-ui/react', async () => {
                         composer: { text: '', attachments: [] },
                     }))
                 },
-                addAttachment: async () => {},
+                addAttachment: async (file: File) => { await runtime.addAttachment?.(file) },
             }),
             thread: () => ({ cancelRun: () => {} }),
         }),
@@ -97,9 +101,15 @@ vi.mock('@/lib/composerSegments', () => ({
     resolveComposerPlaceholderKey: ({ showContinueHint }: { showContinueHint: boolean }) =>
         showContinueHint ? 'misc.typeMessage' : 'misc.typeAMessage',
 }))
-vi.mock('@/hooks/useComposerDraft', () => ({
-    useComposerDraft: (sessionId: string | undefined) => ({ sessionId, complete: true, restoredAny: false, hasStoredAttachments: false }),
-}))
+vi.mock('@/hooks/useComposerDraft', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@/hooks/useComposerDraft')>()
+    return { useComposerDraft: (...args: Parameters<typeof actual.useComposerDraft>) => {
+        const state = runtime.useRealDraftHook ? actual.useComposerDraft(...args)
+            : { sessionId: args[0], complete: true, restoredAny: false, hasStoredAttachments: false }
+        runtime.hydrationComplete = state.complete
+        return state
+    } }
+})
 vi.mock('@/hooks/useComposerEnterBehavior', () => ({ useComposerEnterBehavior: () => ({ composerEnterBehavior: 'send' }) }))
 vi.mock('@/hooks/usePlatform', () => ({ usePlatform: () => ({ haptic: { impact: () => {}, notification: () => {} }, isTouch: false }) }))
 vi.mock('@/hooks/usePWAInstall', () => ({ usePWAInstall: () => ({ isStandalone: false, isIOS: false }) }))
@@ -157,6 +167,8 @@ function ComposerHarness(props: {
     initialText: string
     initialSchedule?: PendingSchedule | null
     piRunning?: boolean
+    active?: boolean
+    sessionId?: string
     controls: { current: HarnessControls | null }
 }) {
     const [snapshot, setSnapshot] = useState<FakeRuntimeState>(() => ({
@@ -223,7 +235,8 @@ function ComposerHarness(props: {
         <I18nProvider>
             <HappyComposer
                 key={composerKey}
-                sessionId={composerKey}
+                sessionId={props.sessionId ?? composerKey}
+                active={props.active ?? true}
                 disabled={isSending}
                 pendingSchedule={schedule}
                 sendAcceptance={sendAcceptance}
@@ -246,6 +259,7 @@ function ComposerHarness(props: {
                 piModels={[{ provider: 'pi', modelId: 'pi-model', name: 'Pi model' }]}
                 onModelChange={(model) => runtime.modelChanges.push(model)}
                 pendingSendIntentRef={pendingSendIntentRef}
+                onSendAttachmentDrafts={(drafts) => { runtime.submittedDrafts = drafts }}
             />
         </I18nProvider>
     )
@@ -600,5 +614,152 @@ describe('HappyComposer send intent gestures', () => {
         fireEvent.keyDown(input(), { key: 'Enter', altKey: true })
         expect(runtime.sentIntents).toEqual([])
         expect(runtime.pendingSendIntentRef?.current).toBe('default')
+    })
+})
+
+describe('submitted attachment recovery with real adapter and draft lifecycle', () => {
+    afterEach(() => {
+        cleanup()
+        runtime.useRealDraftHook = false
+        runtime.hydrationComplete = false
+        runtime.addAttachment = null
+        runtime.submittedDrafts = []
+        runtime.setSnapshot = null
+        vi.unstubAllGlobals()
+    })
+
+    async function prepare() {
+        vi.stubGlobal('indexedDB', undefined)
+        vi.stubGlobal('requestAnimationFrame', (callback: () => void) => setTimeout(callback, 0))
+        vi.stubGlobal('cancelAnimationFrame', clearTimeout)
+        const drafts = await import('@/lib/composer-attachment-drafts')
+        const textDrafts = await import('@/lib/composer-drafts')
+        for (const id of ['composer-a', 'composer-b']) {
+            drafts.clearDraftAttachments(id)
+            textDrafts.clearDraft(id)
+        }
+        runtime.useRealDraftHook = true
+        runtime.hydrationComplete = false
+        return drafts
+    }
+
+    it('protects both submitted blobs while only one chip has restored and navigation unmounts the composer', async () => {
+        const drafts = await prepare()
+        const { createAttachmentAdapter } = await import('@/lib/attachmentAdapter')
+        const uploadFile = vi.fn(async () => { throw new TypeError('offline') })
+        const adapter = createAttachmentAdapter({ uploadFile } as never, 'composer-a')
+        let releaseFirst!: () => void
+        const firstBlocked = new Promise<void>((resolve) => { releaseFirst = resolve })
+        let additions = 0
+        runtime.addAttachment = async (file) => {
+            if (++additions === 1) {
+                // Simulate a runtime add that has not published its chip yet.
+                // Its old composer is disposed during the wait.
+                await firstBlocked
+                return
+            }
+            const stream = adapter.add({ file })
+            if (!('next' in stream)) throw new Error('Expected upload progress')
+            for await (const attachment of stream) {
+                runtime.setSnapshot!((current) => ({ ...current, composer: {
+                    ...current.composer,
+                    attachments: [...current.composer.attachments.filter((item) => item.id !== attachment.id), attachment],
+                } }))
+            }
+        }
+        const controls: { current: HarnessControls | null } = { current: null }
+        render(<ComposerHarness initialText="two images" initialSchedule={{ type: 'absolute', ms: 1234 }} sessionId="composer-a" controls={controls} />)
+        await waitFor(() => expect(runtime.hydrationComplete).toBe(true))
+        const files = [new File(['first bytes'], 'first.png', { type: 'image/png' }), new File(['second bytes'], 'second.png', { type: 'image/png' })]
+        act(() => runtime.setSnapshot!((current) => ({ ...current, composer: { ...current.composer, attachments: files.map((file, index) => ({
+            id: `submitted-${index}`, file, path: `/uploads/${index}.png`, status: { type: 'requires-action' as const },
+        })) } })))
+        send()
+        expect(runtime.submittedDrafts).toHaveLength(2)
+        acceptAndClearSchedule(controls)
+        setError(controls, { ...fail(101, 'two images'), attachmentDrafts: runtime.submittedDrafts })
+        await waitFor(() => expect(runtime.snapshot.composer.attachments).toHaveLength(1))
+        expect(await drafts.getDraftAttachments('composer-a')).toHaveLength(2)
+        act(() => {
+            // A keyed runtime starts empty; its saved draft is the source
+            // when returning to this session after navigation.
+            runtime.setSnapshot!((current) => ({ ...current, composer: { text: '', attachments: [] } }))
+            controls.current!.remount()
+        })
+        // Old cleanup must retain the complete saved snapshot rather than
+        // replace it with its one visible chip.
+        expect(await drafts.getDraftAttachments('composer-a')).toHaveLength(2)
+        await waitFor(() => expect(runtime.snapshot.composer.attachments).toHaveLength(2))
+        expect(runtime.snapshot.composer.attachments.map((item) => item.id).sort()).toEqual(['submitted-0', 'submitted-1'])
+        expect(runtime.snapshot.composer.attachments.every((item) => item.path?.startsWith('/uploads/'))).toBe(true)
+        expect(uploadFile).not.toHaveBeenCalled()
+        expect(input()).toHaveValue('two images')
+        expect(screen.getByTestId('pending-schedule')).toHaveTextContent('1234')
+        releaseFirst()
+        await act(async () => { await firstBlocked })
+        // The recovered chips stay removable; clear does not resurrect files.
+        act(() => controls.current!.removeAttachments())
+        await waitFor(async () => expect(await drafts.getDraftAttachments('composer-a')).toHaveLength(0))
+    })
+
+    it('persists removal of all recovered attachments without remounting', async () => {
+        const drafts = await prepare()
+        const { createAttachmentAdapter } = await import('@/lib/attachmentAdapter')
+        const adapter = createAttachmentAdapter({ uploadFile: vi.fn() } as never, 'composer-a')
+        let release!: () => void
+        const completed = new Promise<void>((resolve) => { release = resolve })
+        runtime.addAttachment = async (file) => {
+            const stream = adapter.add({ file })
+            if (!('next' in stream)) throw new Error('Expected upload progress')
+            for await (const attachment of stream) {
+                runtime.setSnapshot!((current) => ({ ...current, composer: {
+                    ...current.composer,
+                    attachments: [...current.composer.attachments.filter((item) => item.id !== attachment.id), attachment],
+                } }))
+            }
+            await completed
+        }
+        const controls: { current: HarnessControls | null } = { current: null }
+        render(<ComposerHarness initialText="images" sessionId="composer-a" controls={controls} />)
+        await waitFor(() => expect(runtime.hydrationComplete).toBe(true))
+        const files = [new File(['a'], 'a.png'), new File(['b'], 'b.png')]
+        act(() => runtime.setSnapshot!((current) => ({ ...current, composer: { ...current.composer, attachments: files.map((file, index) => ({
+            id: `recovered-${index}`, file, path: `/uploads/${index}`, status: { type: 'requires-action' as const },
+        })) } })))
+        send()
+        acceptAndClearSchedule(controls)
+        setError(controls, { ...fail(103, 'images'), attachmentDrafts: runtime.submittedDrafts })
+        await waitFor(() => expect(runtime.snapshot.composer.attachments).toHaveLength(2))
+        await act(async () => { release(); await completed })
+        act(() => controls.current!.removeAttachments())
+        await waitFor(async () => expect(await drafts.getDraftAttachments('composer-a')).toHaveLength(0))
+    })
+
+    it('retains inactive attachment blobs without invoking a resolver or reuploading while offline', async () => {
+        const drafts = await prepare()
+        const { createAttachmentAdapter } = await import('@/lib/attachmentAdapter')
+        const resolveSessionId = vi.fn(async () => { throw new TypeError('offline resume') })
+        const uploadFile = vi.fn()
+        const adapter = createAttachmentAdapter({ uploadFile } as never, 'composer-a', resolveSessionId)
+        const add = vi.fn(async (file: File) => {
+            const stream = adapter.add({ file })
+            if (!('next' in stream)) throw new Error('Expected upload progress')
+            for await (const _attachment of stream) { /* consume */ }
+        })
+        runtime.addAttachment = add
+        const controls: { current: HarnessControls | null } = { current: null }
+        render(<ComposerHarness initialText="" active={false} controls={controls} />)
+        await waitFor(() => expect(runtime.hydrationComplete).toBe(true))
+        const file = new File(['inactive bytes'], 'held.png', { type: 'image/png' })
+        setError(controls, { ...fail(102, 'inactive question', 9999, false), attachmentDrafts: [{ id: 'inactive-file', file, path: '/uploads/held.png' }] })
+        await waitFor(() => expect(input()).toHaveValue('inactive question'))
+        expect(await drafts.getDraftAttachments('composer-a')).toHaveLength(1)
+        expect(runtime.snapshot.composer.attachments).toHaveLength(0)
+        expect(add).not.toHaveBeenCalled()
+        expect(resolveSessionId).not.toHaveBeenCalled()
+        expect(uploadFile).not.toHaveBeenCalled()
+        expect(screen.getByTestId('pending-schedule')).toHaveTextContent('9999')
+        cleanup()
+        expect(await drafts.getDraftAttachments('composer-a')).toHaveLength(1)
     })
 })

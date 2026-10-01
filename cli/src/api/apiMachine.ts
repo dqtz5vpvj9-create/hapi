@@ -1,6 +1,3 @@
-import { CodexSessionLineageRpcRequestSchema, ReadCodexSubagentMessagesRequestSchema } from '@hapi/protocol/apiTypes'
-import { lookupCodexSessionLineage } from '../codex/utils/codexLineageLookup'
-import { readCodexSubagentMessages } from '../codex/utils/codexSubagentHistory'
 /**
  * WebSocket client for machine/runner communication with hapi-hub
  */
@@ -14,6 +11,7 @@ import type { ClientToServerEvents, ServerToClientEvents, Update, UpdateMachineB
 import {
     ArchiveCodexSessionRpcRequestSchema,
     ListCodexSessionsRpcRequestSchema,
+    CodexSessionLineageRpcRequestSchema,
     ListPiSessionsRpcRequestSchema,
     type ArchiveCodexSessionRpcResponse,
     type AgentAvailabilityResponse,
@@ -59,6 +57,11 @@ import {
 } from '../modules/common/kimiModels'
 import type { SpawnSessionOptions, SpawnSessionResult } from '../modules/common/rpcTypes'
 import { applyVersionedAck } from './versionedUpdate'
+import { ReadCodexSubagentMessagesRequestSchema } from '@hapi/protocol/apiTypes'
+import { readCodexSubagentMessages } from '../codex/utils/codexSubagentHistory'
+import { lookupCodexSessionLineage } from '../codex/utils/codexLineageLookup'
+import { connectNativeCodexThread, nativeCodexEligibility } from '../codex/shared/nativeConnection'
+import { ConnectCodexSessionRequestSchema } from '@hapi/protocol/apiTypes'
 import { archiveLocalCodexSession, listLocalCodexSessionSummaries, listLocalCodexSessionsWithMessagesByIds } from '../modules/common/codexSessions'
 import { listLocalPiSessionSummaries, listLocalPiSessionsWithMessagesByIds } from '../modules/common/piSessions'
 import { buildSocketIoExtraHeaderOptions } from './hubExtraHeaders'
@@ -332,6 +335,15 @@ export class ApiMachineClient {
             }
         )
 
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.ConnectCodexSession, async (params: unknown) => {
+            const { threadId } = ConnectCodexSessionRequestSchema.parse(params)
+            const target = listLocalCodexSessionSummaries(Number.MAX_SAFE_INTEGER).find(session => session.id === threadId)
+            if (!target || !await this.isLocalSessionWithinWorkspaceRoots(target)) {
+                throw new Error('Codex session is unavailable or outside workspace roots')
+            }
+            return await connectNativeCodexThread(threadId)
+        })
+
         this.rpcHandlerManager.registerHandler(RPC_METHODS.ReadCodexSubagentMessages, async (raw: unknown) => {
             const { rootThreadId, threadId, limit, before } = ReadCodexSubagentMessagesRequestSchema.parse(raw)
             const parent = lookupCodexSessionLineage([rootThreadId])[0]
@@ -402,10 +414,11 @@ export class ApiMachineClient {
                 const allSessions = requestedIds
                     ? listLocalCodexSessionsWithMessagesByIds(requestedIds)
                     : listLocalCodexSessionSummaries()
+                const eligibility = requestedIds ? null : await nativeCodexEligibility()
                 const sessions = []
                 for (const session of allSessions) {
                     if (await this.isLocalSessionWithinWorkspaceRoots(session)) {
-                        sessions.push(session)
+                        sessions.push(eligibility ? { ...session, connectionState: eligibility.error ? 'unavailable' as const : eligibility.loaded.has(session.id) ? 'attached' as const : 'history' as const, ...(eligibility.error ? { connectionError: eligibility.error } : {}) } : session)
                     }
                 }
                 return { success: true, sessions }

@@ -18,6 +18,8 @@ export const EMPTY_STATE: MessageWindowState = {
     sessionId: 'unknown',
     messages: [],
     hasMore: false,
+    hasMoreAfter: false,
+    readingNotice: null,
     oldestSeq: null,
     newestSeq: null,
     epoch: null,
@@ -32,6 +34,7 @@ export const EMPTY_STATE: MessageWindowState = {
 
 export function useMessages(api: ApiClient | null, sessionId: string | null): {
     messages: DecryptedMessage[]
+    epoch: number | null
     warning: string | null
     isSyncingTail: boolean
     isLoadingMore: boolean
@@ -57,7 +60,9 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
     useLayoutEffect(() => {
         if (sessionId) {
             activateMessageWindow(sessionId)
+            return () => cancelOlderMessageLoad(sessionId)
         }
+        return undefined
     }, [sessionId])
 
     useEffect(() => {
@@ -95,6 +100,7 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
 
     return {
         messages: state.messages,
+        epoch: state.epoch,
         warning: state.warning,
         isSyncingTail: state.isSyncingTail,
         isLoadingMore: state.isLoadingMore,

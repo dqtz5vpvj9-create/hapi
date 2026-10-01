@@ -1344,6 +1344,15 @@ export function SessionList(props: {
     const lastSeenVersion = useSessionLastSeenVersion()
     // Transient unread lens — not a Settings preference. Cleared on reload; rows drop as they're seen.
     const [showUnreadOnly, setShowUnreadOnly] = useState(false)
+    const [listView, setListView] = useState<'recent' | 'directory'>(() => {
+        try { return localStorage.getItem('hapi.sessionListView') === 'recent' ? 'recent' : 'directory' }
+        catch { return 'directory' }
+    })
+    const changeListView = (view: 'recent' | 'directory') => {
+        setListView(view)
+        try { localStorage.setItem('hapi.sessionListView', view) } catch { /* Private browsing may disable storage. */ }
+    }
+
     const { pinInProgressSessions } = usePinInProgressSessions()
     const { machineFilter, setMachineFilter } = useSessionListMachineFilter()
     const showDetailedStatus = sessionListStatusMode === 'detailed'
@@ -2120,6 +2129,15 @@ export function SessionList(props: {
             ) : null}
             </div>
 
+            <div role="group" aria-label={t('sessions.view.label')} className="mx-2 mb-2 flex gap-1 rounded-lg bg-[var(--app-secondary-bg)] p-1">
+                {(['recent', 'directory'] as const).map(view => (
+                    <button key={view} type="button" aria-pressed={listView === view}
+                        onClick={() => changeListView(view)}
+                        className={`min-h-9 flex-1 rounded-md px-2 text-sm ${listView === view ? 'bg-[var(--app-bg)] text-[var(--app-fg)] shadow-sm' : 'text-[var(--app-hint)]'}`}>
+                        {t(view === 'recent' ? 'sessions.view.recent' : 'sessions.view.directory')}
+                    </button>
+                ))}
+            </div>
             <div className="relative flex min-h-0 flex-1 flex-col">
             {isRefreshing || pullState !== 'idle' || props.isLoading ? (
                 <div
@@ -2156,6 +2174,16 @@ export function SessionList(props: {
                     </div>
                 ) : null}
 
+                {listView === 'recent' ? (
+                    <div data-testid="recent-session-list" className="flex flex-col gap-0.5">
+                        {[...machineFilteredSessions].sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)).map(s => (
+                            <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly} key={s.id} session={s} onSelect={props.onSelect} api={api}
+                                titleSuggestionAvailable={titleSuggestionAvailable} selected={s.id === selectedSessionId}
+                                showDetailedStatus={showDetailedStatus} lastSeenVersion={lastSeenVersion}
+                                machineLabel={resolveMachineLabel(s.metadata?.machineId ?? null)} />
+                        ))}
+                    </div>
+                ) : <>
                 {globalPinnedSessions.length > 0 ? (
                     <div key="pinned-section">
                         <div
@@ -2229,6 +2257,7 @@ export function SessionList(props: {
                 })}
                 {groups.map(renderDirectoryGroup)}
                 {actionOnlyGroups.map(renderActionOnlyGroupHeader)}
+                </>}
             </SessionListScrollAnchor>
             </div>
             </div>

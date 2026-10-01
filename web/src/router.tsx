@@ -20,6 +20,7 @@ import {
 import { App } from '@/App'
 import { SessionChat } from '@/components/SessionChat'
 import { SessionList } from '@/components/SessionList'
+import { SessionQuickSwitcher } from '@/components/SessionQuickSwitcher'
 import { NewSession } from '@/components/NewSession'
 import { WorkspaceBrowser } from '@/components/WorkspaceBrowser'
 import { LoadingState } from '@/components/LoadingState'
@@ -48,7 +49,7 @@ import { useTranslation } from '@/lib/use-translation'
 import { seedMessageWindowFromSession, syncTailMessages } from '@/lib/message-window-store'
 import { clearDraftsAfterSend } from '@/lib/clearDraftsAfterSend'
 import { transferComposerDraftThenNavigate } from '@/lib/composer-draft-transfer'
-import { getDraftAttachments } from '@/lib/composer-attachment-drafts'
+import { getDraftAttachments, type AttachmentDraftInput } from '@/lib/composer-attachment-drafts'
 import { refreshSessionDetailPreservingActive } from '@/lib/session-detail-optimistic'
 import { inactiveSessionCanResume, resolveCursorReopenGate } from '@/lib/sessionResume'
 import { initializeSessionLastSeen } from '@/lib/sessionLastSeen'
@@ -156,6 +157,18 @@ function SettingsIcon(props: { className?: string }) {
 }
 
 function SessionsPage() {
+    const [quickSwitchOpen, setQuickSwitchOpen] = useState(false)
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.isComposing || event.repeat || event.altKey || event.shiftKey) return
+            if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return
+            if (document.querySelector('[role="dialog"]')) return
+            event.preventDefault()
+            setQuickSwitchOpen(true)
+        }
+        window.addEventListener('keydown', onKeyDown)
+        return () => window.removeEventListener('keydown', onKeyDown)
+    }, [])
     const { api, baseUrl, titleSuggestionAvailable = false } = useAppContext()
     const navigate = useNavigate()
     const pathname = useLocation({ select: location => location.pathname })
@@ -222,6 +235,13 @@ function SessionsPage() {
 
     return (
         <>
+            <SessionQuickSwitcher
+                open={quickSwitchOpen}
+                onOpenChange={setQuickSwitchOpen}
+                sessions={sessions}
+                machineLabelsById={machineLabelsById}
+                onSelect={sessionId => navigate(getSessionListSelectionNavigation(sessionId))}
+            />
             <div className="flex h-full min-h-0">
             <div
                 className={`${isSessionsIndex ? 'flex' : 'hidden split:flex'} w-full shrink-0 flex-col bg-[var(--app-bg)]`}
@@ -249,6 +269,14 @@ function SessionsPage() {
                         renderHeader={false}
                         headerActions={(
                             <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setQuickSwitchOpen(true)}
+                                    className="min-h-9 rounded-md px-2 text-sm text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
+                                    title={`${t('sessions.quickSwitch.title')} (Ctrl/Cmd+K)`}
+                                >
+                                    {t('sessions.quickSwitch.button')}
+                                </button>
                                 {canBrowse && (
                                     <button
                                         type="button"
@@ -355,6 +383,7 @@ function SessionPage() {
     } = useCursorChatStoreStatus({ api, session })
     const {
         messages,
+        epoch: messagesEpoch,
         warning: messagesWarning,
         isSyncingTail: messagesSyncingTail,
         isLoadingMore: messagesLoadingMore,
@@ -395,6 +424,7 @@ function SessionPage() {
         deliveryMode: MessageDeliveryMode
         mutationStarted: boolean
         restoreSuppressed: boolean
+        attachmentDrafts?: AttachmentDraftInput[]
     }
     const [sendErrors, setSendErrors] = useState<Record<string, RawSendError>>({})
     const [reopeningSessionId, setReopeningSessionId] = useState<string | null>(null)
@@ -496,6 +526,7 @@ function SessionPage() {
             deliveryMode: rawSendError.deliveryMode,
             mutationStarted: rawSendError.mutationStarted,
             restoreSuppressed: rawSendError.restoreSuppressed,
+            attachmentDrafts: rawSendError.attachmentDrafts,
             action: rawSendError.code === 'session_inactive' && canOfferInactiveReopen
                 ? {
                     label: t('chat.sendError.sessionInactive.action'),
@@ -580,6 +611,7 @@ function SessionPage() {
     const {
         sendMessage,
         retryMessage,
+        discardFailedMessage,
         isSending,
         sendSettlement,
     } = useSendMessage(api, sessionId, {
@@ -611,6 +643,7 @@ function SessionPage() {
                     deliveryMode: info.deliveryMode,
                     mutationStarted: info.mutationStarted,
                     restoreSuppressed: false,
+                    attachmentDrafts: info.attachmentDrafts,
                 }
             }))
         },
@@ -799,6 +832,7 @@ function SessionPage() {
             isSending={isSending}
             sendSettlement={sendSettlement}
             viewMode={messagesViewMode}
+            messagesEpoch={messagesEpoch}
             messagesVersion={messagesVersion}
             historyVersion={historyVersion}
             tailRevision={tailRevision}
@@ -811,6 +845,7 @@ function SessionPage() {
             onUploadSessionResolved={handleSessionResolved}
             onViewModeChange={setViewMode}
             onRetryMessage={retryMessage}
+            onDiscardFailedMessage={discardFailedMessage}
             autocompleteSuggestions={getAutocompleteSuggestions}
             availableSlashCommands={slashCommands}
             sendError={sendError}

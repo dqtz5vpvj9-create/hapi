@@ -1,4 +1,3 @@
-import { CodexLineageBackfill } from './codexLineageBackfill'
 /**
  * Sync Engine for HAPI Telegram Bot (Direct Connect)
  *
@@ -13,7 +12,7 @@ import {
     cliBinaryUpdatedOnDisk,
     isMachineCapabilitySkewed,
 } from '@hapi/protocol/runnerCapabilities'
-import type { CursorChatStoreStatus, CursorMigrateOutcome, CursorMigrateToAcpRequest, MessageDeliveryMode, MessagesResponse, QueuedStateResponse, RewindConversationErrorCode, SlashCommandsResponse } from '@hapi/protocol/apiTypes'
+import type { CursorChatStoreStatus, CursorMigrateOutcome, CursorMigrateToAcpRequest, MessageContextResponse, MessageDependenciesResponse, MessageDeliveryMode, MessagesResponse, QueuedStateResponse, RewindConversationErrorCode, SlashCommandsResponse } from '@hapi/protocol/apiTypes'
 import type { SteerQueuedMessageResponse } from '@hapi/protocol/schemas'
 import type { ImplementCodexPlanResult } from '@hapi/protocol/apiTypes'
 import type { AgentFlavor, CodexCollaborationMode, CopilotAgentMode, DecryptedMessage, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
@@ -28,8 +27,12 @@ import type { SSEManager } from '../sse/sseManager'
 import { CursorLegacyMigrator, type CursorLegacyMigratorOptions } from '../cursor/cursorLegacyMigrator'
 
 import { EventPublisher, type SyncEventListener } from './eventPublisher'
+import { CodexLineageBackfill } from './codexLineageBackfill'
 import { MachineCache, type Machine } from './machineCache'
 import { MessageService, type RetryIndeterminateMessageResult } from './messageService'
+import { withNativeQueuePage } from './nativeQueuePage'
+import { MessageDependencyBackfill } from './messageDependencyBackfill'
+import { MessageOutlineBackfill } from './messageOutlineBackfill'
 import { createTitleSuggestionService, type TitleSuggestionService } from './titleSuggestion'
 import { selectForkTranscriptPrefix } from './forkTranscript'
 import { buildForkSessionSummary } from './forkSessionSummary'
@@ -180,10 +183,12 @@ function extractClaudeUserMessageTextFromAgentOutput(content: unknown): string |
 
 export class SyncEngine {
     private readonly eventPublisher: EventPublisher
-    private readonly codexLineageBackfill = new CodexLineageBackfill()
     private readonly sessionCache: SessionCache
+    private readonly codexLineageBackfill = new CodexLineageBackfill()
     private readonly machineCache: MachineCache
     private readonly messageService: MessageService
+    private readonly messageDependencyBackfill: MessageDependencyBackfill
+    private readonly messageOutlineBackfill: MessageOutlineBackfill
     private readonly titleSuggestionService: TitleSuggestionService
     private readonly rpcGateway: RpcGateway
     private inactivityTimer: NodeJS.Timeout | null = null
@@ -237,6 +242,8 @@ export class SyncEngine {
             (sessionId, updatedAt) => this.recordSessionActivity(sessionId, updatedAt)
         )
         this.titleSuggestionService = createTitleSuggestionService(store)
+        this.messageDependencyBackfill = new MessageDependencyBackfill(store)
+        this.messageOutlineBackfill = new MessageOutlineBackfill(store)
         this.rpcGateway = new RpcGateway(io, rpcRegistry)
         this.reloadAll()
         this.inactivityTimer = setInterval(() => this.expireInactive(), 5_000)
@@ -247,6 +254,8 @@ export class SyncEngine {
     }
 
     stop(): void {
+        this.messageDependencyBackfill.stop()
+        this.messageOutlineBackfill.stop()
         if (this.inactivityTimer) {
             clearInterval(this.inactivityTimer)
             this.inactivityTimer = null
@@ -409,6 +418,24 @@ export class SyncEngine {
         return this.machineCache.renameMachine(machineId, displayName)
     }
 
+    getMessageOutline(sessionId: string, options: Parameters<MessageService['getMessageOutline']>[1]) {
+        const result = this.messageService.getMessageOutline(sessionId, options)
+        if (!result.page.reset && result.page.scannedThrough < result.page.headSeq) {
+            result.page.indexing = this.messageOutlineBackfill.request(sessionId)
+        }
+        return result
+    }
+
+    getMessageDependencies(sessionId: string, seedIds: string[], epoch: number): MessageDependenciesResponse | null {
+        const result = this.messageService.getMessageDependencies(sessionId, seedIds, epoch)
+        if (result && !result.reset && !result.indexScanned) this.messageDependencyBackfill.request(sessionId)
+        return result
+    }
+
+    getMessageContext(sessionId: string, messageId: string, options: { radius: number; epoch?: number }): MessageContextResponse | null {
+        return this.messageService.getMessageContext(sessionId, messageId, options)
+    }
+
     getMessagesPage(
         sessionId: string,
         options: {
@@ -417,6 +444,7 @@ export class SyncEngine {
             after?: { at: number; seq: number } | null
             until?: { at: number; seq: number } | null
             epoch?: number | null
+            bounded?: boolean
         }
     ): MessagesResponse {
         return this.messageService.getMessagesPage(sessionId, options)
@@ -3139,6 +3167,9 @@ export class SyncEngine {
         }
 
         let initialSession = access.session
+        if (!initialSession.active && initialSession.metadata?.codexNativeSession) {
+            return { type: 'error', code: 'resume_unavailable', message: 'Native Codex bridge is offline; reconnect the existing native session.' }
+        }
         if (await this.recoverInactiveReservedClear(initialSession, namespace)) {
             initialSession = this.sessionCache.getSessionByNamespace(sessionId, namespace) ?? initialSession
         }
@@ -4319,6 +4350,20 @@ export class SyncEngine {
 
     async listCodexModelsForSession(sessionId: string): Promise<RpcListCodexModelsResponse> {
         return await this.rpcGateway.listCodexModelsForSession(sessionId)
+    }
+
+    async connectCodexSessionForMachine(machineId: string, threadId: string) {
+        return await this.rpcGateway.connectCodexSessionForMachine(machineId, threadId)
+    }
+
+    async readCodexHistory(sessionId: string, query: Record<string, unknown>) {
+        const result = await this.rpcGateway.readCodexHistory(sessionId, query)
+        if (result && typeof result === 'object' && 'error' in result && typeof result.error === 'string') {
+            throw new Error(result.error)
+        }
+        return query.operation || query.beforeAt !== undefined
+            ? result
+            : withNativeQueuePage(this.store, sessionId, result as MessagesResponse)
     }
 
     async refreshCodexSessionLineage(namespace: string): Promise<void> {

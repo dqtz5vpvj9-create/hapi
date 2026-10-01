@@ -22,7 +22,8 @@ export class SharedCodexQueue {
         private readonly file: string, private readonly consumed: (ids: string[], steered?: boolean) => void,
         private readonly uncertain: (ids: string[]) => void,
         private readonly mirror?: (id: string, input: QueueInput | null) => void,
-        private readonly requeued?: (ids: string[]) => Promise<unknown>) {}
+        private readonly requeued?: (ids: string[]) => Promise<unknown>,
+        private readonly snapshot?: (items: Array<z.infer<typeof SubmissionSchema>>) => void) {}
 
     async load(): Promise<void> {
         try { this.entries = LedgerSchema.parse(JSON.parse(await readFile(this.file, 'utf8'))); }
@@ -63,11 +64,25 @@ export class SharedCodexQueue {
         });
     }
     async committed(id: string): Promise<void> {
+        if (this.entries[id]?.state === 'consumed') { this.consumed([id]); return; }
         // History may prove acceptance after execution replacement, before hub
         // redelivery. Remember it even when this generation did not enqueue it.
         const entry = this.entries[id] ??= { state: 'consumed', input: [] };
         entry.state = 'consumed';
         await this.save(); this.consumed([id]);
+    }
+
+    /** External history is read directly, but user-item notifications still
+     * prove queue acceptance. A disappearing queue entry alone never does. */
+    async acceptedItem(method: string, params: unknown): Promise<void> {
+        if (method !== 'item/started' && method !== 'item/completed') return;
+        const event = z.object({ threadId: z.literal(this.threadId), item: z.object({
+            type: z.literal('userMessage'), id: z.string(),
+            clientId: z.string().nullish(), clientUserMessageId: z.string().nullish()
+        }) }).safeParse(params);
+        if (!event.success) return;
+        const item = event.data.item;
+        await this.committed(item.clientId ?? item.clientUserMessageId ?? `codex:${this.threadId}:user:${item.id}`);
     }
 
     async list(): Promise<Array<z.infer<typeof SubmissionSchema>>> {
@@ -83,7 +98,8 @@ export class SharedCodexQueue {
     reconcile(): Promise<void> { return this.serial(() => this.reconcileNow()); }
     private async reconcileNow(): Promise<void> {
         const present = new Set<string>();
-        for (const item of await this.list()) {
+        const items = await this.list();
+        for (const item of items) {
             const id = item.clientUserMessageId; present.add(id);
             const entry = this.entries[id] ??= { input: item.input, state: 'queued' };
             if (entry.state !== 'consumed' && entry.state !== 'canceled') {
@@ -98,6 +114,7 @@ export class SharedCodexQueue {
             if (entry.state === 'queued' && !present.has(id)) entry.state = 'unknown';
         }
         await this.save();
+        this.snapshot?.(items.filter(item => !['consumed', 'canceled'].includes(this.entries[item.clientUserMessageId].state)));
         const unknown = Object.entries(this.entries).filter(([, entry]) => entry.state === 'unknown').map(([id]) => id);
         if (unknown.length) this.uncertain(unknown);
         await this.publishReleased();
@@ -156,10 +173,13 @@ export class SharedCodexQueue {
     }
 
     replay(): void {
+        const consumed: string[] = [];
         for (const [id, entry] of Object.entries(this.entries)) {
             if (entry.state === 'queued' || entry.state === 'released') this.mirror?.(id, entry.input);
             if (entry.state === 'canceled') this.mirror?.(id, null);
+            if (entry.state === 'consumed') consumed.push(id);
         }
+        if (consumed.length) this.consumed(consumed);
     }
 
     enqueue(id: string, input: QueueInput, resumeInterrupted = false): Promise<void> {

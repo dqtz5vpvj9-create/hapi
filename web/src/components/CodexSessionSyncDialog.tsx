@@ -49,12 +49,15 @@ export function CodexSessionSyncDialog(props: {
     currentWorkDirectory?: string | null
     onConfirm: (sessionIds: string[]) => Promise<void>
     onSelectOnly?: (session: CodexLocalSessionSummary) => void
+    mode?: 'connect' | 'import'
     selectionMode?: 'single' | 'multiple'
     onRestartCodexDesktop: () => Promise<void>
     onArchiveSession?: (session: CodexLocalSessionSummary) => Promise<void>
     isPending: boolean
     isRestartingCodexDesktop: boolean
     isLoading: boolean
+    error?: string | null
+    onRetry?: () => void
 }) {
     const { t } = useTranslation()
     const {
@@ -64,12 +67,15 @@ export function CodexSessionSyncDialog(props: {
         currentWorkDirectory,
         onConfirm,
         onSelectOnly,
+        mode = 'import',
         selectionMode = 'multiple',
         onRestartCodexDesktop,
         onArchiveSession,
         isPending,
         isRestartingCodexDesktop,
         isLoading,
+        error,
+        onRetry,
         onClose
     } = props
     const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([])
@@ -194,7 +200,7 @@ export function CodexSessionSyncDialog(props: {
     }
 
     const toggleSession = (sessionId: string) => {
-        if (isPending || isLoading) return
+        if (isPending || isLoading || (mode === 'connect' && sessions.find(s => s.id === sessionId)?.connectionState === 'unavailable')) return
 
         if (selectionMode === 'single') {
             setSelectedSessionIds([sessionId])
@@ -219,7 +225,7 @@ export function CodexSessionSyncDialog(props: {
     const handleConfirm = async () => {
         if (selectedSessionIds.length === 0 || isPending || isLoading) return
 
-        if (selectionMode === 'single' && onSelectOnly) {
+        if (mode !== 'connect' && selectionMode === 'single' && onSelectOnly) {
             const selected = sessions.find((session) => session.id === selectedSessionIds[0])
             if (selected) onSelectOnly(selected)
             return
@@ -231,19 +237,20 @@ export function CodexSessionSyncDialog(props: {
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-w-xl">
-                <div className="flex items-start justify-between gap-3 pr-10" data-testid="codex-import-dialog-header">
-                    <DialogHeader className="min-w-0 flex-1 pr-0 text-left">
-                        <DialogTitle>{t('codexSync.confirm.title')}</DialogTitle>
+            <DialogContent className="max-w-xl max-h-[calc(100dvh-24px)] overflow-y-auto">
+                <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between" data-testid="codex-import-dialog-header">
+                    <DialogHeader className="min-w-0 w-full flex-1 pr-10 text-left">
+                        <DialogTitle>{t(mode === 'connect' ? 'codexConnect.title' : 'codexSync.confirm.title')}</DialogTitle>
                         <DialogDescription className="mt-2">
-                            {t('codexSync.confirm.description')}
+                            {t(mode === 'connect' ? 'codexConnect.description' : 'codexSync.confirm.description')}
                         </DialogDescription>
                     </DialogHeader>
+                    {mode === 'import' ? (
                     <Button
                         type="button"
                         variant="secondary"
                         size="sm"
-                        className="shrink-0"
+                        className="shrink-0 sm:mr-10"
                         onClick={() => void onRestartCodexDesktop()}
                         disabled={isRestartingCodexDesktop}
                         aria-label={t('codexSync.restart.tooltip')}
@@ -252,6 +259,7 @@ export function CodexSessionSyncDialog(props: {
                         {/* 中文注释：右侧预留关闭按钮区域，重启按钮保持在标题行右侧但不压到关闭按钮。 */}
                         {isRestartingCodexDesktop ? t('codexSync.restart.confirming') : t('codexSync.restart.tooltip')}
                     </Button>
+                    ) : null}
                 </div>
 
                 <div className="mt-4 space-y-3">
@@ -260,7 +268,7 @@ export function CodexSessionSyncDialog(props: {
                             {archiveError}
                         </div>
                     ) : null}
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-xs text-[var(--app-hint)]">
                             {t('codexSync.confirm.selectedCount', { n: selectedSessionIds.length })}
                         </div>
@@ -270,7 +278,7 @@ export function CodexSessionSyncDialog(props: {
                                 variant="secondary"
                                 size="sm"
                                 onClick={clearAll}
-                                disabled={isPending || isLoading || selectedSessionIds.length === 0}
+                                disabled={isPending || isLoading || Boolean(error) || selectedSessionIds.length === 0}
                             >
                                 {t('codexSync.confirm.clearAll')}
                             </Button>
@@ -326,7 +334,12 @@ export function CodexSessionSyncDialog(props: {
                     <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)]">
                         {isLoading ? (
                             <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
-                                {t('codexSync.confirm.loading')}
+                                {t(mode === 'connect' ? 'codexConnect.loading' : 'codexSync.confirm.loading')}
+                            </div>
+                        ) : error ? (
+                            <div role="alert" className="px-4 py-4 text-sm text-red-600">
+                                <p>{error}</p>
+                                {onRetry ? <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={onRetry}>{t('button.retry')}</Button> : null}
                             </div>
                         ) : sessions.length === 0 ? (
                             <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
@@ -350,6 +363,9 @@ export function CodexSessionSyncDialog(props: {
                                         <div
                                             key={session.id}
                                             className="relative flex cursor-pointer items-start gap-3 px-3 py-2 transition-colors hover:bg-[var(--app-subtle-bg)]"
+                                            onClick={(event) => {
+                                                if (mode === 'connect' && !(event.target instanceof HTMLInputElement)) toggleSession(session.id)
+                                            }}
                                             onContextMenu={(event) => {
                                                 if (!onArchiveSession) return
                                                 event.preventDefault()
@@ -367,10 +383,11 @@ export function CodexSessionSyncDialog(props: {
                                             onPointerCancel={clearLongPressTimer}
                                         >
                                             <input
+                                                aria-label={session.title}
                                                 type={selectionMode === 'single' ? 'radio' : 'checkbox'}
                                                 className="mt-1 h-4 w-4 accent-[var(--app-link)]"
                                                 checked={checked}
-                                                disabled={isPending || isLoading}
+                                                disabled={isPending || isLoading || (mode === 'connect' && session.connectionState === 'unavailable')}
                                                 onChange={() => toggleSession(session.id)}
                                             />
                                             <div className="min-w-0 flex-1">
@@ -399,6 +416,7 @@ export function CodexSessionSyncDialog(props: {
                                                         </span>
                                                     ) : null}
                                                 </div>
+                                                {mode === 'connect' ? <div className="mt-1 text-xs text-[var(--app-hint)]">{t(session.connectionState === 'attached' ? 'codexConnect.attached' : session.connectionState === 'history' ? 'codexConnect.historyOnly' : 'codexConnect.unavailable')}{session.connectionError ? `: ${session.connectionError}` : ''}</div> : null}
                                                 {preview ? (
                                                     <div className="mt-0.5 truncate text-xs text-[var(--app-hint)]">
                                                         {preview}
@@ -455,9 +473,9 @@ export function CodexSessionSyncDialog(props: {
                         type="button"
                         variant="secondary"
                         onClick={() => void handleConfirm()}
-                        disabled={isPending || isLoading || selectedSessionIds.length === 0}
+                        disabled={isPending || isLoading || Boolean(error) || selectedSessionIds.length === 0}
                     >
-                        {selectionMode === 'single' ? t('codexSync.confirm.useSelected') : (isPending ? t('codexSync.confirm.confirming') : t('codexSync.confirm.confirm'))}
+                        {mode === 'connect' ? t(isPending ? 'codexConnect.connecting' : sessions.find(s => s.id === selectedSessionIds[0])?.connectionState === 'history' ? 'codexConnect.viewHistory' : 'codexConnect.connect') : selectionMode === 'single' ? t('codexSync.confirm.useSelected') : (isPending ? t('codexSync.confirm.confirming') : t('codexSync.confirm.confirm'))}
                     </Button>
                 </div>
             </DialogContent>

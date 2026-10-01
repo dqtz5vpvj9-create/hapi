@@ -42,7 +42,7 @@ import { supportsEffort, supportsModelChange, PI_THINKING_LEVEL_LABELS } from '@
 import type { PiThinkingLevel } from '@hapi/protocol'
 import { markSkillUsed } from '@/lib/recent-skills'
 import { useComposerDraft } from '@/hooks/useComposerDraft'
-import type { AttachmentDraftInput } from '@/lib/composer-attachment-drafts'
+import { saveDraftAttachments, setRestoredUploadMetadata, type AttachmentDraftInput } from '@/lib/composer-attachment-drafts'
 import { persistInactiveComposerAttachments, setComposerDraftSnapshot, updateComposerDraftTextSnapshot, attachmentDraftRevision, resetInactiveComposerAttachmentVisibility } from '@/lib/composer-draft-transfer'
 import { useComposerEnterBehavior } from '@/hooks/useComposerEnterBehavior'
 import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
@@ -106,6 +106,7 @@ export function getComposerEscapeAction(input: {
  *  3. shows a red ring + inline message until the user types or sends.
  */
 export type ComposerSendError = {
+    attachmentDrafts?: AttachmentDraftInput[]
     id: number
     text: string
     message: string
@@ -285,6 +286,7 @@ export function HappyComposer(props: {
     sessionId?: string
     focusInputRef?: MutableRefObject<(() => void) | null>
     onUploadDraftSnapshot?: (text: string, attachments: AttachmentDraftInput[]) => void
+    onSendAttachmentDrafts?: (attachments: AttachmentDraftInput[]) => void
     canRestoreAttachments?: boolean
     disabled?: boolean
     permissionMode?: PermissionMode
@@ -598,6 +600,7 @@ export function HappyComposer(props: {
     const modelValueButtonRef = useRef<HTMLButtonElement>(null)
     const effortValueButtonRef = useRef<HTMLButtonElement>(null)
     const settingsOverlayRef = useRef<HTMLDivElement>(null)
+    const settingsReturnFocusRef = useRef<HTMLButtonElement | null>(null)
     // `composer.text === ''` alone is not enough to identify the empty state
     // created by a send. A user can type and delete a fresh draft before the
     // failed mutation reports back. Keep monotonic interaction generations so
@@ -665,6 +668,10 @@ export function HappyComposer(props: {
     latestComposerTextRef.current = composerText
     const attachmentDraftsRef = useRef(attachmentDrafts)
     attachmentDraftsRef.current = attachmentDrafts
+    const [, setAttachmentRecoveryPending] = useState(false)
+    const attachmentRecoveryRef = useRef(false)
+    const attachmentRecoveryErrorIdRef = useRef<number | null>(null)
+    if (!sendError || sendError.restoreSuppressed) attachmentRecoveryRef.current = false
     const draftHydration = useComposerDraft(
         sessionId,
         composerText,
@@ -672,6 +679,7 @@ export function HappyComposer(props: {
         props.canRestoreAttachments ?? active,
         (text) => api.composer().setText(text),
         (file) => api.composer().addAttachment(file),
+        attachmentRecoveryRef,
     )
     const canHydrateAttachments = props.canRestoreAttachments ?? active
     const hiddenAttachmentStatePending =
@@ -729,7 +737,7 @@ export function HappyComposer(props: {
     // reflects that send's cleared state. A blank composer alone is not enough:
     // a user might type then delete a replacement draft before onError arrives.
     const restoredErrorIdRef = useRef<number | null>(null)
-    const restoredErrorSnapshotRef = useRef<{ id: number; text: string; observed: boolean } | null>(null)
+    const restoredErrorSnapshotRef = useRef<{ id: number; text: string; attachmentIds: string[]; observed: boolean } | null>(null)
     useEffect(() => {
         if (!sendError || restoredErrorIdRef.current === sendError.id) {
             return
@@ -788,8 +796,35 @@ export function HappyComposer(props: {
         }
 
         restoredErrorIdRef.current = sendError.id
-        restoredErrorSnapshotRef.current = { id: sendError.id, text: sendError.text, observed: false }
+        const drafts = sendError.attachmentDrafts ?? []
+        restoredErrorSnapshotRef.current = { id: sendError.id, text: sendError.text, attachmentIds: drafts.map((draft) => draft.id), observed: false }
         api.composer().setText(sendError.text)
+        if (drafts.length > 0 && sessionId) {
+            attachmentRecoveryRef.current = active && canHydrateAttachments
+            setAttachmentRecoveryPending(attachmentRecoveryRef.current)
+            attachmentRecoveryErrorIdRef.current = sendError.id
+            saveDraftAttachments(sessionId, drafts)
+            if (active && canHydrateAttachments) {
+                const additions = drafts.map((draft) => {
+                    setRestoredUploadMetadata(draft.file, {
+                        id: draft.id, path: draft.path, previewUrl: draft.previewUrl, uploadSessionId: draft.uploadSessionId,
+                    })
+                    // Uploaded paths restore without a network request. Keep
+                    // the durable blob snapshot if the adapter cannot restore.
+                    return api.composer().addAttachment(draft.file)
+                })
+                void Promise.all(additions).then(() => {
+                    if (attachmentRecoveryErrorIdRef.current === sendError.id) {
+                        attachmentRecoveryRef.current = false
+                        setAttachmentRecoveryPending(false)
+                    }
+                }).catch(() => {
+                    // Keep the complete saved blobs protected for remount
+                    // hydration; a failed sibling must not disappear silently.
+                    console.warn('[composer-draft] submitted attachment restoration failed; saved draft retained')
+                })
+            }
+        }
         // `scheduledAt` is already absolute (presets resolve at send time), so
         // restore it through the normal controlled schedule path in the same
         // effect as text. For a pre-mutation rejection this updates the still
@@ -797,7 +832,7 @@ export function HappyComposer(props: {
         if (sendError.scheduledAt !== null && onScheduleProp) {
             onScheduleProp({ type: 'absolute', ms: sendError.scheduledAt })
         }
-    }, [sendError, api, attachments, composerText, draftHydration, onClearSendError, onScheduleProp, pendingSchedule, sessionId])
+    }, [sendError, api, active, attachments, canHydrateAttachments, composerText, draftHydration, onClearSendError, onScheduleProp, pendingSchedule, sessionId])
 
     // A successful automatic restore keeps its inline error visible so the
     // operator understands why the draft returned. If another path replaces
@@ -808,13 +843,15 @@ export function HappyComposer(props: {
     useEffect(() => {
         const restored = restoredErrorSnapshotRef.current
         if (!sendError || !restored || restored.id !== sendError.id) return
+        const matchesAttachments = attachments.length === restored.attachmentIds.length
+            && attachments.every((attachment) => restored.attachmentIds.includes(attachment.id))
         if (!restored.observed) {
-            if (composerText === restored.text && attachments.length === 0) {
+            if (composerText === restored.text && matchesAttachments) {
                 restored.observed = true
             }
             return
         }
-        if (composerText === restored.text && attachments.length === 0) return
+        if (composerText === restored.text && matchesAttachments) return
         onClearSendError?.()
     }, [sendError, attachments, composerText, onClearSendError])
 
@@ -1218,6 +1255,7 @@ export function HappyComposer(props: {
             // Must be adjacent to send(): useHappyRuntime consumes and resets
             // this ref synchronously from assistant-ui's onNew callback.
             if (pendingSendIntentRef) pendingSendIntentRef.current = effectiveIntent
+            props.onSendAttachmentDrafts?.([...attachmentDraftsRef.current])
             api.composer().send()
         } catch (error) {
             resetPendingSendIntent()
@@ -1245,6 +1283,7 @@ export function HappyComposer(props: {
         props.onParkScratchlist,
         props.onResumeStoredDraft,
         props.scratchlistMode,
+        props.onSendAttachmentDrafts,
         richMentionsEnabled,
         sendError,
         attachmentOrderRef,
@@ -1255,6 +1294,22 @@ export function HappyComposer(props: {
     const flushAndSend = useCallback((intent: ComposerSendIntent = 'default') => {
         void handleSend(intent)
     }, [handleSend])
+
+    const clearCursorDrillDown = useCallback(() => {
+        setCursorDrillDownBase(null)
+        setCursorDrillDownDefaultVariant(null)
+    }, [])
+
+    const dismissSettings = useCallback(() => {
+        clearCursorDrillDown()
+        setShowSettings(false)
+        setSettingsSection(null)
+    }, [clearCursorDrillDown])
+
+    const dismissSettingsWithFocus = useCallback(() => {
+        dismissSettings()
+        settingsReturnFocusRef.current?.focus()
+    }, [dismissSettings])
 
     const handleKeyDown = useCallback((e: ReactKeyboardEvent<HTMLTextAreaElement | HTMLDivElement>) => {
         const key = e.key
@@ -1323,6 +1378,13 @@ export function HappyComposer(props: {
                 dismissRichComposerFue()
                 return
             }
+            if (showSettings) {
+                if (document.querySelector('[role="dialog"]')) return
+                e.preventDefault()
+                e.stopPropagation()
+                dismissSettingsWithFocus()
+                return
+            }
             const action = getComposerEscapeAction({
                 hasSuggestions: suggestions.length > 0,
                 threadIsRunning,
@@ -1364,6 +1426,8 @@ export function HappyComposer(props: {
         richMentionsEnabled,
         richComposerFueStatus,
         dismissRichComposerFue,
+        showSettings,
+        dismissSettingsWithFocus,
         flushAndSend,
         isExpanded,
         handleExpandedToggle,
@@ -1438,6 +1502,8 @@ export function HappyComposer(props: {
     // instead of closing, so model->effort moves between sections directly.
     const handleSettingsToggle = useCallback((section: 'model' | 'effort' | null = null) => {
         haptic('light')
+        settingsReturnFocusRef.current = section === 'model' ? modelValueButtonRef.current
+            : section === 'effort' ? effortValueButtonRef.current : settingsButtonRef.current
         if (showSettings && section !== settingsSection) {
             // Open with a different anchor: switch sections, keep the sheet up.
             setSettingsSection(section)
@@ -1454,16 +1520,7 @@ export function HappyComposer(props: {
         setShowSettings(true)
     }, [haptic, showSettings, settingsSection])
 
-    const clearCursorDrillDown = useCallback(() => {
-        setCursorDrillDownBase(null)
-        setCursorDrillDownDefaultVariant(null)
-    }, [])
 
-    const dismissSettings = useCallback(() => {
-        clearCursorDrillDown()
-        setShowSettings(false)
-        setSettingsSection(null)
-    }, [clearCursorDrillDown])
 
     const handleModelChange = useCallback((nextModel: { provider: string; modelId: string } | string | null) => {
         if (!onModelChange || configurationControlsDisabled) return
@@ -1526,9 +1583,22 @@ export function HappyComposer(props: {
             dismissSettings()
         }
 
+        const handleEscape = (event: KeyboardEvent) => {
+            // Bubble after modal/input handlers so their own Escape keeps
+            // priority. The composer input handles settings before abort.
+            if (event.key !== 'Escape' || event.defaultPrevented || richComposerFueStatus === 'engaging') return
+            if (document.querySelector('[role="dialog"]')) return
+            event.preventDefault()
+            event.stopImmediatePropagation()
+            dismissSettingsWithFocus()
+        }
         document.addEventListener('pointerdown', handlePointerDown, true)
-        return () => document.removeEventListener('pointerdown', handlePointerDown, true)
-    }, [dismissSettings, showSettings])
+        window.addEventListener('keydown', handleEscape)
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown, true)
+            window.removeEventListener('keydown', handleEscape)
+        }
+    }, [dismissSettings, dismissSettingsWithFocus, showSettings, richComposerFueStatus])
 
     const handleSubmit = useCallback((event?: ReactFormEvent<HTMLFormElement>) => {
         event?.preventDefault()
@@ -1687,6 +1757,9 @@ export function HappyComposer(props: {
         return option?.label ?? rawKey ?? undefined
     }, [isNarrowViewport, onModelChange, agentFlavor, selectedPiModel, model, modelOptions, selectedModelBase])
     const effortValueLabel = useMemo(() => {
+        if (showModelReasoningEffortSettings) {
+            return `${t('misc.reasoningEffort')}: ${modelReasoningEffort ?? 'Default'}`
+        }
         if (isNarrowViewport) return undefined
         if (!onEffortChange || !supportsEffort(agentFlavor)) return undefined
         // Pi: without a resolved catalog entry there is no capability map to
@@ -1702,7 +1775,7 @@ export function HappyComposer(props: {
         }
         const option = claudeEffortOptions.find((candidate) => candidate.value === effort)
         return option?.label ?? (effort ? effort : undefined)
-    }, [isNarrowViewport, onEffortChange, agentFlavor, selectedPiModel, effort, claudeEffortOptions])
+    }, [showModelReasoningEffortSettings, modelReasoningEffort, t, isNarrowViewport, onEffortChange, agentFlavor, selectedPiModel, effort, claudeEffortOptions])
 
     // Wrapper for DOM onClick consumers: never leak the MouseEvent into the
     // `section` parameter (the gear must always open the full sheet).

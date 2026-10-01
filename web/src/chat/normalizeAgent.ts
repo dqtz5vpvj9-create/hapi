@@ -1,6 +1,7 @@
 import type { AgentEvent, CodexReview, CodexReviewFinding, NormalizedAgentContent, NormalizedMessage, RoundModelUsage, RoundSummary, ToolResultPermission, UsageData } from '@/chat/types'
 import { inlineMediaSourceFromWire } from '@/chat/inlineMediaSource'
 import { AGENT_MESSAGE_PAYLOAD_TYPE, asNumber, asString, isObject } from '@hapi/protocol'
+import { sdkMessageIdentity, sdkSidechainPrompt } from '@hapi/protocol/messageDependencies'
 import { isClaudeChatVisibleMessage } from '@hapi/protocol/messages'
 import { parseAgentTimestampMs } from '@/chat/agentTimestamp'
 
@@ -292,11 +293,8 @@ function normalizeAssistantOutput(
     data: Record<string, unknown>,
     meta?: unknown,
 ): NormalizedMessage | null {
-    const uuid = asString(data.uuid) ?? messageId
-    const parentUUID = asString(data.parentUuid) ?? null
-    const isSidechain = Boolean(data.isSidechain)
+    const { uuid, parentUUID, isSidechain, parentToolUseId } = sdkMessageIdentity(messageId, data)
     const agentTimestamp = parseAgentTimestampMs(data.timestamp)
-    const parentToolUseId = asString(data.parentToolUseId) ?? null
 
     const message = isObject(data.message) ? data.message : null
     if (!message) return null
@@ -360,18 +358,16 @@ function normalizeUserOutput(
     data: Record<string, unknown>,
     meta?: unknown,
 ): NormalizedMessage | null {
-    const uuid = asString(data.uuid) ?? messageId
-    const parentUUID = asString(data.parentUuid) ?? null
-    const isSidechain = Boolean(data.isSidechain)
+    const { uuid, parentUUID, isSidechain, parentToolUseId } = sdkMessageIdentity(messageId, data)
     const agentTimestamp = parseAgentTimestampMs(data.timestamp)
-    const parentToolUseId = asString(data.parentToolUseId) ?? null
 
     const message = isObject(data.message) ? data.message : null
     if (!message) return null
 
     const messageContent = message.content
 
-    if (isSidechain && typeof messageContent === 'string') {
+    const sidechainPrompt = sdkSidechainPrompt(messageContent, isSidechain)
+    if (sidechainPrompt !== null) {
         return {
             id: messageId,
             localId,
@@ -379,51 +375,8 @@ function normalizeUserOutput(
             role: 'agent',
             isSidechain: true,
             parentToolUseId,
-            content: [{ type: 'sidechain', uuid, parentUUID, prompt: messageContent }],
+            content: [{ type: 'sidechain', uuid, parentUUID, prompt: sidechainPrompt }],
             agentTimestamp
-        }
-    }
-
-    // Handle system-injected messages that arrive as type:'user' through
-    // the agent output path. Real user text goes through normalizeUserRecord.
-    //
-    // All string-content user messages here are system-injected (subagent
-    // prompts, task notifications, system reminders, etc.).  Always emit as
-    // sidechain so the uuid/parentUUID chain is preserved — the reducer uses
-    // sidechain UUIDs to identify sentinel auto-replies.  Task-notification
-    // summaries are extracted as events by the reducer, not here.
-    if (typeof messageContent === 'string') {
-        return {
-            id: messageId,
-            localId,
-            createdAt,
-            role: 'agent',
-            isSidechain: true,
-            parentToolUseId,
-            content: [{ type: 'sidechain', uuid, parentUUID, prompt: messageContent }],
-            agentTimestamp
-        }
-    }
-
-    // Sidechain user messages with array content (e.g. subagent prompts
-    // that Claude Code serialised as [{type:'text', text:'...'}] instead
-    // of a plain string).  Extract the text and treat as sidechain so the
-    // tracer can match it to the parent Task tool call.
-    if (isSidechain && Array.isArray(messageContent)) {
-        const textParts = messageContent
-            .filter((b: unknown) => isObject(b) && b.type === 'text' && typeof b.text === 'string')
-            .map((b: Record<string, unknown>) => b.text as string)
-        if (textParts.length > 0) {
-            return {
-                id: messageId,
-                localId,
-                createdAt,
-                role: 'agent',
-                isSidechain: true,
-                parentToolUseId,
-                content: [{ type: 'sidechain', uuid, parentUUID, prompt: textParts.join('\n\n') }],
-                agentTimestamp
-            }
         }
     }
 

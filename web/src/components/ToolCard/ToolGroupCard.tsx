@@ -286,78 +286,24 @@ export function ToolGroupCard(props: {
     }, [selectedTool, props.metadata, t])
 
     const primaryTitle = formatGroupedHeaderTitle(props.block, t)
-    const subtitle = props.block.presentationMode === 'codex-exploration'
-        ? null
-        : formatGroupedHeaderSubtitle(props.block, t) ?? formatActionSummary(props.block, t)
-    const summaryBadgeText = props.block.presentationMode === 'codex-exploration'
-        ? null
-        : subtitle ?? t('toolGroup.toolCount', { n: props.block.tools.length })
-    const fileCount = props.block.summary.fileTargets.length
+    const groupState = props.block.summary.errorCount ? 'error' : props.block.summary.pendingCount ? 'pending' : groupTiming.running ? 'running' : 'completed'
 
     return (
-        <Card className="overflow-hidden rounded-[20px] bg-[var(--app-tool-group-bg)] shadow-none">
-            <CardHeader className={cn('space-y-0 p-3', subtitle ? 'pb-2' : null)}>
+        <Card className="min-w-0 max-w-full overflow-hidden rounded-md border-0 bg-transparent shadow-none">
+            <CardHeader className="space-y-0 px-0 py-1">
                 <button
                     type="button"
                     onClick={() => setOpen((value) => !value)}
                     className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
                     aria-expanded={open}
                 >
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0 flex flex-1 flex-col gap-1">
-                            <div className="min-w-0 flex items-center gap-2">
-                                <div className="shrink-0 flex h-3.5 w-3.5 items-center justify-center text-[var(--app-tool-card-accent)] leading-none">
-                                    <DetailsIcon open={open} />
-                                </div>
-                                <CardTitle className="min-w-0 truncate whitespace-nowrap text-sm font-medium leading-tight text-[var(--app-fg)]">
-                                    {primaryTitle}
-                                </CardTitle>
-                            </div>
-                            <ToolTimingSummary
-                                startedAt={groupTiming.startedAt}
-                                completedAt={groupTiming.completedAt}
-                                durationMs={groupTiming.durationMs}
-                                typography="group"
-                            />
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-2 self-center text-[var(--app-hint)]">
-                            {groupTiming.running ? (
-                                <span className={toolStatusColorClass('running')} aria-label={t('toolGroup.rowStatus.running')}>
-                                    <ToolStatusIcon state="running" />
-                                </span>
-                            ) : null}
-                            {summaryBadgeText ? (
-                                <SummaryBadge
-                                    className="bg-[var(--app-subtle-bg)] text-xs font-normal text-[var(--app-hint)]"
-                                    text={summaryBadgeText}
-                                />
-                            ) : null}
-                            {props.block.summary.runningCount > 0 ? (
-                                <SummaryBadge
-                                    className="bg-sky-500/10 text-sky-600"
-                                    text={t('toolGroup.badge.running', { n: props.block.summary.runningCount })}
-                                />
-                            ) : null}
-                            {props.block.summary.pendingCount > 0 ? (
-                                <SummaryBadge
-                                    className="bg-amber-500/10 text-amber-700"
-                                    text={t('toolGroup.badge.pending', { n: props.block.summary.pendingCount })}
-                                />
-                            ) : null}
-                            {props.block.summary.errorCount > 0 ? (
-                                <SummaryBadge
-                                    className="bg-red-500/10 text-red-600"
-                                    text={t('toolGroup.badge.error', { n: props.block.summary.errorCount })}
-                                />
-                            ) : null}
-                            {fileCount > 0 ? (
-                                <SummaryBadge
-                                    className="bg-[var(--app-subtle-bg)] text-[var(--app-hint)]"
-                                    text={t('toolGroup.badge.fileTargets', { n: fileCount })}
-                                />
-                            ) : null}
-                        </div>
+                    <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--app-hint)]">
+                        <span className="shrink-0"><DetailsIcon open={open} /></span>
+                        <span className="shrink-0" aria-hidden="true">⚒</span>
+                        <span className="min-w-0 truncate font-mono text-sm" title={primaryTitle}>{primaryTitle}</span>
+                        <span className={cn('shrink-0', toolStatusColorClass(groupState))} aria-label={t(`toolGroup.rowStatus.${groupState}`)}><ToolStatusIcon state={groupState} /></span>
+                        <span className="shrink-0 tabular-nums opacity-65">{new Date(props.block.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span className="shrink-0 opacity-65">({props.block.tools.length})</span>
                     </div>
                 </button>
             </CardHeader>
@@ -373,7 +319,7 @@ export function ToolGroupCard(props: {
                                 <button
                                     key={tool.id}
                                     type="button"
-                                    className="flex items-center gap-3 rounded-[16px] border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-left transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                                    className="flex min-w-0 items-center gap-2 rounded px-1 py-1 text-left transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
                                     onClick={() => setSelectedToolId(tool.id)}
                                 >
                                     <span className={cn('shrink-0', toolStatusColorClass(tool.tool.state))}>

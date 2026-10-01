@@ -11,6 +11,7 @@ import { withSettingsFileLock } from '@hapi/protocol/settingsFileLock';
 const RuntimeSchema = z.object({
     id: z.string(), pid: z.number().int().positive(), marker: z.string(),
     serverPid: z.number().int().positive().optional(), serverMarker: z.string().optional(),
+    nativeEndpoint: z.string().optional(),
     endpoint: z.string(), token: z.string().optional(),
     command: z.string(), args: z.array(z.string()), codexHome: z.string(), hub: z.string(), authHash: z.string(),
     pendingCreations: z.array(z.string()).optional(),

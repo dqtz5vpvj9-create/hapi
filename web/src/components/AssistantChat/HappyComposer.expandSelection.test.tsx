@@ -132,6 +132,22 @@ describe('HappyComposer plain-text expansion', () => {
         })
     })
 
+    it('Escape closes settings first, then collapses the expanded editor with its draft intact', async () => {
+        render(<TestRuntime withSettings />)
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Keep this edited question' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Expand message editor' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Collapse message editor' })).toBeInTheDocument())
+        fireEvent.click(screen.getByRole('button', { name: 'Composer settings' }))
+        expect(screen.getByText('misc.permissionMode')).toBeInTheDocument()
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
+        expect(screen.queryByText('misc.permissionMode')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Collapse message editor' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Composer settings' })).toHaveFocus()
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Expand message editor' })).toBeInTheDocument())
+        expect(screen.getByRole('textbox')).toHaveValue('Keep this edited question')
+    })
+
     it('closes settings when clicking outside while preserving inside and trigger interactions', () => {
         render(<TestRuntime withSettings />)
 

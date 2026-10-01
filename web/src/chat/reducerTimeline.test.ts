@@ -38,6 +38,25 @@ function makeAgentMessage(text: string, overrides?: Partial<TracedMessage>): Tra
 }
 
 describe('reduceTimeline', () => {
+    it('replaces child agent stream snapshots while preserving separate messages and agents', () => {
+        const trace = (row: string, agentId: string, id: string, text: string): TracedMessage => ({
+            id: row, localId: null, createdAt: 1700000000000, role: 'event', isSidechain: false,
+            content: { type: 'agent-run-trace', agentId, cardId: `codex-agent:${agentId}`,
+                message: { type: 'message', id, message: text, streamSnapshot: true } }
+        } as TracedMessage)
+        const { blocks } = reduceTimeline([
+            trace('row-1', 'a', 'message-1', 'Hel'),
+            trace('row-2', 'a', 'message-1', 'Hello'),
+            trace('row-3', 'a', 'message-2', 'Hello'),
+            trace('row-4', 'b', 'message-1', 'Other agent'),
+            trace('row-5', 'a', 'message-1', 'Hello world'),
+        ], makeContext())
+        const agents = blocks.filter(b => b.kind === 'tool-call')
+        expect(agents).toHaveLength(2)
+        const texts = agents.map(b => b.children.filter(c => c.kind === 'agent-text').map(c => c.text))
+        expect(texts).toEqual([['Hello world', 'Hello'], ['Other agent']])
+    })
+
     it('renders user text as user-text block', () => {
         const text = 'Hello, this is a normal message'
         const { blocks } = reduceTimeline([makeUserMessage(text)], makeContext())
@@ -753,7 +772,7 @@ describe('reduceTimeline', () => {
             isSidechain: false
         } as TracedMessage
 
-        // Sidechain child message that would be in the group for msg-agent
+        // Sidechain child message that would be in the group for tc-agent-1
         const sidechainChild: TracedMessage = {
             id: 'sc-msg-1',
             localId: null,
@@ -769,12 +788,12 @@ describe('reduceTimeline', () => {
                 parentUUID: null
             }],
             isSidechain: true,
-            sidechainId: 'msg-agent'
+            sidechainId: 'tc-agent-1'
         } as TracedMessage
 
-        // Build groups map the way the real pipeline does it (keyed by message id)
+        // Build groups map the way the real pipeline does it (keyed by tool-use id)
         const groups = new Map<string, TracedMessage[]>()
-        groups.set('msg-agent', [sidechainChild])
+        groups.set('tc-agent-1', [sidechainChild])
 
         const ctx = { ...makeContext(), groups }
         const { blocks } = reduceTimeline([agentToolMsg], ctx)

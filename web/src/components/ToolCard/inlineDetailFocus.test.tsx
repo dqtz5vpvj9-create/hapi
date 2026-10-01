@@ -9,12 +9,12 @@ const block: ToolCallBlock = {
     kind: 'tool-call', id: 'bash-1', localId: null, createdAt: 1_000,
     tool: {
         id: 'bash-1', name: 'Bash', state: 'completed', input: { command: 'echo preview' },
-        createdAt: 1_000, startedAt: 1_000, completedAt: 1_100, execStartedAt: null, execCompletedAt: null, description: null,
+        createdAt: 1_000, startedAt: 1_000, completedAt: 1_100, execStartedAt: null, execCompletedAt: null, description: null, permission: { id: 'approval', status: 'pending' },
     }, children: [],
 }
 
 describe('ToolCard inline detail focus', () => {
-    it('restores focus to both the header trigger and an inline preview invoker', async () => {
+    it('restores focus from details to an approval input preview and its header', async () => {
         const { container } = render(
             <I18nProvider><ToolCard api={{} as ApiClient} sessionId="session-1" metadata={null} terminalToolDisplayMode="detailed" disabled={false} onDone={() => {}} block={block} /></I18nProvider>
         )

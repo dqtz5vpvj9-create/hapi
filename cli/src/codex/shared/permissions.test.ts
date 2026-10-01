@@ -12,12 +12,63 @@ function fixture() {
         updateAgentState: (fn: (state: AgentState) => AgentState) => { state = fn(state); },
         rpcHandlerManager: { registerHandler: (key: string, fn: (raw: unknown) => Promise<unknown>) => handlers.set(key, fn) } } as unknown as ApiSessionClient;
     const respond = vi.fn();
-    const permissions = new SharedCodexPermissions(session, { respond } as unknown as CodexAppServerClient, 'generation');
+    let yolo = false;
+    const permissions = new SharedCodexPermissions(session, { respond } as unknown as CodexAppServerClient, 'generation', threadId => threadId === 'thread' && yolo);
     const request = { id: 1, method: 'item/tool/requestUserInput', params: { threadId: 'thread', turnId: 'turn', itemId: 'call',
         questions: [{ id: 'choice', header: 'Choose', question: 'Which?', options: [{ label: 'A', description: 'A' }, { label: 'B', description: 'B' }] }] } };
-    return { permissions, request, respond, handlers, send, state: () => state };
+    return { permissions, request, respond, handlers, send, state: () => state, setYolo: (value: boolean) => { yolo = value; permissions.settingsChanged('thread'); } };
 }
 describe('shared request arbitration', () => {
+    const approval = (id: number, threadId = 'thread') => ({ id, method: 'item/commandExecution/requestApproval',
+        params: { threadId, turnId: 'turn', itemId: `command-${id}`, command: 'printf probe' } });
+    it('submits existing and later root tool approvals after confirmed YOLO, keeping native arbitration authoritative', async () => {
+        const f = fixture();
+        f.permissions.receive(approval(2));
+        const id = Object.keys(f.state().requests!)[0]!;
+        f.setYolo(true);
+        f.setYolo(true);
+        await vi.waitFor(() => expect(f.respond).toHaveBeenCalledExactlyOnceWith(2, { decision: 'accept' }));
+        expect(f.state().requests?.[id]).toBeDefined();
+        expect(f.state().completedRequests).toBeUndefined();
+        await expect(f.handlers.get('permission')!({ id, approved: false })).rejects.toThrow('submitted');
+        f.permissions.resolved('thread', 2);
+        expect(f.state().completedRequests?.[id]?.status).toBe('resolved');
+        f.permissions.receive(approval(3));
+        await vi.waitFor(() => expect(f.respond).toHaveBeenLastCalledWith(3, { decision: 'accept' }));
+        expect(Object.keys(f.state().requests!)).toHaveLength(0);
+        f.setYolo(false);
+        f.permissions.receive(approval(4));
+        await Promise.resolve();
+        expect(Object.keys(f.state().requests!)).toHaveLength(1);
+        expect(f.respond).toHaveBeenCalledTimes(2);
+    });
+    it('leaves child approvals and root questions pending, including MCP forms', async () => {
+        const f = fixture();
+        f.permissions.receive(approval(2, 'child'));
+        f.permissions.receive(f.request);
+        f.permissions.receive({ id: 3, method: 'mcpServer/elicitation/request', params: {
+            threadId: 'thread', turnId: 'turn', serverName: 'external', mode: 'form', message: 'Choose a value',
+            requestedSchema: { type: 'object', properties: { choice: { type: 'string', enum: ['A', 'B'] } }, required: ['choice'] }
+        } });
+        f.setYolo(true);
+        f.permissions.receive(approval(4, 'child'));
+        await Promise.resolve();
+        expect(f.respond).not.toHaveBeenCalled();
+        expect(Object.keys(f.state().requests!)).toHaveLength(4);
+    });
+    it('never overwrites a submitted user decision or resurrects a natively resolved request on mode change', async () => {
+        const f = fixture();
+        f.permissions.receive(approval(2));
+        const id = Object.keys(f.state().requests!)[0]!;
+        await f.handlers.get('permission')!({ id, approved: false, decision: 'denied' });
+        f.setYolo(true);
+        await vi.waitFor(() => expect(f.respond).toHaveBeenCalledExactlyOnceWith(2, { decision: 'decline' }));
+        f.permissions.resolved('thread', 2);
+        f.permissions.receive(approval(3));
+        f.permissions.resolved('thread', 3);
+        await Promise.resolve(); await Promise.resolve();
+        expect(f.respond).toHaveBeenCalledTimes(1);
+    });
     it.each([{ notes: [] }, { notes: ['user_note: custom answer'] }])('preserves isOther and canonical other answers (%j) without claiming a winner', async ({ notes }) => {
         const f = fixture();
         const request = { ...f.request, params: { ...f.request.params, isBlocking: true,

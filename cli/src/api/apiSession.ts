@@ -1139,6 +1139,10 @@ export class ApiSessionClient extends EventEmitter {
         this.emitOrQueue(() => this.socket.emit('native-queue-message', { sid: this.sessionId, localId, text }))
     }
 
+    syncNativeQueueSnapshot(messages: Array<{ localId: string; text: string }>): void {
+        this.emitOrQueue(() => this.socket.emit('native-queue-snapshot', { sid: this.sessionId, messages }))
+    }
+
     notifyUserActivity(): void {
         void this.materialize()
     }
@@ -1203,8 +1207,10 @@ export class ApiSessionClient extends EventEmitter {
         this.emitOrQueue(() => {
             this.socket.emit('message', {
                 sid: this.sessionId,
-                message: content
+                message: content,
+                ...(id ? { localId: id } : {})
             })
+            if (id) this.socket.emit('messages-consumed', { sid: this.sessionId, localIds: [id] })
         }, event.type === 'message' || event.type === 'error' || event.type === 'compact-summary' ? 'lossless' : 'droppable')
     }
 

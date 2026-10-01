@@ -98,7 +98,11 @@ describe('useComposerDraft', () => {
         expect(addAttachment).not.toHaveBeenCalled()
 
         // Same-id resume flips inactive → active with B already visible.
+        mockSaveDraftAttachments.mockClear()
         rerender({ canRestore: true, attachments: visible })
+        // The inactive hydration's complete=true must not authorize a write
+        // before active restoration reads its hidden stored sibling.
+        expect(mockSaveDraftAttachments).not.toHaveBeenCalled()
         await act(async () => flushRAF())
         await act(async () => {
             await Promise.resolve()
@@ -149,6 +153,54 @@ describe('useComposerDraft', () => {
 
         expect(mockSaveDraft).toHaveBeenCalledWith('session-1', 'my draft')
         expect(mockSaveDraftAttachments).toHaveBeenCalledWith('session-1', [])
+    })
+
+    it('persists picks and completed upload metadata while visible, then clears removals', async () => {
+        const file = new File(['image bytes'], 'draft.png', { type: 'image/png' })
+        const pending = { id: 'picked', file }
+        const uploaded = { ...pending, path: '/uploads/draft.png', uploadSessionId: 'session-1' }
+        const { rerender } = renderHook(
+            ({ text, attachments }) => useComposerDraft('session-1', text, attachments, true, vi.fn(), vi.fn()),
+            { initialProps: { text: '', attachments: [] as Array<typeof uploaded | typeof pending> } },
+        )
+        await act(async () => flushRAF())
+        expect(mockSaveDraftAttachments).not.toHaveBeenCalled()
+
+        rerender({ text: 'keep draft', attachments: [pending] })
+        expect(mockSaveDraftAttachments).toHaveBeenLastCalledWith('session-1', [pending])
+        rerender({ text: 'keep draft', attachments: [uploaded] })
+        expect(mockSaveDraftAttachments).toHaveBeenLastCalledWith('session-1', [uploaded])
+        const writes = mockSaveDraftAttachments.mock.calls.length
+        rerender({ text: 'typing more', attachments: [{ ...uploaded }] })
+        expect(mockSaveDraftAttachments).toHaveBeenCalledTimes(writes)
+
+        rerender({ text: 'typing more', attachments: [] })
+        expect(mockSaveDraftAttachments).toHaveBeenLastCalledWith('session-1', [])
+    })
+
+    it('waits for hydration before persisting a pick made during the stored-file read', async () => {
+        let finishRead!: (files: File[]) => void
+        mockGetDraftAttachments.mockReturnValue(new Promise((resolve) => { finishRead = resolve }))
+        const pick = { id: 'new', file: new File(['new'], 'new.png') }
+        const { rerender } = renderHook(
+            ({ attachments }) => useComposerDraft('session-1', '', attachments, true, vi.fn(), vi.fn()),
+            { initialProps: { attachments: [] as Array<typeof pick> } },
+        )
+        await act(async () => flushRAF())
+        rerender({ attachments: [pick] })
+        expect(mockSaveDraftAttachments).not.toHaveBeenCalled()
+        await act(async () => { finishRead([]) })
+        expect(mockSaveDraftAttachments).toHaveBeenCalledWith('session-1', [pick])
+    })
+
+    it('does not delete a stored draft when its initial restore fails', async () => {
+        mockGetDraftAttachments.mockResolvedValue([new File(['saved'], 'saved.png')])
+        const { result } = renderHook(() => useComposerDraft(
+            'session-1', '', [], true, vi.fn(), async () => { throw new Error('restore failed') },
+        ))
+        await act(async () => flushRAF())
+        expect(result.current.complete).toBe(true)
+        expect(mockSaveDraftAttachments).not.toHaveBeenCalled()
     })
 
     it('saves draft when the page becomes hidden, without unmounting (hapi#1882)', async () => {

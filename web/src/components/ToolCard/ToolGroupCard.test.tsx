@@ -112,13 +112,13 @@ describe('ToolGroupCard', () => {
         const view = renderCard(makeGroup())
 
         expect(screen.getByRole('button', { name: /inspect a\.ts/i })).toHaveAttribute('aria-expanded', 'false')
-        expect(screen.getByText('Run 1 · Read 1')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /inspect a\.ts/i })).toHaveTextContent('(2)')
         expect(screen.queryByText('2 actions')).not.toBeInTheDocument()
-        expect(screen.getByText('Run 1 · Read 1')).toHaveClass('text-xs', 'font-normal', 'text-[var(--app-hint)]')
+
         expect(screen.queryByText('src/a.ts')).not.toBeInTheDocument()
         expect(screen.queryByText('bun test')).not.toBeInTheDocument()
 
-        expect(view.container.innerHTML).toContain('bg-[var(--app-tool-group-bg)]')
+        expect(screen.queryByText('Input')).not.toBeInTheDocument()
     })
 
     it('derives completed group wall-clock timing from the earliest start and latest finish', () => {
@@ -156,13 +156,13 @@ describe('ToolGroupCard', () => {
         })
         const view = renderCard(group)
 
-        expect(screen.getByText('Started')).toBeInTheDocument()
-        expect(screen.getByText('Duration')).toBeInTheDocument()
+        expect(screen.queryByText('Started')).not.toBeInTheDocument()
+        expect(screen.queryByText('Duration')).not.toBeInTheDocument()
         expect(screen.queryByText('Finished')).not.toBeInTheDocument()
         expect(within(view.container).getByLabelText('Running')).toBeInTheDocument()
     })
 
-    it('shows final timing in the collapsed header after every tool finishes', () => {
+    it('shows compact completion after every tool finishes', () => {
         const startedAt = Date.now() - 4_000
         const first = makeToolBlock('read-1', 'Read')
         first.tool.startedAt = startedAt
@@ -173,10 +173,12 @@ describe('ToolGroupCard', () => {
 
         renderCard(makeGroup({ tools: [first, second] }))
 
-        expect(screen.getByText('Started')).toBeInTheDocument()
-        expect(screen.getByText('Finished')).toBeInTheDocument()
-        expect(screen.getByText('Duration')).toBeInTheDocument()
-        expect(screen.getByText('4.0s')).toBeInTheDocument()
+        expect(screen.getByLabelText('Completed')).toBeInTheDocument()
+        expect(screen.queryByText('Started')).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { expanded: false }))
+        fireEvent.click(screen.getAllByRole('button')[1]!)
+        expect(screen.getByRole('dialog')).toHaveTextContent('Started')
+        expect(screen.getByRole('dialog')).toHaveTextContent('Finished')
     })
 
     it('expands to show compact rows and opens a detail dialog per row', async () => {
@@ -187,7 +189,7 @@ describe('ToolGroupCard', () => {
         fireEvent.click(groupToggle)
         expect(groupToggle).toHaveAttribute('aria-expanded', 'true')
         expect(view.container.querySelector('svg[data-state="open"]')).toBeInTheDocument()
-        expect(screen.getByText('Run 1 · Read 1')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /inspect a\.ts/i })).toHaveTextContent('(2)')
         expect(screen.queryByText('2 actions')).not.toBeInTheDocument()
         expect(screen.getByText('src/a.ts')).toBeInTheDocument()
         expect(screen.getByText('bun test')).toBeInTheDocument()
@@ -283,7 +285,7 @@ describe('ToolGroupCard', () => {
         }))
 
         expect(screen.getByRole('button', { name: /tool activity/i })).toBeInTheDocument()
-        expect(screen.getByText('25 actions')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /tool activity/i })).toHaveTextContent('(25)')
         expect(screen.queryByText('Use tool +24')).not.toBeInTheDocument()
         expect(screen.queryByText('Tool 25')).not.toBeInTheDocument()
 

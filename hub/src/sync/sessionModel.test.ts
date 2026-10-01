@@ -1881,6 +1881,20 @@ describe('session model', () => {
         ]).toEqual([[], undefined, outcome.before.metadataVersion, outcome.before.updatedAt])
     })
 
+    it('does not spawn a replacement for an offline native Codex bridge', async () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(store, {} as never, new RpcRegistry(), { broadcast() {} } as never)
+        try {
+            const session = engine.getOrCreateSession('native-offline', {
+                path: '/project', host: 'localhost', flavor: 'codex', codexSessionId: 'native-thread', codexNativeSession: true
+            }, null, 'default')
+            let spawned = false
+            ;(engine as any).rpcGateway.spawnSession = async () => { spawned = true; throw new Error('must not spawn') }
+            expect(await engine.resumeSession(session.id, 'default')).toMatchObject({ type: 'error', code: 'resume_unavailable' })
+            expect(spawned).toBe(false)
+        } finally { engine.stop() }
+    })
+
     it('does not let stale default resume option override persisted Codex yolo', async () => {
         const store = new Store(':memory:')
         const engine = new SyncEngine(

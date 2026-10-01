@@ -5,6 +5,7 @@ import { parseMessageAsEvent } from '@/chat/reducerEvents'
 import { collectTitleChanges, ensureToolBlock, extractTitleFromChangeTitleInput, isChangeTitleToolName, type PermissionEntry } from '@/chat/reducerTools'
 import { isSubagentToolName } from '@/chat/subagentTool'
 import { asString, isObject } from '@hapi/protocol'
+import { getAgentRunFingerprint, getAgentRunIdentity } from '@hapi/protocol/messageDependencies'
 
 function getEventString(event: Record<string, unknown>, key: string): string | null {
     return asString(event[key])
@@ -57,7 +58,7 @@ function setEarliestExecStartedAt(block: ToolCallBlock, execStartedAt: number | 
 }
 
 function getAgentRunCardId(event: Record<string, unknown>, fallback: string): string {
-    return getEventString(event, 'cardId') ?? getEventString(event, 'card_id') ?? fallback
+    return getAgentRunIdentity(event).cardId ?? fallback
 }
 
 function isFallbackAgentRunCardId(cardId: string, agentId: string | null): boolean {
@@ -153,27 +154,6 @@ function getAgentRunDisplayPatch(event: Record<string, unknown>): Record<string,
     return patch
 }
 
-function getAgentRunFingerprint(event: Record<string, unknown>): string | null {
-    const summary = getEventString(event, 'summary')
-    if (summary) return summary
-
-    const input = isObject(event.input) ? event.input : null
-    const direct = input ? asString(input.message) ?? asString(input.prompt) : null
-    if (direct) return direct.replace(/\s+/g, ' ').trim()
-
-    if (input && Array.isArray(input.items)) {
-        const text = input.items
-            .map((item) => isObject(item) ? asString(item.text) : null)
-            .filter((part): part is string => Boolean(part))
-            .join('\n\n')
-            .replace(/\s+/g, ' ')
-            .trim()
-        return text.length > 0 ? text : null
-    }
-
-    return null
-}
-
 function isAgentNotFoundUpdate(event: Record<string, unknown>): boolean {
     const status = getEventString(event, 'status')
     const activityKind = getEventString(event, 'activityKind') ?? getEventString(event, 'activity_kind')
@@ -237,7 +217,8 @@ function normalizeTraceMessage(
             ...base,
             id: traceId,
             role: 'agent',
-            content: [{ type: 'text', text: data.message, uuid: traceId, parentUUID: null }]
+            content: [{ type: 'text', text: data.message, uuid: traceId,
+                ...(data.streamSnapshot === true ? { streamId: traceId } : {}), parentUUID: null }]
         } as TracedMessage]
     }
 
@@ -597,7 +578,7 @@ export function reduceTimeline(
                 || msg.content.type === 'agent-run-trace'
             ) {
                 const event = msg.content as Record<string, unknown>
-                const agentId = getEventString(event, 'agentId') ?? getEventString(event, 'agent_id')
+                const agentId = getAgentRunIdentity(event).agentId
                 const fallbackCardId = agentId ? `codex-agent:${agentId}` : msg.id
                 const rawCardId = getAgentRunCardId(event, fallbackCardId)
                 const previousCardId = agentId ? agentRunCardByAgentId.get(agentId) ?? null : null
@@ -1016,10 +997,10 @@ export function reduceTimeline(
                     setEarliestStartedAt(block, msg.createdAt)
                     setEarliestExecStartedAt(block, msg.agentTimestamp ?? null)
 
-                    if (isSubagentToolName(c.name) && !context.consumedGroupIds.has(msg.id)) {
-                        const sidechain = context.groups.get(msg.id) ?? null
+                    if (isSubagentToolName(c.name) && !context.consumedGroupIds.has(c.id)) {
+                        const sidechain = context.groups.get(c.id) ?? null
                         if (sidechain && sidechain.length > 0) {
-                            context.consumedGroupIds.add(msg.id)
+                            context.consumedGroupIds.add(c.id)
                             const child = reduceTimeline(sidechain, context)
                             hasReadyEvent = hasReadyEvent || child.hasReadyEvent
                             block.children = child.blocks

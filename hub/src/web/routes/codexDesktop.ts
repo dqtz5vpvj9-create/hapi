@@ -1,3 +1,4 @@
+import { ConnectCodexSessionRequestSchema, ConnectCodexSessionResponseSchema } from '@hapi/protocol/apiTypes'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -962,7 +963,12 @@ async function listCodexSessionsViaMachine(options: {
     if (!machineId || !options.engine) {
         return { sessions: [], error: 'No online machine available for Codex history import' }
     }
-    const result = await options.engine.listCodexSessionsForMachine(machineId, options.cwd, options.sessionIds)
+    let result: unknown
+    try {
+        result = await options.engine.listCodexSessionsForMachine(machineId, options.cwd, options.sessionIds)
+    } catch (error) {
+        return { sessions: [], machineId, error: error instanceof Error ? error.message : 'Failed to list local Codex sessions' }
+    }
     if (!result || typeof result !== 'object') {
         return { sessions: [], machineId, error: 'Unexpected Codex sessions RPC response' }
     }
@@ -2246,6 +2252,25 @@ export function createCodexDesktopRoutes(options: {
         } satisfies CodexLocalSessionsResponse)
     })
 
+
+    app.post('/codex/connect-session', async (c) => {
+        const parsed = ConnectCodexSessionRequestSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid native Codex connection request' }, 400)
+        const engine = options.getSyncEngine()
+        const machineId = resolveCodexImportMachineId(null, c.get('namespace'), engine, parsed.data.machineId)
+        if (!engine || !machineId) return c.json({ error: 'No online machine available for native Codex connection' }, 503)
+        try {
+            const result = ConnectCodexSessionResponseSchema.parse(await engine.connectCodexSessionForMachine(machineId, parsed.data.threadId))
+            const session = engine.getSessionsByNamespace(c.get('namespace')).find(session => session.id === result.sessionId)
+            if (result.threadId !== parsed.data.threadId || !session || session.metadata?.codexSessionId !== result.threadId
+                || session.metadata?.machineId !== machineId || !session.metadata?.codexNativeSession) {
+                return c.json({ error: 'Native Codex binding has not been confirmed; retry after the bridge is ready' }, 503)
+            }
+            return c.json(result)
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Native Codex connection unavailable' }, 503)
+        }
+    })
 
     app.post('/codex/archive-session', async (c) => {
         const body = await c.req.json().catch(() => null)

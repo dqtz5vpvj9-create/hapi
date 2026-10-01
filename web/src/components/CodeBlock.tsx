@@ -1,9 +1,12 @@
-import { type CSSProperties, type ReactNode } from 'react'
+import { lazy, Suspense, type CSSProperties, type ReactNode } from 'react'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
 import { useCodeWrap } from '@/hooks/useCodeWrap'
 import { useShikiHighlightedLines, splitCodeLines } from '@/lib/shiki'
 import { CopyIcon, CheckIcon, WrapIcon } from '@/components/icons'
 import { useTranslation } from '@/lib/use-translation'
+import { needsLargeCodeView } from '@/lib/large-code'
+
+const LargeCodeView = lazy(() => import('@/components/LargeCodeView'))
 
 const DEFAULT_COLLAPSE_LINE_THRESHOLD = 18
 const DEFAULT_COLLAPSE_CHAR_THRESHOLD = 1800
@@ -51,7 +54,8 @@ export function CodeBlock(props: {
     const showWrapToggle = props.showWrapToggle ?? true
     const { copied, copy } = useCopyToClipboard()
     const { codeWrap, setCodeWrap } = useCodeWrap()
-    const highlightedLines = useShikiHighlightedLines(props.code, props.language)
+    const large = needsLargeCodeView(props.code)
+    const highlightedLines = useShikiHighlightedLines(large ? '' : props.code, large ? 'text' : props.language)
     const isCollapsed = Boolean(props.collapseLongContent) && shouldCollapseCode(
         props.code,
         props.collapseLineThreshold ?? DEFAULT_COLLAPSE_LINE_THRESHOLD,
@@ -73,7 +77,7 @@ export function CodeBlock(props: {
     // `highlightedLines` (one ReactNode per line) is null while shiki is
     // pending or for unsupported languages; fall back to the raw code split
     // on newlines using the same normalization, so line numbers match.
-    const fallbackLines = splitCodeLines(props.code)
+    const fallbackLines = large ? [] : splitCodeLines(props.code)
     const codeLines: ReactNode[] = highlightedLines ?? fallbackLines
     const firstLine = props.startLineNumber ?? 1
     const lineNumberWidth = Math.max(String(firstLine + codeLines.length - 1).length, 3)
@@ -149,7 +153,13 @@ export function CodeBlock(props: {
                 className={`min-w-0 w-full max-w-full ${codeWrap ? '' : 'overflow-x-auto'}`}
                 style={bodyStyle}
             >
-                <pre
+                {large ? (
+                    <Suspense fallback={<pre className="m-0 p-3 font-mono">{props.code}</pre>}>
+                        <LargeCodeView code={props.code} language={props.language} wrap={codeWrap}
+                            firstLine={firstLine} compact={props.size !== 'comfortable'} clipped={isCollapsed}
+                            maxHeight={isCollapsed ? collapsedHeight : props.scrollY ? scrollHeight : undefined} />
+                    </Suspense>
+                ) : <pre
                     data-hapi-code-grid="true"
                     className={`shiki m-0 grid ${codeWrap ? 'w-full' : 'w-max min-w-full'} font-mono ${codeTextClass}`}
                     style={codeGridStyle}
@@ -173,7 +183,7 @@ export function CodeBlock(props: {
                             </span>
                         )
                     })}
-                </pre>
+                </pre>}
             </div>
             {isCollapsed ? (
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[var(--app-code-bg)] via-[var(--app-code-bg)]/94 to-transparent px-2 pb-2 pt-10">

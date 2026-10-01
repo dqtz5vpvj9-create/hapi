@@ -220,6 +220,8 @@ export type CodexDesktopScriptResponse = {
 }
 
 export type CodexLocalSessionSummary = {
+    connectionState?: 'attached' | 'history' | 'unavailable'
+    connectionError?: string
     id: string
     title: string
     lastUserMessage?: string | null

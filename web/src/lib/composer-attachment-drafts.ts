@@ -312,3 +312,8 @@ export function clearDraftAttachments(sessionId: string): void {
 export function getRestoredUploadMetadata(file: File): RestoredUploadMetadata | undefined {
     return restoredUploadMetadata.get(file)
 }
+
+/** Seed an existing attachment identity before the upload adapter receives its File. */
+export function setRestoredUploadMetadata(file: File, metadata: RestoredUploadMetadata): void {
+    restoredUploadMetadata.set(file, metadata)
+}

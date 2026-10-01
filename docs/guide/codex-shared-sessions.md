@@ -18,6 +18,34 @@ has since changed. A compatible runner is required when one is already running.
 Update CLI, Runner and Hub together: the Hub must preserve shared pending input
 on execution exit rather than applying the legacy session-end queue sweep.
 
+## Attach an existing native daemon
+
+For ordinary Codex terminals or desktop sessions that are already running, connect
+HAPI to their existing app-server endpoint:
+
+```bash
+hapi codex --native-daemon unix:///path/to/existing/codex.sock
+```
+
+Use the same `CODEX_HOME` and HAPI account as the machine's Runner. The endpoint
+is configured per machine; HAPI does not guess which daemon to connect to.
+This mode discovers loaded root threads on startup and every five seconds.
+It reads their history and subscribes to the same live threads. No import,
+new execution, injected MCP server, or changed native instructions is required.
+
+The daemon and original terminal retain their lifetime ownership. Stopping or
+restarting this bridge detaches HAPI and preserves native execution and queued
+input. Restart reconnects to the same HAPI session IDs. When the native bridge
+is offline, Web cannot cold-resume these sessions into a second engine; restore
+the original daemon/bridge connection to continue. Archived native threads are
+not automatically reopened.
+
+The existing **Stop** and **End session** controls still interrupt or archive
+when explicitly selected. Starting a new session with HAPI's usual button keeps
+the existing Runner behavior; automatic discovery applies to sessions started
+in the connected native daemon. Linux native daemon adoption is exercised by
+the deployment tests; Windows and macOS endpoint setup require their own checks.
+
 ## Lifecycle
 
 - **Terminal-created execution**: the original terminal owns its lifetime.

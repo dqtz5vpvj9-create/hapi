@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync } from 'node:fs'
+import { closeSync, fstatSync, openSync, readSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, relative } from 'node:path'
 import { homedir } from 'node:os'
@@ -299,14 +299,39 @@ function deduplicateAdjacentImportedMessages(messages: CodexImportedMessageConte
     return deduped
 }
 
+// Listing needs metadata and a recent preview, not multi-gigabyte tool output.
+// Read complete lines at each end; importing still reads the selected transcript in full.
+const SUMMARY_WINDOW_BYTES = 64 * 1024
+
+function readSummaryLines(filePath: string): string[] {
+    const fd = openSync(filePath, 'r')
+    try {
+        const size = fstatSync(fd).size
+        const head = Buffer.alloc(Math.min(size, SUMMARY_WINDOW_BYTES))
+        const headText = head.subarray(0, readSync(fd, head, 0, head.length, 0)).toString('utf8')
+        if (size <= SUMMARY_WINDOW_BYTES) return headText.split(/\r?\n/).filter(Boolean)
+        const tail = Buffer.alloc(SUMMARY_WINDOW_BYTES)
+        const tailText = tail.subarray(0, readSync(fd, tail, 0, tail.length, size - tail.length)).toString('utf8')
+        return [
+            ...headText.slice(0, headText.lastIndexOf('\n')).split(/\r?\n/),
+            ...tailText.slice(tailText.indexOf('\n') + 1).split(/\r?\n/)
+        ].filter(Boolean)
+    } finally {
+        closeSync(fd)
+    }
+}
+
 function parseCodexLocalSession(
     filePath: string,
     includeMessages: boolean,
     sessionIndexTitles = new Map<string, CodexSessionIndexTitle>()
 ): LocalCodexSessionWithMessages | LocalCodexSessionSummary | null {
-    let content: string
-    try { content = readFileSync(filePath, 'utf-8') } catch { return null }
-    const lines = content.split(/\r?\n/).filter(Boolean)
+    let lines: string[]
+    try {
+        lines = includeMessages
+            ? readFileSync(filePath, 'utf-8').split(/\r?\n/).filter(Boolean)
+            : readSummaryLines(filePath)
+    } catch { return null }
     const headLines = lines.slice(0, 200)
     let sessionId: string | null = null
     let cwd: string | null = null
@@ -392,8 +417,57 @@ function listLocalCodexSessions(includeMessages: boolean, limit = DEFAULT_CODEX_
     return Array.from(deduped.values()).sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, limit)
 }
 
+type IndexedCodexThread = {
+    id: string
+    rollout_path: string
+    updated_at: number
+    cwd: string
+    title: string
+    source: string
+    cli_version: string
+    first_user_message: string
+    thread_source?: string | null
+    preview?: string
+    name?: string | null
+    originator?: string | null
+}
+
+function listIndexedCodexSessions(limit: number): LocalCodexSessionSummary[] | null {
+    const home = getCodexHome()
+    if (!existsSync(home)) return null
+    const databases = readdirSync(home).filter((file) => /^state_\d+\.sqlite$/.test(file))
+        .sort((a, b) => Number(b.match(/\d+/)?.[0]) - Number(a.match(/\d+/)?.[0]))
+    if (databases.length === 0) return null
+    // The CLI runs in Bun. Keep SQLite loading lazy so transcript-only environments
+    // and the Node unit-test runner do not need a SQLite module.
+    const { Database } = require('bun:sqlite') as typeof import('bun:sqlite')
+    const db = new Database(join(home, databases[0]), { readonly: true })
+    try {
+        const rows = db.query('SELECT * FROM threads WHERE archived = 0 ORDER BY updated_at DESC').all() as IndexedCodexThread[]
+        const titles = readCodexSessionIndexTitles()
+        return rows.filter((row) => {
+            let source: unknown = row.source
+            try { source = JSON.parse(row.source) } catch { /* Plain CLI source. */ }
+            return !isCodexSubagentSource(source) && existsSync(row.rollout_path)
+        }).slice(0, limit).map((row) => ({
+            id: row.id,
+            title: truncateText(row.name || titles.get(row.id)?.threadName || row.title || row.first_user_message || basename(row.cwd) || row.id.slice(0, 8), 80),
+            lastUserMessage: truncateText(row.preview || row.first_user_message || '', 140) || null,
+            cwd: row.cwd,
+            file: row.rollout_path,
+            modifiedAt: row.updated_at * 1000,
+            originator: row.originator ?? null,
+            cliVersion: row.cli_version,
+            source: row.source,
+            threadSource: row.thread_source ?? null
+        }))
+    } finally {
+        db.close()
+    }
+}
+
 export function listLocalCodexSessionSummaries(limit = DEFAULT_CODEX_SESSION_SCAN_LIMIT): LocalCodexSessionSummary[] {
-    return listLocalCodexSessions(false, limit)
+    return listIndexedCodexSessions(limit) ?? listLocalCodexSessions(false, limit)
 }
 
 export function listLocalCodexSessionsWithMessages(limit = DEFAULT_CODEX_SESSION_SCAN_LIMIT): LocalCodexSessionWithMessages[] {

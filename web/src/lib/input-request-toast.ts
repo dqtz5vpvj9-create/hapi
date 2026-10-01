@@ -6,3 +6,8 @@ export function translateInputRequestTitle(title: string, t: I18nContextValue['t
     if (!match) return null
     return t('toast.input.title', { agent: match[1] })
 }
+
+/** Classify the hub's canonical wire title before localization. */
+export function incomingToastKind(title: string): 'ready' | undefined {
+    return title.trim() === 'Ready for input' ? 'ready' : undefined
+}

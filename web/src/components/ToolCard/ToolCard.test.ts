@@ -50,11 +50,11 @@ describe('ToolCard terminal display mode helpers', () => {
         expect(shouldShowInlineToolCardBody('CodexBash', false, 'compact')).toBe(false)
     })
 
-    it('keeps inline terminal previews in detailed mode', () => {
-        expect(shouldShowInlineToolCardBody('CodexBash', false, 'detailed')).toBe(true)
-        expect(shouldShowInlineToolCardBody('Bash', true, 'detailed')).toBe(true)
-        expect(shouldShowInlineToolCardBody('shell_command', true, 'detailed')).toBe(true)
-        expect(shouldShowInlineToolCardBody('run_shell_command', true, 'detailed')).toBe(true)
+    it('keeps terminal output in details even when command summaries are enabled', () => {
+        expect(shouldShowInlineToolCardBody('CodexBash', false, 'detailed')).toBe(false)
+        expect(shouldShowInlineToolCardBody('Bash', true, 'detailed')).toBe(false)
+        expect(shouldShowInlineToolCardBody('shell_command', true, 'detailed')).toBe(false)
+        expect(shouldShowInlineToolCardBody('run_shell_command', true, 'detailed')).toBe(false)
     })
 
     it('still hides inline bodies for minimal and Task/Agent subagent cards', () => {

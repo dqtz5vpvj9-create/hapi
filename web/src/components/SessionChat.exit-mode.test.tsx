@@ -29,10 +29,12 @@ const mockSessionId = 'sess-test'
  * on so the entry stays and the operator can retry.
  */
 
-const setText = vi.fn()
+const composerState = { text: '', attachments: [] as Array<{ id: string }> }
+const setText = vi.fn((text: string) => { composerState.text = text })
+const addAttachment = vi.fn<(file: File) => Promise<void>>()
 vi.mock('@assistant-ui/react', () => ({
     useAui: () => ({
-        composer: () => ({ setText }),
+        composer: () => ({ setText, addAttachment, getState: () => composerState }),
     }),
 }))
 
@@ -44,10 +46,113 @@ function makeEntry(overrides: Partial<ScratchlistEntry> & { id: string }): Scrat
 
 afterEach(() => {
     cleanup()
-    setText.mockReset()
+    setText.mockClear()
+    addAttachment.mockReset()
+    composerState.text = ''
+    composerState.attachments = []
+    vi.restoreAllMocks()
 })
 
 describe('ScratchlistDrawerHost.onPromoteToComposer', () => {
+    function renderCopy() {
+        const onSend = vi.fn(async () => true)
+        const onExitScratchlistMode = vi.fn()
+        const onDelete = vi.fn()
+        render(<I18nProvider><ScratchlistDrawerHost
+            sessionId={mockSessionId} api={mockApi}
+            entries={[makeEntry({ id: 'old', text: 'parked requirement' })]}
+            onMove={vi.fn()} onDelete={onDelete} onSend={onSend}
+            onExitScratchlistMode={onExitScratchlistMode}
+        /></I18nProvider>)
+        return { onSend, onExitScratchlistMode, onDelete }
+    }
+
+    it('lets the user cancel copying without changing text, attachments, mode or the held entry', () => {
+        composerState.text = 'new requirement'
+        composerState.attachments = [{ id: 'new-image' }]
+        const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+        const callbacks = renderCopy()
+        fireEvent.click(screen.getByRole('button', { name: 'Copy into composer' }))
+        expect(confirm).toHaveBeenCalledTimes(1)
+        expect(composerState).toEqual({ text: 'new requirement', attachments: [{ id: 'new-image' }] })
+        expect(setText).not.toHaveBeenCalled()
+        expect(callbacks.onExitScratchlistMode).not.toHaveBeenCalled()
+        expect(callbacks.onSend).not.toHaveBeenCalled()
+        expect(callbacks.onDelete).not.toHaveBeenCalled()
+    })
+
+    it('merges after explicit confirmation and preserves the current attachment and held entry', () => {
+        composerState.text = 'new requirement'
+        composerState.attachments = [{ id: 'new-image' }]
+        vi.spyOn(window, 'confirm').mockReturnValue(true)
+        const callbacks = renderCopy()
+        fireEvent.click(screen.getByRole('button', { name: 'Copy into composer' }))
+        expect(composerState).toEqual({
+            text: 'new requirement\n\nparked requirement', attachments: [{ id: 'new-image' }],
+        })
+        expect(callbacks.onExitScratchlistMode).toHaveBeenCalledTimes(1)
+        expect(callbacks.onSend).not.toHaveBeenCalled()
+        expect(callbacks.onDelete).not.toHaveBeenCalled()
+    })
+
+    it('also protects an attachment-only draft and does not double the exact restored text', () => {
+        composerState.attachments = [{ id: 'new-image' }]
+        const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+        renderCopy()
+        const copy = screen.getByRole('button', { name: 'Copy into composer' })
+        fireEvent.click(copy)
+        expect(setText).not.toHaveBeenCalled()
+        confirm.mockReturnValue(true)
+        fireEvent.click(copy)
+        fireEvent.click(copy)
+        expect(composerState.text).toBe('parked requirement')
+        expect(composerState.attachments).toEqual([{ id: 'new-image' }])
+    })
+
+    it('copies held image and text into an empty composer, then merges a new draft without duplicating that image', async () => {
+        const { createAttachmentAdapter } = await import('@/lib/attachmentAdapter')
+        const api = {
+            fetchScratchlistAttachmentBlob: vi.fn(async () => new Blob(['held image'], { type: 'image/png' })),
+            uploadFile: vi.fn(async () => ({ success: true, path: '/uploads/held.png' })),
+        }
+        const adapter = createAttachmentAdapter(api as unknown as ApiClient, mockSessionId)
+        addAttachment.mockImplementation(async (file) => {
+            const additions = adapter.add({ file })
+            if (!('next' in additions)) throw new Error('Expected upload progress')
+            for await (const attachment of additions) {
+                const current = composerState.attachments.filter((item) => item.id !== attachment.id)
+                composerState.attachments = [...current, attachment]
+            }
+        })
+        const entry = makeEntry({ id: 'held', text: 'held requirement', attachments: [{
+            id: 'hub-image', filename: 'held.png', mimeType: 'image/png', size: 10,
+            path: 'hapi-hub:scratchlist/default/sess-test/hub-image-held.png',
+        }] })
+        const onSend = vi.fn(async () => true)
+        const onDelete = vi.fn()
+        const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+        render(<I18nProvider><ScratchlistDrawerHost
+            sessionId={mockSessionId} api={api as unknown as ApiClient} entries={[entry]}
+            onMove={vi.fn()} onDelete={onDelete} onSend={onSend} onExitScratchlistMode={vi.fn()}
+        /></I18nProvider>)
+        const copy = screen.getByRole('button', { name: 'Copy into composer' })
+        fireEvent.click(copy)
+        await waitFor(() => expect(api.uploadFile).toHaveBeenCalledTimes(1))
+        await waitFor(() => expect(composerState.attachments[0]).toMatchObject({ path: '/uploads/held.png' }))
+        expect(confirm).not.toHaveBeenCalled()
+        expect(composerState.text).toBe('held requirement')
+        composerState.text = 'new unsent requirement'
+        fireEvent.click(copy)
+        await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+        expect(composerState.text).toBe('new unsent requirement\n\nheld requirement')
+        expect(composerState.attachments).toHaveLength(1)
+        expect(addAttachment).toHaveBeenCalledTimes(1)
+        expect(api.uploadFile).toHaveBeenCalledTimes(1)
+        expect(onDelete).not.toHaveBeenCalled()
+        expect(onSend).not.toHaveBeenCalled()
+        expect(entry.attachments).toHaveLength(1)
+    })
+
     it('exits scratchlist mode AND sets composer text when an entry is promoted to composer', () => {
         const onExitScratchlistMode = vi.fn()
         const onSend = vi.fn(async () => true)

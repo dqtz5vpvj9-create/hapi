@@ -1,9 +1,9 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import '../src/index.css'
-import type { ApiClient } from '../src/api/client'
+import { ApiError, type ApiClient } from '../src/api/client'
 import type { DecryptedMessage, MessagesResponse, Session } from '../src/types/api'
 import { I18nProvider } from '../src/lib/i18n-context'
 import { useMessages } from '../src/hooks/queries/useMessages'
@@ -15,7 +15,11 @@ import { isQueuedForInvocation } from '../src/lib/messages'
 import { useHappyRuntime } from '../src/lib/assistant-runtime'
 import { HappyThread } from '../src/components/AssistantChat/HappyThread'
 import type { ChatBlock } from '../src/chat/types'
-import { getMessageWindowState } from '../src/lib/message-window-store'
+import { getMessageWindowState, ingestIncomingMessages } from '../src/lib/message-window-store'
+import { getHistoryPageRepository } from '../src/lib/history-page-repository'
+import { captureReadingAnchor, type ReadingAnchor } from '../src/lib/reading-anchor'
+import { buildConversationOutline } from '../src/chat/outline'
+import { extractConversationOutlineLabel } from '@hapi/protocol/conversationOutline'
 
 // Drives the real message-window store + chat pipeline + HappyThread against a
 // fake paginated message API, so e2e tests can exercise older-history loading
@@ -23,14 +27,32 @@ import { getMessageWindowState } from '../src/lib/message-window-store'
 // assertions (e.g. "exactly one older page per top-approach").
 
 const SESSION_ID = 'history-load-fixture'
+let activeSessionId = SESSION_ID
 const TOTAL_MESSAGES = 1200
 const BASE_AT = 1_700_000_000_000
 
 type Probe = {
+    evictHistoryPayloads: () => void
+    holdContext: () => void
+    releaseContext: () => void
+    holdAfter: (minimumSeq?: number) => void
+    releaseAfter: () => void
+    appendRemoteMessage: (deliver?: boolean) => void
+
+    holdMedia: () => void
+    releaseMedia: () => void
+    mediaReads: number
+    finishedOutlineRequests: number
+    finishedRequests: number
+    remoteRewindTo: (seq: number) => Promise<void>
+    remoteEditMessage: (seq: number, text: string) => void
     requests: { direction: string; beforeSeq: number | null; limit: number | undefined; at: number }[]
     loadMore: () => Promise<unknown>
     refetch: () => Promise<void>
     releaseLatest: () => void
+    holdLatest: () => void
+    holdOutline: () => void
+    releaseOutline: () => void
     holdBefore: () => void
     releaseBefore: () => void
     windowState: () => {
@@ -38,25 +60,66 @@ type Probe = {
         oldestSeq: number | null
         newestSeq: number | null
         isLoadingMore: boolean
+        isSyncingTail: boolean
+        viewMode: 'tail' | 'history'
     }
 }
 
 declare global {
     interface Window {
         __probe: Probe
+        __readingAnchorTasks: {
+            capture: () => ReadingAnchor | null
+            point: (anchor: ReadingAnchor) => number | null
+        }
     }
 }
 
+let mediaResponseGate: Promise<void> | null = null
+let releaseMediaResponse = () => {}
 let releaseLatestResponse = () => {}
 let latestResponseGate: Promise<void> | null = null
+let contextResponseGate: Promise<void> | null = null
+let releaseContextResponse = () => {}
+let holdAfterMinimumSeq = 0
+let afterResponseGate: Promise<void> | null = null
+let releaseAfterResponse = () => {}
+let outlineResponseGate: Promise<void> | null = null
+let releaseOutlineResponse = () => {}
 let beforeResponseGate: Promise<void> | null = null
 let releaseBeforeResponse = () => {}
 
 window.__probe = {
+    mediaReads: 0,
+    holdMedia: () => { mediaResponseGate = new Promise<void>(resolve => { releaseMediaResponse = resolve }) },
+    releaseMedia: () => { mediaResponseGate = null; releaseMediaResponse() },
+    evictHistoryPayloads: () => getHistoryPageRepository(fakeApi).invalidateSession(SESSION_ID),
+    holdContext: () => { contextResponseGate = new Promise<void>(resolve => { releaseContextResponse = resolve }) },
+    releaseContext: () => { contextResponseGate = null; releaseContextResponse() },
+    holdAfter: (minimumSeq = 0) => { holdAfterMinimumSeq = minimumSeq; afterResponseGate = new Promise<void>(resolve => { releaseAfterResponse = resolve }) },
+    releaseAfter: () => { afterResponseGate = null; releaseAfterResponse() },
+    appendRemoteMessage: (deliver = true) => {
+        const last = allMessages[allMessages.length - 1]
+        const seq = last.seq! + 1
+        const row = { ...last, id: `m-${seq}`, seq, createdAt: last.createdAt + 1,
+            invokedAt: (last.invokedAt ?? last.createdAt) + 1,
+            content: { role: 'user', content: { type: 'text', text: `Fixture message ${seq}` } } } as DecryptedMessage
+        allMessages.push(row)
+        sessionStorage.setItem('hapi:e2e:history-remote-appends', JSON.stringify(allMessages.slice(TOTAL_MESSAGES)))
+        remoteRewindSeq = seq
+        if (deliver) ingestIncomingMessages(SESSION_ID, [row])
+    },
+    finishedOutlineRequests: 0,
+    finishedRequests: 0,
+    remoteRewindTo: async () => {},
+    remoteEditMessage: () => {},
     requests: [],
     loadMore: async () => {},
     refetch: async () => {},
-    releaseLatest: () => releaseLatestResponse(),
+    releaseLatest: () => { latestResponseGate = null; releaseLatestResponse() },
+    holdLatest: () => { latestResponseGate = new Promise<void>(resolve => { releaseLatestResponse = resolve }) },
+    holdOutline: () => { outlineResponseGate = new Promise<void>(resolve => { releaseOutlineResponse = resolve }) },
+    releaseOutline: () => { outlineResponseGate = null; releaseOutlineResponse() },
     holdBefore: () => {
         beforeResponseGate = new Promise<void>((resolve) => {
             releaseBeforeResponse = resolve
@@ -67,12 +130,14 @@ window.__probe = {
         releaseBeforeResponse()
     },
     windowState: () => {
-        const state = getMessageWindowState(SESSION_ID)
+        const state = getMessageWindowState(activeSessionId)
         return {
             messageCount: state.messages.length,
             oldestSeq: state.oldestSeq,
             newestSeq: state.newestSeq,
-            isLoadingMore: state.isLoadingMore
+            isLoadingMore: state.isLoadingMore,
+            isSyncingTail: state.isSyncingTail,
+            viewMode: state.viewMode
         }
     }
 }
@@ -100,12 +165,25 @@ window.__probe = {
 const fixtureParams = new URLSearchParams(window.location.search)
 const shortPages = fixtureParams.has('shortPages')
 const failBeforeCount = Number(fixtureParams.get('failBefore') ?? '0')
+const directoryDenied = fixtureParams.has('directoryDenied')
+const outlineEpochReset = fixtureParams.has('outlineEpochReset')
+const resetRefreshDenied = fixtureParams.has('resetRefreshDenied')
+let resetRefreshFailures = 0
 const filteredOlder = fixtureParams.has('filteredOlder')
 const epochBump = fixtureParams.has('epochBump')
 const coldInitial = fixtureParams.has('coldInitial')
 const slowBefore = fixtureParams.has('slowBefore')
 const cachedReentry = fixtureParams.has('cachedReentry')
+const orphanReasoning = fixtureParams.has('orphanReasoning')
+const sameAt = fixtureParams.has('sameAt')
+const snapshotBefore = fixtureParams.has('snapshotBefore')
 const holdLatest = fixtureParams.has('holdLatest')
+const readingAnchorTasks = fixtureParams.has('readingAnchor')
+const readingPending = fixtureParams.has('readingPending')
+const outlineArchive = fixtureParams.has('outlineArchive')
+const threadHeader = fixtureParams.has('threadHeader')
+let remoteRewindSeq = TOTAL_MESSAGES
+let remoteEpoch = 1
 if (holdLatest) {
     latestResponseGate = new Promise<void>((resolve) => {
         releaseLatestResponse = resolve
@@ -128,6 +206,100 @@ const allMessages: DecryptedMessage[] = Array.from({ length: TOTAL_MESSAGES }, (
     } as DecryptedMessage
 })
 
+// A page may begin in the middle of an assistant response. Loading its earlier
+// blocks changes the first block of the joined assistant-ui message.
+if (fixtureParams.has('groupedHistory')) {
+    for (const message of allMessages) {
+        if (message.seq! % 80 === 1) continue
+        message.content = { role: 'agent', content: { type: 'codex', data: {
+            type: 'message', message: Array.from({ length: 3 }, (_, paragraph) =>
+                `History passage ${message.seq}.${paragraph}: Reading this passage must remain stable when an earlier page arrives.`).join('\n\n'),
+        } } }
+    }
+}
+
+if (fixtureParams.has('sparseOutline')) {
+    for (const message of allMessages) {
+        if (message.seq === 1) continue
+        message.content = { role: 'agent', content: { type: 'codex', data: {
+            type: 'message', message: `Sparse answer passage ${message.seq}: keep this reading position.`,
+        } } }
+    }
+}
+
+if (fixtureParams.has('longIncoming')) {
+    for (let index=994; index<1193; index++) {
+        if (index % 5 !== 0) continue;
+        allMessages[index].content = {role:'agent',content:{type:'codex',data:{type:'message',message:
+            Array.from({length:18+index%11},(_,i)=>`Loaded paragraph ${index+1}.${i+1}: This long history report contains real wrapping text and several lines on the phone. 历史正文应始终完整可读，不得与下一条工具或消息重叠。`).join('\n\n')
+        }}};
+    }
+}
+if (readingAnchorTasks) {
+    const image = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="${readingPending ? 40 : 240}"><rect width="480" height="240" fill="#c5e5ff"/></svg>`
+    allMessages[TOTAL_MESSAGES - 7].content = { role: 'user', content: { type: 'text', text: 'Image above the long reading passage', attachments: [{
+        id: 'reading-image', filename: 'reading-anchor.svg', mimeType: 'image/svg+xml', size: image.length,
+        path: 'fixture/reading-anchor.svg', previewUrl: `data:image/svg+xml,${encodeURIComponent(image)}`,
+    }] } }
+    allMessages[TOTAL_MESSAGES - 6].content = { role: 'agent', content: { type: 'codex', data: { type: 'message', message:
+        Array.from({ length: 90 }, (_, i) => `Anchor paragraph ${String(i + 1).padStart(3, '0')}: `
+            + `Reading passage ${i + 1} remains visible when earlier content changes. 段落 ${i + 1} 的文字应保持原位，宽度变化后仍然读同一个字符。`).join('\n\n'),
+    } } }
+}
+
+if (fixtureParams.has('shareLongTurn')) {
+    allMessages[600].content = { role: 'user', content: { type: 'text', text: 'Export this complete long turn' } }
+    for (let index = 601; index < 1199; index++) {
+        allMessages[index].content = { role: 'agent', content: { type: 'codex', data: {
+            type: 'message', message: `Export passage ${index + 1}: complete history content.`,
+        } } }
+    }
+}
+
+if (fixtureParams.has('shareMediaExport')) {
+    for (let index = 602; index < 1198; index++) {
+        allMessages[index].content = { role: 'agent', content: { type: 'output', data: { isMeta: true } } }
+    }
+}
+
+if (fixtureParams.has('shareOversize')) {
+    allMessages[600].content = { role: 'user', content: { type: 'text', text: 'x'.repeat(9 * 1024 * 1024) } }
+}
+
+if (fixtureParams.has('shareSlowImage')) {
+    allMessages[749].content = { role: 'agent', content: { type: 'codex', data: {
+        type: 'generated-image', imageId: 'share-image', fileName: 'share-image.svg', mimeType: 'image/svg+xml',
+    } } }
+}
+
+if (sameAt) {
+    for (const message of allMessages) { message.createdAt = BASE_AT; message.invokedAt = BASE_AT }
+}
+
+// The simulated server outlives a page refresh, just as the real Hub does.
+const remoteAppends = JSON.parse(sessionStorage.getItem('hapi:e2e:history-remote-appends') ?? '[]') as DecryptedMessage[]
+allMessages.push(...remoteAppends)
+if (remoteAppends.length) remoteRewindSeq = remoteAppends[remoteAppends.length - 1].seq!
+
+window.__readingAnchorTasks = {
+    capture: () => {
+        const viewport = document.querySelector<HTMLElement>('.chat-scroll-y')
+        return viewport ? captureReadingAnchor(viewport) : null
+    },
+    point: (anchor) => {
+        const viewport = document.querySelector<HTMLElement>('.chat-scroll-y')
+        const row = document.getElementById(anchor.id)
+        if (!viewport || !row || !anchor.text) return null
+        // Observe the original DOM occurrence, independent of production quote lookup.
+        let node: Node | undefined = row
+        for (const index of anchor.text.path) node = node?.childNodes[index]
+        if (!node || node.nodeType !== Node.TEXT_NODE) return null
+        const range = document.createRange()
+        range.setStart(node, anchor.text.offset); range.setEnd(node, anchor.text.offset + 1)
+        return range.getBoundingClientRect().top - viewport.getBoundingClientRect().top
+    },
+}
+
 if (cachedReentry) {
     const cachedMessages = allMessages.slice(-200)
     const cachedOldest = cachedMessages[0]
@@ -136,7 +308,11 @@ if (cachedReentry) {
     const oldestPosition = positionOf(cachedOldest)
     const newestPosition = positionOf(cachedNewest)
     sessionStorage.setItem(`hapi:message-window:v2:${SESSION_ID}`, JSON.stringify({
-        messages: cachedMessages,
+        messages: orphanReasoning ? [{
+            ...allMessages[0], id: 'reasoning-retained', content: { role: 'agent', content: {
+                type: 'codex', data: { type: 'reasoning', message: 'Retained earlier reasoning snapshot', id: 'retained-stream' },
+            } },
+        }, ...cachedMessages] : cachedMessages,
         hasMore: true,
         oldestPositionAt: oldestPosition.at,
         oldestPositionSeq: oldestPosition.seq,
@@ -169,22 +345,79 @@ function pageFrom(messages: DecryptedMessage[], overrides: Partial<MessagesRespo
     }
 }
 
+let outlineReads = 0
+let outlineFailures = Number(fixtureParams.get('failOutline') ?? '0')
 const fakeApi = {
+    getMessageOutline: async (_sessionId: string, options: { limit?: number; before?: { at: number; seq: number }; epoch?: number } = {}) => {
+        window.__probe.requests.push({ direction: 'outline', beforeSeq: options.before?.seq ?? null, limit: options.limit, at: Date.now() })
+        outlineReads++
+        const snapshot = allMessages.filter(row => row.seq! <= remoteRewindSeq)
+        const gate = options.before ? outlineResponseGate : null
+        await new Promise(resolve => setTimeout(resolve, Number(fixtureParams.get('outlineDelay') ?? '50')))
+        if (gate) await gate
+        window.__probe.finishedOutlineRequests++
+        if (directoryDenied) throw new ApiError('fixture: directory forbidden', 403)
+        if (options.before && outlineFailures > 0) { outlineFailures--; throw new Error('fixture: outline page failed') }
+        if (outlineEpochReset && outlineReads === 2) { remoteEpoch = 2; remoteRewindSeq = 1000 }
+        const reset = options.epoch !== undefined && options.epoch !== remoteEpoch
+        const indexing = outlineReads <= Number(fixtureParams.get('outlineIndexReads') ?? '0')
+        const all = snapshot.filter(row => row.seq! <= remoteRewindSeq).flatMap(row => {
+            const label = extractConversationOutlineLabel(row.content)
+            return label === null ? [] : [{ messageId: row.id, label, ...positionOf(row), createdAt: row.createdAt }]
+        }).reverse().filter(row => !options.before || row.at < options.before.at || (row.at === options.before.at && row.seq < options.before.seq))
+        const entries = reset || indexing ? [] : all.slice(0, options.limit ?? 100)
+        const last = entries.at(-1)
+        return { entries, page: { epoch: remoteEpoch, reset, hasMore: !reset && all.length > entries.length,
+            beforeCursor: last ? { at: last.at, seq: last.seq } : null,
+            scannedThrough: indexing ? 0 : remoteRewindSeq, headSeq: remoteRewindSeq,
+            complete: !indexing, indexing, unreadable: false } }
+    },
+    getGeneratedImageBlob: async () => {
+        const gate = mediaResponseGate
+        window.__probe.mediaReads++
+        await new Promise(resolve => setTimeout(resolve, 600))
+        if (gate) await gate
+        if (fixtureParams.has('shareImageFailure')) throw new Error('fixture image unavailable')
+        return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" fill="blue"/></svg>'], { type: 'image/svg+xml' })
+    },
     getHubSettings: async () => ({ sessionSummaryInChat: false }),
     getMachines: async () => ({ machines: [] }),
+    getMessageContext: async (_sessionId: string, messageId: string, options: { radius?: number } = {}) => {
+        const gate = contextResponseGate
+        window.__probe.requests.push({ direction: 'context', beforeSeq: null, limit: options.radius, at: Date.now() })
+        await new Promise(resolve => setTimeout(resolve, 50))
+        if (gate) await gate
+        if (fixtureParams.has('shareContextDenied')) throw new ApiError('Access denied', 403)
+        const active = allMessages.filter(message => message.seq! <= remoteRewindSeq)
+        const index = active.findIndex(message => message.id === messageId)
+        if (index < 0) throw new ApiError('Message not found', 404)
+        const radius = options.radius ?? 99
+        const start = Math.max(0, index - radius), end = Math.min(active.length, index + radius + 1)
+        const rows = active.slice(start, end)
+        return { anchor: { messageId, position: positionOf(active[index]) }, messages: rows,
+            page: { epoch: epochBump && beforeAttempts > 0 ? 2 : remoteEpoch, reset: false, beforeCursor: positionOf(rows[0]),
+                afterCursor: positionOf(rows[rows.length - 1]), hasMoreBefore: start > 0,
+                hasMoreAfter: end < active.length, snapshotHead: positionOf(active[active.length - 1]) } }
+    },
     getMessages: async (_sessionId: string, query: {
         limit?: number
         beforeAt?: number | null
         beforeSeq?: number | null
         afterAt?: number | null
         afterSeq?: number | null
+        epoch?: number
+        untilAt?: number
+        untilSeq?: number
     }): Promise<MessagesResponse> => {
         const requestedLimit = query.limit ?? 200
         let direction = 'latest'
         if (query.beforeSeq != null || query.beforeAt != null) direction = 'before'
         else if (query.afterSeq != null || query.afterAt != null) direction = 'after'
-        const limit = direction === 'latest' && !coldInitial && !cachedReentry ? 200 : requestedLimit
-        const responseGate = direction === 'before' ? beforeResponseGate : null
+        const limit = direction === 'latest' && readingPending ? 7
+            : direction === 'latest' && !coldInitial && !cachedReentry ? 200 : requestedLimit
+        const responseGate = direction === 'before' ? beforeResponseGate : direction === 'after' && (query.afterSeq ?? 0) >= holdAfterMinimumSeq ? afterResponseGate : null
+        const requestSnapshot = snapshotBefore && direction === 'before'
+            ? allMessages.filter(message => message.seq! <= remoteRewindSeq) : null
         window.__probe.requests.push({
             direction,
             beforeSeq: query.beforeSeq ?? null,
@@ -203,14 +436,27 @@ const fakeApi = {
             await latestResponseGate
         }
 
+        window.__probe.finishedRequests++
+        if (outlineEpochReset && direction !== 'before' && remoteEpoch === 2 && resetRefreshFailures++ === 0) {
+            if (resetRefreshDenied) throw new ApiError('fixture: reset refresh forbidden', 403)
+            throw new Error('fixture: reset refresh failed')
+        }
+        const activeMessages = allMessages.filter(message => message.seq! <= remoteRewindSeq)
         if (direction === 'before') {
             beforeAttempts += 1
+            if (directoryDenied) throw new ApiError('fixture: directory forbidden', 403)
+            if (outlineEpochReset && beforeAttempts === 1) {
+                remoteRewindSeq = 1000
+                remoteEpoch = 2
+                const snapshot = allMessages.filter(message => message.seq! <= remoteRewindSeq).slice(-200)
+                return { messages: snapshot, page: pageFrom(snapshot, { epoch: 2, reset: true, hasMore: true }) }
+            }
             if (beforeAttempts <= failBeforeCount) {
                 throw new Error('fixture: forced before-page failure')
             }
             const cursorAt = query.beforeAt ?? Number.POSITIVE_INFINITY
             const cursorSeq = query.beforeSeq ?? Number.POSITIVE_INFINITY
-            const older = allMessages.filter((message) => {
+            const older = (requestSnapshot ?? activeMessages).filter((message) => {
                 const position = positionOf(message)
                 return position.at < cursorAt || (position.at === cursorAt && position.seq < cursorSeq)
             })
@@ -221,7 +467,7 @@ const fakeApi = {
                 page: pageFrom(pageMessages, {
                     direction: 'before',
                     limit,
-                    epoch: epochBump ? 2 : 1,
+                    epoch: epochBump ? 2 : remoteEpoch,
                     hasMore: older.length > pageMessages.length,
                     nextBeforeSeq: oldest?.seq ?? null,
                     nextBeforeAt: oldest ? positionOf(oldest).at : null,
@@ -233,7 +479,25 @@ const fakeApi = {
             }
         }
 
-        const pageMessages = allMessages.slice(-limit)
+        if (direction === 'after' && query.epoch === remoteEpoch && !epochBump) {
+            const newer = activeMessages.filter(message => {
+                const position = positionOf(message)
+                const after = { at: query.afterAt!, seq: query.afterSeq! }
+                const until = { at: query.untilAt ?? Infinity, seq: query.untilSeq ?? Infinity }
+                return (position.at > after.at || (position.at === after.at && position.seq > after.seq))
+                    && (position.at < until.at || (position.at === until.at && position.seq <= until.seq))
+            })
+            const rows = newer.slice(0, limit)
+            const last = rows[rows.length - 1]
+            const head = activeMessages[activeMessages.length - 1]
+            return { messages: rows, page: pageFrom(rows, {
+                direction: 'after', limit, epoch: remoteEpoch, reset: false, hasMore: newer.length > rows.length,
+                nextAfterAt: last ? positionOf(last).at : query.afterAt!, nextAfterSeq: last?.seq ?? query.afterSeq!,
+                snapshotHeadAt: positionOf(head).at, snapshotHeadSeq: head.seq
+            }) }
+        }
+
+        const pageMessages = activeMessages.slice(-limit)
         // After an epoch bump the "rewritten" tail renders taller rows, so
         // the reset changes content height — this is what re-fires the
         // ResizeObserver coverage re-check in the epoch-reset scenario.
@@ -252,7 +516,8 @@ const fakeApi = {
                 direction: 'latest',
                 limit,
                 reset: true,
-                hasMore: allMessages.length > pageMessages.length
+                epoch: rewritten ? 2 : remoteEpoch,
+                hasMore: activeMessages.length > pageMessages.length
             })
         }
     }
@@ -270,8 +535,13 @@ const noopSend = () => {}
 const noopAbort = async () => {}
 
 function FixtureThread() {
+    const [sessionId, setSessionId] = useState(SESSION_ID)
+    activeSessionId = sessionId
+    const session = useMemo(() => ({ ...fakeSession, id: sessionId }), [sessionId])
+    const [outlineOpen, setOutlineOpen] = useState(false)
     const {
         messages,
+        epoch,
         warning,
         isSyncingTail,
         isLoadingMore,
@@ -282,10 +552,20 @@ function FixtureThread() {
         cancelLoadMore,
         refetch,
         setViewMode
-    } = useMessages(fakeApi, SESSION_ID)
+    } = useMessages(fakeApi, sessionId)
 
+    window.__probe.remoteEditMessage = (seq, text) => {
+        const message = { ...allMessages[seq - 1], content: { role: 'user', content: { type: 'text', text } } } as DecryptedMessage
+        allMessages[seq - 1] = message
+        ingestIncomingMessages(sessionId, [message])
+    }
     window.__probe.loadMore = loadMore
     window.__probe.refetch = refetch
+    window.__probe.remoteRewindTo = async (seq) => {
+        remoteRewindSeq = seq
+        remoteEpoch++
+        await refetch()
+    }
 
     const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
 
@@ -310,8 +590,17 @@ function FixtureThread() {
         [reconciled.blocks, hasMore]
     )
 
+    const outlineItems = useMemo(() => {
+        const items = buildConversationOutline(reconciled.blocks)
+        if (outlineArchive && !items.some(item => item.targetMessageId === 'user-text:m-700')) {
+            const archived = normalizeDecryptedMessage(allMessages[699])!
+            items.push(...buildConversationOutline(reduceChatBlocks([archived], null, {}).blocks))
+        }
+        return items
+    }, [reconciled.blocks])
+
     const runtime = useHappyRuntime({
-        session: fakeSession,
+        session,
         blocks: visibleBlocks,
         messagesVersion,
         historyVersion,
@@ -323,10 +612,17 @@ function FixtureThread() {
     return (
         <AssistantRuntimeProvider runtime={runtime}>
             <div className="flex h-screen min-h-0 flex-col">
+                {threadHeader ? <div className="h-14 shrink-0">Session header fixture</div> : null}
+                {readingAnchorTasks ? <button type="button" className="fixed left-0 top-0 z-50"
+                    onClick={() => setSessionId(current => current === SESSION_ID ? `${SESSION_ID}-b` : SESSION_ID)}>
+                    {sessionId === SESSION_ID ? 'Switch to session B' : 'Switch to session A'}
+                </button> : null}
+                {readingAnchorTasks || fixtureParams.has('outlineVirtual') ? <button type="button" className="fixed right-0 top-0 z-50"
+                    onClick={() => setOutlineOpen(true)}>Open conversation outline</button> : null}
                 <HappyThread
                     api={fakeApi}
-                    session={fakeSession}
-                    sessionId={SESSION_ID}
+                    session={session}
+                    sessionId={sessionId}
                     metadata={null}
                     disabled={false}
                     onRefresh={() => {}}
@@ -345,9 +641,10 @@ function FixtureThread() {
                     messagesVersion={messagesVersion}
                     historyVersion={historyVersion}
                     forceScrollToken={0}
-                    outlineOpen={false}
-                    outlineItems={[]}
-                    onOutlineOpenChange={() => {}}
+                    outlineOpen={outlineOpen}
+                    outlineItems={outlineItems}
+                    outlineEpoch={epoch}
+                    onOutlineOpenChange={setOutlineOpen}
                 />
             </div>
         </AssistantRuntimeProvider>

@@ -1,3 +1,4 @@
+import { invalidateHistoryPages } from '@/lib/history-page-repository'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Outlet, useLocation, useMatchRoute, useRouter } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -18,10 +19,10 @@ import { useVisibilityReporter } from '@/hooks/useVisibilityReporter'
 import { queryKeys } from '@/lib/query-keys'
 import { refreshAllAgyCatalogs } from '@/lib/agyCatalogAnnouncement'
 import { AppContextProvider } from '@/lib/app-context'
-import { clearMessageWindow, rewindMessageWindow, syncTailMessages } from '@/lib/message-window-store'
+import { invalidateMessageWindow, rewindMessageWindow, syncTailMessages } from '@/lib/message-window-store'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useTranslation } from '@/lib/use-translation'
-import { translateInputRequestTitle } from '@/lib/input-request-toast'
+import { incomingToastKind, translateInputRequestTitle } from '@/lib/input-request-toast'
 import { VoiceProvider } from '@/lib/voice-context'
 import { requireHubUrlForLogin } from '@/lib/runtime-config'
 import { getAppGlobalSseSubscription, getAppSessionSseSubscription } from '@/lib/appSseSubscriptions'
@@ -70,6 +71,9 @@ function AppInner() {
     const { serverUrl, baseUrl, setServerUrl, clearServerUrl } = useServerUrl()
     const { authSource, isLoading: isAuthSourceLoading, setAccessToken } = useAuthSource(baseUrl)
     const { token, api, isLoading: isAuthLoading, error: authError, needsBinding, bind } = useAuth(authSource, baseUrl)
+    useEffect(() => {
+        return () => { if (api) invalidateHistoryPages(api) }
+    }, [api])
     const [titleSuggestionAvailable, setTitleSuggestionAvailable] = useState(false)
     const goBack = useAppGoBack()
     const pathname = useLocation({ select: (location) => location.pathname })
@@ -311,10 +315,14 @@ function AppInner() {
         if (!api || event.sessionId !== selectedSessionId) {
             return
         }
+        if (event.reason === 'native-history') {
+            void syncTailMessages(api, event.sessionId, { ensureAfterCurrent: true })
+            return
+        }
         if (event.reason === 'rewind' && event.truncateFromLocalId) {
             rewindMessageWindow(event.sessionId, event.truncateFromLocalId)
         } else {
-            clearMessageWindow(event.sessionId)
+            invalidateMessageWindow(event.sessionId)
         }
         void syncTailMessages(api, event.sessionId)
     }, [api, selectedSessionId])
@@ -341,7 +349,7 @@ function AppInner() {
             return { title: inputTitle, body: normalizedBody }
         }
 
-        if (normalizedTitle === 'Ready for input') {
+        if (incomingToastKind(normalizedTitle) === 'ready') {
             const waitingMatch = normalizedBody.match(/^(.+)\s+is waiting in\s+(.+)$/i)
             if (waitingMatch) {
                 const agent = waitingMatch[1]?.trim() ?? ''
@@ -384,6 +392,7 @@ function AppInner() {
     const handleToast = useCallback((event: ToastEvent) => {
         const localized = translateIncomingToast(event.data.title, event.data.body)
         addToast({
+            kind: incomingToastKind(event.data.title),
             title: localized.title,
             body: localized.body,
             sessionId: event.data.sessionId,

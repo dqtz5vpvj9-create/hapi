@@ -1,5 +1,9 @@
+import type { ReadingAnchor } from '@/lib/reading-anchor'
+import { getHistoryPageRepository, HistoryReadInvalidated, type HistoryPageRequest } from '@/lib/history-page-repository'
 import { getReasoningStreamId } from '@hapi/protocol/messages'
-import type { ApiClient } from '@/api/client'
+import { ApiError, type ApiClient } from '@/api/client'
+import { reduceChatBlocks } from '@/chat/reducer'
+import { buildVisibleChatBlocks } from '@/chat/toolGroups'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
 import type { DecryptedMessage, MessageStatus, MessagesResponse } from '@/types/api'
 import { isQueuedForInvocation, mergeMessages } from '@/lib/messages'
@@ -26,6 +30,8 @@ export type MessageWindowState = {
     sessionId: string
     messages: DecryptedMessage[]
     hasMore: boolean
+    hasMoreAfter: boolean
+    readingNotice: 'neighbor-restored' | null
     oldestSeq: number | null
     newestSeq: number | null
     epoch: number | null
@@ -46,12 +52,17 @@ const OLDER_LOAD_WINDOW_SIZE = 800
 const PAGE_SIZE = 200
 const CACHED_REENTRY_PAGE_SIZE = 20
 
+type SavedReadingAnchor = ReadingAnchor & { sourceMessageId?: string; position?: MessagePosition }
+
 type MessagePosition = {
     at: number
     seq: number
 }
 
 type InternalState = MessageWindowState & {
+    readingBookmark: SavedReadingAnchor | null
+    readerAfter: MessagePosition | null
+    tailSyncError: Error | null
     oldestPositionAt: number | null
     oldestPositionSeq: number | null
     newestPositionAt: number | null
@@ -63,6 +74,10 @@ type InternalState = MessageWindowState & {
 }
 
 type PersistedMessageWindowState = {
+    readingBookmark?: SavedReadingAnchor | null
+    viewMode?: MessageViewMode
+    readerAfter?: MessagePosition | null
+    hasMoreAfter?: boolean
     messages: DecryptedMessage[]
     hasMore: boolean
     oldestPositionAt: number | null
@@ -87,6 +102,9 @@ const appliedRewindLocalIds = new Map<string, Set<string>>()
 const NOTIFY_THROTTLE_MS = 150
 const PERSIST_THROTTLE_MS = 200
 const STORAGE_KEY_PREFIX = 'hapi:message-window:v2:'
+const READER_STORAGE_KEY_PREFIX = 'hapi:message-reader:v1:'
+// Optional server bodies share 2 MiB of UTF-16 storage across sessions.
+const MESSAGE_CACHE_STORAGE_BYTES = 2 * 1024 * 1024
 const pendingNotifySessionIds = new Set<string>()
 const pendingPersistSessionIds = new Set<string>()
 let notifyRafId: ReturnType<typeof requestAnimationFrame> | null = null
@@ -163,21 +181,90 @@ function shouldPersistState(state: InternalState): boolean {
     return state.messages.length > 0
         || state.hasMore
         || state.epoch !== null
+        || state.readingBookmark !== null
         || state.oldestPositionAt !== null
         || state.newestPositionAt !== null
 }
 
-function persistState(sessionId: string, state: InternalState): void {
+function discardOptionalMessageCaches(): void {
+    const keys = Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.key(index))
+    for (const key of keys) {
+        if (!key?.startsWith(STORAGE_KEY_PREFIX)) continue
+        const id = key.slice(STORAGE_KEY_PREFIX.length)
+        if (sessionStorage.getItem(`${READER_STORAGE_KEY_PREFIX}${id}`)) {
+            sessionStorage.removeItem(key)
+        } else {
+            // A previous-version window can be another session's only copy
+            // of local rows. Shrink it in place, retaining its reader intent.
+            const legacy = JSON.parse(sessionStorage.getItem(key)!) as PersistedMessageWindowState
+            sessionStorage.setItem(key, JSON.stringify({ ...legacy,
+                messages: legacy.messages.filter(row => row.seq === null || isQueuedForInvocation(row)),
+                oldestPositionAt: null, oldestPositionSeq: null,
+                newestPositionAt: null, newestPositionSeq: null, epoch: null
+            }))
+        }
+    }
+}
+
+function persistMessageCache(sessionId: string, persisted: PersistedMessageWindowState): void {
+    const key = getStorageKey(sessionId)
+    const encodedRows: string[] = []
+    let bytes = 0
+    let rawStringBytes = 0
+    const overBudget = new Error('Optional message cache exceeds storage budget')
+    try {
+        for (const row of persisted.messages) {
+            if (row.seq === null || isQueuedForInvocation(row)) continue
+            const encoded = JSON.stringify(row, (_key, value) => {
+                if (typeof value === 'string') {
+                    rawStringBytes += value.length * 2
+                    if (rawStringBytes > MESSAGE_CACHE_STORAGE_BYTES) throw overBudget
+                }
+                return value
+            })
+            bytes += (encoded.length + 1) * 2
+            if (bytes > MESSAGE_CACHE_STORAGE_BYTES) throw overBudget
+            encodedRows.push(encoded)
+        }
+        const header = JSON.stringify({ ...persisted, messages: [] })
+        const encoded = header.replace('"messages":[]', () => `"messages":[${encodedRows.join(',')}]`)
+        bytes = encoded.length * 2
+        if (bytes > MESSAGE_CACHE_STORAGE_BYTES) throw overBudget
+        // Replace bodies as a cache transaction, not as reader persistence.
+        sessionStorage.removeItem(key)
+        const keys = Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.key(index))
+        let storedBytes = keys.reduce((total, cacheKey) => total + (cacheKey?.startsWith(STORAGE_KEY_PREFIX)
+            ? (sessionStorage.getItem(cacheKey)?.length ?? 0) * 2 : 0), 0)
+        for (const cacheKey of keys) {
+            if (storedBytes + bytes <= MESSAGE_CACHE_STORAGE_BYTES) break
+            if (!cacheKey?.startsWith(STORAGE_KEY_PREFIX)) continue
+            const id = cacheKey.slice(STORAGE_KEY_PREFIX.length)
+            if (!sessionStorage.getItem(`${READER_STORAGE_KEY_PREFIX}${id}`)) continue
+            storedBytes -= (sessionStorage.getItem(cacheKey)?.length ?? 0) * 2
+            sessionStorage.removeItem(cacheKey)
+        }
+        if (storedBytes + bytes <= MESSAGE_CACHE_STORAGE_BYTES) sessionStorage.setItem(key, encoded)
+    } catch {
+        // An oversized or unavailable body cache never leaves a stale window.
+        sessionStorage.removeItem(key)
+    }
+}
+
+function persistState(sessionId: string, state: InternalState, cacheMessages = true): void {
     if (!isSessionStorageAvailable()) {
         return
     }
     try {
         if (!shouldPersistState(state)) {
-            sessionStorage.removeItem(getStorageKey(sessionId))
+            clearPersistedState(sessionId)
             return
         }
         const persisted: PersistedMessageWindowState = {
             messages: state.messages,
+            readingBookmark: state.readingBookmark,
+            viewMode: state.viewMode,
+            readerAfter: state.readerAfter,
+            hasMoreAfter: state.hasMoreAfter,
             hasMore: state.hasMore,
             oldestPositionAt: state.oldestPositionAt,
             oldestPositionSeq: state.oldestPositionSeq,
@@ -185,7 +272,33 @@ function persistState(sessionId: string, state: InternalState): void {
             newestPositionSeq: state.newestPositionSeq,
             epoch: state.epoch
         }
-        sessionStorage.setItem(getStorageKey(sessionId), JSON.stringify(persisted))
+        // Persist an explicit latest intent immediately, without certifying the
+        // historical server window as a valid tail while its GET is pending.
+        if (state.requiresLatestReset && state.viewMode === 'tail') {
+            persisted.messages = state.messages.filter(row => row.seq === null || isQueuedForInvocation(row))
+            persisted.hasMore = false
+            persisted.hasMoreAfter = false
+            persisted.readingBookmark = null
+            persisted.readerAfter = null
+            persisted.epoch = null
+            persisted.oldestPositionAt = persisted.oldestPositionSeq = null
+            persisted.newestPositionAt = persisted.newestPositionSeq = null
+        }
+        const localRows = persisted.messages.filter(row => row.seq === null || isQueuedForInvocation(row))
+        // Reader intent and local/queued rows own the durable entry. Server
+        // bodies are an optional cache and are stored only once, separately.
+        const readerKey = `${READER_STORAGE_KEY_PREFIX}${sessionId}`
+        const encodedReader = JSON.stringify({ ...persisted, messages: localRows })
+        try {
+            sessionStorage.setItem(readerKey, encodedReader)
+        } catch (error) {
+            if (!error || typeof error !== 'object' || !('name' in error) || error.name !== 'QuotaExceededError') throw error
+            // Known cache pressure has a specific capacity remedy. No other
+            // session's intent/local rows, or unrelated storage, is removed.
+            discardOptionalMessageCaches()
+            sessionStorage.setItem(readerKey, encodedReader)
+        }
+        if (cacheMessages) persistMessageCache(sessionId, persisted)
     } catch {
     }
 }
@@ -197,6 +310,7 @@ function clearPersistedState(sessionId: string): void {
     }
     try {
         sessionStorage.removeItem(getStorageKey(sessionId))
+        sessionStorage.removeItem(`${READER_STORAGE_KEY_PREFIX}${sessionId}`)
     } catch {
     }
 }
@@ -230,6 +344,10 @@ function createState(sessionId: string): InternalState {
         sessionId,
         messages: [],
         hasMore: false,
+        hasMoreAfter: false,
+        readingNotice: null,
+        readerAfter: null,
+        readingBookmark: null,
         oldestSeq: null,
         newestSeq: null,
         epoch: null,
@@ -244,6 +362,7 @@ function createState(sessionId: string): InternalState {
         oldestPositionSeq: null,
         newestPositionAt: null,
         newestPositionSeq: null,
+        tailSyncError: null,
         requiresLatestReset: false,
         preferLatestOnActivation: false,
         syncGeneration: 0,
@@ -257,13 +376,27 @@ function hydrateState(sessionId: string): InternalState | null {
     }
     try {
         const raw = sessionStorage.getItem(getStorageKey(sessionId))
-        if (!raw) {
-            return null
-        }
-        const parsed = JSON.parse(raw) as Partial<PersistedMessageWindowState> | null
+        const readerRaw = sessionStorage.getItem(`${READER_STORAGE_KEY_PREFIX}${sessionId}`)
+        if (!raw && !readerRaw) return null
+        const cache = raw ? JSON.parse(raw) as Partial<PersistedMessageWindowState> : null
+        const reader = readerRaw ? JSON.parse(readerRaw) as Partial<PersistedMessageWindowState> : null
+        let parsed = reader ?? cache
         if (!parsed || !Array.isArray(parsed.messages)) {
             clearPersistedState(sessionId)
             return null
+        }
+        if (reader) {
+            // Native epoch/cursors identify the cached window. Never combine
+            // current reader intent with a body cache whose replacement failed.
+            const matches = cache && Array.isArray(cache.messages)
+                && cache.epoch === reader.epoch
+                && cache.oldestPositionAt === reader.oldestPositionAt && cache.oldestPositionSeq === reader.oldestPositionSeq
+                && cache.newestPositionAt === reader.newestPositionAt && cache.newestPositionSeq === reader.newestPositionSeq
+                && (!reader.readingBookmark?.sourceMessageId || cache.messages.some(row => row.id === reader.readingBookmark!.sourceMessageId)
+                    || reader.messages!.some(row => row.id === reader.readingBookmark!.sourceMessageId))
+            parsed = { ...reader, messages: mergeMessages(matches ? cache!.messages! : [], reader.messages!),
+                ...(!matches ? { oldestPositionAt: null, oldestPositionSeq: null,
+                    newestPositionAt: null, newestPositionSeq: null, epoch: null } : {}) }
         }
         const restoreMessage = (message: DecryptedMessage): DecryptedMessage => {
             if (message.status !== 'sending') {
@@ -271,7 +404,10 @@ function hydrateState(sessionId: string): InternalState | null {
             }
             return {
                 ...message,
-                status: message.invokedAt === null ? 'queued' : 'sent'
+                // A browser restart cannot establish server acceptance. Keep the
+                // payload actionable locally while queued-state lookup resolves it.
+                status: message.invokedAt === null && optimisticMessage(message) ? 'failed'
+                    : message.invokedAt === null ? 'queued' : 'sent'
             }
         }
         const oldest = readPosition(parsed.oldestPositionAt, parsed.oldestPositionSeq)
@@ -279,15 +415,20 @@ function hydrateState(sessionId: string): InternalState | null {
         const epoch = typeof parsed.epoch === 'number' && Number.isInteger(parsed.epoch) && parsed.epoch >= 0
             ? parsed.epoch
             : null
+        const restoredMessages = parsed.messages!.map(restoreMessage)
         return buildState(createState(sessionId), {
-            messages: mergeMessages([], parsed.messages.map(restoreMessage)),
+            messages: mergeMessages([], restoredMessages),
             hasMore: parsed.hasMore === true,
+            hasMoreAfter: parsed.hasMoreAfter === true,
+            readingBookmark: parsed.readingBookmark ?? null,
+            viewMode: parsed.viewMode === 'history' ? 'history' : 'tail',
+            readerAfter: readPosition(parsed.readerAfter?.at, parsed.readerAfter?.seq),
             oldestPositionAt: oldest?.at ?? null,
             oldestPositionSeq: oldest?.seq ?? null,
             newestPositionAt: newest?.at ?? null,
             newestPositionSeq: newest?.seq ?? null,
             epoch,
-            requiresLatestReset: parsed.messages.length > 0 && (newest === null || epoch === null)
+            requiresLatestReset: (restoredMessages.length > 0 || parsed.readingBookmark != null) && (newest === null || epoch === null)
         })
     } catch {
         clearPersistedState(sessionId)
@@ -320,6 +461,7 @@ function setState(sessionId: string, next: InternalState, immediate = false): vo
     // flight; a reload during the reset must not resurrect removed messages.
     if (next.requiresLatestReset) {
         pendingPersistSessionIds.delete(sessionId)
+        if (next.viewMode === 'tail') persistState(sessionId, next)
     } else {
         schedulePersist(sessionId)
     }
@@ -392,10 +534,15 @@ function buildState(
     updates: Partial<Pick<InternalState,
         | 'messages'
         | 'hasMore'
+        | 'hasMoreAfter'
+        | 'readerAfter'
+        | 'readingBookmark'
+        | 'readingNotice'
         | 'epoch'
         | 'isSyncingTail'
         | 'isLoadingMore'
         | 'warning'
+        | 'tailSyncError'
         | 'viewMode'
         | 'oldestPositionAt'
         | 'oldestPositionSeq'
@@ -573,6 +720,9 @@ function mergeIntoWindow(
         })
     }
     const newest = derivePosition(kept, 'newest')
+    if (previous.viewMode === 'history' && previous.epoch !== null) {
+        return buildState(next, { hasMoreAfter: true, readerAfter: newest })
+    }
     next = buildState(next, {
         requiresLatestReset: true,
         newestPositionAt: newest?.at ?? null,
@@ -643,12 +793,90 @@ function applyLatestResponse(
         newestPositionSeq: newest?.seq ?? null,
         tailRevision: previous.tailRevision + 1,
         requiresLatestReset: false,
+        ...(options.replaceServerRows && previous.readingBookmark ? { readingBookmark: null, viewMode: 'tail' as const } : {}),
+        hasMoreAfter: false,
+        readerAfter: null,
         isLoadingMore: options.replaceServerRows ? false : previous.isLoadingMore,
         olderGeneration: options.replaceServerRows
             ? previous.olderGeneration + 1
             : previous.olderGeneration,
         warning: null
     })
+}
+
+async function recoverReadingAfterReset(api: ApiClient, sessionId: string, response: MessagesResponse, generation: number): Promise<boolean> {
+    const initial = getState(sessionId)
+    const saved = initial.readingBookmark
+    if (initial.viewMode !== 'history' || !saved?.sourceMessageId) return false
+    let context
+    let moved = false
+    try {
+        context = await api.getMessageContext(sessionId, saved.sourceMessageId, { radius: 99, epoch: response.page.epoch })
+    } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 404 || !saved.position) throw error
+        moved = true
+        const head = pagePosition(response.page.snapshotHeadAt, response.page.snapshotHeadSeq)
+        const nearest = await api.getMessages(sessionId, {
+            afterAt: saved.position.at, afterSeq: saved.position.seq,
+            untilAt: head?.at, untilSeq: head?.seq, epoch: response.page.epoch, limit: PAGE_SIZE, bounded: true
+        })
+        const rows = nearest.messages.length ? nearest.messages : response.messages
+        const first = derivePosition(rows, 'oldest'), last = derivePosition(rows, 'newest')
+        if (!first || !last || !head) return false
+        context = { messages: rows, page: { epoch: nearest.page.epoch, reset: false,
+            beforeCursor: first, afterCursor: last, hasMoreBefore: nearest.page.direction === 'after' || nearest.page.hasMore,
+            hasMoreAfter: comparePosition(last, head) < 0, snapshotHead: head } }
+    }
+    if (!isCurrentTailSync(sessionId, generation)) return true
+    const current = getState(sessionId)
+    if (current.viewMode !== 'history') return false
+    const reading = current.readingBookmark
+    const readerMoved = reading?.id !== saved.id
+    if (!reading?.sourceMessageId || (readerMoved && !context.messages.some(row => row.id === reading.sourceMessageId))) {
+        // This recovery no longer covers the user's reader. Discard it without
+        // giving the caller permission to replace history with the latest page.
+        // A changed epoch still requires a fresh authoritative recovery.
+        updateState(sessionId, previous => buildState(previous, {
+            preferLatestOnActivation: false,
+            requiresLatestReset: previous.requiresLatestReset || previous.epoch !== context.page.epoch
+        }))
+        return true
+    }
+    let bookmark = reading
+    if (moved && !readerMoved) {
+        const normalized = context.messages.map(normalizeDecryptedMessage).filter(message => message !== null)
+        const blocks = buildVisibleChatBlocks(reduceChatBlocks(normalized, null, {}).blocks, { hasMoreMessages: context.page.hasMoreBefore })
+        // After a rewind the nearest surviving position can be the new head;
+        // otherwise the first visible row after the removed identity is next.
+        const afterHead = comparePosition(saved.position!, context.page.snapshotHead) >= 0
+        const block = afterHead ? blocks.at(-1) : blocks[0]
+        if (!block) return false
+        const id = `hapi-message-${block.kind}:${block.id}`
+        const source = findMessageSource(context.messages, id)
+        bookmark = { id, topOffset: saved.topOffset, sourceMessageId: source?.id,
+            position: source?.seq != null ? { at: source.invokedAt ?? source.createdAt, seq: source.seq } : undefined }
+    }
+    const baseline = new Map(initial.messages.map(row => [row.id, row]))
+    const currentRows = new Map(current.messages.map(row => [row.id, row]))
+    const rows = context.messages.map(row => {
+        const live = currentRows.get(row.id)
+        return live && live !== baseline.get(row.id) ? live : row
+    })
+    getHistoryPageRepository(api).observeEpoch(sessionId, context.page.epoch)
+    updateState(sessionId, previous => {
+        if (previous.syncGeneration !== generation) return previous
+        return buildState(previous, {
+            messages: mergeMessages(rows, previous.messages.filter(row => row.seq === null || isQueuedForInvocation(row))),
+            epoch: context.page.epoch, viewMode: 'history', readingBookmark: bookmark,
+            hasMore: context.page.hasMoreBefore, hasMoreAfter: context.page.hasMoreAfter,
+            oldestPositionAt: context.page.beforeCursor.at, oldestPositionSeq: context.page.beforeCursor.seq,
+            readerAfter: context.page.afterCursor, newestPositionAt: context.page.snapshotHead.at,
+            newestPositionSeq: context.page.snapshotHead.seq, requiresLatestReset: false,
+            preferLatestOnActivation: false, isLoadingMore: false, historyVersion: previous.historyVersion + 1,
+            readingNotice: moved && !readerMoved ? 'neighbor-restored' : null, warning: null
+        })
+    }, true)
+    return true
 }
 
 function beginTailSync(sessionId: string): number {
@@ -673,12 +901,12 @@ function isCurrentTailSync(sessionId: string, generation: number): boolean {
     return getState(sessionId).syncGeneration === generation
 }
 
-function finishTailSync(sessionId: string, generation: number, warning: string | null): void {
+function finishTailSync(sessionId: string, generation: number, error: Error | null): void {
     updateState(sessionId, (previous) => {
         if (previous.syncGeneration !== generation) {
             return previous
         }
-        return buildState(previous, { isSyncingTail: false, warning })
+        return buildState(previous, { isSyncingTail: false, warning: error?.message ?? null, tailSyncError: error })
     })
 }
 
@@ -708,6 +936,11 @@ async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
                         : PAGE_SIZE
             const response = await api.getMessages(sessionId, { limit: latestPageSize })
             if (!isCurrentTailSync(sessionId, generation)) return
+            getHistoryPageRepository(api).observeEpoch(sessionId, response.page.epoch)
+            if (await recoverReadingAfterReset(api, sessionId, response, generation)) {
+                finishTailSync(sessionId, generation, null)
+                return
+            }
             updateState(sessionId, (previous) => {
                 if (previous.syncGeneration !== generation) return previous
                 const next = applyLatestResponse(previous, response, {
@@ -718,6 +951,7 @@ async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
                 })
                 return buildState(next, { preferLatestOnActivation: false })
             })
+            getHistoryPageRepository(api).observeMessages(sessionId, getState(sessionId).messages.filter(row => row.seq !== null))
             finishTailSync(sessionId, generation, null)
             return
         }
@@ -735,8 +969,10 @@ async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
                 limit: PAGE_SIZE
             })
             if (!isCurrentTailSync(sessionId, generation)) return
+            getHistoryPageRepository(api).observeEpoch(sessionId, response.page.epoch)
 
             if (response.page.reset || response.page.direction === 'latest') {
+                if (await recoverReadingAfterReset(api, sessionId, response, generation)) break
                 updateState(sessionId, (previous) => {
                     if (previous.syncGeneration !== generation) return previous
                     return applyLatestResponse(previous, response, {
@@ -755,7 +991,15 @@ async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
 
             updateState(sessionId, (previous) => {
                 if (previous.syncGeneration !== generation) return previous
-                const merged = mergeIntoWindow(previous, response.messages, {
+                const currentRows = new Map(previous.messages.map(row => [row.id, row]))
+                const freshRows = response.messages.map(row => {
+                    const current = currentRows.get(row.id)
+                    return current && current !== requestBaseline.get(row.id) ? current : row
+                })
+                const visibleIncoming = previous.hasMoreAfter
+                    ? freshRows.filter(message => currentRows.has(message.id))
+                    : freshRows
+                const merged = mergeIntoWindow(previous, visibleIncoming, {
                     advanceTailRevision: true
                 })
                 if (merged.requiresLatestReset) {
@@ -777,6 +1021,7 @@ async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
             })
 
             const current = getState(sessionId)
+            getHistoryPageRepository(api).observeMessages(sessionId, current.messages.filter(row => row.seq !== null))
             if (
                 current.requiresLatestReset
                 || current.preferLatestOnActivation
@@ -797,7 +1042,7 @@ async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
         finishTailSync(
             sessionId,
             generation,
-            error instanceof Error ? error.message : 'Failed to synchronize messages'
+            error instanceof Error ? error : new Error('Failed to synchronize messages')
         )
     }
 }
@@ -840,7 +1085,7 @@ async function waitForTailSyncDrain(
 
 function enterTailMode(previous: InternalState): InternalState {
     const { kept, dropped } = trimPreservingQueued(previous.messages, VISIBLE_WINDOW_SIZE, 'append')
-    const forceLatest = previous.requiresLatestReset
+    const forceLatest = previous.requiresLatestReset || previous.hasMoreAfter
     const oldest = dropped.length > 0
         ? derivePosition(kept, 'oldest')
         : readPosition(previous.oldestPositionAt, previous.oldestPositionSeq)
@@ -848,6 +1093,11 @@ function enterTailMode(previous: InternalState): InternalState {
         messages: kept,
         hasMore: previous.hasMore || dropped.length > 0,
         viewMode: 'tail',
+        readingNotice: null,
+        readingBookmark: null,
+        hasMoreAfter: false,
+        readerAfter: null,
+        requiresLatestReset: forceLatest,
         epoch: forceLatest ? null : previous.epoch,
         oldestPositionAt: oldest?.at ?? null,
         oldestPositionSeq: oldest?.seq ?? null,
@@ -859,8 +1109,15 @@ function enterTailMode(previous: InternalState): InternalState {
 export function activateMessageWindow(sessionId: string): void {
     let requestedLatest = false
     updateState(sessionId, (previous) => {
+        // A saved reading position owns re-entry; tail refresh must not evict it.
+        if (previous.viewMode === 'history' && previous.readingBookmark
+            && ((previous.epoch !== null && !previous.requiresLatestReset) || previous.readingBookmark.sourceMessageId)) {
+            return previous.preferLatestOnActivation
+                ? buildState(previous, { preferLatestOnActivation: false })
+                : previous
+        }
         const { kept } = trimPreservingQueued(previous.messages, VISIBLE_WINDOW_SIZE, 'append')
-        const forceLatest = previous.requiresLatestReset
+        const forceLatest = previous.requiresLatestReset || previous.hasMoreAfter
         const hasUsableCursor = getNewestCursor(previous) !== null
             && previous.epoch !== null
             && !forceLatest
@@ -902,6 +1159,58 @@ export function activateMessageWindow(sessionId: string): void {
             controller.trailingRequested = true
         }
     }
+}
+
+export function findMessageSource(messages: readonly DecryptedMessage[], anchorId: string): DecryptedMessage | undefined {
+    const id = anchorId.replace(/^hapi-(?:message|reading)-/, '').replace(/~\d+$/, '')
+    const blockId = id.slice(id.indexOf(':') + 1).replace(/^tool-group:/, '')
+    for (let index = messages.length - 1; index >= 0; index--) {
+        const row = messages[index]
+        if (blockId === row.id || blockId.startsWith(`${row.id}:`)) return row
+    }
+    for (let index = messages.length - 1; index >= 0; index--) {
+        const row = messages[index]
+        const message = normalizeDecryptedMessage(row)
+        if (message?.role === 'agent' && message.content.some(part =>
+            ('streamId' in part && part.streamId === blockId) || (part.type === 'tool-call' && part.id === blockId)
+        )) return row
+    }
+    return undefined
+}
+
+export function getMessageReadingAnchor(sessionId: string): ReadingAnchor | null {
+    return getState(sessionId).readingBookmark
+}
+
+/** Scrolling changes the bookmark, not the message projection. */
+export function saveMessageReadingAnchor(sessionId: string, anchor: ReadingAnchor | null, immediate = false): void {
+    const state = getState(sessionId)
+    let readingBookmark: SavedReadingAnchor | null = anchor
+    if (anchor) {
+        const source = findMessageSource(state.messages, anchor.id)
+        const previous = state.readingBookmark?.id === anchor.id ? state.readingBookmark : null
+        readingBookmark = { ...anchor,
+            sourceMessageId: source?.id ?? previous?.sourceMessageId,
+            position: source?.seq != null ? { at: source.invokedAt ?? source.createdAt, seq: source.seq } : previous?.position }
+    }
+    const next = { ...state, readingBookmark }
+    states.set(sessionId, next)
+    if (!next.requiresLatestReset || next.viewMode === 'tail') {
+        // Scrolling only changes reader metadata; do not serialize all bodies.
+        persistState(sessionId, next, false)
+    }
+}
+
+/** Pagination starts at covered history, which can differ from the oldest
+ * retained row (for example an earlier live reasoning snapshot). */
+export function getMessageHistoryCursor(sessionId: string): MessagePosition | null {
+    const state = getState(sessionId)
+    return readPosition(state.oldestPositionAt, state.oldestPositionSeq)
+}
+
+/** Preserve the original API status for consumers recovering from a failed refresh. */
+export function getMessageTailSyncError(sessionId: string): Error | null {
+    return getState(sessionId).tailSyncError
 }
 
 export function syncTailMessages(
@@ -953,7 +1262,7 @@ export async function fetchOlderMessages(
     if (!initial.hasMore) {
         return { kind: 'stopped', reason: 'exhausted' }
     }
-    if (!before) {
+    if (!before || initial.epoch === null) {
         return { kind: 'stopped', reason: 'unavailable' }
     }
     const generation = initial.olderGeneration + 1
@@ -964,16 +1273,21 @@ export async function fetchOlderMessages(
     }))
 
     try {
-        const response = await api.getMessages(sessionId, {
-            beforeAt: before.at,
-            beforeSeq: before.seq,
-            limit: PAGE_SIZE
-        })
+        const repository = getHistoryPageRepository(api)
+        repository.observeEpoch(sessionId, initial.epoch)
+        const request = { direction: 'before' as const, cursor: before, epoch: initial.epoch }
+        let response
+        try {
+            response = await repository.read(sessionId, request)
+        } catch (error) {
+            if (!(error instanceof HistoryReadInvalidated) || getState(sessionId).olderGeneration !== generation) throw error
+            response = await repository.read(sessionId, request, { refresh: true })
+        }
         if (getState(sessionId).olderGeneration !== generation) {
             return { kind: 'stopped', reason: 'invalidated' }
         }
 
-        if (initial.epoch !== null && response.page.epoch !== initial.epoch) {
+        if (response.page.reset || response.page.epoch !== initial.epoch) {
             updateState(sessionId, (previous) => {
                 if (previous.olderGeneration !== generation) return previous
                 return buildState(previous, {
@@ -1048,6 +1362,97 @@ export async function fetchOlderMessages(
     }
 }
 
+/** Select an archived identity directly, without walking every intervening page. */
+export async function openMessageContext(api: ApiClient, sessionId: string, messageId: string, isCurrent: () => boolean): Promise<boolean> {
+    const initial = getState(sessionId)
+    const generation = initial.olderGeneration + 1
+    updateState(sessionId, previous => buildState(previous, {
+        olderGeneration: generation, syncGeneration: previous.syncGeneration + 1,
+        isLoadingMore: true, isSyncingTail: false, warning: null
+    }), true)
+    try {
+        const repository = getHistoryPageRepository(api)
+        const cached = initial.epoch === null ? null : repository.findCachedMessagePage(sessionId, initial.epoch, messageId)
+        const context = cached ? null : await api.getMessageContext(sessionId, messageId, {
+            radius: 99, ...(initial.epoch === null ? {} : { epoch: initial.epoch })
+        })
+        if (!isCurrent() || getState(sessionId).olderGeneration !== generation) return false
+        const currentRows = new Map(getState(sessionId).messages.map(row => [row.id, row]))
+        const baseline = new Map(initial.messages.map(row => [row.id, row]))
+        const rows = (cached?.messages ?? context!.messages).map(row => {
+            const current = currentRows.get(row.id)
+            return current && current !== baseline.get(row.id) ? current : row
+        })
+        const first = derivePosition(rows, 'oldest')
+        const last = derivePosition(rows, 'newest')
+        const responseHead = context?.page.snapshotHead ?? getNewestCursor(initial)
+        const currentHead = getNewestCursor(getState(sessionId))
+        const head = responseHead && currentHead
+            ? (comparePosition(responseHead, currentHead) >= 0 ? responseHead : currentHead)
+            : responseHead ?? currentHead
+        const epoch = context?.page.epoch ?? initial.epoch!
+        if (context?.page.reset || epoch !== initial.epoch) repository.observeEpoch(sessionId, epoch)
+        updateState(sessionId, previous => buildState(previous, {
+            messages: mergeMessages(rows, previous.messages.filter(message => message.seq === null || isQueuedForInvocation(message))),
+            epoch, viewMode: 'history', readingNotice: null, readingBookmark: null,
+            hasMore: context?.page.hasMoreBefore ?? (cached!.page.direction === 'after' ? true : cached!.page.hasMore),
+            hasMoreAfter: Boolean(context?.page.hasMoreAfter) || Boolean(last && head && comparePosition(last, head) < 0),
+            oldestPositionAt: context?.page.beforeCursor.at ?? cached?.page.nextBeforeAt ?? first?.at ?? null,
+            oldestPositionSeq: context?.page.beforeCursor.seq ?? cached?.page.nextBeforeSeq ?? first?.seq ?? null,
+            readerAfter: context?.page.afterCursor ?? last,
+            newestPositionAt: head?.at ?? null, newestPositionSeq: head?.seq ?? null,
+            isLoadingMore: false, requiresLatestReset: false,
+            historyVersion: previous.historyVersion + 1
+        }), true)
+        return true
+    } catch (error) {
+        if (isCurrent() && getState(sessionId).olderGeneration === generation) updateState(sessionId, previous => buildState(previous, {
+            isLoadingMore: false, warning: error instanceof Error ? error.message : String(error)
+        }), true)
+        return false
+    } finally {
+        if (!isCurrent() && getState(sessionId).olderGeneration === generation) cancelOlderMessageLoad(sessionId)
+    }
+}
+
+/** Continue toward the latest snapshot while retaining the reader's current window. */
+export async function fetchNewerHistory(api: ApiClient, sessionId: string, onBeforeApply?: () => void | Promise<void>): Promise<boolean> {
+    const initial = getState(sessionId)
+    const until = getNewestCursor(initial)
+    if (!initial.hasMoreAfter || !initial.readerAfter || !until || initial.epoch === null || initial.isLoadingMore || initial.isSyncingTail) return false
+    const generation = initial.olderGeneration + 1
+    updateState(sessionId, previous => buildState(previous, { olderGeneration: generation, isLoadingMore: true }))
+    try {
+        const response = await getHistoryPageRepository(api).read(sessionId, {
+            direction: 'after', cursor: initial.readerAfter, until, epoch: initial.epoch
+        })
+        if (getState(sessionId).olderGeneration !== generation) return false
+        if (response.page.reset || response.page.epoch !== initial.epoch) {
+            markMessageWindowForLatestReset(sessionId, getState(sessionId).messages)
+            await syncTailMessages(api, sessionId)
+            return false
+        }
+        await onBeforeApply?.()
+        if (getState(sessionId).olderGeneration !== generation) return false
+        updateState(sessionId, previous => {
+            const merged = mergeIntoWindow(previous, response.messages, { mode: 'append', regularLimit: OLDER_LOAD_WINDOW_SIZE })
+            const readerAfter = pagePosition(response.page.nextAfterAt, response.page.nextAfterSeq) ?? derivePosition(response.messages, 'newest') ?? initial.readerAfter
+            const currentHead = getNewestCursor(previous)
+            return buildState(merged, {
+                readerAfter,
+                hasMoreAfter: response.page.hasMore || Boolean(readerAfter && currentHead && comparePosition(readerAfter, currentHead) < 0), isLoadingMore: false,
+                historyVersion: previous.historyVersion + 1, warning: null
+            })
+        }, true)
+        return true
+    } catch (error) {
+        if (getState(sessionId).olderGeneration === generation) updateState(sessionId, previous => buildState(previous, {
+            isLoadingMore: false, warning: error instanceof Error ? error.message : String(error)
+        }))
+        return false
+    }
+}
+
 export function cancelOlderMessageLoad(sessionId: string): void {
     updateState(sessionId, (previous) => {
         if (!previous.isLoadingMore) {
@@ -1075,8 +1480,13 @@ export function setMessageViewMode(sessionId: string, mode: MessageViewMode): vo
 
 export function ingestIncomingMessages(sessionId: string, incoming: DecryptedMessage[]): void {
     if (incoming.length === 0) return
+    const api = tailSyncControllers.get(sessionId)?.api
+    if (api) getHistoryPageRepository(api).observeMessages(sessionId, incoming)
     updateState(sessionId, (previous) => {
-        let merged = mergeIntoWindow(previous, incoming, {
+        const visibleIncoming = previous.hasMoreAfter
+            ? incoming.filter(message => message.seq === null || previous.messages.some(row => row.id === message.id))
+            : incoming
+        let merged = mergeIntoWindow(previous, visibleIncoming, {
             advanceTailRevision: true
         })
         if (merged.epoch === null || merged.requiresLatestReset) {
@@ -1093,6 +1503,19 @@ export function ingestIncomingMessages(sessionId: string, incoming: DecryptedMes
         })
         return merged
     })
+}
+
+/** The store owns cursor selection; warm-up cannot infer coverage from DOM. */
+export function getHistoryPreloadRequest(sessionId: string, direction: 'before' | 'after'): HistoryPageRequest | null {
+    const state = getState(sessionId)
+    if (state.epoch === null || state.requiresLatestReset || state.isSyncingTail) return null
+    if (direction === 'before') {
+        const cursor = readPosition(state.oldestPositionAt, state.oldestPositionSeq)
+        return state.hasMore && cursor ? { direction, epoch: state.epoch, cursor } : null
+    }
+    const until = getNewestCursor(state)
+    return state.hasMoreAfter && state.readerAfter && until
+        ? { direction, epoch: state.epoch, cursor: state.readerAfter, until } : null
 }
 
 export function getMessageWindowState(sessionId: string): MessageWindowState {
@@ -1114,6 +1537,8 @@ export function subscribeMessageWindow(sessionId: string, listener: () => void):
 }
 
 export function clearMessageWindow(sessionId: string): void {
+    const api = tailSyncControllers.get(sessionId)?.api
+    if (api) getHistoryPageRepository(api).invalidateSession(sessionId)
     tailSyncControllers.delete(sessionId)
     clearPersistedState(sessionId)
     const previous = states.get(sessionId)
@@ -1129,6 +1554,8 @@ function markMessageWindowForLatestReset(sessionId: string, messages: DecryptedM
     const previous = states.get(sessionId)
     if (!previous) return
 
+    const api = tailSyncControllers.get(sessionId)?.api
+    if (api) getHistoryPageRepository(api).invalidateSession(sessionId)
     tailSyncControllers.delete(sessionId)
     clearPersistedState(sessionId)
     setState(sessionId, buildState(previous, {
@@ -1208,7 +1635,11 @@ export function seedMessageWindowFromSession(fromSessionId: string, toSessionId:
 }
 
 function isQueuedReconcileCandidate(message: DecryptedMessage): boolean {
-    if (!message.localId || !isQueuedForInvocation(message)) return false
+    if (!message.localId) return false
+    // Interrupted local attempts still need authority lookup: their POST may
+    // have been accepted even if its response and tail echo never arrived.
+    if (optimisticMessage(message) && message.invokedAt === null && message.status === 'failed') return true
+    if (!isQueuedForInvocation(message)) return false
     if (!optimisticMessage(message)) return true
     return message.status === 'queued' || message.status === 'sent'
 }
@@ -1235,6 +1666,7 @@ export function reconcileQueuedLocalIds(
         const messages = previous.messages.filter((message) => {
             if (!message.localId || !candidates.has(message.localId)) return true
             return queued.has(message.localId) || !isQueuedReconcileCandidate(message)
+                || (optimisticMessage(message) && message.status === 'failed')
         })
         return messages.length === previous.messages.length
             ? previous
@@ -1282,11 +1714,16 @@ export function markMessagesIndeterminate(sessionId: string, localIds: string[])
     updateState(sessionId, (previous) => {
         let changed = false
         const messages = previous.messages.map((message) => {
-            if (!message.localId || !idSet.has(message.localId) || message.deliveryState === 'indeterminate') {
+            if (!message.localId || !idSet.has(message.localId)
+                || (message.deliveryState === 'indeterminate' && message.status !== 'failed')) {
                 return message
             }
             changed = true
-            return { ...message, deliveryState: 'indeterminate' as const }
+            return {
+                ...message,
+                ...(optimisticMessage(message) && message.status === 'failed' ? { status: 'queued' as const } : {}),
+                deliveryState: 'indeterminate' as const
+            }
         })
         return changed ? buildState(previous, { messages }) : previous
     }, true)
@@ -1301,7 +1738,8 @@ export function markMessagesRequeued(sessionId: string, localIds: string[]): voi
             if (
                 !message.localId
                 || !idSet.has(message.localId)
-                || (message.deliveryState === undefined && message.queueDismissed !== true)
+                || (message.deliveryState === undefined && message.queueDismissed !== true
+                    && !(optimisticMessage(message) && message.status === 'failed'))
             ) {
                 return message
             }
@@ -1311,7 +1749,7 @@ export function markMessagesRequeued(sessionId: string, localIds: string[]): voi
                 queueDismissed: _queueDismissed,
                 ...requeued
             } = message
-            return requeued
+            return optimisticMessage(message) && message.status === 'failed' ? { ...requeued, status: 'queued' as const } : requeued
         })
         return changed ? buildState(previous, { messages }) : previous
     }, true)
@@ -1328,7 +1766,8 @@ export function markMessagesConsumed(
     updateState(sessionId, (previous) => {
         let changed = false
         const updated = previous.messages.map((message) => {
-            if (!message.localId || !idSet.has(message.localId) || message.status === 'failed') {
+            if (!message.localId || !idSet.has(message.localId)
+                || (message.status === 'failed' && !optimisticMessage(message))) {
                 return message
             }
             const needsStatus = message.status !== 'sent'

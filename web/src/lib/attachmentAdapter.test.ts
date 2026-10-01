@@ -251,3 +251,38 @@ describe('attachmentAdapter image previews', () => {
         expect(uploadFile).not.toHaveBeenCalled()
     })
 })
+
+describe('stable restored identity cancellation', () => {
+    it('can re-add a removed identity while its older upload remains cancelled', async () => {
+        const { createAttachmentAdapter } = await import('./attachmentAdapter')
+        const { setRestoredUploadMetadata } = await import('./composer-attachment-drafts')
+        const file = new File(['image'], 'restored.png', { type: 'image/png' })
+        setRestoredUploadMetadata(file, { id: 'scratchlist-source-image' })
+        let finishOld!: (result: { success: boolean; path: string }) => void
+        const uploadFile = vi.fn()
+            .mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve }))
+            .mockResolvedValueOnce({ success: true, path: '/uploads/new-attempt.png' })
+        const deleteUploadFile = vi.fn(async () => {})
+        const adapter = createAttachmentAdapter({ uploadFile, deleteUploadFile } as never, 'session-1')
+        const old = adapter.add({ file })
+        if (!('next' in old)) throw new Error('Expected upload progress')
+        const first = await old.next()
+        await old.next()
+        const pendingOld = old.next()
+        await vi.waitFor(() => expect(uploadFile).toHaveBeenCalledTimes(1))
+        await adapter.remove(first.value!)
+
+        const retry = adapter.add({ file })
+        if (!('next' in retry)) throw new Error('Expected upload progress')
+        const retried = []
+        for await (const attachment of retry) retried.push(attachment)
+        expect(retried.at(-1)).toMatchObject({
+            id: 'scratchlist-source-image', path: '/uploads/new-attempt.png',
+            status: { type: 'requires-action', reason: 'composer-send' },
+        })
+        finishOld({ success: true, path: '/uploads/old-attempt.png' })
+        expect((await pendingOld).done).toBe(true)
+        expect(deleteUploadFile).toHaveBeenCalledWith('session-1', '/uploads/old-attempt.png')
+        expect(deleteUploadFile).not.toHaveBeenCalledWith('session-1', '/uploads/new-attempt.png')
+    })
+})

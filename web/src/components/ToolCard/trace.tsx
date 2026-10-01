@@ -2,7 +2,9 @@
  * TraceSection — shows child tool calls inside a Task/Agent tool dialog.
  * Placed between Input and Result sections.
  */
-import { useState } from 'react'
+import { useNativeToolDetail, NativeDependencyStatus } from '@/components/ToolCard/nativeDependencies'
+import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
 import { isObject, safeStringify } from '@hapi/protocol'
 import type { ChatBlock, ToolCallBlock } from '@/chat/types'
 import type { SessionMetadataSummary } from '@/types/api'
@@ -167,9 +169,7 @@ function TraceSectionInner({
             </button>
 
             {open ? (
-                <div className={fixedHeight ? 'min-h-[260px] max-h-[45vh] overflow-y-auto pr-1' : undefined}>
-                    <TraceChildList items={items} metadata={metadata} mode={mode} />
-                </div>
+                <TraceChildList items={items} metadata={metadata} mode={mode} fixedHeight={fixedHeight} />
             ) : null}
         </div>
     )
@@ -183,26 +183,126 @@ type TraceChildListProps = {
     items: ChatBlock[]
     metadata: SessionMetadataSummary | null
     mode: 'trace' | 'session'
+    fixedHeight: boolean
 }
 
-function TraceChildList({ items, metadata, mode }: TraceChildListProps) {
-    const [expandedId, setExpandedId] = useState<string | null>(null)
+const VIRTUAL_TRACE_THRESHOLD = 80
 
+// Search the original data, including bodies that have never entered the DOM.
+// Do not build a second retained text index alongside native detail ownership.
+function matchesTraceItem(item: ChatBlock, query: string): boolean {
+    const text = 'text' in item ? item.text
+        : item.kind === 'tool-call' ? safeStringify({ tool: item.tool, children: item.children })
+        : item.kind === 'agent-event' ? safeStringify(item.event) : safeStringify(item)
+    return text.toLocaleLowerCase().includes(query)
+}
+
+function TraceChildList({ items, metadata, mode, fixedHeight }: TraceChildListProps) {
+    const [expandedId, setExpandedId] = useState<string | null>(null)
+    const onToggle = (id: string) => setExpandedId(prev => prev === id ? null : id)
+    if (items.length > VIRTUAL_TRACE_THRESHOLD) {
+        return <VirtualTraceList items={items} metadata={metadata} mode={mode}
+            expandedId={expandedId} onToggle={onToggle} onReveal={setExpandedId} />
+    }
     return (
-        <div className={mode === 'session'
-            ? 'flex flex-col gap-3'
-            : 'flex flex-col gap-1 pl-4 border-l border-[var(--app-border)]'
-        }>
-            {items.map((child) => (
-                <TraceChildRow
-                    key={child.id}
-                    child={child}
-                    metadata={metadata}
-                    expanded={expandedId === child.id}
-                    onToggle={() => setExpandedId((prev) => (prev === child.id ? null : child.id))}
-                    mode={mode}
-                />
-            ))}
+        <div className={fixedHeight ? 'min-h-[260px] max-h-[45vh] overflow-y-auto pr-1' : undefined}>
+            <div className={mode === 'session' ? 'flex flex-col gap-3' : 'flex flex-col gap-1 pl-4 border-l border-[var(--app-border)]'}>
+                {items.map(child => <TraceChildRow key={child.id} child={child} metadata={metadata}
+                    expanded={expandedId === child.id} onToggle={() => onToggle(child.id)} mode={mode} />)}
+            </div>
+        </div>
+    )
+}
+
+function VirtualTraceList({ items, metadata, mode, expandedId, onToggle, onReveal }: {
+    items: ChatBlock[]
+    metadata: SessionMetadataSummary | null
+    mode: 'trace' | 'session'
+    expandedId: string | null
+    onToggle: (id: string) => void
+    onReveal: (id: string) => void
+}) {
+    const { t } = useTranslation()
+    const viewportRef = useRef<HTMLDivElement>(null)
+    const listRef = useRef<HTMLDivElement>(null)
+    const [query, setQuery] = useState('')
+    const [matchPosition, setMatchPosition] = useState(0)
+    const matches = useMemo(() => {
+        const needle = query.trim().toLocaleLowerCase()
+        return needle ? items.flatMap((item, index) => matchesTraceItem(item, needle) ? [index] : []) : []
+    }, [items, query])
+    const expandedIndex = items.findIndex(item => item.id === expandedId)
+    const getItemKey = useCallback((index: number) => items[index].id, [items])
+    const rangeExtractor = useCallback((range: Parameters<typeof defaultRangeExtractor>[0]) =>
+        [...new Set([...defaultRangeExtractor(range), ...(expandedIndex >= 0 ? [expandedIndex] : [])])].sort((a, b) => a - b), [expandedIndex])
+    const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+        count: items.length,
+        getScrollElement: () => viewportRef.current,
+        getItemKey,
+        estimateSize: () => mode === 'session' ? 44 : 28,
+        gap: mode === 'session' ? 12 : 4,
+        overscan: 5,
+        useFlushSync: false,
+        rangeExtractor,
+        measureElement: (element, entry) => entry?.borderBoxSize?.[0]?.blockSize ?? Number.parseFloat(getComputedStyle(element).height),
+    })
+    const rows = virtualizer.getVirtualItems()
+    useLayoutEffect(() => {
+        // Retained rows can expand while scrolling. Publish the committed
+        // fractional height even when the virtualizer skips a ref measurement.
+        for (const element of listRef.current?.querySelectorAll<HTMLElement>(':scope > [data-trace-row-id]') ?? []) {
+            virtualizer.resizeItem(Number(element.dataset.index), Number.parseFloat(getComputedStyle(element).height))
+        }
+    })
+    const reveal = (position: number, indices = matches) => {
+        if (!indices.length) return
+        const next = (position + indices.length) % indices.length
+        const index = indices[next]
+        setMatchPosition(next)
+        onReveal(items[index].id)
+        virtualizer.scrollToIndex(index, { align: 'start' })
+    }
+    return (
+        <div className="min-w-0 flex flex-col gap-2" data-trace-list="virtual">
+            <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--app-hint)]">
+                <input type="search" aria-label={t('tool.trace.search')} placeholder={t('tool.trace.search')}
+                    className="min-w-0 flex-1 rounded border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1 text-[var(--app-fg)]"
+                    value={query} onChange={event => {
+                        const value = event.target.value
+                        setQuery(value)
+                        setMatchPosition(0)
+                        const needle = value.trim().toLocaleLowerCase()
+                        if (needle) reveal(0, items.flatMap((item, index) => matchesTraceItem(item, needle) ? [index] : []))
+                    }} onKeyDown={event => {
+                        if (event.key === 'Enter') { event.preventDefault(); reveal(matchPosition + (event.shiftKey ? -1 : 1)) }
+                    }} />
+                {query.trim() ? <span role="status" className="shrink-0 tabular-nums">{matches.length ? Math.min(matchPosition + 1, matches.length) : 0}/{matches.length}</span> : null}
+                <button type="button" aria-label={t('tool.trace.previous')} title={t('tool.trace.previous')} disabled={!matches.length} onClick={() => reveal(matchPosition - 1)}>↑</button>
+                <button type="button" aria-label={t('tool.trace.next')} title={t('tool.trace.next')} disabled={!matches.length} onClick={() => reveal(matchPosition + 1)}>↓</button>
+            </div>
+            <div ref={viewportRef} data-trace-viewport="true" tabIndex={0}
+                className="min-h-[260px] max-h-[45vh] overflow-y-auto pr-1" style={{ height: '45vh', position: 'relative' }}>
+                <div ref={listRef} style={{ height: virtualizer.getTotalSize(), width: '100%' }}>
+                    {rows.map((row, index) => {
+                        const child = items[row.index]
+                        const previous = rows[index - 1]
+                        // Consecutive rows flow immediately with their real
+                        // content height. Only unmounted intervals use cached
+                        // geometry; pins keep the same keyed parent throughout.
+                        const space = previous
+                            ? previous.index + 1 === row.index ? (mode === 'session' ? 12 : 4) : row.start - previous.end
+                            : row.start
+                        return <Fragment key={row.key}>
+                            <div aria-hidden="true" style={{ height: Math.max(0, space) }} />
+                            <div ref={virtualizer.measureElement} data-index={row.index} data-trace-row-id={child.id}
+                                style={{ display: 'flow-root', width: '100%' }}>
+                                <TraceChildRow child={child} metadata={metadata} expanded={expandedId === child.id}
+                                    onToggle={() => onToggle(child.id)} mode={mode} />
+                            </div>
+                        </Fragment>
+                    })}
+                </div>
+            </div>
         </div>
     )
 }
@@ -300,6 +400,16 @@ function TraceChildRow({ child, metadata, expanded, onToggle, mode }: TraceChild
         return null
     }
 
+    return <TraceToolRow child={child} metadata={metadata} expanded={expanded} onToggle={onToggle} mode={mode} />
+}
+
+function TraceToolRow({ child: original, metadata, expanded, onToggle, mode }: Omit<TraceChildRowProps, "child"> & { child: ToolCallBlock }) {
+    const { t } = useTranslation()
+    const detail = useNativeToolDetail(original, expanded)
+    const child = detail.block
+    const isSessionMode = mode === "session"
+    const rowClassName = isSessionMode ? "flex flex-col gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-subtle-bg)] p-2" : "flex flex-col gap-1"
+    const chevron = <span className="w-3 text-center select-none">{expanded ? "▾" : "▸"}</span>
     const label = formatTaskChildLabel(child, metadata, t)
     const FullInputView = getToolFullViewComponent(child.tool.name)
     const ResultView = getToolResultViewComponent(child.tool.name)
@@ -321,6 +431,8 @@ function TraceChildRow({ child, metadata, expanded, onToggle, mode }: TraceChild
 
             {expanded && (
                 <div className={isSessionMode ? 'flex flex-col gap-2' : 'ml-8 flex flex-col gap-2 rounded border border-[var(--app-border)] p-2'}>
+                    <NativeDependencyStatus {...detail} />
+                    <TraceSection block={child} metadata={metadata} />
                     <div>
                         <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">{t('tool.input')}</div>
                         {FullInputView ? (

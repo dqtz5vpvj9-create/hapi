@@ -1,18 +1,9 @@
 import type { ChatBlock, CliOutputBlock, UsageData } from '@/chat/types'
 
-const CLI_TAG_REGEX = /<(?:local-command-[a-z-]+|command-(?:name|message|args))>/i
+export { isCliOutputText } from '@hapi/protocol/conversationOutline'
+
 const CLI_COMMAND_NAME_REGEX = /<command-name>/i
 const CLI_COMMAND_STDOUT_REGEX = /<local-command-stdout>/i
-
-function getMetaSentFrom(meta: unknown): string | null {
-    if (!meta || typeof meta !== 'object') return null
-    const sentFrom = (meta as { sentFrom?: unknown }).sentFrom
-    return typeof sentFrom === 'string' ? sentFrom : null
-}
-
-function hasCliOutputTags(text: string): boolean {
-    return CLI_TAG_REGEX.test(text)
-}
 
 function hasCommandNameTag(text: string): boolean {
     return CLI_COMMAND_NAME_REGEX.test(text)
@@ -20,10 +11,6 @@ function hasCommandNameTag(text: string): boolean {
 
 function hasLocalCommandStdoutTag(text: string): boolean {
     return CLI_COMMAND_STDOUT_REGEX.test(text)
-}
-
-export function isCliOutputText(text: string, meta: unknown): boolean {
-    return getMetaSentFrom(meta) === 'cli' && hasCliOutputTags(text)
 }
 
 export function createCliOutputBlock(props: {

@@ -1,0 +1,24 @@
+diff --git a/src/utils/smooth/useSmooth.ts b/src/utils/smooth/useSmooth.ts
+--- a/src/utils/smooth/useSmooth.ts
++++ b/src/utils/smooth/useSmooth.ts
+@@ -236,7 +236,7 @@
+     animatorPartRef.current = part;
+     // A new part whose text shares a prefix with the previous target would
+     // keep the stale cursor and flicker without this reset.
+-    if (partChanged || !text.startsWith(animatorRef.targetText)) {
++    if (partChanged || !text.startsWith(animatorRef.targetText) || !text.startsWith(animatorRef.currentText)) {
+       if (state.status.type === "running") {
+         animatorRef.currentText = "";
+         animatorRef.targetText = text;
+diff --git a/dist/utils/smooth/useSmooth.js b/dist/utils/smooth/useSmooth.js
+--- a/dist/utils/smooth/useSmooth.js
++++ b/dist/utils/smooth/useSmooth.js
+@@ -140,7 +140,7 @@
+ 		}
+ 		const partChanged = animatorPartRef.current !== part;
+ 		animatorPartRef.current = part;
+-		if (partChanged || !text.startsWith(animatorRef.targetText)) {
++		if (partChanged || !text.startsWith(animatorRef.targetText) || !text.startsWith(animatorRef.currentText)) {
+ 			if (state.status.type === "running") {
+ 				animatorRef.currentText = "";
+ 				animatorRef.targetText = text;

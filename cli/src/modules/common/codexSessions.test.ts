@@ -63,6 +63,26 @@ describe('listLocalCodexSessionSummaries', () => {
         else process.env.CODEX_HOME = originalCodexHome
     })
 
+    it('lists large transcripts using head metadata and the latest preview, then imports the full selected history', () => {
+        const root = mkdtempSync(join(tmpdir(), 'codex-large-'))
+        process.env.CODEX_HOME = root
+        const dir = join(root, 'sessions')
+        mkdirSync(dir)
+        const user = (text: string) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } })
+        writeFileSync(join(dir, 'large.jsonl'), [
+            JSON.stringify({ type: 'session_meta', payload: { id: 'large-session', cwd: '/project' } }),
+            user('first prompt'),
+            JSON.stringify({ type: 'response_item', payload: { type: 'function_call_output', call_id: 'tool', output: 'x'.repeat(2 * 1024 * 1024) } }),
+            user('latest prompt')
+        ].join('\n'))
+        try {
+            expect(listLocalCodexSessionSummaries()).toMatchObject([{ id: 'large-session', cwd: '/project', title: 'first prompt', lastUserMessage: 'latest prompt' }])
+            const imported = listLocalCodexSessionsWithMessagesByIds(new Set(['large-session']))
+            expect(imported[0].messages).toHaveLength(3)
+            expect(JSON.stringify(imported[0].messages[1])).toContain('x'.repeat(1000))
+        } finally { rmSync(root, { recursive: true, force: true }) }
+    })
+
     it('parses original and fork metadata from session_meta', () => {
         const root = mkdtempSync(join(tmpdir(), 'codex-home-'))
         process.env.CODEX_HOME = root

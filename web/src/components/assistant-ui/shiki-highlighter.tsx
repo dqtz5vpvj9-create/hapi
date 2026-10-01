@@ -1,7 +1,10 @@
 import type { SyntaxHighlighterProps } from '@assistant-ui/react-markdown'
-import type { CSSProperties, ReactNode } from 'react'
+import { lazy, Suspense, type CSSProperties, type ReactNode } from 'react'
 import { useShikiHighlightedLines, splitCodeLines } from '@/lib/shiki'
 import { useCodeWrap } from '@/hooks/useCodeWrap'
+import { needsLargeCodeView } from '@/lib/large-code'
+
+const LargeCodeView = lazy(() => import('@/components/LargeCodeView'))
 
 // `@assistant-ui/react-markdown`'s DefaultCodeBlock renders this component
 // (not `Pre`) for every fenced code block that declares a language — i.e.
@@ -10,6 +13,18 @@ import { useCodeWrap } from '@/hooks/useCodeWrap'
 // CodeBlock: a line-number cell and a code cell share each grid row, so the
 // number stays aligned with its line even when the code cell wraps.
 export function SyntaxHighlighter(props: SyntaxHighlighterProps) {
+    const { codeWrap } = useCodeWrap()
+    if (needsLargeCodeView(props.code)) {
+        return <div data-hapi-code-body="true" className="aui-md-codeblock min-w-0 w-full max-w-full rounded-b-xl bg-[var(--app-code-bg)]">
+            <Suspense fallback={<pre className="m-0 overflow-x-auto p-3 text-sm font-mono">{props.code}</pre>}>
+                <LargeCodeView code={props.code} language={props.language} wrap={codeWrap} />
+            </Suspense>
+        </div>
+    }
+    return <SmallSyntaxHighlighter {...props} />
+}
+
+function SmallSyntaxHighlighter(props: SyntaxHighlighterProps) {
     const highlightedLines = useShikiHighlightedLines(props.code, props.language)
     const { codeWrap } = useCodeWrap()
     const codeLines: ReactNode[] = highlightedLines ?? splitCodeLines(props.code)

@@ -53,6 +53,51 @@ function reasoningTextOf(message: { content: unknown }): string {
 }
 
 describe('cli session handlers', () => {
+    it.each([false, true])('retains one native text snapshot through interleaving, completion and late replay (child=%s)', child => {
+        const store = new Store(':memory:')
+        const session = store.sessions.getOrCreateSession('text-stream', {}, null, 'default')
+        const other = store.sessions.getOrCreateSession('other-text-stream', {}, null, 'default')
+        const socket = new FakeSocket()
+        const events: SyncEvent[] = []
+        registerSessionHandlers(socket as unknown as CliSocketWithData, {
+            store, resolveSessionAccess: sid => ({ ok: true, value: sid === session.id ? session : other }),
+            emitAccessError() {}, onWebappEvent: event => events.push(event),
+        })
+        const id = 'codex:thread:turn:item:agent_message'
+        const content = (message: string, live: boolean) => {
+            const data = { type: 'message', id, message, ...(live ? { streamSnapshot: true } : {}) }
+            return { role: 'agent', content: { type: AGENT_MESSAGE_PAYLOAD_TYPE, data: child
+                ? { type: 'agent-run-trace', agentId: 'child', cardId: 'card', message: data, id }
+                : data } }
+        }
+        const emit = (message: string, live: boolean, sid = session.id, localId?: string) =>
+            socket.trigger('message', { sid, message: content(message, live), localId })
+        emit('other session', true, other.id)
+        emit('partial', true)
+        for (let i = 0; i < 100; i++) {
+            store.messages.addMessage(session.id, { role: 'user', content: { type: 'text', text: `interleaved ${i}` } })
+        }
+        let previousSeq = 0
+        for (let i = 0; i < 100; i++) {
+            emit(`partial ${i}`, true)
+            const rows = store.messages.getAllMessages(session.id)
+            expect(rows).toHaveLength(101)
+            expect(rows.at(-1)?.content).toEqual(content(`partial ${i}`, true))
+            expect(rows.at(-1)?.invokedAt).not.toBeNull()
+            expect(rows.at(-1)!.seq).toBeGreaterThan(previousSeq)
+            previousSeq = rows.at(-1)!.seq
+        }
+        emit('complete answer', false, session.id, id)
+        emit('stale partial', true)
+        emit('complete answer', false, session.id, id)
+        const rows = store.messages.getAllMessages(session.id)
+        expect(rows).toHaveLength(101)
+        expect(rows.at(-1)?.content).toEqual(content('complete answer', false))
+        expect(store.messages.getAllMessages(other.id)).toHaveLength(1)
+        expect(events.at(-1)).toMatchObject({ type: 'message-received', message: { content: content('complete answer', false) } })
+        store.close()
+    })
+
     it.each([undefined, 'terminated', 'error'] as const)('preserves shared Codex pending input on execution exit (%s)', reason => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession('shared-end', { flavor: 'codex', capabilities: { concurrentClients: true } }, null, 'default')

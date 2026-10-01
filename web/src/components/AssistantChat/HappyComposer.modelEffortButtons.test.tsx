@@ -36,6 +36,7 @@ const runtime = vi.hoisted(() => ({
     sentIntents: [] as ComposerSendIntent[],
     narrowViewport: false,
     toolbarLayout: null as ComposerToolbarLayout | null,
+    cancelRun: vi.fn(),
 }))
 
 vi.mock('@assistant-ui/react', async () => {
@@ -60,7 +61,7 @@ vi.mock('@assistant-ui/react', async () => {
                 },
                 addAttachment: async () => {},
             }),
-            thread: () => ({ cancelRun: () => {} }),
+            thread: () => ({ cancelRun: runtime.cancelRun }),
         }),
         useAuiState: (selector: (state: typeof runtime.snapshot) => unknown) => selector(runtime.snapshot),
         ComposerPrimitive: {
@@ -144,6 +145,20 @@ describe('HappyComposer generic model/effort value buttons', () => {
         runtime.toolbarLayout = null
         runtime.snapshot.thread.isDisabled = false
         runtime.sentIntents = []
+        runtime.snapshot.thread.isRunning = false
+        localStorage.removeItem('hapi.fue.v1.rich-composer-mentions')
+    })
+
+    it.each([false, true])('exposes Codex reasoning directly, narrow=%s', narrow => {
+        runtime.narrowViewport = narrow
+        const change = vi.fn()
+        renderComposer('codex', { modelReasoningEffort: 'medium', onModelReasoningEffortChange: change,
+            availableModelReasoningEffortOptions: [{ value: 'low' }, { value: 'medium' }, { value: 'high' }] })
+        fireEvent.click(screen.getByRole('button', { name: 'Reasoning Effort: medium' }))
+        expect(screen.getByText('Reasoning Effort')).toBeTruthy()
+        expect(screen.queryByText('Permission Mode')).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'High' }))
+        expect(change).toHaveBeenCalledWith('high')
     })
 
     it('shows model and effort value buttons for Claude on wide viewports', () => {
@@ -423,6 +438,57 @@ describe('HappyComposer generic model/effort value buttons', () => {
     it('maps auto/default wire values onto the localized default option label', () => {
         renderComposer('claude', { model: 'auto' })
         expect(screen.getByRole('button', { name: 'Default' })).toBeTruthy()
+    })
+
+    it('first-use Escape dismisses FUE before settings and never aborts the running turn', () => {
+        localStorage.removeItem('hapi.fue.v1.rich-composer-mentions')
+        runtime.snapshot.thread.isRunning = true
+        runtime.cancelRun.mockClear()
+        renderComposer('claude')
+        expect(screen.getByRole('dialog')).toBeTruthy()
+        fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Settings' }), { key: 'Escape' })
+        expect(screen.queryByRole('dialog')).toBeNull()
+        expect(screen.getByText('Permission Mode')).toBeTruthy()
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Settings' }), { key: 'Escape' })
+        expect(screen.queryByText('Permission Mode')).toBeNull()
+        expect(screen.getByRole('button', { name: 'Settings' })).toHaveFocus()
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
+    })
+
+    it('leaves another modal its Escape while settings are open', () => {
+        localStorage.setItem('hapi.fue.v1.rich-composer-mentions', '1')
+        renderComposer('claude')
+        fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+        const modal = document.createElement('div')
+        modal.setAttribute('role', 'dialog')
+        modal.setAttribute('aria-modal', 'true')
+        document.body.appendChild(modal)
+        fireEvent.keyDown(modal, { key: 'Escape' })
+        expect(screen.getByText('Permission Mode')).toBeTruthy()
+        modal.remove()
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
+        expect(screen.queryByText('Permission Mode')).toBeNull()
+    })
+
+    it.each(['trigger', 'menu', 'input'])('Escape closes settings from %s without aborting a running turn', origin => {
+        localStorage.setItem('hapi.fue.v1.rich-composer-mentions', '1')
+        runtime.snapshot.thread.isRunning = true
+        runtime.cancelRun.mockClear()
+        renderComposer('claude')
+        const trigger = screen.getByRole('button', { name: 'Settings' })
+        trigger.focus()
+        fireEvent.click(trigger)
+        const target = origin === 'trigger' ? screen.getByRole('button', { name: 'Settings' })
+            : origin === 'menu' ? screen.getAllByRole('button', { name: 'Sonnet 4' }).at(-1)!
+            : screen.getByRole('textbox')
+        target.focus()
+        fireEvent.keyDown(target, { key: 'Escape' })
+        expect(screen.queryByText('Permission Mode')).toBeNull()
+        expect(screen.getByRole('button', { name: 'Settings' })).toHaveFocus()
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
+        runtime.snapshot.thread.isRunning = false
     })
 
     it('toggles the settings sheet closed when the model value button is clicked again', () => {

@@ -274,6 +274,22 @@ describe('ApiSessionClient lazy materialization', () => {
         client.close()
     })
 
+    it('preserves a stable event localId through delayed materialization for hub replay deduplication', async () => {
+        socketHarness.sockets.length = 0
+        const pendingMaterialization = deferred<Session>()
+        const client = new ApiSessionClient('fixture', createSession(), { materialize: async () => await pendingMaterialization.promise })
+        client.notifyUserActivity()
+        client.sendSessionEvent({ type: 'message', message: 'Aborted by user' }, 'codex:thread:turn:turn_aborted')
+        pendingMaterialization.resolve(createSession({ namespace: 'default' }))
+        expect(await client.materialize()).toBe(true)
+        const row = socketHarness.sockets[0]?.emitted.find(entry => entry.event === 'message')?.args[0]
+        expect(row).toMatchObject({ localId: 'codex:thread:turn:turn_aborted', message: { role: 'agent', content: {
+            id: 'codex:thread:turn:turn_aborted', type: 'event', data: { type: 'message', message: 'Aborted by user' },
+        } } })
+        expect(socketHarness.sockets[0]?.emitted).toContainEqual({ event: 'messages-consumed', args: [{ sid: client.sessionId, localIds: ['codex:thread:turn:turn_aborted'] }] })
+        client.close()
+    })
+
     it('keeps an error event when the pending droppable queue overflows during materialization', async () => {
         socketHarness.sockets.length = 0
         const pendingMaterialization = deferred<Session>()

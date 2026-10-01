@@ -124,6 +124,19 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
         onWebappEvent?.({ type: 'messages-invalidated', sessionId: parsed.data.sid, reason: 'native-history' })
     })
 
+    socket.on('native-queue-snapshot', data => {
+        const parsed = z.object({ sid: z.string(), messages: z.array(z.object({
+            localId: z.string().min(1), text: z.string()
+        })) }).safeParse(data)
+        if (!parsed.success) return
+        const { sid, messages } = parsed.data
+        const access = resolveSessionAccess(sid, { fresh: true })
+        if (!access.ok) { emitAccessError('session', sid, access.reason); return }
+        if (!(access.value.metadata as Metadata | null)?.capabilities?.concurrentClients) return
+        store.messages.syncNativeQueueSnapshot(sid, messages)
+        onWebappEvent?.({ type: 'messages-invalidated', sessionId: sid, reason: 'native-history' })
+    })
+
     socket.on('native-queue-message', data => {
         const parsed = z.object({ sid: z.string(), localId: z.string().min(1), text: z.string().nullable() }).safeParse(data)
         if (!parsed.success) return
@@ -178,7 +191,7 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
             return
         }
 
-        const msg = store.messages.addMessage(sid, content, localId, undefined, createdAt)
+        const msg = store.messages.addAgentMessage(sid, content, localId, createdAt)
 
         // A reasoning stream arrives as a series of growing snapshots under one
         // stable id, so a stream should cost one row rather than one per

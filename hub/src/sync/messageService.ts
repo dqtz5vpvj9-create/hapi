@@ -12,7 +12,8 @@ import {
     unwrapRoleWrappedRecordEnvelope
 } from '@hapi/protocol/messages'
 import { isObject } from '@hapi/protocol'
-import type { MessageDeliveryMode, MessagesResponse, QueuedStateResponse } from '@hapi/protocol/apiTypes'
+import type { MessageOutlineResponse, MessageContextResponse, MessageDependenciesResponse, MessageDeliveryMode, MessagesResponse, QueuedStateResponse } from '@hapi/protocol/apiTypes'
+import { HistoryDependencySeedNotFound } from '../store/messageDependencyContext'
 import type { Server } from 'socket.io'
 import { randomUUID } from 'node:crypto'
 import type { Store, CancelQueuedMessageResult } from '../store'
@@ -267,6 +268,52 @@ export class MessageService {
         }
     }
 
+    getMessageOutline(sessionId: string, options: { limit: number; beforeAt?: number; beforeSeq?: number; epoch?: number }): MessageOutlineResponse {
+        const before = options.beforeAt !== undefined && options.beforeSeq !== undefined
+            ? { at: options.beforeAt, seq: options.beforeSeq } : null
+        const result = this.store.messages.getOutline(sessionId, before, options.limit)
+        const reset = options.epoch !== undefined && options.epoch !== result.coverage.epoch
+        return {
+            entries: reset ? [] : result.entries,
+            page: { ...result.coverage, reset, hasMore: !reset && result.hasMore,
+                beforeCursor: reset ? null : result.before, indexing: false }
+        }
+    }
+
+    getMessageDependencies(sessionId: string, seedIds: string[], epoch: number): MessageDependenciesResponse | null {
+        try {
+            const context = this.store.messages.getMessageDependencyContext(sessionId, seedIds, epoch)
+            return { ...context, messages: toVisibleDecryptedMessages(context.messages) }
+        } catch (error) {
+            if (error instanceof HistoryDependencySeedNotFound) return null
+            throw error
+        }
+    }
+
+    getMessageContext(
+        sessionId: string,
+        messageId: string,
+        options: { radius: number; epoch?: number }
+    ): MessageContextResponse | null {
+        const context = this.store.messages.getMessageContext(sessionId, messageId, options.radius)
+        if (!context) return null
+        const { anchor, before, after } = context
+        const position = messagePosition(anchor)
+        return {
+            anchor: { messageId: anchor.id, position },
+            messages: toVisibleDecryptedMessages([...before, anchor, ...after]),
+            page: {
+                epoch: context.epoch,
+                reset: options.epoch !== undefined && options.epoch !== context.epoch,
+                beforeCursor: before.length ? messagePosition(before[0]) : position,
+                afterCursor: after.length ? messagePosition(after[after.length - 1]) : position,
+                hasMoreBefore: context.hasMoreBefore,
+                hasMoreAfter: context.hasMoreAfter,
+                snapshotHead: context.snapshotHead,
+            },
+        }
+    }
+
     getMessagesPage(
         sessionId: string,
         options: {
@@ -275,13 +322,14 @@ export class MessageService {
             after?: MessagePosition | null
             until?: MessagePosition | null
             epoch?: number | null
+            bounded?: boolean
         }
     ): MessagesResponse {
         const epoch = this.store.messages.getMessageEpoch(sessionId)
+        if (options.epoch !== undefined && options.epoch !== null && options.epoch !== epoch) {
+            return this.getLatestOrBeforeMessagesPage(sessionId, options.limit, null, epoch, true, options.bounded)
+        }
         if (options.after) {
-            if (options.epoch !== undefined && options.epoch !== null && options.epoch !== epoch) {
-                return this.getLatestOrBeforeMessagesPage(sessionId, options.limit, null, epoch, true)
-            }
             return this.getAfterMessagesPage(
                 sessionId,
                 options.limit,
@@ -295,7 +343,8 @@ export class MessageService {
             options.limit,
             options.before ?? null,
             epoch,
-            false
+            false,
+            options.bounded
         )
     }
 
@@ -304,7 +353,8 @@ export class MessageService {
         limit: number,
         requestedBefore: MessagePosition | null,
         epoch: number,
-        reset: boolean
+        reset: boolean,
+        bounded = false
     ): MessagesResponse {
         const direction = requestedBefore ? 'before' as const : 'latest' as const
         const snapshotHead = this.store.messages.getNewestMessagePosition(sessionId)
@@ -347,7 +397,7 @@ export class MessageService {
                 { at: oldestPositionAt, seq: oldestSeq }
             ).length > 0
 
-        while (messages.length === 0 && hasMore && oldestSeq !== null && oldestPositionAt !== null) {
+        while (!bounded && messages.length === 0 && hasMore && oldestSeq !== null && oldestPositionAt !== null) {
             before = { at: oldestPositionAt, seq: oldestSeq }
             pageRows = this.store.messages.getMessagesByPosition(sessionId, limit, before)
             queuedRows = []

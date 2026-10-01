@@ -12,7 +12,7 @@ const ReplySchema = z.object({
     answers: z.union([z.record(z.string(), z.array(z.string())), z.record(z.string(), z.object({ answers: z.array(z.string()) }))]).optional()
 });
 type Reply = z.infer<typeof ReplySchema>;
-type Pending = { nativeId: string | number; threadId: string; turnId?: string; toolCallId: string; userInput: boolean; input: unknown; submitted: boolean; answer(reply: Reply): void; cancel(error: Error): void };
+type Pending = { nativeId: string | number; threadId: string; turnId?: string; toolCallId: string; userInput: boolean; toolApproval: boolean; input: unknown; submitted: boolean; answer(reply: Reply): void; cancel(error: Error): void };
 
 /** No winner is inferred from submitting a Web candidate: only native resolution closes it. */
 export class SharedCodexPermissions {
@@ -30,7 +30,8 @@ export class SharedCodexPermissions {
             scope: { role: 'child', threadId: request.threadId, parentThreadId: rootThreadId }, scope_role: 'child'
         } : message, id);
     }
-    constructor(private readonly session: ApiSessionClient, private readonly client: CodexAppServerClient, private readonly generation: string) {
+    constructor(private readonly session: ApiSessionClient, private readonly client: CodexAppServerClient, private readonly generation: string,
+        private readonly isYolo: (threadId: string) => boolean = () => false) {
         session.rpcHandlerManager.registerHandler(RPC_METHODS.Permission, async (raw: unknown) => {
             const reply = ReplySchema.parse(raw);
             const request = this.pending.get(reply.id);
@@ -54,17 +55,34 @@ export class SharedCodexPermissions {
         });
     }
 
+    /** Active turns can retain their old permission snapshot after native settings change. */
+    settingsChanged(threadId: string): void {
+        if (this.closed || !this.isYolo(threadId)) return;
+        for (const [id, request] of this.pending) {
+            if (request.threadId !== threadId || !request.toolApproval || request.submitted) continue;
+            request.submitted = true;
+            // Submit a single approval, without granting a persistent session exception.
+            // Only serverRequest/resolved establishes the winning native decision.
+            request.answer({ id, approved: true, decision: 'approved' });
+        }
+    }
+
     receive(request: { id: string | number; method: string; params: unknown }): void {
         const threadId = string(record(request.params).threadId);
         if (!threadId) return;
         const key = `${this.generation}:${threadId}:${typeof request.id}:${request.id}`;
         if (this.closed || this.pending.has(key) || this.retired.has(key)) return;
         const handlers = new Map<string, (params: unknown) => unknown>();
-        const ask = (tool: string, input: unknown): Promise<Reply> => new Promise((answer, cancel) => {
+        const ask = (tool: string, input: unknown, userInput = false): Promise<Reply> => new Promise((answer, cancel) => {
             const pending: Pending = { nativeId: request.id, threadId, turnId: string(record(request.params).turnId),
                 toolCallId: string(record(request.params).itemId) ?? key,
-                userInput: request.method === 'item/tool/requestUserInput', input, answer, cancel, submitted: false };
+                userInput: request.method === 'item/tool/requestUserInput', toolApproval: !userInput, input, answer, cancel, submitted: false };
             this.pending.set(key, pending);
+            if (pending.toolApproval && this.isYolo(threadId)) {
+                pending.submitted = true;
+                answer({ id: key, approved: true, decision: 'approved' });
+                return;
+            }
             // requestUserInput is a server request, not a native transcript item.
             // Persist its lifecycle so resolution cannot erase the question card.
             if (pending.userInput) this.questionEvent(pending);
@@ -80,7 +98,7 @@ export class SharedCodexPermissions {
                 return { decision: reply.approved ? (reply.decision === 'approved_for_session' ? 'approved_for_session' : 'approved') : reply.decision === 'denied' ? 'denied' : 'abort' };
             } },
             onUserInputRequest: async ({ input }) => {
-                const reply = await ask('request_user_input', input);
+                const reply = await ask('request_user_input', input, true);
                 return reply.approved && reply.answers ? { decision: 'accept', answers: reply.answers } : { decision: 'cancel' };
             }
         });

@@ -25,7 +25,9 @@
         "./voice-personality": "./src/voicePersonality.ts",
         "./usage": "./src/usage.ts",
         "./settingsFileLock": "./src/settingsFileLock.ts",
-        "./agentCliSpawnLease": "./src/agentCliSpawnLease.ts"
+        "./agentCliSpawnLease": "./src/agentCliSpawnLease.ts",
+        "./messageDependencies": "./src/messageDependencies.ts",
+        "./conversationOutline": "./src/conversationOutline.ts"
     },
     "sideEffects": false,
     "scripts": {

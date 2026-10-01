@@ -9,6 +9,7 @@ import type { CodexAppServerClient } from '../codexAppServerClient';
 
 export const SharedLaunchSchema = z.object({
     startedBy: z.enum(['runner', 'terminal']).optional(),
+    nativeEndpoint: z.string().optional(),
     codexArgs: z.array(z.string()).optional(),
     permissionMode: z.enum(['default', 'read-only', 'safe-yolo', 'yolo']).optional(),
     resumeSessionId: z.string().optional(), resumeLast: z.boolean().optional(), resumeAll: z.boolean().optional(),

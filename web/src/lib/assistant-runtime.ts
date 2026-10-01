@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef } from 'react'
 import type React from 'react'
-import type { AppendMessage, AttachmentAdapter, ThreadMessageLike } from '@assistant-ui/react'
+import type { AppendMessage, AttachmentAdapter, ThreadMessage, ThreadMessageLike } from '@assistant-ui/react'
 import { useExternalMessageConverter, useExternalStoreRuntime } from '@assistant-ui/react'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import { resolvePendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
@@ -940,6 +940,16 @@ export function useHappyRuntime(props: {
         messages: blocksWithThreadIds,
         isRunning: isRunningForMessages,
     })
+    // This is the complete reading window. The array adapter retains absent
+    // messages as branches, so use the repository snapshot API to release rows
+    // when pagination moves them out of the window.
+    const messageRepository = useMemo(() => ({
+        headId: convertedMessages.at(-1)?.id ?? null,
+        messages: convertedMessages.map((message, index) => ({
+            message,
+            parentId: convertedMessages[index - 1]?.id ?? null,
+        })),
+    }), [convertedMessages])
 
     const onNew = useCallback(async (message: AppendMessage) => {
         const intent = consumeComposerSendIntent(props.pendingSendIntentRef)
@@ -979,7 +989,7 @@ export function useHappyRuntime(props: {
     const adapter = useMemo(() => ({
         isDisabled: props.isSending || (!props.session.active && !props.allowSendWhenInactive),
         isRunning,
-        messages: convertedMessages,
+        messageRepository,
         extras,
         onNew,
         onCancel,
@@ -990,7 +1000,7 @@ export function useHappyRuntime(props: {
         props.isSending,
         props.allowSendWhenInactive,
         isRunning,
-        convertedMessages,
+        messageRepository,
         extras,
         onNew,
         onCancel,
@@ -1001,5 +1011,5 @@ export function useHappyRuntime(props: {
     // The ref is read at send time inside onNew (not at render time), so changes
     // to pendingSchedule do not need to invalidate the adapter or re-run onNew.
 
-    return useExternalStoreRuntime(adapter)
+    return useExternalStoreRuntime<ThreadMessage>(adapter)
 }

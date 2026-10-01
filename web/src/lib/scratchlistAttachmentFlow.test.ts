@@ -298,3 +298,100 @@ describe('finalizeMigratedScratchlistParkCleanup (#1226)', () => {
         expect(deleteScratchlistAttachment).not.toHaveBeenCalled()
     })
 })
+
+describe('Scratchlist copies into the composer', () => {
+    async function setupRestore() {
+        const { createAttachmentAdapter } = await import('./attachmentAdapter')
+        const { rehydrateScratchlistAttachmentsToComposer } = await import('./scratchlistAttachmentFlow')
+        const { getDraftAttachments, getRestoredUploadMetadata, saveDraftAttachments, clearDraftAttachments } = await import('./composer-attachment-drafts')
+        const api = {
+            fetchScratchlistAttachmentBlob: vi.fn(async (_session: string, id: string) => new Blob([`image:${id}`], { type: 'image/png' })),
+            uploadFile: vi.fn(async (_session: string, _name: string, content: string) => ({ success: true, path: `/uploads/${content}.png` })),
+            deleteUploadFile: vi.fn(async () => {}),
+        }
+        const adapter = createAttachmentAdapter(api as never, 'restore-test')
+        const visible: Array<import('@assistant-ui/react').PendingAttachment & { path?: string }> = []
+        const composer = {
+            getState: () => ({ attachments: visible }),
+            addAttachment: vi.fn(async (file: File) => {
+                const result = adapter.add({ file })
+                if (!('next' in result)) throw new Error('Expected upload progress')
+                for await (const attachment of result) {
+                    const index = visible.findIndex((item) => item.id === attachment.id)
+                    if (index < 0) visible.push(attachment)
+                    else visible[index] = attachment
+                }
+            }),
+        }
+        const image = (id: string) => ({
+            id, filename: 'same-name.png', mimeType: 'image/png', size: 8,
+            path: `hapi-hub:scratchlist/default/restore-test/${id}-same-name.png`,
+        })
+        const restore = (attachments = [image('hub-image')]) => rehydrateScratchlistAttachmentsToComposer(
+            api as never, 'restore-test', attachments, composer,
+        )
+        return { api, adapter, visible, composer, image, restore, getDraftAttachments, getRestoredUploadMetadata, saveDraftAttachments, clearDraftAttachments }
+    }
+
+    it('uploads from empty, deduplicates repeated copies by source identity and preserves distinct same-name images', async () => {
+        const state = await setupRestore()
+        await state.restore()
+        const first = state.visible[0]!
+        expect(first.name).toBe('same-name.png')
+        expect(first.status).toEqual({ type: 'requires-action', reason: 'composer-send' })
+        expect(state.api.uploadFile).toHaveBeenCalledWith('restore-test', 'same-name.png', expect.any(String), 'image/png')
+        await state.restore()
+        expect(state.visible).toHaveLength(1)
+        expect(state.composer.addAttachment).toHaveBeenCalledTimes(1)
+        expect(state.api.uploadFile).toHaveBeenCalledTimes(1)
+
+        await state.restore([state.image('different-hub-image')])
+        expect(state.visible).toHaveLength(2)
+        expect(state.visible[0]!.id).not.toBe(state.visible[1]!.id)
+        expect(state.visible.map((item) => item.name)).toEqual(['same-name.png', 'same-name.png'])
+
+        // A persisted draft carries the source id through the existing blob
+        // round-trip, so reopening it does not disable identity-based dedupe.
+        state.saveDraftAttachments('restore-test', state.visible.map((item) => ({
+            id: item.id, file: item.file!, path: item.path, uploadSessionId: 'restore-test',
+        })))
+        const files = await state.getDraftAttachments('restore-test')
+        state.visible.splice(0)
+        for (const file of files) await state.composer.addAttachment(file)
+        await state.restore()
+        expect(state.visible).toHaveLength(2)
+        expect(state.api.uploadFile).toHaveBeenCalledTimes(2)
+        expect(files.map((file) => state.getRestoredUploadMetadata(file)?.id)).toEqual(state.visible.map((item) => item.id))
+        state.clearDraftAttachments('restore-test')
+    })
+
+    it('allows removing a restored image and copying it again without deleting its Scratchlist source', async () => {
+        const state = await setupRestore()
+        await state.restore()
+        const removed = state.visible.shift()!
+        await state.adapter.remove(removed)
+        expect(state.api.deleteUploadFile).toHaveBeenCalledTimes(1)
+        await state.restore()
+        expect(state.visible).toHaveLength(1)
+        expect(state.visible[0]!.id).toBe(removed.id)
+        expect(state.api.uploadFile).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not duplicate an image when another drawer copy starts during fetch, and permits retry after failure', async () => {
+        const state = await setupRestore()
+        let finish!: (blob: Blob) => void
+        state.api.fetchScratchlistAttachmentBlob.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+        const first = state.restore()
+        await state.restore()
+        expect(state.api.fetchScratchlistAttachmentBlob).toHaveBeenCalledTimes(1)
+        expect(state.composer.addAttachment).not.toHaveBeenCalled()
+        finish(new Blob(['image'], { type: 'image/png' }))
+        await first
+        expect(state.visible).toHaveLength(1)
+
+        state.api.fetchScratchlistAttachmentBlob.mockRejectedValueOnce(new Error('fetch failed'))
+        await expect(state.restore([state.image('retry-image')])).rejects.toThrow('fetch failed')
+        await state.restore([state.image('retry-image')])
+        expect(state.visible).toHaveLength(2)
+    })
+})
