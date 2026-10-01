@@ -48,7 +48,10 @@ export function lookupCodexSessionLineage(ids: readonly string[], home = process
                 if (isSubagent(row)) unresolved.add(id);
                 const identity = Object.fromEntries([['codexAgentNickname', row.agent_nickname], ['codexAgentRole', row.agent_role], ['codexAgentPath', row.agent_path]]
                     .filter(([, value]) => typeof value === 'string' && value.trim()));
-                found.set(id, { id, cwd: typeof row.cwd === 'string' ? row.cwd : null, ...identity, ...lineage });
+                found.set(id, { id, cwd: typeof row.cwd === 'string' ? row.cwd : null,
+                    codexUpdatedAt: typeof row.updated_at_ms === 'number' ? row.updated_at_ms
+                        : typeof row.updated_at === 'number' ? row.updated_at * 1000 : undefined,
+                    ...identity, ...lineage });
                 // Older indices sometimes preserve only the source kind, so use the header for its parent.
                 if (!lineage.codexParentThreadId && typeof row.rollout_path === 'string')
                     files.set(id, row.rollout_path);

@@ -77,4 +77,22 @@ statement = "import { CodexSubagentMessagesQuerySchema } from '@hapi/protocol/ap
 if statement not in current:
     current = statement + '\n' + current
 (target / name).write_text(current)
+# Preserve the native clock when an already-running CLI sends older metadata.
+name = 'hub/src/socket/handlers/cli/sessionHandlers.ts'
+current = (target / name).read_text()
+if "'codexUpdatedAt'" not in current:
+    current = current.replace("['supersededBySessionId', 'opencodeClearOperation'] as const",
+        "['supersededBySessionId', 'opencodeClearOperation', 'codexUpdatedAt'] as const", 1)
+(target / name).write_text(current)
+
+name = 'hub/src/sync/syncEngine.ts'
+current = (target / name).read_text()
+start = "        if (event.type === 'messages-invalidated' && event.reason === 'native-history') {"
+if start not in current:
+    desired = (source / name).read_text()
+    end = "        if (event.type === 'session-updated' && event.sessionId) {"
+    block = desired[desired.index(start):desired.index(end, desired.index(start))]
+    current = current.replace(end, block + end, 1)
+(target / name).write_text(current)
+
 print('Installed native subagent inventory and history in', target)

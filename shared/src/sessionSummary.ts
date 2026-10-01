@@ -40,6 +40,7 @@ export type SessionSummaryMetadata = {
     flavor?: string | null
     worktree?: WorktreeMetadata
     agentSessionId?: string
+    codexUpdatedAt?: number
     codexParentThreadId?: string
     codexAgentNickname?: string
     codexAgentRole?: string
@@ -203,6 +204,7 @@ export function toSessionSummaryMetadata(metadata: Metadata | null | undefined):
         flavor: metadata.flavor ?? null,
         worktree: metadata.worktree,
         agentSessionId: getSummaryAgentSessionId(metadata),
+        codexUpdatedAt: metadata.codexUpdatedAt,
         codexParentThreadId: metadata.codexParentThreadId,
         codexAgentNickname: metadata.codexAgentNickname,
         codexAgentRole: metadata.codexAgentRole,
@@ -220,7 +222,9 @@ export function toSessionSummary(session: Session): SessionSummary {
         active: session.active,
         thinking: session.thinking,
         activeAt: session.activeAt,
-        updatedAt: session.updatedAt,
+        updatedAt: session.metadata?.flavor === 'codex'
+            ? session.metadata.codexUpdatedAt ?? session.updatedAt
+            : session.updatedAt,
         pinned: session.pinned ?? false,
         globalPinned: session.globalPinned ?? false,
         metadata: toSessionSummaryMetadata(session.metadata),

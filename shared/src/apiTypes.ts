@@ -1014,6 +1014,8 @@ export const CodexSessionLineageRpcRequestSchema = z.object({
 export const CodexSessionLineageSchema = z.object({
     id: z.string().min(1),
     cwd: z.string().nullable().optional(),
+    // Native activity time, independent of HAPI connection and state updates.
+    codexUpdatedAt: z.number().optional(),
     codexParentThreadId: z.string().optional(),
     codexAgentNickname: z.string().optional(),
     codexAgentRole: z.string().optional(),

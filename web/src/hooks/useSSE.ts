@@ -146,6 +146,7 @@ export function sameSessionSummaryMetadata(
         && current.summary?.text === next.summary?.text
         && current.flavor === next.flavor
         && current.agentSessionId === next.agentSessionId
+        && current.codexUpdatedAt === next.codexUpdatedAt
         && current.codexParentThreadId === next.codexParentThreadId
         && current.codexAgentNickname === next.codexAgentNickname
         && current.codexAgentRole === next.codexAgentRole
@@ -561,6 +562,11 @@ export function useSSE(options: {
                 if (patch.metadata !== undefined && patch.metadata.version >= current.metadataVersion) {
                     nextSummary.metadata = toSessionSummaryMetadata(patch.metadata.value)
                     nextSummary.metadataVersion = patch.metadata.version
+                }
+
+                // Native activity is authoritative; connection/state patches use Hub wall time.
+                if (nextSummary.metadata?.flavor === 'codex' && nextSummary.metadata.codexUpdatedAt !== undefined) {
+                    nextSummary.updatedAt = nextSummary.metadata.codexUpdatedAt
                 }
 
                 patched = true

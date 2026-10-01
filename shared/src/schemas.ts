@@ -78,6 +78,8 @@ export const MetadataSchema = z.object({
     // session as a branch of `<id>` instead of an unrelated duplicate.
     forkedFrom: z.string().optional(),
     codexSessionId: z.string().optional(),
+    // Native activity time, independent of HAPI connection and state updates.
+    codexUpdatedAt: z.number().optional(),
     codexParentThreadId: z.string().optional(),
     codexAgentNickname: z.string().optional(),
     codexAgentRole: z.string().optional(),

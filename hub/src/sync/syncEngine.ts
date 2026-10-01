@@ -435,6 +435,10 @@ export class SyncEngine {
     }
 
     handleRealtimeEvent(event: SyncEvent): void {
+        if (event.type === 'messages-invalidated' && event.reason === 'native-history') {
+            const session = this.getSession(event.sessionId)
+            if (session) void this.refreshCodexSessionLineage(session.namespace)
+        }
         if (event.type === 'session-updated' && event.sessionId) {
             // Closes the second half of #884: when a CLI handler emits a
             // structured patch (todos / teamState / metadata / agentState),
