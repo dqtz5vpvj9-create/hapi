@@ -1,3 +1,4 @@
+import { readCodexActivity } from '../utils/codexActivity';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -51,6 +52,8 @@ export class SharedCodexRoot {
     private readonly children = new Map<string, SharedCodexProjection>();
     private readonly ancestry = new Map<string, string | null>();
     private heartbeat?: ReturnType<typeof setInterval>;
+    private activityCheckedAt = 0;
+    private nativeActivity?: number;
     private work: Promise<unknown> = Promise.resolve();
     private notifications = Promise.resolve();
     private currentTurn: string | undefined;
@@ -219,6 +222,16 @@ export class SharedCodexRoot {
         this.session.updateAgentState(state => ({ ...state, steeringActive: active }));
     }
     private alive(): void {
+        if (this.host.external && this.threadId && this.host.codexHome && Date.now() - this.activityCheckedAt >= 20_000) {
+            this.activityCheckedAt = Date.now();
+            try {
+                const at = readCodexActivity(this.threadId, this.host.codexHome);
+                if (at !== undefined && at !== this.nativeActivity) {
+                    this.nativeActivity = at;
+                    this.session.emitNativeHistoryChanged(at);
+                }
+            } catch (error) { logger.debug('[Codex shared] activity metadata unavailable', error); }
+        }
         this.publishSteering();
         this.publishPlan();
         if (!this.closed) this.session.keepAlive(Boolean(this.currentTurn), undefined, this.settings);

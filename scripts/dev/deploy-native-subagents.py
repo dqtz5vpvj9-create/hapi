@@ -19,6 +19,7 @@ for name in [
     'cli/src/codex/utils/codexLineageLookup.ts',
     'cli/src/codex/utils/codexSubagentMetadata.ts',
     'cli/src/codex/utils/codexSubagentHistory.ts',
+    'cli/src/codex/utils/codexActivity.ts',
 ]:
     shutil.copy2(source / name, target / name)
 
@@ -93,6 +94,23 @@ if start not in current:
     end = "        if (event.type === 'session-updated' && event.sessionId) {"
     block = desired[desired.index(start):desired.index(end, desired.index(start))]
     current = current.replace(end, block + end, 1)
+(target / name).write_text(current)
+
+install_block('hub/src/socket/handlers/cli/sessionHandlers.ts',
+    "    socket.on('native-history-changed', data => {",
+    "    socket.on('native-queue-snapshot', data => {")
+
+install_block('cli/src/api/apiSession.ts',
+    '    emitNativeHistoryChanged(', '    syncNativeQueuedMessage(')
+
+install_block('cli/src/codex/shared/root.ts',
+    '    private alive(): void {', '    private availablePlanId():',
+    ["import { readCodexActivity } from '../utils/codexActivity';"])
+name = 'cli/src/codex/shared/root.ts'
+current = (target / name).read_text()
+if '    private activityCheckedAt = 0;' not in current:
+    current = current.replace('    private heartbeat?: ReturnType<typeof setInterval>;',
+        '    private heartbeat?: ReturnType<typeof setInterval>;\n    private activityCheckedAt = 0;\n    private nativeActivity?: number;', 1)
 (target / name).write_text(current)
 
 print('Installed native subagent inventory and history in', target)

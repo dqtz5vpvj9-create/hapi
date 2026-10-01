@@ -356,7 +356,12 @@ export class ApiMachineClient {
             const { sessionIds } = CodexSessionLineageRpcRequestSchema.parse(params)
             const sessions = []
             for (const session of lookupCodexSessionLineage(sessionIds)) {
-                if (!await this.isLocalSessionWithinWorkspaceRoots(session)) continue
+                if (!await this.isLocalSessionWithinWorkspaceRoots(session)) {
+                    // Hub requests IDs already bound to sessions on this machine.
+                    // Their list clock needs no cwd, child inventory or transcript access.
+                    sessions.push({ id: session.id, codexUpdatedAt: session.codexUpdatedAt })
+                    continue
+                }
                 const permitted = new Set<string>()
                 for (const child of session.codexSubagents ?? []) {
                     if (await this.isLocalSessionWithinWorkspaceRoots({ cwd: child.path })) permitted.add(child.threadId)

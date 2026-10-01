@@ -105,6 +105,25 @@ export type SessionHandlersDeps = {
 export function registerSessionHandlers(socket: CliSocketWithData, deps: SessionHandlersDeps): void {
     const { store, resolveSessionAccess, emitAccessError, onSessionAlive, onSessionReady, onSessionEnd, onWebappEvent, onBackgroundTaskDelta, onSessionActivity, onAgentProgress, onSweepImmediateQueued, onMessagesConsumed } = deps
 
+    socket.on('native-history-changed', data => {
+        const parsed = z.object({ sid: z.string(), updatedAt: z.number().int().nonnegative().optional() }).safeParse(data)
+        if (!parsed.success) return
+        const access = resolveSessionAccess(parsed.data.sid, { fresh: true })
+        if (!access.ok) { emitAccessError('session', parsed.data.sid, access.reason); return }
+        const metadata = access.value.metadata as Metadata | null
+        if (!metadata?.codexNativeSession) return
+        if (parsed.data.updatedAt !== undefined && parsed.data.updatedAt !== metadata.codexUpdatedAt) {
+            const result = store.sessions.updateSessionMetadata(parsed.data.sid,
+                { ...metadata, codexUpdatedAt: parsed.data.updatedAt }, access.value.metadataVersion,
+                access.value.namespace, { touchUpdatedAt: false })
+            if (result.result === 'success') {
+                onWebappEvent?.({ type: 'session-updated', sessionId: parsed.data.sid,
+                    data: { metadata: { version: result.version, value: result.value as Metadata | null } } })
+            }
+        }
+        onWebappEvent?.({ type: 'messages-invalidated', sessionId: parsed.data.sid, reason: 'native-history' })
+    })
+
     socket.on('native-queue-message', data => {
         const parsed = z.object({ sid: z.string(), localId: z.string().min(1), text: z.string().nullable() }).safeParse(data)
         if (!parsed.success) return

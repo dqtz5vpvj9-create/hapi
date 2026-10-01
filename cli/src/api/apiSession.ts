@@ -1131,6 +1131,10 @@ export class ApiSessionClient extends EventEmitter {
         this.notifyUserActivity()
     }
 
+    emitNativeHistoryChanged(updatedAt?: number): void {
+        this.emitOrQueue(() => this.socket.emit('native-history-changed', { sid: this.sessionId, ...(updatedAt !== undefined ? { updatedAt } : {}) }))
+    }
+
     syncNativeQueuedMessage(localId: string, text: string | null): void {
         this.emitOrQueue(() => this.socket.emit('native-queue-message', { sid: this.sessionId, localId, text }))
     }
