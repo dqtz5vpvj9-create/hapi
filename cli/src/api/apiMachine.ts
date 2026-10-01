@@ -1,3 +1,6 @@
+import { CodexSessionLineageRpcRequestSchema, ReadCodexSubagentMessagesRequestSchema } from '@hapi/protocol/apiTypes'
+import { lookupCodexSessionLineage } from '../codex/utils/codexLineageLookup'
+import { readCodexSubagentMessages } from '../codex/utils/codexSubagentHistory'
 /**
  * WebSocket client for machine/runner communication with hapi-hub
  */
@@ -328,6 +331,53 @@ export class ApiMachineClient {
                 return await listKimiModelsForCwd(resolvedCwd)
             }
         )
+
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.ReadCodexSubagentMessages, async (raw: unknown) => {
+            const { rootThreadId, threadId, limit, before } = ReadCodexSubagentMessagesRequestSchema.parse(raw)
+            const parent = lookupCodexSessionLineage([rootThreadId])[0]
+            const child = parent?.codexSubagents?.find(item => item.threadId === threadId)
+            if (!parent || !child || !await this.isLocalSessionWithinWorkspaceRoots(parent)
+                || !await this.isLocalSessionWithinWorkspaceRoots({ cwd: child.path })) {
+                throw new Error('Subagent is unavailable or outside workspace roots')
+            }
+            const descendants = new Map((parent.codexSubagents ?? []).map(item => [item.threadId, item]))
+            let ancestor = child
+            while (ancestor.parentThreadId !== rootThreadId) {
+                const next = descendants.get(ancestor.parentThreadId)
+                if (!next || !await this.isLocalSessionWithinWorkspaceRoots({ cwd: next.path })) {
+                    throw new Error('Subagent is unavailable or outside workspace roots')
+                }
+                ancestor = next
+            }
+            return readCodexSubagentMessages(threadId, limit, before)
+        })
+
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.CodexSessionLineage, async (params: unknown) => {
+            const { sessionIds } = CodexSessionLineageRpcRequestSchema.parse(params)
+            const sessions = []
+            for (const session of lookupCodexSessionLineage(sessionIds)) {
+                if (!await this.isLocalSessionWithinWorkspaceRoots(session)) continue
+                const permitted = new Set<string>()
+                for (const child of session.codexSubagents ?? []) {
+                    if (await this.isLocalSessionWithinWorkspaceRoots({ cwd: child.path })) permitted.add(child.threadId)
+                }
+                const byId = new Map((session.codexSubagents ?? []).map(child => [child.threadId, child]))
+                const children = (session.codexSubagents ?? []).filter(child => {
+                    let id = child.threadId
+                    const seen = new Set<string>()
+                    while (id !== session.id) {
+                        if (seen.has(id) || !permitted.has(id)) return false
+                        seen.add(id)
+                        const ancestor = byId.get(id)
+                        if (!ancestor) return false
+                        id = ancestor.parentThreadId
+                    }
+                    return true
+                })
+                sessions.push({ ...session, codexSubagents: children })
+            }
+            return { sessions }
+        })
 
         this.rpcHandlerManager.registerHandler<unknown, ListCodexSessionsRpcResponse>(
             RPC_METHODS.ListCodexSessions,

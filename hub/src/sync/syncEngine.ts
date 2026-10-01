@@ -1,3 +1,4 @@
+import { CodexLineageBackfill } from './codexLineageBackfill'
 /**
  * Sync Engine for HAPI Telegram Bot (Direct Connect)
  *
@@ -179,6 +180,7 @@ function extractClaudeUserMessageTextFromAgentOutput(content: unknown): string |
 
 export class SyncEngine {
     private readonly eventPublisher: EventPublisher
+    private readonly codexLineageBackfill = new CodexLineageBackfill()
     private readonly sessionCache: SessionCache
     private readonly machineCache: MachineCache
     private readonly messageService: MessageService
@@ -4313,6 +4315,28 @@ export class SyncEngine {
 
     async listCodexModelsForSession(sessionId: string): Promise<RpcListCodexModelsResponse> {
         return await this.rpcGateway.listCodexModelsForSession(sessionId)
+    }
+
+    async refreshCodexSessionLineage(namespace: string): Promise<void> {
+        await this.codexLineageBackfill.refresh(namespace, this.getSessionsByNamespace(namespace), this.getOnlineMachinesByNamespace(namespace),
+            (machineId, ids) => this.rpcGateway.codexSessionLineageForMachine(machineId, ids), (session, lineage) => {
+                const current = this.sessionCache.getSessionByNamespace(session.id, namespace)
+                if (!current?.metadata || current.metadata.machineId !== session.metadata?.machineId
+                    || current.metadata.codexSessionId !== lineage.id) return false
+                const { id: _id, cwd: _cwd, ...metadata } = lineage
+                const changed = Object.entries(metadata).some(([field, value]) => value !== undefined
+                    && JSON.stringify(current.metadata?.[field as keyof NonNullable<Session['metadata']>]) !== JSON.stringify(value))
+                if (!changed) return true
+                const result = this.store.sessions.updateSessionMetadata(current.id, { ...current.metadata, ...metadata },
+                    current.metadataVersion, namespace, { touchUpdatedAt: false })
+                if (result.result !== 'success') return false
+                this.sessionCache.refreshSession(current.id)
+                return true
+            })
+    }
+
+    async readCodexSubagentMessages(machineId: string, query: { rootThreadId: string; threadId: string; limit: number; before?: number }) {
+        return await this.rpcGateway.readCodexSubagentMessages(machineId, query)
     }
 
     async listCodexSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[]) {

@@ -1,3 +1,4 @@
+import { CodexSubagentMessagesQuerySchema } from '@hapi/protocol/apiTypes'
 import { Hono } from 'hono'
 import { MessagesQuerySchema, QueuedStateRequestSchema, SendMessageRequestSchema } from '@hapi/protocol'
 import type { SyncEngine } from '../../sync/syncEngine'
@@ -6,6 +7,26 @@ import { requireSessionFromParam, requireSyncEngine } from './guards'
 
 export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
+
+    app.get('/sessions/:id/codex-subagents/:threadId/messages', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const parent = requireSessionFromParam(c, engine)
+        if (parent instanceof Response) return parent
+        const metadata = parent.session.metadata
+        const machine = metadata?.machineId ? engine.getMachine(metadata.machineId) : undefined
+        if (metadata?.flavor !== 'codex' || !metadata.codexSessionId || !machine || machine.namespace !== c.get('namespace')) {
+            return c.json({ error: 'Subagent session is unavailable' }, 404)
+        }
+        if (!machine.active) return c.json({ error: 'Machine is offline' }, 503)
+        const query = CodexSubagentMessagesQuerySchema.safeParse(c.req.query())
+        if (!query.success || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(c.req.param('threadId'))) {
+            return c.json({ error: 'Invalid query' }, 400)
+        }
+        try { return c.json(await engine.readCodexSubagentMessages(machine.id, { ...query.data,
+            rootThreadId: metadata.codexSessionId, threadId: c.req.param('threadId') })) }
+        catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Subagent history unavailable' }, 409) }
+    })
 
     app.get('/sessions/:id/messages', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)

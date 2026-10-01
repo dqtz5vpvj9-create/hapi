@@ -1,4 +1,14 @@
 export default {
+  'sessions.nativeSubagentHistory': 'Native subagent history',
+  'sessions.subagentLoadEarlier': 'Load earlier messages',
+  'sessions.subagentLoading': 'Loading…',
+  'sessions.subagentEmpty': 'No messages yet',
+  'sessions.subagentRole.user': 'Task',
+  'sessions.subagentRole.assistant': 'Assistant',
+  'sessions.subagentRole.tool': 'Tool',
+  'sessions.subagentsPending': '{n} awaiting approval',
+  'sessions.subagents': 'Subagents ({n})',
+  'sessions.subagent': 'Subagent',
   // Loading states
   'loading': 'Loading…',
   'authorizing': 'Authorizing…',

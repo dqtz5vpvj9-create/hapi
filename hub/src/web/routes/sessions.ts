@@ -81,6 +81,7 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         const getPendingCount = (s: Session) => s.agentState?.requests ? Object.keys(s.agentState.requests).length : 0
 
         const namespace = c.get('namespace')
+        void engine.refreshCodexSessionLineage(namespace)
         const limitRaw = c.req.query('limit')
         const parsedLimit = limitRaw === undefined ? null : Number(limitRaw)
         const limit = parsedLimit !== null && Number.isFinite(parsedLimit)

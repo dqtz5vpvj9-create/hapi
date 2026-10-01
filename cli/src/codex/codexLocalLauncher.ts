@@ -1,3 +1,4 @@
+import { codexSubagentMetadata } from './utils/codexSubagentMetadata';
 import { logger } from '@/ui/logger';
 import { resolve } from 'node:path';
 import { startHookServer } from '@/claude/utils/startHookServer';
@@ -305,6 +306,13 @@ export async function codexLocalLauncher(session: CodexSession): Promise<'switch
             replayExistingHistory,
             onReplayComplete: () => {
                 finalizeTranscriptConversion(true);
+            },
+            onSessionMetadata: (metadata) => {
+                const payload = metadata as { id?: string } | null;
+                if (payload?.id && isPrimarySessionId(payload.id)) {
+                    const lineage = codexSubagentMetadata(metadata);
+                    if (lineage.codexParentThreadId) session.client.updateMetadata(current => ({ ...current, ...lineage }));
+                }
             },
             onSessionId: (sessionId) => {
                 if (!isPrimarySessionId(sessionId)) {

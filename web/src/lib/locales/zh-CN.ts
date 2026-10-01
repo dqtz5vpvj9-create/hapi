@@ -1,4 +1,14 @@
 export default {
+  'sessions.nativeSubagentHistory': '原生子代理记录',
+  'sessions.subagentLoadEarlier': '加载更早记录',
+  'sessions.subagentLoading': '加载中…',
+  'sessions.subagentEmpty': '暂无记录',
+  'sessions.subagentRole.user': '任务',
+  'sessions.subagentRole.assistant': '助手',
+  'sessions.subagentRole.tool': '工具',
+  'sessions.subagentsPending': '{n} 项待审批',
+  'sessions.subagents': '子代理（{n}）',
+  'sessions.subagent': '子代理',
   // Loading states
   'loading': '加载中…',
   'authorizing': '认证中…',

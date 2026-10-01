@@ -5,6 +5,7 @@ export type {
     AttachmentMetadata,
     DecryptedMessage,
     Metadata,
+    CodexSubagent,
     Machine,
     MachineHealth,
     MachineMetadata,

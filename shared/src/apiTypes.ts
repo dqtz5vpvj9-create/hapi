@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+    CodexSubagentSchema,
     AttachmentMetadataSchema,
     CodexCollaborationModeSchema,
     CopilotAgentModeSchema,
@@ -1006,3 +1007,33 @@ export type UsageSummaryResponse = {
     byModel: UsageSummaryBucket[]
     updatedAt: number
 }
+
+export const CodexSessionLineageRpcRequestSchema = z.object({
+    sessionIds: z.array(z.string().min(1)).max(500)
+})
+export const CodexSessionLineageSchema = z.object({
+    id: z.string().min(1),
+    cwd: z.string().nullable().optional(),
+    codexParentThreadId: z.string().optional(),
+    codexAgentNickname: z.string().optional(),
+    codexAgentRole: z.string().optional(),
+    codexAgentPath: z.string().optional(),
+    codexSubagents: z.array(CodexSubagentSchema).optional()
+})
+export const CodexSessionLineageRpcResponseSchema = z.object({ sessions: z.array(CodexSessionLineageSchema) })
+export type CodexSessionLineage = z.infer<typeof CodexSessionLineageSchema>
+
+
+export const CodexSubagentMessagesQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(40),
+    before: z.coerce.number().int().nonnegative().optional()
+})
+export const ReadCodexSubagentMessagesRequestSchema = CodexSubagentMessagesQuerySchema.extend({
+    rootThreadId: z.string().uuid(), threadId: z.string().uuid()
+})
+export const CodexSubagentMessagesResponseSchema = z.object({
+    threadId: z.string(),
+    messages: z.array(z.object({ id: z.string(), role: z.enum(['user', 'assistant', 'tool']), text: z.string(), createdAt: z.number() })),
+    before: z.number().nullable(), hasMore: z.boolean()
+})
+export type CodexSubagentMessagesResponse = z.infer<typeof CodexSubagentMessagesResponseSchema>

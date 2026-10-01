@@ -367,6 +367,21 @@ export class ApiClient {
         )
     }
 
+    async getCodexSubagentMessages(
+        parentSessionId: string,
+        threadId: string,
+        options: { limit?: number; before?: number; signal?: AbortSignal } = {},
+    ): Promise<{
+        threadId: string
+        messages: Array<{ id: string; role: 'user' | 'assistant' | 'tool'; text: string; createdAt: number }>
+        before: number | null
+        hasMore: boolean
+    }> {
+        const query = new URLSearchParams({ limit: String(options.limit ?? 40) })
+        if (options.before !== undefined) query.set('before', String(options.before))
+        return await this.request(`/api/sessions/${encodeURIComponent(parentSessionId)}/codex-subagents/${encodeURIComponent(threadId)}/messages?${query}`, { signal: options.signal })
+    }
+
     async getMessages(
         sessionId: string,
         options: {

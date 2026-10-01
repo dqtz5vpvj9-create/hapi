@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { buildSessionHierarchy, hierarchyRootId, hierarchyContains, type SessionHierarchy } from '@/lib/sessionHierarchy'
 import { SessionListScrollAnchor } from './SessionListScrollAnchor'
+import { CodexSubagentDialog } from './CodexSubagentDialog'
 import type { SessionSummary } from '@/types/api'
 import { SESSION_LIFECYCLE_IDLE } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
@@ -1206,6 +1208,110 @@ function PullRefreshIcon(props: { rotation: number }) {
     )
 }
 
+type NativeSubagent = NonNullable<NonNullable<SessionSummary['metadata']>['codexSubagents']>[number]
+type OpenNativeSubagent = (parentSessionId: string, agent: NativeSubagent) => void
+
+function nativeSubagentTitle(agent: NativeSubagent): string {
+    return agent.nickname || agent.role || agent.threadId.slice(0, 8)
+}
+
+function NativeSubagentItem(props: {
+    agent: NativeSubagent
+    agents: NativeSubagent[]
+    parentSessionId: string
+    onOpen: OpenNativeSubagent
+    revealChildren: boolean
+}) {
+    const { t } = useTranslation()
+    const [expanded, setExpanded] = useState(false)
+    const children = props.agents.filter(agent => agent.parentThreadId === props.agent.threadId)
+    const open = expanded || props.revealChildren
+    return (
+        <div data-native-subagent-id={props.agent.threadId}>
+            <button type="button"
+                className="flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left hover:bg-[var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                onClick={() => props.onOpen(props.parentSessionId, props.agent)}>
+                <span className="flex items-center gap-1.5 text-sm text-[var(--app-fg)]">
+                    <span aria-hidden="true" className="text-[var(--app-hint)]">↳</span>
+                    {nativeSubagentTitle(props.agent)}
+                </span>
+                <span className="text-[11px] text-[var(--app-hint)]">
+                    {t('sessions.subagent')}{props.agent.role && props.agent.role !== props.agent.nickname ? ` · ${props.agent.role}` : ''}
+                </span>
+            </button>
+            {children.length > 0 ? <>
+                <button type="button" aria-expanded={open}
+                    className="ml-2.5 flex items-center gap-1 rounded px-1 py-1 text-[11px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
+                    onClick={() => setExpanded(value => !value)}>
+                    <ChevronIcon className="h-3 w-3" collapsed={!open} />
+                    {t('sessions.subagents', { n: children.length })}
+                </button>
+                {open ? <div className="ml-3 border-l border-[var(--app-border)] pl-2">
+                    {children.map(agent => <NativeSubagentItem {...props} key={agent.threadId} agent={agent} />)}
+                </div> : null}
+            </> : null}
+        </div>
+    )
+}
+
+function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
+    tree: SessionHierarchy
+    selectedSessionId?: string | null
+    revealChildren: boolean
+    onOpenNativeSubagent: OpenNativeSubagent
+}) {
+    const { tree, selectedSessionId, revealChildren, onOpenNativeSubagent, ...rowProps } = props
+    const { t } = useTranslation()
+    const children = tree.children.get(props.session.id) ?? []
+    const agents = props.session.metadata?.codexSubagents ?? []
+    const nativeChildren = agents.filter(agent => agent.parentThreadId === props.session.metadata?.agentSessionId
+        && !children.some(child => child.metadata?.agentSessionId === agent.threadId))
+    const containsSelection = hierarchyContains(tree, props.session.id, selectedSessionId)
+        && props.session.id !== selectedSessionId
+    const [expanded, setExpanded] = useState(containsSelection)
+    useEffect(() => {
+        if (containsSelection) setExpanded(true)
+    }, [containsSelection, selectedSessionId])
+    const pending = tree.pendingDescendants.get(props.session.id) ?? 0
+    const open = expanded || revealChildren || pending > 0
+    return (
+        <div data-session-tree-id={props.session.id}>
+            {props.session.metadata?.codexParentThreadId ? (
+                <div className="px-2.5 pt-1 text-[10px] text-[var(--app-hint)]">
+                    {t('sessions.subagent')}
+                    {props.session.metadata.codexAgentNickname ? ` · ${props.session.metadata.codexAgentNickname}` : ''}
+                    {props.session.metadata.codexAgentRole ? ` · ${props.session.metadata.codexAgentRole}` : ''}
+                </div>
+            ) : null}
+            <SessionItem {...rowProps} />
+            {children.length + nativeChildren.length > 0 ? (
+                <>
+                    <button type="button" aria-expanded={open}
+                        className="ml-2.5 flex items-center gap-1 rounded px-1 py-1 text-[11px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
+                        onClick={() => setExpanded(value => !value)}>
+                        <ChevronIcon className="h-3 w-3" collapsed={!open} />
+                        {t('sessions.subagents', { n: children.length + nativeChildren.length })}
+                        {pending > 0 ? <span className="text-[var(--app-badge-warning-text)]">{t('sessions.subagentsPending', { n: pending })}</span> : null}
+                    </button>
+                    {open ? (
+                        <div className="ml-3 border-l border-[var(--app-border)] pl-2" data-subagent-parent={props.session.id}>
+                            {children.map(child => (
+                                <SessionTreeItem {...rowProps} key={child.id} session={child}
+                                    selected={child.id === selectedSessionId} tree={tree}
+                                    projectLabel={rowProps.projectLabel ? getPathDisplayName(child.metadata?.worktree?.basePath ?? child.metadata?.path ?? 'Other') : undefined}
+                                    selectedSessionId={selectedSessionId} revealChildren={revealChildren}
+                                    onOpenNativeSubagent={onOpenNativeSubagent} />
+                            ))}
+                            {nativeChildren.map(agent => <NativeSubagentItem key={agent.threadId} agent={agent} agents={agents}
+                                parentSessionId={props.session.id} onOpen={onOpenNativeSubagent} revealChildren={revealChildren} />)}
+                        </div>
+                    ) : null}
+                </>
+            ) : null}
+        </div>
+    )
+}
+
 export function SessionList(props: {
     sessions: SessionSummary[]
     onSelect: (sessionId: string) => void
@@ -1246,6 +1352,8 @@ export function SessionList(props: {
     const [customStart, setCustomStart] = useState('')
     const [customEnd, setCustomEnd] = useState('')
     const [markAllReadOpen, setMarkAllReadOpen] = useState(false)
+    const [nativeSubagent, setNativeSubagent] = useState<{ parentSessionId: string; agent: NativeSubagent } | null>(null)
+    const openNativeSubagent: OpenNativeSubagent = (parentSessionId, agent) => setNativeSubagent({ parentSessionId, agent })
     const [, setCodexImportedSessionsVersion] = useState(0)
     const normalizedQuery = normalizeSearch(searchQuery)
     const timeRange = getSessionTimeRange(customStart, customEnd)
@@ -1322,9 +1430,10 @@ export function SessionList(props: {
         },
         [allSessions, hasTextQuery, isFiltering, normalizedQuery, searchScoreIndex, timeScopedSessions, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
     )
+    const allHierarchy = useMemo(() => buildSessionHierarchy(allSessions, sidebarSessions), [allSessions, sidebarSessions])
     const allGroups = useMemo(
-        () => groupSessionsByDirectory(allSessions),
-        [allSessions]
+        () => groupSessionsByDirectory(allHierarchy.roots),
+        [allHierarchy]
     )
     const machineFilters = useMemo(
         () => groupByMachine(allGroups, resolveMachineLabel),
@@ -1364,7 +1473,7 @@ export function SessionList(props: {
             id => lastSeenById[id] ?? 0
         )
     }, [lastSeenVersion, visibleSessions, selectedSessionId, showUnreadOnly])
-    const machineFilteredSessions = useMemo(
+    const scopedSessions = useMemo(
         () => activeMachineFilter === null
             ? unreadFilteredSessions
             : unreadFilteredSessions.filter(session =>
@@ -1372,6 +1481,9 @@ export function SessionList(props: {
             ),
         [unreadFilteredSessions, activeMachineFilter]
     )
+    const sessionHierarchy = useMemo(() => buildSessionHierarchy(scopedSessions, sidebarSessions), [scopedSessions, sidebarSessions])
+    const machineFilteredSessions = sessionHierarchy.roots
+    const selectedRootId = hierarchyRootId(sessionHierarchy, selectedSessionId)
     const globalPinnedSessions = useMemo(() => {
         const pinned = machineFilteredSessions.filter((session) => Boolean(session.globalPinned))
         if (searchScoreIndex && hasTextQuery) {
@@ -1437,7 +1549,7 @@ export function SessionList(props: {
         const override = collapseOverrides.get(group.key)
         if (override !== undefined) return override
         const hasSelectedSession = selectedSessionId
-            ? group.sessions.some(session => session.id === selectedSessionId)
+            ? group.sessions.some(session => session.id === selectedRootId)
             : false
         return !group.hasActiveSession && !group.hasPinnedSession && !hasSelectedSession
     }
@@ -1468,7 +1580,7 @@ export function SessionList(props: {
                 group.sessions.length
             )
             const currentVisibleCount = getVisibleSessionPreview(group.sessions, {
-                selectedSessionId,
+                selectedSessionId: selectedRootId,
                 limit: currentLimit
             }).length
             next.set(group.key, getNextSessionVisibleCount(
@@ -1501,7 +1613,7 @@ export function SessionList(props: {
         return getVisibleSessionPreview(
             group.sessions,
             {
-                selectedSessionId,
+                selectedSessionId: selectedRootId,
                 limit: getGroupVisibleCount(group)
             }
         )
@@ -1570,7 +1682,7 @@ export function SessionList(props: {
                                         {t(bucket.labelKey)} ({sessions.length})
                                     </div>
                                     {sessions.map((s) => (
-                                        <SessionItem
+                                        <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly}
                                             key={s.id}
                                             session={s}
                                             onSelect={props.onSelect}
@@ -1643,7 +1755,7 @@ export function SessionList(props: {
         )
         const previousLimit = getPreviousSessionVisibleCount(currentLimit, sessionPreviewLimit)
         const previousGroupSessions = getVisibleSessionPreview(group.sessions, {
-            selectedSessionId,
+            selectedSessionId: selectedRootId,
             limit: previousLimit
         })
         const collapseCount = visibleGroupSessions.length - previousGroupSessions.length
@@ -1702,7 +1814,7 @@ export function SessionList(props: {
                                         aria-hidden="true"
                                     />
                                 ) : null}
-                                <SessionItem
+                                <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly}
                                     session={s}
                                     onSelect={props.onSelect}
                                     showPath={false}
@@ -1760,7 +1872,7 @@ export function SessionList(props: {
         // in a visible group. Using `allGroups` here would expand the group
         // below whenever a running session is opened.
         const group = groups.find(g =>
-            g.sessions.some(s => s.id === selectedSessionId)
+            g.sessions.some(s => s.id === selectedRootId)
         )
         if (!group) {
             // The selected session is not rendered inside any directory group
@@ -1776,7 +1888,7 @@ export function SessionList(props: {
         autoExpandedSelectedSessionKeyRef.current = autoExpandKey
 
         setCollapseOverrides(prev => expandSelectedSessionCollapseOverrides(prev, group))
-    }, [selectedSessionId, groups])
+    }, [selectedSessionId, selectedRootId, groups])
 
     // Clean up stale collapse overrides
     useEffect(() => {
@@ -1942,7 +2054,7 @@ export function SessionList(props: {
                             {showMachineFilterBar ? (
                                 <MachineFilterMenu
                                     machines={machineFilterItems}
-                                    totalCount={allSessions.length}
+                                    totalCount={allHierarchy.roots.length}
                                     value={activeMachineFilter}
                                     onChange={setMachineFilter}
                                 />
@@ -2001,7 +2113,7 @@ export function SessionList(props: {
             {showMachineFilterBar ? (
                 <MachineFilterBar
                     machines={machineFilterItems}
-                    totalCount={allSessions.length}
+                    totalCount={allHierarchy.roots.length}
                     value={activeMachineFilter}
                     onChange={setMachineFilter}
                 />
@@ -2076,7 +2188,7 @@ export function SessionList(props: {
                             <div className="collapsible-inner">
                                 <div className="flex flex-col gap-0.5 ml-3 pl-1 py-1">
                                     {globalPinnedSessions.map((s) => (
-                                        <SessionItem
+                                        <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly}
                                             key={s.id}
                                             session={s}
                                             onSelect={props.onSelect}
@@ -2120,6 +2232,9 @@ export function SessionList(props: {
             </SessionListScrollAnchor>
             </div>
             </div>
+            {nativeSubagent && api ? <CodexSubagentDialog api={api} parentSessionId={nativeSubagent.parentSessionId}
+                threadId={nativeSubagent.agent.threadId} title={nativeSubagentTitle(nativeSubagent.agent)}
+                isOpen={true} onClose={() => setNativeSubagent(null)} /> : null}
             <ConfirmDialog
                 isOpen={markAllReadOpen}
                 onClose={() => setMarkAllReadOpen(false)}

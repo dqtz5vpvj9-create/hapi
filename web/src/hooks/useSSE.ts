@@ -146,6 +146,11 @@ export function sameSessionSummaryMetadata(
         && current.summary?.text === next.summary?.text
         && current.flavor === next.flavor
         && current.agentSessionId === next.agentSessionId
+        && current.codexParentThreadId === next.codexParentThreadId
+        && current.codexAgentNickname === next.codexAgentNickname
+        && current.codexAgentRole === next.codexAgentRole
+        && current.codexAgentPath === next.codexAgentPath
+        && JSON.stringify(current.codexSubagents) === JSON.stringify(next.codexSubagents)
         && current.lifecycleState === next.lifecycleState
         && current.worktree?.basePath === next.worktree?.basePath
         && current.worktree?.branch === next.worktree?.branch

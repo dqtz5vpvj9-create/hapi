@@ -1,3 +1,4 @@
+import { CodexSessionLineageRpcResponseSchema, CodexSubagentMessagesResponseSchema } from '@hapi/protocol/apiTypes'
 import type { AgentFlavor, CodexCollaborationMode, CopilotAgentMode, PermissionMode } from '@hapi/protocol/types'
 import { PERMISSION_REQUEST_NOT_FOUND_MESSAGE, RPC_METHODS } from '@hapi/protocol/rpcMethods'
 import {
@@ -452,6 +453,15 @@ export class RpcGateway {
             {},
             MODEL_LIST_RPC_TIMEOUT_MS
         ) as RpcListCodexModelsResponse
+    }
+
+    async codexSessionLineageForMachine(machineId: string, sessionIds: string[]) {
+        const result = await this.machineRpc(machineId, RPC_METHODS.CodexSessionLineage, { sessionIds }, 10_000)
+        return CodexSessionLineageRpcResponseSchema.parse(result).sessions
+    }
+
+    async readCodexSubagentMessages(machineId: string, query: { rootThreadId: string; threadId: string; limit: number; before?: number }) {
+        return CodexSubagentMessagesResponseSchema.parse(await this.machineRpc(machineId, RPC_METHODS.ReadCodexSubagentMessages, query, 15_000))
     }
 
     async listCodexSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[]): Promise<RpcListCodexSessionsResponse> {
