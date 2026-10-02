@@ -1,3 +1,4 @@
+import type { CodexGoalRequest, CodexGoalResponse } from '@hapi/protocol/apiTypes'
 import { CodexSubagentMessagesResponseSchema } from '@hapi/protocol/apiTypes'
 import type { AgentFlavor, CodexCollaborationMode, CopilotAgentMode, PermissionMode } from '@hapi/protocol/types'
 import { PERMISSION_REQUEST_NOT_FOUND_MESSAGE, RPC_METHODS } from '@hapi/protocol/rpcMethods'
@@ -590,6 +591,10 @@ export class RpcGateway {
 
     async clearConversation(sessionId: string): Promise<{ sessionId: string }> {
         return await this.sessionRpc(sessionId, RPC_METHODS.ClearConversation, {}, 120_000) as { sessionId: string }
+    }
+
+    async codexGoal(sessionId: string, request: CodexGoalRequest): Promise<CodexGoalResponse> {
+        return await this.sessionRpc(sessionId, RPC_METHODS.CodexGoal, request) as CodexGoalResponse
     }
 
     async implementCodexPlan(sessionId: string, planId: string): Promise<ImplementCodexPlanResult> {

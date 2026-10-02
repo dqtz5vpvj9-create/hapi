@@ -8,7 +8,7 @@ import { isIndeterminateError } from '../codexAppServerClient';
 const InputSchema = z.array(z.object({ type: z.string() }).passthrough());
 export const SubmissionSchema = z.object({ id: z.string(), input: InputSchema, clientUserMessageId: z.string() });
 const LedgerSchema = z.record(z.string(), z.object({
-    input: InputSchema, state: z.enum(['unknown', 'queued', 'consumed', 'canceled', 'rejected', 'released']), nativeId: z.string().optional()
+    input: InputSchema, state: z.enum(['unknown', 'queued', 'dispatching', 'consumed', 'canceled', 'rejected', 'released']), nativeId: z.string().optional()
 }));
 export type QueueInput = z.infer<typeof InputSchema>;
 type Entry = z.infer<typeof LedgerSchema>[string];
@@ -23,10 +23,15 @@ export class SharedCodexQueue {
         private readonly uncertain: (ids: string[]) => void,
         private readonly mirror?: (id: string, input: QueueInput | null) => void,
         private readonly requeued?: (ids: string[]) => Promise<unknown>,
-        private readonly snapshot?: (items: Array<z.infer<typeof SubmissionSchema>>) => void) {}
+        private readonly snapshot?: (items: Array<z.infer<typeof SubmissionSchema>>) => void,
+        private readonly dispatching?: (ids: string[]) => Promise<unknown>) {}
 
     async load(): Promise<void> {
-        try { this.entries = LedgerSchema.parse(JSON.parse(await readFile(this.file, 'utf8'))); }
+        try {
+            this.entries = LedgerSchema.parse(JSON.parse(await readFile(this.file, 'utf8')));
+            // A replacement bridge has lost the live acceptance subscription.
+            for (const entry of Object.values(this.entries)) if (entry.state === 'dispatching') entry.state = 'unknown';
+        }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     }
 
@@ -98,11 +103,13 @@ export class SharedCodexQueue {
     reconcile(): Promise<void> { return this.serial(() => this.reconcileNow()); }
     private async reconcileNow(): Promise<void> {
         const present = new Set<string>();
+        const returned: string[] = [];
         const items = await this.list();
         for (const item of items) {
             const id = item.clientUserMessageId; present.add(id);
             const entry = this.entries[id] ??= { input: item.input, state: 'queued' };
             if (entry.state !== 'consumed' && entry.state !== 'canceled') {
+                if (entry.state === 'dispatching' || entry.state === 'unknown') returned.push(id);
                 const changed = entry.nativeId !== item.id || JSON.stringify(entry.input) !== JSON.stringify(item.input);
                 entry.nativeId = item.id; entry.input = item.input; entry.state = 'queued';
                 if (changed) this.mirror?.(id, item.input);
@@ -111,13 +118,28 @@ export class SharedCodexQueue {
         // Absence could mean consumed, removed, or lost during engine restart.
         // Only an item event/history or a successful delete can decide which.
         for (const [id, entry] of Object.entries(this.entries)) {
-            if (entry.state === 'queued' && !present.has(id)) entry.state = 'unknown';
+            if (entry.state === 'queued' && !present.has(id)) entry.state = 'dispatching';
         }
         await this.save();
         this.snapshot?.(items.filter(item => !['consumed', 'canceled'].includes(this.entries[item.clientUserMessageId].state)));
+        if (returned.length) await this.requeued?.(returned);
+        const dispatching = Object.entries(this.entries).filter(([, entry]) => entry.state === 'dispatching').map(([id]) => id);
+        if (dispatching.length) await this.dispatching?.(dispatching);
         const unknown = Object.entries(this.entries).filter(([, entry]) => entry.state === 'unknown').map(([id]) => id);
         if (unknown.length) this.uncertain(unknown);
         await this.publishReleased();
+    }
+
+    transportLost(): Promise<void> {
+        return this.serial(async () => {
+            const ids: string[] = [];
+            for (const [id, entry] of Object.entries(this.entries)) {
+                if (entry.state === 'queued' || entry.state === 'dispatching') entry.state = 'unknown';
+                if (entry.state === 'unknown') ids.push(id);
+            }
+            await this.save();
+            if (ids.length) this.uncertain(ids);
+        });
     }
 
     private async publishReleased(): Promise<void> {
@@ -137,14 +159,14 @@ export class SharedCodexQueue {
                 // Do not delete and later restore stale contents from the ledger.
                 const unknown: string[] = [];
                 for (const [id, entry] of Object.entries(this.entries)) {
-                    if (entry.state === 'queued') entry.state = 'unknown';
+                    if (entry.state === 'queued' || entry.state === 'dispatching') entry.state = 'unknown';
                     if (entry.state === 'unknown') unknown.push(id);
                 }
                 await this.save(); if (unknown.length) this.uncertain(unknown);
                 return;
             }
             for (const [id, entry] of Object.entries(this.entries)) {
-                if (!['queued', 'unknown'].includes(entry.state)) continue;
+                if (!['queued', 'dispatching', 'unknown'].includes(entry.state)) continue;
                 // Persist uncertainty before deletion; a lost ACK cannot authorize replay.
                 entry.state = 'unknown'; await this.save();
                 if (entry.nativeId) {

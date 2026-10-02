@@ -339,7 +339,7 @@ export function QueuedMessagesBar({
             <div className="px-3 pb-0 pt-2 text-sm text-[var(--app-fg-muted)]">
                 <div className="flex items-center gap-1.5 mb-1.5 text-xs font-medium text-[var(--app-hint)]">
                     <ClockIcon />
-                    <span>Queued</span>
+                    <span>{queued.every(message => message.deliveryState === 'dispatching') ? t('queuedMessages.confirming') : 'Queued'}</span>
                 </div>
                 <ul
                     className="flex flex-col gap-1.5 max-h-32 sm:max-h-48 overflow-y-auto"
@@ -352,7 +352,7 @@ export function QueuedMessagesBar({
                         const hasAttachments = attachmentNames.length > 0
                         const localId = msg.localId ?? msg.id
                         const isPending = cancelMutation.isPending || queuedOperationPending
-                        const canCancel = computeCanCancel({ id: msg.id, localId: msg.localId, isPending })
+                        const canCancel = msg.deliveryState !== 'dispatching' && computeCanCancel({ id: msg.id, localId: msg.localId, isPending })
 
                         const handleCancel = () => {
                             if (!canCancel) return
@@ -517,6 +517,9 @@ export function QueuedMessagesBar({
                                         <span className="line-clamp-3 whitespace-pre-wrap break-words text-[var(--app-fg)]">
                                             {text}
                                         </span>
+                                    ) : null}
+                                    {msg.deliveryState === 'dispatching' ? (
+                                        <div className="mt-1 text-xs text-[var(--app-hint)]">{t('queuedMessages.confirming')}</div>
                                     ) : null}
                                     {msg.deliveryState === 'indeterminate' ? (
                                         <div className="mt-1 text-xs text-[var(--app-warning-text)]">

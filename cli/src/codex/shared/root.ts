@@ -10,7 +10,8 @@ import { listSlashCommands } from '@/modules/common/slashCommands';
 import { normalizeCodexModel } from '@/modules/common/codexModels';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods';
-import { ImplementCodexPlanRequestSchema, type ImplementCodexPlanResult } from '@hapi/protocol/apiTypes';
+import { ThreadGoalSchema } from '@hapi/protocol/schemas';
+import { CodexGoalRequestSchema, CodexGoalResponseSchema, ImplementCodexPlanRequestSchema, type ImplementCodexPlanResult } from '@hapi/protocol/apiTypes';
 import { CodexAppServerClient, isIndeterminateError } from '../codexAppServerClient';
 import { buildHapiMcpBridge, type HapiMcpBridge } from '../utils/buildHapiMcpBridge';
 import { buildUserInputFromMessage } from '../utils/appServerConfig';
@@ -116,9 +117,22 @@ export class SharedCodexRoot {
                 this.publishPlan();
             }
             const modelAtReceipt = record(params).threadId === this.threadId ? this.settings.model ?? undefined : undefined;
-            this.notifications = this.notifications.then(() => this.notification(method, params, modelAtReceipt)).catch(error => logger.debug('[Codex shared] projection', error));
+            // Queue reads can finish after native user acceptance has already
+            // arrived on this transport. Record that identity before the
+            // serialized projection waits behind the queue read; otherwise a
+            // normal dequeue temporarily publishes an unknown outcome.
+            const acceptance = this.queue?.acceptedItem(method, params)
+                .catch(error => logger.debug('[Codex shared] acceptance', error));
+            this.notifications = this.notifications.then(async () => {
+                await acceptance;
+                await this.notification(method, params, modelAtReceipt);
+            }).catch(error => logger.debug('[Codex shared] projection', error));
         });
-        this.client.setTransportAbandonedHandler(() => { void this.reconnect(); });
+        this.client.setTransportAbandonedHandler(() => {
+            this.publishSteering(); this.publishPlan();
+            void (this.queue?.transportLost() ?? Promise.resolve()).catch(error => logger.debug('[Codex shared] lost queue confirmation', error))
+                .then(() => this.reconnect());
+        });
         this.session.onUserMessage((message, localId) => {
             this.work = this.work.catch(() => {}).then(async () => {
                 await this.bound;
@@ -215,7 +229,8 @@ export class SharedCodexRoot {
             (ids, steered) => this.session.emitMessagesConsumed(ids, { steered }), ids => this.session.emitSteerIndeterminate(ids),
             (id, input) => { if (this.host.external) this.session.emitNativeHistoryChanged(); else this.session.syncNativeQueuedMessage(id, input === null ? null : inputText(input)); },
             ids => this.session.setSteerDeliveryState(ids, 'queued'),
-            items => this.session.syncNativeQueueSnapshot(items.map(item => ({ localId: item.clientUserMessageId, text: inputText(item.input) }))));
+            items => this.session.syncNativeQueueSnapshot(items.map(item => ({ localId: item.clientUserMessageId, text: inputText(item.input) }))),
+            ids => this.session.setSteerDeliveryState(ids, 'dispatching'));
         await this.queue.load();
         this.projection = new SharedCodexProjection(this.session, threadId, id => this.queue.committed(id));
         this.session.updateMetadata(metadata => ({ ...metadata, codexSessionId: threadId, ...codexSubagentMetadata(response.thread), capabilities: {
@@ -232,7 +247,7 @@ export class SharedCodexRoot {
         this.acceptSettings(response); this.acceptSettings(this.host.settingsFor(threadId) ?? {});
         if (!this.host.external) await this.projection.history(response.thread);
         else this.nativeHistory = new NativeCodexHistory(threadId, this.client, this.host.codexHome ?? '');
-        await this.refresh(); await this.refreshChildren(true);
+        await this.refresh(); await this.refreshChildren(true); await this.refreshGoal();
     }
     async activate(options: SharedLaunchOptions = {}): Promise<void> {
         // Restored input cannot run before the cold-resume settings are applied.
@@ -318,7 +333,9 @@ export class SharedCodexRoot {
         if (method === 'thread/archived') { await this.host.end(this, false); return; }
         if (method === 'thread/queue/changed') await this.queue.reconcile();
         if (this.host.external) {
-            await this.queue.acceptedItem(method, params);
+            // Goal state is outside the paged transcript; never use its updates as history cursors.
+            if (method === 'thread/goal/updated') this.publishGoal(p.goal);
+            if (method === 'thread/goal/cleared') this.publishGoal(null);
             if (method === 'turn/completed') this.nativeHistory?.terminal(record(record(params).turn));
             this.nativeHistory?.invalidate(/revert|rollback|rolledback|truncat/i.test(method)); this.session.emitNativeHistoryChanged();
         }
@@ -414,7 +431,7 @@ export class SharedCodexRoot {
                     const observedSettings = this.settingsRevision !== settingsRevision;
                     this.acceptSettings(response);
                     if (!observedSettings) this.acceptSettings(this.host.settingsFor(this.threadId) ?? {});
-                    this.projection.reset(); this.nativeHistory?.invalidate(); await this.refresh(); this.queue.replay(); await this.refreshChildren(true);
+                    this.projection.reset(); this.nativeHistory?.invalidate(); await this.refresh(); await this.refreshGoal(); this.queue.replay(); await this.refreshChildren(true);
                     return;
                 } catch (error) {
                     this.permissions.close();
@@ -551,6 +568,17 @@ export class SharedCodexRoot {
             exitFromHubArchive();
         }
         this.session.on('hub-archived', exitFromHubArchive);
+        rpc.registerHandler(RPC_METHODS.CodexGoal, async raw => {
+            const request = CodexGoalRequestSchema.parse(raw);
+            const params = { threadId: this.threadId };
+            const response = request.action === 'get' ? await this.client.request('thread/goal/get', params)
+                : request.action === 'clear' ? await this.client.request('thread/goal/clear', params)
+                : await this.client.request('thread/goal/set', { ...params, ...(request.action === 'set'
+                    ? { objective: request.objective } : { status: request.action === 'pause' ? 'paused' : 'active' }) });
+            const result = CodexGoalResponseSchema.parse({ goal: request.action === 'clear' ? null : record(response).goal });
+            this.publishGoal(result.goal);
+            return result;
+        });
         rpc.registerHandler(RPC_METHODS.SetSessionConfig, raw => this.applySettings(raw));
         rpc.registerHandler(RPC_METHODS.ImplementCodexPlan, raw => {
             const { planId } = ImplementCodexPlanRequestSchema.parse(raw);
@@ -598,6 +626,19 @@ export class SharedCodexRoot {
             developerInstructions: getCodexSystemPrompt(),
             config: { ...record(sandbox.config), model_reasoning_effort: this.settings.modelReasoningEffort ?? undefined } };
     }
+    private async refreshGoal(): Promise<void> {
+        try {
+            const response = record(await this.client.request('thread/goal/get', { threadId: this.threadId }));
+            this.publishGoal(response.goal);
+        } catch (error) {
+            // An optional goal read must not prevent attaching a session; explicit /goal still reports failure.
+            logger.debug('[Codex shared] goal snapshot unavailable', error);
+        }
+    }
+    private publishGoal(value: unknown): void {
+        const threadGoal = value == null ? null : ThreadGoalSchema.parse(value);
+        this.session.updateAgentState(state => ({ ...state, threadGoal }));
+    }
     private notice(message: string): void { this.session.sendSessionEvent({ type: 'message', message }); }
     private async newConversation(): Promise<SharedCodexRoot> {
         const child = await this.host.create('thread/start', this.freshParams());
@@ -621,7 +662,8 @@ export class SharedCodexRoot {
             const response = slash.action === 'show' ? await this.client.request('thread/goal/get', params)
                 : slash.action === 'clear' ? await this.client.request('thread/goal/clear', params)
                 : await this.client.request('thread/goal/set', { ...params, ...(slash.action === 'set' ? { objective: slash.objective } : { status: slash.action === 'pause' ? 'paused' : 'active' }) });
-            this.notice(JSON.stringify(response)); return null;
+            this.publishGoal(slash.action === 'clear' ? null : record(response).goal);
+            return null;
         }
         if (slash.updates?.proactiveMultiAgent !== undefined) throw new Error('This Codex version uses Ultra reasoning effort instead of a multi-agent toggle');
         if (slash.updates?.model === null) throw new Error('Choose an explicit model in a shared thread');

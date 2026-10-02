@@ -187,16 +187,16 @@ describe('StatusBar context details popover', () => {
         const leftStatusGroup = connectionLabel.parentElement?.parentElement
         const statusBar = leftStatusGroup?.parentElement
         const rightStatusGroup = statusBar?.lastElementChild
-        expect(statusBar?.className.split(' ')).toContain('items-baseline')
-        expect(leftStatusGroup?.className.split(' ')).toContain('items-baseline')
-        expect(rightStatusGroup?.className.split(' ')).toContain('items-baseline')
+        expect(statusBar?.className.split(' ')).toContain('items-center')
+        expect(leftStatusGroup?.className.split(' ')).toContain('items-center')
+        expect(rightStatusGroup?.className.split(' ')).toContain('items-center')
         expect(connectionLabel.className.split(' ')).not.toContain('top-px')
         expect(connectionLabel.previousElementSibling?.className.split(' ')).not.toContain('top-px')
         expect(connectionLabel.parentElement?.className.split(' ')).toContain('top-px')
         expect(connectionLabel.parentElement?.className.split(' ')).toContain('sm:top-0.5')
-        expect(leftStatusGroup?.className.split(' ')).toContain('gap-2')
+        expect(leftStatusGroup?.className.split(' ')).toContain('gap-1.5')
         expect(leftStatusGroup?.className.split(' ')).not.toContain('sm:gap-3')
-        expect(rightStatusGroup?.className.split(' ')).toContain('gap-2')
+        expect(rightStatusGroup?.className.split(' ')).toContain('gap-0.5')
 
         const trigger = screen.getByRole('button', { name: '上下文详情' })
         expect(trigger.className.split(' ')).not.toContain('relative')

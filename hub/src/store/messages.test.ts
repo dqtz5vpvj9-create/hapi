@@ -561,7 +561,7 @@ describe('content codec integration', () => {
         expect(store.messages.setMessagesDeliveryState(session.id, ['lid-retry'], 'indeterminate')).toBe(1)
         expect(store.messages.getDeliverableMessagesAfter(session.id, 0, Date.now())).toHaveLength(0)
         const claimed = store.messages.claimIndeterminateMessage(session.id, msg.id)
-        expect(claimed).toMatchObject({ id: msg.id, invokedAt: null, deliveryState: 'indeterminate' })
+        expect(claimed).toMatchObject({ id: msg.id, invokedAt: null, deliveryState: 'dispatching' })
         expect(store.messages.claimIndeterminateMessage(session.id, msg.id)).toBeNull()
         expect(store.messages.getDeliverableMessagesAfter(session.id, 0, Date.now())).toHaveLength(0)
         expect(store.messages.setMessagesDeliveryState(session.id, ['lid-retry'], 'queued')).toBe(1)

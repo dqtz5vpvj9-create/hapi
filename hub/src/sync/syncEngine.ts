@@ -1,3 +1,4 @@
+import type { CodexGoalRequest, CodexGoalResponse } from '@hapi/protocol/apiTypes'
 /**
  * Sync Engine for HAPI Telegram Bot (Direct Connect)
  *
@@ -2104,6 +2105,15 @@ export class SyncEngine {
         if (!child) throw new Error('Invalid shared-runtime clear binding')
         // No superseded-session redirect: only the initiating client navigates.
         return { sessionId: child.id }
+    }
+
+    async codexGoal(sessionId: string, namespace: string, request: CodexGoalRequest): Promise<CodexGoalResponse> {
+        const access = this.sessionCache.resolveSessionAccess(sessionId, namespace)
+        if (!access.ok || !access.session.active || access.session.metadata?.flavor !== 'codex'
+            || !access.session.metadata.capabilities?.concurrentClients) {
+            throw new Error('Goals require an active shared Codex session')
+        }
+        return await this.rpcGateway.codexGoal(access.sessionId, request)
     }
 
     async implementCodexPlan(sessionId: string, namespace: string, planId: string): Promise<ImplementCodexPlanResult> {

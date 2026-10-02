@@ -524,6 +524,8 @@ describe('MessageService.getQueuedState', () => {
         const otherSession = makeSession(store, 'queued-state-other')
         store.messages.addMessage(session.id, 'queued', 'local-queued')
         store.messages.addMessage(session.id, 'invoked', 'local-invoked')
+        store.messages.addMessage(session.id, 'handoff', 'local-handoff')
+        store.messages.setMessagesDeliveryState(session.id, ['local-handoff'], 'dispatching')
         store.messages.addMessage(
             session.id,
             'future scheduled',
@@ -538,17 +540,20 @@ describe('MessageService.getQueuedState', () => {
         expect(service.getQueuedState(session.id, [
             'local-queued',
             'local-invoked',
+            'local-handoff',
             'local-absent',
             'local-future',
             'local-other'
         ])).toEqual({
             queuedLocalIds: ['local-queued', 'local-future'],
             indeterminateLocalIds: [],
+            dispatchingLocalIds: ['local-handoff'],
             invokedLocalMessages: [{ localId: 'local-invoked', invokedAt: 1_000 }]
         })
         expect(service.getQueuedState(session.id, [])).toEqual({
             queuedLocalIds: [],
             indeterminateLocalIds: [],
+            dispatchingLocalIds: [],
             invokedLocalMessages: []
         })
     })
@@ -1198,6 +1203,27 @@ describe('MessageService.sendMessage with scheduledAt', () => {
 })
 
 describe('MessageService.sendMessage deliveryMode', () => {
+    it('keeps native pending SSE input outside history cursor coordinates while retaining its delivery sequence', async () => {
+        const store = makeStore()
+        const session = store.sessions.getOrCreateSession('native-sse-queue', { codexNativeSession: true }, null, 'default')
+        const publisher = makePublisher()
+        const updates: unknown[] = []
+        const io = { of: () => ({ to: () => ({ emit: (_name: string, update: unknown) => updates.push(update) }) }) } as unknown as Server
+        const service = new MessageService(store, io, publisher as unknown as EventPublisher)
+
+        await service.sendMessage(session.id, { text: 'A real queued follow-up', localId: 'native-followup' })
+
+        const event = publisher.events.find(event => event.type === 'message-received')
+        expect(event?.type).toBe('message-received')
+        if (event?.type !== 'message-received') throw new Error('Missing pending input event')
+        expect(event.message.seq).toBeNull()
+        expect(event.message.localId).toBe('native-followup')
+        const stored = store.messages.getMessages(session.id)[0]
+        expect(stored.seq).toBeGreaterThan(0)
+        expect(updates).toHaveLength(1)
+        expect((updates[0] as { seq: number }).seq).toBe(stored.seq)
+        store.close()
+    })
     function makeTrackingIo(): { io: Server; cliEmitted: unknown[] } {
         const cliEmitted: unknown[] = []
         const io = {

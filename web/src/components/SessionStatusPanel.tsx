@@ -40,12 +40,7 @@ export function SessionStatusPanel({ data }: { data: SessionStatusData }) {
     }, [hasLiveElapsed])
 
     return (
-        <details className="group mx-3 mt-3 rounded-md border border-[var(--app-border)] bg-[var(--app-subtle-bg)]">
-            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-semibold text-[var(--app-fg)] [&::-webkit-details-marker]:hidden">
-                {t('session.status.title')}
-                <span className="ml-auto text-[10px] text-[var(--app-hint)] transition-transform group-open:rotate-180" aria-hidden="true">▼</span>
-            </summary>
-            <div className="grid max-h-[min(50dvh,24rem)] gap-3 overflow-y-auto border-t border-[var(--app-border)] px-3 py-2.5 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-3">
                 {data.goal ? (
                     <Section title={t('session.status.goal')}>
                         <div className="break-words text-sm text-[var(--app-fg)]">{data.goal.objective}</div>
@@ -127,7 +122,6 @@ export function SessionStatusPanel({ data }: { data: SessionStatusData }) {
                         </div>
                     </Section>
                 ) : null}
-            </div>
-        </details>
+        </div>
     )
 }

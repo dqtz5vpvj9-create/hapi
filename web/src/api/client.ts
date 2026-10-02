@@ -31,6 +31,8 @@ import type {
     SessionsResponse
 } from '@/types/api'
 import type {
+    CodexGoalRequest,
+    CodexGoalResponse,
     AgyModelsResponse,
     AgentAvailabilityResponse,
     CodexModelsResponse,
@@ -138,6 +140,8 @@ function parseErrorCode(bodyText: string): string | undefined {
     }
 }
 
+export type MessageDownloadProgress = { receivedBytes: number; totalBytes: number | null }
+
 export class ApiError extends Error {
     status: number
     code?: string
@@ -180,7 +184,8 @@ export class ApiClient {
         path: string,
         init?: RequestInit,
         attempt: number = 0,
-        overrideToken?: string | null
+        overrideToken?: string | null,
+        onDownload?: (progress: MessageDownloadProgress) => void
     ): Promise<T> {
         const headers = new Headers(init?.headers)
         const liveToken = this.getToken ? this.getToken() : null
@@ -204,7 +209,7 @@ export class ApiClient {
                 const refreshed = await this.onUnauthorized()
                 if (refreshed) {
                     this.token = refreshed
-                    return await this.request<T>(path, init, attempt + 1, refreshed)
+                    return await this.request<T>(path, init, attempt + 1, refreshed, onDownload)
                 }
             }
             throw new ApiError('Session expired. Please sign in again.', 401)
@@ -221,7 +226,27 @@ export class ApiClient {
             )
         }
 
-        return await res.json() as T
+        if (!onDownload || !res.body) return await res.json() as T
+        // Fetch exposes decoded bytes. A compressed Content-Length cannot
+        // serve as their denominator, so show a total only for plain bodies.
+        const encoding = res.headers.get('content-encoding')
+        const totalBytes = encoding && encoding !== 'identity' ? null : Number(res.headers.get('content-length')) || null
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        const parts: string[] = []
+        let receivedBytes = 0
+        onDownload({ receivedBytes, totalBytes })
+        try {
+            while (true) {
+                const chunk = await reader.read()
+                if (chunk.done) break
+                receivedBytes += chunk.value.byteLength
+                parts.push(decoder.decode(chunk.value, { stream: true }))
+                onDownload({ receivedBytes, totalBytes })
+            }
+            parts.push(decoder.decode())
+            return JSON.parse(parts.join('')) as T
+        } finally { reader.releaseLock() }
     }
 
     async authenticate(auth: { initData: string } | { accessToken: string }): Promise<AuthResponse> {
@@ -404,7 +429,9 @@ export class ApiClient {
             epoch?: number | null
             bounded?: boolean
             limit?: number
-        }
+        },
+        signal?: AbortSignal,
+        onDownload?: (progress: MessageDownloadProgress) => void
     ): Promise<MessagesResponse> {
         const params = new URLSearchParams()
         if (options.beforeAt !== undefined && options.beforeAt !== null) {
@@ -435,7 +462,7 @@ export class ApiClient {
 
         const qs = params.toString()
         const url = `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs ? `?${qs}` : ''}`
-        return await this.request<MessagesResponse>(url)
+        return await this.request<MessagesResponse>(url, { signal }, 0, undefined, onDownload)
     }
 
     async getMessageDependencies(sessionId: string, seedIds: string[], epoch: number, signal?: AbortSignal): Promise<MessageDependenciesResponse> {
@@ -459,13 +486,14 @@ export class ApiClient {
         )
     }
 
-    async getMessageContext(sessionId: string, messageId: string, options: { radius?: number; epoch?: number } = {}): Promise<MessageContextResponse> {
+    async getMessageContext(sessionId: string, messageId: string, options: { radius?: number; epoch?: number } = {}, signal?: AbortSignal): Promise<MessageContextResponse> {
         const params = new URLSearchParams()
         if (options.radius !== undefined) params.set('radius', String(options.radius))
         if (options.epoch !== undefined) params.set('epoch', String(options.epoch))
         const query = params.toString()
         return this.request<MessageContextResponse>(
-            `/api/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/context${query ? `?${query}` : ''}`
+            `/api/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/context${query ? `?${query}` : ''}`,
+            { signal }
         )
     }
 
@@ -642,6 +670,12 @@ export class ApiClient {
 
     async clearConversation(sessionId: string): Promise<{ sessionId: string }> {
         return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/clear`, { method: 'POST' })
+    }
+
+    async codexGoal(sessionId: string, request: CodexGoalRequest): Promise<CodexGoalResponse> {
+        return await this.request<CodexGoalResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/codex/goal`, {
+            method: 'POST', body: JSON.stringify(request)
+        })
     }
 
     async implementCodexPlan(sessionId: string, planId: string): Promise<void> {

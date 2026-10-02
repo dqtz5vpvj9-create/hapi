@@ -6,6 +6,7 @@ const socketHarness = vi.hoisted(() => ({
         connected: boolean
         connectCalls: number
         connectImmediately: boolean
+        dropVolatile: boolean
         emitted: Array<{ event: string; args: unknown[] }>
         listeners: Map<string, Array<(...args: any[]) => void>>
         trigger: (event: string, ...args: any[]) => void
@@ -25,6 +26,7 @@ vi.mock('socket.io-client', () => ({
             connected: false,
             connectCalls: 0,
             connectImmediately: true,
+            dropVolatile: false,
             emitted: [] as Array<{ event: string; args: unknown[] }>,
             listeners: new Map<string, Array<(...args: any[]) => void>>(),
             trigger: () => {},
@@ -81,7 +83,10 @@ vi.mock('socket.io-client', () => ({
             }
         }
         Object.assign(socket, {
-            volatile: socket,
+            volatile: { emit: (event: string, ...args: unknown[]) => {
+                if (!state.dropVolatile) state.emitted.push({ event, args })
+                return socket
+            } },
             io: { opts: { reconnection: true } }
         })
         socketHarness.sockets.push(state)
@@ -970,5 +975,26 @@ describe('IncomingMessageFilter (HAPI Bot R3 finding #1)', () => {
         expect(filter.accept({ id: 'pending', seq: 7 })).toBe(false)
         expect(filter.accept({ id: 'a', seq: 8 })).toBe(true)
         expect(filter.accept({ id: 'b', seq: 9 })).toBe(true)
+    })
+})
+
+
+describe('ApiSessionClient turn state delivery', () => {
+    it('delivers start and stop transitions when ordinary heartbeats are dropped', () => {
+        socketHarness.sockets.length = 0
+        const client = new ApiSessionClient('token', createSession({ namespace: 'default' }))
+        const socket = socketHarness.sockets[0]!
+        socket.dropVolatile = true
+        socket.emitted.length = 0
+
+        client.keepAlive(false, 'remote')
+        client.keepAlive(false, 'remote')
+        client.keepAlive(true, 'remote')
+        client.keepAlive(true, 'remote')
+        client.keepAlive(false, 'remote')
+
+        expect(socket.emitted.filter(e => e.event === 'session-alive').map(e => (e.args[0] as { thinking: boolean }).thinking))
+            .toEqual([false, true, false])
+        client.close()
     })
 })

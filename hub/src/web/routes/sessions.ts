@@ -2,6 +2,7 @@ import {
     CursorMigrateToAcpRequestSchema,
     DeleteUploadRequestSchema,
     ForkConversationRequestSchema,
+    CodexGoalRequestSchema,
     ImplementCodexPlanRequestSchema,
     getPermissionModesForFlavor,
     isLiveLifecycleState,
@@ -515,7 +516,24 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         return c.json(outcome, status)
     })
 
-    app.post('/sessions/:id/codex/plan/implement', async (c) => {
+    app.post('/sessions/:id/codex/goal', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const access = requireSessionFromParam(c, engine, { requireActive: true })
+        if (access instanceof Response) return access
+        if (access.session.metadata?.flavor !== 'codex' || !access.session.metadata.capabilities?.concurrentClients) {
+            return c.json({ error: 'An active shared Codex session is required' }, 409)
+        }
+        const parsed = CodexGoalRequestSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid goal' }, 400)
+        try {
+            return c.json(await engine.codexGoal(access.sessionId, c.get('namespace'), parsed.data))
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Could not update goal' }, 503)
+        }
+    })
+
+    app.post('/sessions/:id/codex/plan/implement' , async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) return engine
         const access = requireSessionFromParam(c, engine, { requireActive: true })

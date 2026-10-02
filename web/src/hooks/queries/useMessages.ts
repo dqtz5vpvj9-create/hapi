@@ -71,6 +71,19 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
         }
     }, [api, sessionId])
 
+    useEffect(() => {
+        if (!api || !sessionId) return
+        const resume = () => {
+            if (document.visibilityState === 'visible') void syncTailMessages(api, sessionId, { restart: true })
+        }
+        window.addEventListener('online', resume)
+        document.addEventListener('visibilitychange', resume)
+        return () => {
+            window.removeEventListener('online', resume)
+            document.removeEventListener('visibilitychange', resume)
+        }
+    }, [api, sessionId])
+
     const loadMore = useCallback(async (onBeforeApply?: (historyVersion: number) => boolean) => {
         if (!api || !sessionId) {
             return { kind: 'stopped', reason: 'unavailable' } as const

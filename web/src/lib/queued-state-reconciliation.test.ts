@@ -5,6 +5,7 @@ vi.mock('./message-window-store', () => ({
     getQueuedReconcileCandidateLocalIds: vi.fn(),
     markMessagesConsumed: vi.fn(),
     markMessagesIndeterminate: vi.fn(),
+    markMessagesDispatching: vi.fn(),
     markMessagesRequeued: vi.fn(),
     reconcileQueuedLocalIds: vi.fn(),
     syncTailMessages: vi.fn(),
@@ -14,6 +15,7 @@ import {
     getQueuedReconcileCandidateLocalIds,
     markMessagesConsumed,
     markMessagesIndeterminate,
+    markMessagesDispatching,
     markMessagesRequeued,
     reconcileQueuedLocalIds,
     syncTailMessages,
@@ -37,6 +39,14 @@ function createMockApi(
 }
 
 describe('reconcileQueuedStateAfterConnect', () => {
+    it('restores a live handoff separately from an unknown send after reconnect', async () => {
+        mockGetCandidates.mockReturnValueOnce(['handoff', 'unknown']);
+        const getQueuedState = vi.fn(async () => ({ queuedLocalIds: [], dispatchingLocalIds: ['handoff'], indeterminateLocalIds: ['unknown'], invokedLocalMessages: [] }));
+        await reconcileQueuedStateAfterConnect(createMockApi(getQueuedState), 'handoff-session');
+        expect(markMessagesDispatching).toHaveBeenCalledWith('handoff-session', ['handoff']);
+        expect(mockMarkMessagesIndeterminate).toHaveBeenCalledWith('handoff-session', ['unknown']);
+        expect(mockReconcileQueuedLocalIds).toHaveBeenCalledWith('handoff-session', ['handoff', 'unknown'], ['handoff', 'unknown']);
+    });
     beforeEach(() => {
         vi.clearAllMocks()
         mockSyncTailMessages.mockResolvedValue(undefined)

@@ -33,6 +33,7 @@ vi.mock('../codexAppServerClient', () => ({
             if (method === 'thread/turns/list') return { data: this.thread.turns.slice(-1), nextCursor: null };
             if (method === 'thread/items/list') return { data: this.items, nextCursor: null };
             if (method === 'thread/list') return { data: [] };
+            if (method === 'thread/goal/get') return { goal: null };
             if (method === 'thread/queue/list') return { data: this.queue };
             if (method === 'thread/settings/update') {
                 const updated = { ...this.settings, ...params,
@@ -84,7 +85,7 @@ async function fixture(opts?: { hubArchived?: boolean; external?: boolean; nativ
         },
         rpcHandlerManager: { registerHandler: (name: string, handler: (raw: unknown) => Promise<unknown>) => rpc.set(name, handler) },
         emitNativeHistoryChanged: vi.fn(), sendSessionEvent: vi.fn(), sendAgentMessage: send, emitSessionReady() {},
-        sendUserMessage() {}, emitMessagesConsumed: vi.fn(), emitSteerIndeterminate() {}, syncNativeQueuedMessage() {}, syncNativeQueueSnapshot: vi.fn(),
+        sendUserMessage() {}, emitMessagesConsumed: vi.fn(), emitSteerIndeterminate: vi.fn(), syncNativeQueuedMessage() {}, syncNativeQueueSnapshot: vi.fn(), setSteerDeliveryState: vi.fn(async () => true),
         sendSessionDeath() {}, async flush() {}, close() {}
     } as unknown as ApiSessionClient;
     const end = opts?.end ?? (async () => { throw new Error('Unexpected root archive'); });
@@ -126,6 +127,51 @@ async function fixture(opts?: { hubArchived?: boolean; external?: boolean; nativ
     };
 }
 
+it.each([false, true])('publishes goal controls through their full lifecycle without queueing a model turn (external=%s)', async external => {
+    const f = await fixture({ external });
+    await f.root.activate();
+    let goal: Record<string, unknown> | null = null;
+    let revision = 0;
+    const request = f.root.client.request.bind(f.root.client);
+    vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params = {}) => {
+        if (method === 'thread/goal/get') return { goal };
+        if (method === 'thread/goal/clear') { goal = null; return { cleared: true }; }
+        if (method === 'thread/goal/set') {
+            const input = params as Record<string, unknown>;
+            goal = { ...goal, threadId: 'thread', objective: input.objective ?? goal?.objective,
+                status: input.status ?? 'active', tokensUsed: 12, updatedAt: ++revision };
+            return { goal };
+        }
+        return request(method, params);
+    });
+    for (const [action, status] of [
+        ['public goal lifecycle', 'active'], ['', 'active'], ['pause', 'paused'], ['resume', 'active'], ['clear', null]
+    ] as const) {
+        const localId = `goal-action-${revision}-${action}`;
+        f.userMessage({ role: 'user', content: { type: 'text', text: `/goal ${action}` } }, localId);
+        await (f.root as any).work;
+        if (status === null) expect(f.state().threadGoal).toBeNull();
+        else expect(f.state().threadGoal).toMatchObject({ objective: 'public goal lifecycle', status });
+        expect(f.root.session.emitMessagesConsumed).toHaveBeenCalledWith([localId], { clearQueuedThinkingGrace: true });
+    }
+    expect(f.native.queue).toHaveLength(0);
+    expect(f.root.session.sendSessionEvent).not.toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('"goal"') }));
+});
+
+it('updates goal controls from native activity in an external thread without replaying its transcript', async () => {
+    const f = await fixture({ external: true });
+    f.native.notify('thread/goal/updated', { threadId: 'thread', goal: {
+        threadId: 'thread', objective: 'native goal', status: 'blocked', tokensUsed: 32
+    } });
+    await (f.root as any).notifications;
+    expect(f.state().threadGoal).toMatchObject({ objective: 'native goal', status: 'blocked' });
+    f.native.notify('thread/goal/cleared', { threadId: 'thread' });
+    await (f.root as any).notifications;
+    expect(f.state().threadGoal).toBeNull();
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.native.queue).toHaveLength(0);
+});
+
 it('waits for native YOLO confirmation before submitting an old-turn approval and then suppresses later prompts', async () => {
     const f = await fixture();
     await f.root.activate();
@@ -154,6 +200,62 @@ it('waits for native YOLO confirmation before submitting an old-turn approval an
     f.native.serverRequest({ ...request, id: 10 });
     await vi.waitFor(() => expect(f.native.respond).toHaveBeenLastCalledWith(10, { decision: 'accept' }));
     expect(Object.keys(f.state().requests!)).toHaveLength(0);
+});
+
+describe('queue consumption notification ordering', () => {
+    it.each([false, true])('uses received acceptance while queue reconciliation is blocked (external=%s)', async external => {
+        const f = await fixture({ external });
+        await f.root.activate();
+        f.userMessage({ role: 'user', content: { type: 'text', text: 'public ordering probe' } }, 'web-ordering');
+        await vi.waitFor(() => expect(f.native.queue).toHaveLength(1));
+        await (f.root as any).work;
+        f.native.queue = [];
+        const request = f.root.client.request.bind(f.root.client);
+        let release!: () => void;
+        let listing = false;
+        vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+            if (method === 'thread/queue/list') {
+                listing = true;
+                await new Promise<void>(resolve => { release = resolve; });
+                return { data: [] };
+            }
+            return request(method, params);
+        });
+        f.native.notify('thread/queue/changed', { threadId: 'thread' });
+        await vi.waitFor(() => expect(listing).toBe(true));
+        f.native.notify('item/started', { threadId: 'thread', turnId: 'turn', item: {
+            type: 'userMessage', id: 'accepted-item', clientId: 'web-ordering', content: [{ type: 'text', text: 'public ordering probe' }]
+        } });
+        release();
+        await (f.root as any).notifications;
+        expect(f.root.session.emitMessagesConsumed).toHaveBeenCalledWith(['web-ordering'], { steered: undefined });
+        expect(f.root.session.emitSteerIndeterminate).not.toHaveBeenCalled();
+        expect((f.root as any).queue.state('web-ordering')).toBe('consumed');
+        expect(f.root.client.request).toHaveBeenCalledTimes(1);
+    });
+
+    it('retains uncertainty when only unrelated acceptance arrives, without resubmitting', async () => {
+        const f = await fixture({ external: true });
+        await f.root.activate();
+        f.userMessage({ role: 'user', content: { type: 'text', text: 'public ordering probe' } }, 'unconfirmed');
+        await vi.waitFor(() => expect(f.native.queue).toHaveLength(1));
+        await (f.root as any).work;
+        f.native.queue = [];
+        f.native.notify('item/started', { threadId: 'other-thread', turnId: 'turn', item: {
+            type: 'userMessage', id: 'different-item', clientId: 'unconfirmed', content: []
+        } });
+        f.native.notify('thread/queue/changed', { threadId: 'thread' });
+        await (f.root as any).notifications;
+        expect((f.root as any).queue.state('unconfirmed')).toBe('dispatching');
+        expect(f.root.session.emitSteerIndeterminate).not.toHaveBeenCalled();
+        await (f.root as any).queue.transportLost();
+        expect(f.root.session.emitSteerIndeterminate).toHaveBeenCalledWith(['unconfirmed']);
+        expect((f.root as any).queue.state('unconfirmed')).toBe('unknown');
+        const request = vi.spyOn(f.root.client, 'request');
+        f.userMessage({ role: 'user', content: { type: 'text', text: 'public ordering probe' } }, 'unconfirmed');
+        await (f.root as any).work;
+        expect(request.mock.calls.filter(([method]) => method === 'thread/queue/add')).toHaveLength(0);
+    });
 });
 
 it('does not infer YOLO from an unrestricted sandbox whose approval policy still prompts', async () => {
@@ -465,4 +567,38 @@ describe('external native lifecycle', () => {
         await root.close(false);
         expect(native.queue).toHaveLength(1);
     });
+});
+
+
+it('edits goals directly through RPC, treating reserved command words as objectives and preserving the native budget', async () => {
+    const f = await fixture({ external: true });
+    await f.root.activate();
+    let goal: Record<string, unknown> | null = null;
+    const request = f.root.client.request.bind(f.root.client);
+    const native = vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params = {}) => {
+        if (method === 'thread/goal/get') return { goal };
+        if (method === 'thread/goal/clear') { goal = null; return { cleared: true }; }
+        if (method === 'thread/goal/set') {
+            const input = params as Record<string, unknown>;
+            goal = { ...goal, threadId: 'thread', objective: input.objective ?? goal?.objective,
+                status: input.status ?? 'active', tokenBudget: 800, tokensUsed: 12 };
+            return { goal };
+        }
+        return request(method, params);
+    });
+    const apply = f.rpc.get(RPC_METHODS.CodexGoal)!;
+    await apply({ action: 'set', objective: 'clear' });
+    expect(f.state().threadGoal).toMatchObject({ objective: 'clear', tokenBudget: 800 });
+    await apply({ action: 'pause' });
+    expect(f.state().threadGoal?.status).toBe('paused');
+    await apply({ action: 'resume' });
+    expect(f.state().threadGoal?.status).toBe('active');
+    expect(await apply({ action: 'get' })).toMatchObject({ goal: { objective: 'clear' } });
+    await apply({ action: 'clear' });
+    expect(f.state().threadGoal).toBeNull();
+    expect(f.native.queue).toHaveLength(0);
+    expect(native).not.toHaveBeenCalledWith('turn/start', expect.anything());
+    const count = native.mock.calls.length;
+    await expect(apply({ action: 'set', objective: '' })).rejects.toThrow();
+    expect(native.mock.calls.length).toBe(count);
 });

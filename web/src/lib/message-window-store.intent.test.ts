@@ -64,7 +64,7 @@ describe('latest responses respect the current reader', () => {
         ingestIncomingMessages(id, [live])
         recovery.resolve(context(15))
         await pending
-        expect(getMessageContext).toHaveBeenCalledWith(id, 'm-15', { radius: 99, epoch: 1 })
+        expect(getMessageContext).toHaveBeenCalledWith(id, 'm-15', { radius: 99, epoch: 1 }, expect.any(AbortSignal))
         expect(getMessageWindowState(id)).toMatchObject({ viewMode: 'history', epoch: 1, isSyncingTail: false, hasMoreAfter: true })
         expect(getMessageReadingAnchor(id)).toMatchObject({ sourceMessageId: 'm-15', topOffset: 12 })
         expect(getMessageWindowState(id).messages).toContainEqual(local)

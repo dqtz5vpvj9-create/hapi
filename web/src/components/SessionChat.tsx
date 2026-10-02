@@ -1289,6 +1289,7 @@ function SessionChatInner(props: SessionChatProps) {
     ), [agentFlavor, cursorModelEffortOptions, props.session.model])
     const {
         abortSession,
+        abortError,
         switchSession,
         setPermissionMode,
         setCollaborationMode,
@@ -1474,7 +1475,7 @@ function SessionChatInner(props: SessionChatProps) {
     )
     const sessionStatus = useMemo(
         () => buildSessionStatusData({
-            goal: reduced.latestGoal,
+            goal: props.session.agentState?.threadGoal !== undefined ? props.session.agentState.threadGoal : reduced.latestGoal,
             tasks: props.session.todos,
             blocks: reconciled.blocks,
             messages: normalizedMessages,
@@ -1482,6 +1483,7 @@ function SessionChatInner(props: SessionChatProps) {
         }),
         [
             reduced.latestGoal,
+            props.session.agentState?.threadGoal,
             props.session.todos,
             props.session.backgroundTaskCount,
             reconciled.blocks,
@@ -1937,7 +1939,6 @@ function SessionChatInner(props: SessionChatProps) {
 
             <CursorMigrationBanner metadata={props.session.metadata} />
 
-            {sessionStatus ? <SessionStatusPanel data={sessionStatus} /> : null}
 
             <div className="flex flex-col min-h-0 flex-1">
             {props.session.teamState && (
@@ -2072,6 +2073,12 @@ function SessionChatInner(props: SessionChatProps) {
                         </div>
 
                         <HappyComposer
+                        statusDetails={sessionStatus ? <SessionStatusPanel data={sessionStatus} /> : undefined}
+                        onGoalAction={props.session.metadata?.capabilities?.concurrentClients ? async request => {
+                            const result = await props.api.codexGoal(props.session.id, request)
+                            return result.goal
+                        } : undefined}
+                        goal={props.session.agentState?.threadGoal !== undefined ? props.session.agentState.threadGoal : reduced.latestGoal}
                         focusInputRef={focusComposerRef}
                         key={`composer-${props.session.id}`}
                         sessionId={props.session.id}
@@ -2143,6 +2150,7 @@ function SessionChatInner(props: SessionChatProps) {
                         allowSendWhenInactive
                         onResumeStoredDraft={() => handleSend('', undefined, null)}
                         thinking={props.session.thinking}
+                        abortError={abortError}
                         agentState={props.session.agentState}
                         backgroundTaskCount={props.session.backgroundTaskCount}
                         contextSize={reduced.latestUsage?.contextSize}

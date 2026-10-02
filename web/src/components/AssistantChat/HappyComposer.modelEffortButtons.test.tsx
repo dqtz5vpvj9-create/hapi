@@ -114,7 +114,6 @@ vi.mock('@/hooks/useActiveWord', () => ({ useActiveWord: () => null }))
 vi.mock('@/hooks/useActiveSuggestions', () => ({ useActiveSuggestions: () => [[], -1, () => {}, () => {}, () => {}] }))
 vi.mock('@/components/ChatInput/FloatingOverlay', () => ({ FloatingOverlay: ({ children }: { children: ReactNode }) => <>{children}</> }))
 vi.mock('@/components/ChatInput/Autocomplete', () => ({ Autocomplete: () => null }))
-vi.mock('@/components/AssistantChat/StatusBar', () => ({ StatusBar: () => null }))
 
 function renderComposer(agentFlavor: string, overrides: Partial<Parameters<typeof HappyComposer>[0]> = {}) {
     render(
@@ -159,6 +158,33 @@ describe('HappyComposer generic model/effort value buttons', () => {
         expect(screen.queryByText('Permission Mode')).toBeNull()
         fireEvent.click(screen.getByRole('button', { name: 'High' }))
         expect(change).toHaveBeenCalledWith('high')
+    })
+
+    it('changes permission from the Yolo status button without opening unrelated settings', () => {
+        const change = vi.fn()
+        renderComposer('codex', { permissionMode: 'yolo', onPermissionModeChange: change })
+        const trigger = screen.getByRole('button', { name: 'Permission Mode: Yolo' })
+        fireEvent.click(trigger)
+        expect(screen.getByText('Permission Mode')).toBeTruthy()
+        expect(screen.queryByText('Model')).toBeNull()
+        expect(screen.queryByText('Reasoning Effort')).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Default' }))
+        expect(change).toHaveBeenCalledWith('default')
+        expect(screen.queryByText('Permission Mode')).toBeNull()
+    })
+
+    it('returns focus to the reasoning status button on Escape without aborting', () => {
+        localStorage.setItem('hapi.fue.v1.rich-composer-mentions', '1')
+        runtime.snapshot.thread.isRunning = true
+        runtime.cancelRun.mockClear()
+        renderComposer('codex', { modelReasoningEffort: 'high', onModelReasoningEffortChange: vi.fn() })
+        const trigger = screen.getByRole('button', { name: 'Reasoning Effort: high' })
+        trigger.focus()
+        fireEvent.click(trigger)
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
+        expect(screen.queryByText('Reasoning Effort')).toBeNull()
+        expect(trigger).toHaveFocus()
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
     })
 
     it('shows model and effort value buttons for Claude on wide viewports', () => {

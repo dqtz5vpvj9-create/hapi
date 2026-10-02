@@ -15,6 +15,24 @@ describe('ApiClient error mapping', () => {
         globalThis.fetch = originalFetch
     })
 
+    it('reads multibyte streamed messages and reports decoded bytes without a compressed denominator', async () => {
+        const value = { messages: [{ text: '消息 🚆' }] }
+        const bytes = new TextEncoder().encode(JSON.stringify(value))
+        const stream = new ReadableStream({ start(controller) {
+            controller.enqueue(bytes.slice(0, 26))
+            controller.enqueue(bytes.slice(26, 29))
+            controller.enqueue(bytes.slice(29))
+            controller.close()
+        } })
+        fetchMock.mockResolvedValueOnce(new Response(stream, { headers: { 'content-length': '12', 'content-encoding': 'gzip' } }))
+        const progress: Array<{ receivedBytes: number; totalBytes: number | null }> = []
+        const result = await new ApiClient('test-token').getMessages('session', {}, undefined, p => progress.push(p))
+        expect(result).toEqual(value)
+        expect(progress.at(-1)?.receivedBytes).toBe(bytes.byteLength)
+        expect(progress.every(p => p.totalBytes === null)).toBe(true)
+        expect(progress).toHaveLength(4)
+    })
+
     it('prefers the stable `code` field over the human-readable `error` message in ApiError.code', async () => {
         // Match the shape /sessions/:id/reopen actually returns on a 503.
         fetchMock.mockResolvedValueOnce(

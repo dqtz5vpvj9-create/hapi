@@ -46,7 +46,7 @@ it('recovers the current context after large native bodies exceed real storage c
         getMessageContext: vi.fn(async () => recovered) } as unknown as ApiClient
     fresh.activateMessageWindow(id)
     await fresh.syncTailMessages(online, id)
-    expect(online.getMessageContext).toHaveBeenCalledWith(id, 'm-5', { radius: 99, epoch: 1 })
+    expect(online.getMessageContext).toHaveBeenCalledWith(id, 'm-5', { radius: 99, epoch: 1 }, expect.any(AbortSignal))
     expect(fresh.getMessageWindowState(id).messages.map(m => m.id).sort()).toEqual(['local-1', 'm-5'])
     expect(fresh.getMessageWindowState(id).viewMode).toBe('history')
     fresh.setMessageViewMode(id, 'tail')

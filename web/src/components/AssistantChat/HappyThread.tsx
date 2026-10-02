@@ -1,3 +1,4 @@
+import { MessageSyncStatus } from '@/components/AssistantChat/MessageSyncStatus'
 import { ConversationOutlineList } from '@/components/AssistantChat/ConversationOutlineList'
 import { VirtualMessageList, type MessageListNavigation } from '@/components/AssistantChat/VirtualMessageList'
 import { useHistoryPreload } from '@/hooks/useHistoryPreload'
@@ -30,7 +31,7 @@ import { ShareTurnDialog } from '@/components/AssistantChat/ShareTurnDialog'
 import { getSessionModelLabel } from '@/lib/sessionModelLabel'
 import { getSessionTitle } from '@/lib/sessionTitle'
 import { isFastServiceTier } from '@/components/AssistantChat/codexFastMode'
-import { openMessageContext, fetchNewerHistory, syncTailMessages, getMessageWindowState, getHistoryPreloadRequest, getMessageReadingAnchor, saveMessageReadingAnchor, type OlderLoadOutcome } from '@/lib/message-window-store'
+import { openMessageContext, fetchNewerHistory, syncTailMessages, getMessageTailSyncError, getMessageWindowState, getHistoryPreloadRequest, getMessageReadingAnchor, saveMessageReadingAnchor, type OlderLoadOutcome } from '@/lib/message-window-store'
 import { useSessionHeaderMetadata } from '@/hooks/useSessionHeaderMetadata'
 import { useMachines } from '@/hooks/queries/useMachines'
 import { useMachineLabels } from '@/hooks/useMachineLabels'
@@ -2063,6 +2064,7 @@ export function HappyThread(props: {
             loadOlderMessagesPreservingScroll: loadOlderFromConsumer
         }}>
             <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col relative">
+                <MessageSyncStatus api={props.api} sessionId={props.sessionId} />
                 {!props.isSyncingTail && (
                     props.isLoadingMoreMessages || pullToLoadState !== 'idle'
                 ) ? (
@@ -2101,7 +2103,7 @@ export function HappyThread(props: {
                                 <MessageSkeleton />
                             ) : (
                                 <>
-                                    {props.messagesWarning ? (
+                                    {props.messagesWarning && !getMessageTailSyncError(props.sessionId) ? (
                                         <div className="mb-3 rounded-md bg-amber-500/10 p-2 text-xs">
                                             {props.messagesWarning}
                                         </div>

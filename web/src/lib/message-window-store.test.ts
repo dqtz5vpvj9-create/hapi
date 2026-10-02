@@ -1,3 +1,4 @@
+import { ApiError } from '@/api/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage, MessagesResponse } from '@/types/api'
@@ -21,6 +22,8 @@ import {
     rewindMessageWindow,
     setMessageViewMode,
     syncTailMessages,
+    subscribeMessageWindow,
+    getMessageTailSyncError,
     updateMessageStatus,
 } from '@/lib/message-window-store'
 
@@ -280,7 +283,7 @@ describe('message tail synchronization', () => {
 
         await syncTailMessages(api, id)
 
-        expect(getMessages).toHaveBeenCalledWith(id, { limit: INITIAL_PAGE_SIZE })
+        expect(getMessages).toHaveBeenCalledWith(id, { limit: INITIAL_PAGE_SIZE }, expect.any(AbortSignal), expect.any(Function))
         expect(getMessageWindowState(id).messages).toHaveLength(INITIAL_PAGE_SIZE)
 
         await fetchOlderMessages(api, id)
@@ -410,7 +413,7 @@ describe('message tail synchronization', () => {
         const getMessages = vi.fn(async () => await response.promise)
         const syncing = syncTailMessages(createApi(getMessages), id)
 
-        expect(getMessages).toHaveBeenCalledWith(id, { limit: 20 })
+        expect(getMessages).toHaveBeenCalledWith(id, { limit: 20 }, expect.any(AbortSignal), expect.any(Function))
         expect(getMessageWindowState(id).messages.map((message) => message.id)).toEqual(['cached'])
         expect(getMessageWindowState(id).isSyncingTail).toBe(true)
 
@@ -454,7 +457,7 @@ describe('message tail synchronization', () => {
         const getMessages = vi.fn(async () => latestResponse([latest], { epoch: 3 }))
         await syncTailMessages(createApi(getMessages), id)
 
-        expect(getMessages).toHaveBeenCalledWith(id, { limit: 20 })
+        expect(getMessages).toHaveBeenCalledWith(id, { limit: 20 }, expect.any(AbortSignal), expect.any(Function))
         expect(getMessageWindowState(id).messages.map((message) => message.id)).toEqual([
             'local-1',
             'latest'
@@ -538,7 +541,7 @@ describe('message tail synchronization', () => {
 
         await syncTailMessages(createApi(getMessages), id)
 
-        expect(getMessages).toHaveBeenCalledWith(id, { limit: 20 })
+        expect(getMessages).toHaveBeenCalledWith(id, { limit: 20 }, expect.any(AbortSignal), expect.any(Function))
         expect(getMessageWindowState(id)).toMatchObject({
             messages: [cached],
             isSyncingTail: false,
@@ -563,7 +566,7 @@ describe('message tail synchronization', () => {
         const response = deferred<MessagesResponse>()
         const getMessages = vi.fn(async () => await response.promise)
         const syncing = syncTailMessages(createApi(getMessages), id)
-        await vi.waitFor(() => expect(getMessages).toHaveBeenCalledWith(id, { limit: 20 }))
+        await vi.waitFor(() => expect(getMessages).toHaveBeenCalledWith(id, { limit: 20 }, expect.any(AbortSignal), expect.any(Function)))
 
         const optimistic = makeUserMessage({
             id: 'local-1',
@@ -618,7 +621,7 @@ describe('message tail synchronization', () => {
             untilSeq: null,
             epoch: 3,
             limit: 200
-        })
+        }, expect.any(AbortSignal), expect.any(Function))
         expect(getMessageWindowState(id).messages.map((message) => message.id)).toEqual([
             'cached',
             'latest'
@@ -1100,7 +1103,7 @@ describe('message tail synchronization', () => {
         await syncTailMessages(createApi(getMessages), id)
 
         expect(getMessages).toHaveBeenCalledTimes(1)
-        expect(getMessages).toHaveBeenCalledWith(id, { limit: INITIAL_PAGE_SIZE })
+        expect(getMessages).toHaveBeenCalledWith(id, { limit: INITIAL_PAGE_SIZE }, expect.any(AbortSignal), expect.any(Function))
         expect(getMessageWindowState(id).hasMore).toBe(true)
     })
 })
@@ -1743,4 +1746,83 @@ describe('reasoning snapshot compaction', () => {
         expect(getMessageWindowState(id).isLoadingMore).toBe(false)
     })
 
+})
+
+
+describe('message synchronization recovery', () => {
+    it('recovers a cached conversation after a transient history503 without leaving the page', async () => {
+        const id = sessionId('recover-read503')
+        const cached = makeAgentMessage({ id: 'cached-before-retry', seq: 1, at: 1_000 })
+        const latest = makeAgentMessage({ id: 'latest-after-retry', seq: 2, at: 2_000 })
+        const getMessages = vi.fn().mockResolvedValueOnce(latestResponse([cached], { epoch: 1 }))
+            .mockRejectedValueOnce(new ApiError('Native index catching up', 503))
+            .mockResolvedValueOnce(latestResponse([latest], { epoch: 1 }))
+        const api = createApi(getMessages)
+        await syncTailMessages(api, id)
+        const unsubscribe = subscribeMessageWindow(id, () => {})
+        try {
+            activateMessageWindow(id)
+            await syncTailMessages(api, id)
+            expect(getMessageWindowState(id).messages.map(m => m.id)).toEqual([cached.id])
+            await vi.waitFor(() => expect(getMessageWindowState(id).messages.map(m => m.id)).toEqual([latest.id]), { timeout: 2_500 })
+            expect(getMessageTailSyncError(id)).toBeNull()
+            expect(getMessageWindowState(id).isSyncingTail).toBe(false)
+            expect(getMessages).toHaveBeenCalledTimes(3)
+        } finally { unsubscribe() }
+    })
+
+    it('explicit reload cancels a stalled read and cannot commit the old response over the new tail', async () => {
+        const id = sessionId('cancel-stalled-read')
+        const cached = makeAgentMessage({ id: 'cached', seq: 1, at: 1_000 })
+        const latest = makeAgentMessage({ id: 'latest', seq: 2, at: 2_000 })
+        let cancelled = false
+        const getMessages = vi.fn().mockResolvedValueOnce(latestResponse([cached], { epoch: 1 }))
+            .mockImplementationOnce((_id, _options, signal: AbortSignal) => new Promise((_resolve, reject) => {
+                signal.addEventListener('abort', () => { cancelled = true; reject(signal.reason) }, { once: true })
+            })).mockResolvedValueOnce(latestResponse([latest], { epoch: 1 }))
+        const api = createApi(getMessages)
+        await syncTailMessages(api, id)
+        activateMessageWindow(id)
+        const stalled = syncTailMessages(api, id)
+        expect(getMessageWindowState(id).isSyncingTail).toBe(true)
+        expect(getMessageWindowState(id).messages.map(m => m.id)).toEqual([cached.id])
+        await syncTailMessages(api, id, { restart: true })
+        await stalled
+        expect(cancelled).toBe(true)
+        expect(getMessageWindowState(id).messages.map(m => m.id)).toEqual([latest.id])
+        expect(getMessageTailSyncError(id)).toBeNull()
+    })
+
+    it('stops retries after three transient failures and preserves cached content', async () => {
+        const id = sessionId('bounded-read-retry')
+        const cached = makeAgentMessage({ id: 'cached', seq: 1, at: 1_000 })
+        const getMessages = vi.fn().mockResolvedValueOnce(latestResponse([cached]))
+            .mockRejectedValue(new ApiError('Unavailable', 503))
+        const api = createApi(getMessages)
+        await syncTailMessages(api, id)
+        const unsubscribe = subscribeMessageWindow(id, () => {})
+        vi.useFakeTimers()
+        try {
+            activateMessageWindow(id)
+            await syncTailMessages(api, id)
+            await vi.advanceTimersByTimeAsync(20_000)
+            expect(getMessages).toHaveBeenCalledTimes(5)
+            expect(getMessageWindowState(id).messages.map(m => m.id)).toEqual([cached.id])
+            expect(getMessageWindowState(id).isSyncingTail).toBe(false)
+            expect(getMessageTailSyncError(id)).toMatchObject({ status: 503 })
+        } finally { unsubscribe(); vi.useRealTimers() }
+    })
+
+    it('does not retry an authorization rejection', async () => {
+        const id = sessionId('no-auth-retry')
+        const getMessages = vi.fn().mockRejectedValue(new ApiError('Forbidden', 403))
+        const unsubscribe = subscribeMessageWindow(id, () => {})
+        vi.useFakeTimers()
+        try {
+            await syncTailMessages(createApi(getMessages), id)
+            await vi.advanceTimersByTimeAsync(20_000)
+            expect(getMessages).toHaveBeenCalledTimes(1)
+            expect(getMessageTailSyncError(id)).toMatchObject({ status: 403 })
+        } finally { unsubscribe(); vi.useRealTimers() }
+    })
 })

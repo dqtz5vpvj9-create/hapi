@@ -7,7 +7,7 @@ import {
 } from '@hapi/protocol'
 import type { PermissionModeTone } from '@hapi/protocol'
 import * as Popover from '@radix-ui/react-popover'
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import type { AgentState, CodexCollaborationMode, PermissionMode } from '@/types/api'
 import type { ConversationStatus } from '@/realtime/types'
 import { getContextBudgetTokens } from '@/chat/modelConfig'
@@ -192,6 +192,13 @@ export function shouldShowCodexFastBadge(
 }
 
 export function StatusBar(props: {
+    composerControl?: ReactNode
+    statusDetails?: ReactNode
+    onReasoningClick?: (button: HTMLButtonElement) => void
+    onPermissionClick?: (button: HTMLButtonElement) => void
+    controlsDisabled?: boolean
+    reasoningOpen?: boolean
+    permissionOpen?: boolean
     active: boolean
     thinking: boolean
     agentState: AgentState | null | undefined
@@ -256,7 +263,7 @@ export function StatusBar(props: {
     // "hide default" parity.
     const displayPermissionMode = permissionMode
         && isPermissionModeAllowedForFlavor(permissionMode, props.agentFlavor)
-        && (permissionMode !== 'default' || props.agentFlavor === 'copilot')
+        && (permissionMode !== 'default' || props.agentFlavor === 'copilot' || props.onPermissionClick)
         ? permissionMode
         : null
 
@@ -290,25 +297,50 @@ export function StatusBar(props: {
         ? formatCompactReasoningLabel(reasoningEffort)
         : null
     const codexFastMode = shouldShowCodexFastBadge(props.agentFlavor, props.serviceTier)
+    const connectionLabel = (
+        <>
+            <span className={`h-2 w-2 shrink-0 rounded-full ${connectionStatus.dotColor} ${connectionStatus.isPulsing ? 'animate-pulse' : ''}`} />
+            <span className={`truncate text-xs ${connectionStatus.color}`}>{connectionStatus.text}</span>
+        </>
+    )
+    const reasoningText = (
+        <>
+            <span className="sm:hidden">{compactReasoningLabel}</span>
+            <span className="hidden sm:inline">{reasoningLabel}</span>
+        </>
+    )
+    const controlClass = 'inline-flex min-h-9 min-w-9 items-center justify-center gap-1 whitespace-nowrap rounded-md bg-[var(--app-subtle-bg)] px-2 text-xs hover:bg-[var(--app-link-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:opacity-50'
 
     return (
-        <div className="flex min-w-0 items-baseline justify-between gap-2 px-2 pb-1">
-            <div className="flex min-w-0 items-baseline gap-2">
-                <div className="relative top-px sm:top-0.5 flex shrink-0 items-center gap-1.5">
-                    <span
-                        className={`h-2 w-2 rounded-full ${connectionStatus.dotColor} ${connectionStatus.isPulsing ? 'animate-pulse' : ''}`}
-                    />
-                    <span className={`whitespace-nowrap text-xs ${connectionStatus.color}`}>
-                        {connectionStatus.text}
-                    </span>
-                </div>
+        <div className="flex min-w-0 items-center justify-between gap-1 px-2 pb-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+                {props.statusDetails ? (
+                    <Popover.Root>
+                        <Popover.Trigger asChild>
+                            <button type="button" aria-label={t('session.status.title')}
+                                className="flex min-h-9 min-w-0 items-center gap-1.5 rounded-md px-1 hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]">
+                                {connectionLabel}
+                            </button>
+                        </Popover.Trigger>
+                        <Popover.Portal>
+                            <Popover.Content side="top" align="start" sideOffset={8} collisionPadding={12}
+                                aria-label={t('session.status.title')}
+                                className="z-[60] w-80 max-w-[calc(100vw-1.5rem)] max-h-[min(70dvh,28rem)] overflow-y-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-lg">
+                                {props.statusDetails}
+                            </Popover.Content>
+                        </Popover.Portal>
+                    </Popover.Root>
+                ) : (
+                    <div className="relative top-px sm:top-0.5 flex min-w-0 items-center gap-1.5">{connectionLabel}</div>
+                )}
+                {props.composerControl}
                 {contextUsageLabel ? (
                     <Popover.Root>
                         <Popover.Trigger asChild>
                             <button
                                 type="button"
                                 aria-label={t('misc.contextDetails')}
-                                className={`min-w-0 cursor-pointer whitespace-nowrap rounded-sm bg-transparent p-0 text-[10px] leading-4 outline-none focus-visible:ring-1 focus-visible:ring-[var(--app-link)] ${contextWarning?.color ?? 'text-[var(--app-hint)]'}`}
+                                className={`min-w-0 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap rounded-sm bg-transparent p-0 text-[10px] leading-4 outline-none focus-visible:ring-1 focus-visible:ring-[var(--app-link)] ${contextWarning?.color ?? 'text-[var(--app-hint)]'}`}
                             >
                                 <span className="sm:hidden">{compactContextUsageLabel}</span>
                                 <span className="hidden items-center gap-2 sm:inline-flex">
@@ -364,12 +396,16 @@ export function StatusBar(props: {
                 ) : null}
             </div>
 
-            <div className="flex min-w-0 shrink-0 items-baseline gap-2">
+            <div className="flex min-w-0 shrink-0 items-center gap-0.5">
                 {reasoningLabel ? (
-                    <span className="whitespace-nowrap text-xs text-[var(--app-hint)]">
-                        <span className="sm:hidden">{compactReasoningLabel}</span>
-                        <span className="hidden sm:inline">{reasoningLabel}</span>
-                    </span>
+                    props.onReasoningClick ? (
+                        <button type="button" disabled={props.controlsDisabled}
+                            data-composer-settings-trigger
+                            aria-label={`${t('misc.reasoningEffort')}: ${compactReasoningLabel}`}
+                            aria-expanded={props.reasoningOpen}
+                            onClick={event => props.onReasoningClick?.(event.currentTarget)}
+                            className={`${controlClass} text-[var(--app-hint)]`}>{reasoningText}<span aria-hidden="true">⌄</span></button>
+                    ) : <span className="whitespace-nowrap text-xs text-[var(--app-hint)]">{reasoningText}</span>
                 ) : null}
                 {codexFastMode ? (
                     <span className="whitespace-nowrap text-xs text-[#34C759]">
@@ -387,9 +423,13 @@ export function StatusBar(props: {
                     </span>
                 ) : null}
                 {displayPermissionMode ? (
-                    <span className={`whitespace-nowrap text-xs ${permissionModeColor}`}>
-                        {permissionModeLabel}
-                    </span>
+                    props.onPermissionClick ? (
+                        <button type="button" disabled={props.controlsDisabled}
+                            data-composer-settings-trigger
+                            aria-label={`${t('misc.permissionMode')}: ${permissionModeLabel}`} aria-expanded={props.permissionOpen}
+                            onClick={event => props.onPermissionClick?.(event.currentTarget)}
+                            className={`${controlClass} ${permissionModeColor}`}>{permissionModeLabel}<span aria-hidden="true">⌄</span></button>
+                    ) : <span className={`whitespace-nowrap text-xs ${permissionModeColor}`}>{permissionModeLabel}</span>
                 ) : null}
             </div>
         </div>

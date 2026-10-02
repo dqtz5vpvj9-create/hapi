@@ -232,7 +232,32 @@ export const AgentStateCompletedRequestSchema = z.object({
 
 export type AgentStateCompletedRequest = z.infer<typeof AgentStateCompletedRequestSchema>
 
+export const ThreadGoalStatusSchema = z.enum([
+    'active',
+    'paused',
+    'budgetLimited',
+    'complete',
+    'blocked',
+    'usageLimited'
+])
+export type ThreadGoalStatus = z.infer<typeof ThreadGoalStatusSchema>
+
+export const ThreadGoalSchema = z.object({
+    threadId: z.string(),
+    objective: z.string(),
+    status: ThreadGoalStatusSchema,
+    tokenBudget: z.number().nullable().optional(),
+    tokensUsed: z.number().optional().default(0),
+    timeUsedSeconds: z.number().optional().default(0),
+    createdAt: z.number().optional().default(0),
+    updatedAt: z.number().optional().default(0)
+})
+
+export type ThreadGoal = z.infer<typeof ThreadGoalSchema>
+
 export const AgentStateSchema = z.object({
+    // Native goal state is independent of transcript pagination.
+    threadGoal: ThreadGoalSchema.nullable().optional(),
     controlledByUser: z.boolean().nullish(),
     // Current actionable shared Codex proposal; content remains in the transcript.
     codexPlanProposalId: z.string().nullish(),
@@ -300,29 +325,6 @@ export const TeamStateSchema = z.object({
 
 export type TeamState = z.infer<typeof TeamStateSchema>
 
-export const ThreadGoalStatusSchema = z.enum([
-    'active',
-    'paused',
-    'budgetLimited',
-    'complete',
-    'blocked',
-    'usageLimited'
-])
-export type ThreadGoalStatus = z.infer<typeof ThreadGoalStatusSchema>
-
-export const ThreadGoalSchema = z.object({
-    threadId: z.string(),
-    objective: z.string(),
-    status: ThreadGoalStatusSchema,
-    tokenBudget: z.number().nullable().optional(),
-    tokensUsed: z.number().optional().default(0),
-    timeUsedSeconds: z.number().optional().default(0),
-    createdAt: z.number().optional().default(0),
-    updatedAt: z.number().optional().default(0)
-})
-
-export type ThreadGoal = z.infer<typeof ThreadGoalSchema>
-
 export const AttachmentMetadataSchema = z.object({
     id: z.string(),
     filename: z.string(),
@@ -344,7 +346,7 @@ export const DecryptedMessageSchema = z.object({
     scheduledAt: z.number().nullable().optional(),
     // The agent was sent the steer but its final outcome could not be proven.
     // The row stays uninvoked and requires an explicit user resolution.
-    deliveryState: z.literal('indeterminate').optional(),
+    deliveryState: z.enum(['dispatching', 'indeterminate']).optional(),
     // Live signal via messages-consumed (steered:true); not persisted by the hub.
     steered: z.boolean().optional()
 })
@@ -643,6 +645,10 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
     }),
     SessionChangedSchema.extend({
         type: z.literal('messages-indeterminate'),
+        localIds: z.array(z.string())
+    }),
+    SessionChangedSchema.extend({
+        type: z.literal('messages-dispatching'),
         localIds: z.array(z.string())
     }),
     SessionChangedSchema.extend({

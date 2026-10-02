@@ -7,7 +7,8 @@ import {
     DecryptedMessageSchema,
     MachineSchema,
     PermissionModeSchema,
-    SessionSchema
+    SessionSchema,
+    ThreadGoalSchema
 } from './schemas'
 import { AgentFlavorSchema } from './modes'
 import type {
@@ -659,6 +660,14 @@ export type ForkConversationResponse = {
     sessionId: string
 }
 
+export const CodexGoalRequestSchema = z.discriminatedUnion('action', [
+    z.object({ action: z.literal('set'), objective: z.string().trim().min(1).refine(value => [...value].length <= 4000, 'Goal must be at most 4000 characters') }),
+    z.object({ action: z.enum(['get', 'pause', 'resume', 'clear']) })
+])
+export type CodexGoalRequest = z.infer<typeof CodexGoalRequestSchema>
+export const CodexGoalResponseSchema = z.object({ goal: ThreadGoalSchema.nullable() })
+export type CodexGoalResponse = z.infer<typeof CodexGoalResponseSchema>
+
 export const ImplementCodexPlanRequestSchema = z.object({
     planId: z.string().min(1)
 })
@@ -721,6 +730,7 @@ export type QueuedStateRequest = z.infer<typeof QueuedStateRequestSchema>
 export type QueuedStateResponse = {
     queuedLocalIds: string[]
     indeterminateLocalIds?: string[]
+    dispatchingLocalIds?: string[]
     invokedLocalMessages: Array<{
         localId: string
         invokedAt: number

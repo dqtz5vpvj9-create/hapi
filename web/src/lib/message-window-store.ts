@@ -42,6 +42,8 @@ export type MessageWindowState = {
     messagesVersion: number
     historyVersion: number
     tailRevision: number
+    tailSyncProgress?: { startedAt: number; pages: number; records: number; retryAttempt: number; retryAt?: number; download?: { bytes: number; total: number | null; startedAt: number; lastAt: number } }
+    lastSyncedAt?: number
 }
 
 export const VISIBLE_WINDOW_SIZE = 400
@@ -92,6 +94,9 @@ type TailSyncController = {
     running: Promise<void> | null
     trailingRequested: boolean
     runningPrefersLatest: boolean
+    abort: AbortController | null
+    retryTimer: ReturnType<typeof setTimeout> | null
+    retryAttempt: number
 }
 
 const states = new Map<string, InternalState>()
@@ -484,6 +489,17 @@ function updateState(
     }
 }
 
+// Transfer counters are transient UI state. Chunk arrival must not serialize
+// the existing conversation cache again.
+function updateTailProgress(sessionId: string, updater: (previous: InternalState) => InternalState): void {
+    const previous = getState(sessionId)
+    const next = updater(previous)
+    if (next !== previous) {
+        states.set(sessionId, next)
+        scheduleNotify(sessionId)
+    }
+}
+
 function deriveSeqBounds(messages: DecryptedMessage[]): { oldestSeq: number | null; newestSeq: number | null } {
     let oldestSeq: number | null = null
     let newestSeq: number | null = null
@@ -543,6 +559,8 @@ function buildState(
         | 'isLoadingMore'
         | 'warning'
         | 'tailSyncError'
+        | 'tailSyncProgress'
+        | 'lastSyncedAt'
         | 'viewMode'
         | 'oldestPositionAt'
         | 'oldestPositionSeq'
@@ -804,14 +822,14 @@ function applyLatestResponse(
     })
 }
 
-async function recoverReadingAfterReset(api: ApiClient, sessionId: string, response: MessagesResponse, generation: number): Promise<boolean> {
+async function recoverReadingAfterReset(api: ApiClient, sessionId: string, response: MessagesResponse, generation: number, signal: AbortSignal): Promise<boolean> {
     const initial = getState(sessionId)
     const saved = initial.readingBookmark
     if (initial.viewMode !== 'history' || !saved?.sourceMessageId) return false
     let context
     let moved = false
     try {
-        context = await api.getMessageContext(sessionId, saved.sourceMessageId, { radius: 99, epoch: response.page.epoch })
+        context = await api.getMessageContext(sessionId, saved.sourceMessageId, { radius: 99, epoch: response.page.epoch }, signal)
     } catch (error) {
         if (!(error instanceof ApiError) || error.status !== 404 || !saved.position) throw error
         moved = true
@@ -819,7 +837,7 @@ async function recoverReadingAfterReset(api: ApiClient, sessionId: string, respo
         const nearest = await api.getMessages(sessionId, {
             afterAt: saved.position.at, afterSeq: saved.position.seq,
             untilAt: head?.at, untilSeq: head?.seq, epoch: response.page.epoch, limit: PAGE_SIZE, bounded: true
-        })
+        }, signal)
         const rows = nearest.messages.length ? nearest.messages : response.messages
         const first = derivePosition(rows, 'oldest'), last = derivePosition(rows, 'newest')
         if (!first || !last || !head) return false
@@ -879,7 +897,7 @@ async function recoverReadingAfterReset(api: ApiClient, sessionId: string, respo
     return true
 }
 
-function beginTailSync(sessionId: string): number {
+function beginTailSync(sessionId: string, retryAttempt: number): number {
     let generation = 0
     updateState(sessionId, (previous) => {
         generation = previous.syncGeneration + 1
@@ -891,6 +909,7 @@ function beginTailSync(sessionId: string): number {
             olderGeneration: previous.olderGeneration + 1,
             isSyncingTail: true,
             isLoadingMore: false,
+            tailSyncProgress: { startedAt: retryAttempt ? previous.tailSyncProgress?.startedAt ?? Date.now() : Date.now(), pages: 0, records: 0, retryAttempt },
             warning: null
         })
     })
@@ -906,12 +925,30 @@ function finishTailSync(sessionId: string, generation: number, error: Error | nu
         if (previous.syncGeneration !== generation) {
             return previous
         }
-        return buildState(previous, { isSyncingTail: false, warning: error?.message ?? null, tailSyncError: error })
+        return buildState(previous, { isSyncingTail: false, warning: error?.message ?? null, tailSyncError: error, ...(error ? {} : { lastSyncedAt: Date.now() }) })
     })
 }
 
-async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
-    const generation = beginTailSync(sessionId)
+async function runTailSync(api: ApiClient, sessionId: string, cancelSignal: AbortSignal, retryAttempt: number): Promise<void> {
+    const generation = beginTailSync(sessionId, retryAttempt)
+    const idle = new AbortController()
+    const signal = AbortSignal.any([cancelSignal, idle.signal])
+    let idleTimer: ReturnType<typeof setTimeout>
+    const markReadActivity = () => {
+        clearTimeout(idleTimer)
+        if (!signal.aborted) idleTimer = setTimeout(() => {
+            idle.abort(new DOMException('No message data received for 30 seconds', 'TimeoutError'))
+        }, 30_000)
+    }
+    markReadActivity()
+    const onDownload = (download: { receivedBytes: number; totalBytes: number | null }) => {
+        markReadActivity()
+        updateTailProgress(sessionId, previous => previous.syncGeneration !== generation || !previous.tailSyncProgress ? previous
+            : buildState(previous, { tailSyncProgress: { ...previous.tailSyncProgress, download: {
+                bytes: download.receivedBytes, total: download.totalBytes,
+                startedAt: download.receivedBytes === 0 ? Date.now() : previous.tailSyncProgress.download?.startedAt ?? Date.now(), lastAt: Date.now()
+            } } }))
+    }
     try {
         const initial = getState(sessionId)
         const initialCursor = getNewestCursor(initial)
@@ -934,10 +971,11 @@ async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
                     : initialCursor === null
                         ? INITIAL_PAGE_SIZE
                         : PAGE_SIZE
-            const response = await api.getMessages(sessionId, { limit: latestPageSize })
+            const response = await api.getMessages(sessionId, { limit: latestPageSize }, signal, onDownload)
             if (!isCurrentTailSync(sessionId, generation)) return
+            recordTailPage(sessionId, generation, response.messages.length)
             getHistoryPageRepository(api).observeEpoch(sessionId, response.page.epoch)
-            if (await recoverReadingAfterReset(api, sessionId, response, generation)) {
+            if (await recoverReadingAfterReset(api, sessionId, response, generation, signal)) {
                 finishTailSync(sessionId, generation, null)
                 return
             }
@@ -967,12 +1005,13 @@ async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
                 untilSeq: until?.seq ?? null,
                 epoch: initial.epoch,
                 limit: PAGE_SIZE
-            })
+            }, signal, onDownload)
             if (!isCurrentTailSync(sessionId, generation)) return
+            recordTailPage(sessionId, generation, response.messages.length)
             getHistoryPageRepository(api).observeEpoch(sessionId, response.page.epoch)
 
             if (response.page.reset || response.page.direction === 'latest') {
-                if (await recoverReadingAfterReset(api, sessionId, response, generation)) break
+                if (await recoverReadingAfterReset(api, sessionId, response, generation, signal)) break
                 updateState(sessionId, (previous) => {
                     if (previous.syncGeneration !== generation) return previous
                     return applyLatestResponse(previous, response, {
@@ -1039,30 +1078,59 @@ async function runTailSync(api: ApiClient, sessionId: string): Promise<void> {
         finishTailSync(sessionId, generation, null)
     } catch (error) {
         if (!isCurrentTailSync(sessionId, generation)) return
+        if (signal.aborted) error = signal.reason
         finishTailSync(
             sessionId,
             generation,
             error instanceof Error ? error : new Error('Failed to synchronize messages')
         )
+    } finally {
+        clearTimeout(idleTimer!)
     }
 }
 
+function recordTailPage(sessionId: string, generation: number, records: number): void {
+    updateTailProgress(sessionId, previous => previous.syncGeneration !== generation || !previous.tailSyncProgress
+        ? previous
+        : buildState(previous, { tailSyncProgress: { ...previous.tailSyncProgress,
+            pages: previous.tailSyncProgress.pages + 1, records: previous.tailSyncProgress.records + records } }))
+}
+
+function retryableTailError(error: Error | null): boolean {
+    return error instanceof ApiError ? error.status === 408 || error.status === 429 || error.status >= 500
+        : error instanceof TypeError || error?.name === 'TimeoutError'
+}
+
 function startTailSync(sessionId: string, controller: TailSyncController): Promise<void> {
+    if (controller.retryTimer) clearTimeout(controller.retryTimer)
+    controller.retryTimer = null
+    controller.abort?.abort()
+    controller.abort = new AbortController()
+    const signal = controller.abort.signal
     const runningPrefersLatest = getState(sessionId).preferLatestOnActivation
-    const running = runTailSync(controller.api, sessionId)
+    const running = runTailSync(controller.api, sessionId, signal, controller.retryAttempt)
     controller.running = running
     controller.runningPrefersLatest = runningPrefersLatest
     const finish = () => {
-        if (tailSyncControllers.get(sessionId) !== controller || controller.running !== running) {
-            return
-        }
+        if (tailSyncControllers.get(sessionId) !== controller || controller.running !== running) return
         controller.running = null
         controller.runningPrefersLatest = false
-        if (!controller.trailingRequested) {
-            return
+        const error = getMessageTailSyncError(sessionId)
+        if (!error) controller.retryAttempt = 0
+        if (controller.trailingRequested) {
+            controller.trailingRequested = false
+            startTailSync(sessionId, controller)
+        } else if (retryableTailError(error) && controller.retryAttempt < 3 && listeners.get(sessionId)?.size) {
+            const delay = 1_000 * 2 ** controller.retryAttempt++
+            updateTailProgress(sessionId, previous => buildState(previous, {
+                tailSyncProgress: previous.tailSyncProgress && { ...previous.tailSyncProgress,
+                    retryAttempt: controller.retryAttempt, retryAt: Date.now() + delay }
+            }))
+            controller.retryTimer = setTimeout(() => {
+                controller.retryTimer = null
+                if (listeners.get(sessionId)?.size) startTailSync(sessionId, controller)
+            }, delay)
         }
-        controller.trailingRequested = false
-        startTailSync(sessionId, controller)
     }
     void running.then(finish, finish)
     return running
@@ -1216,7 +1284,7 @@ export function getMessageTailSyncError(sessionId: string): Error | null {
 export function syncTailMessages(
     api: ApiClient,
     sessionId: string,
-    options: { ensureAfterCurrent?: boolean } = {}
+    options: { ensureAfterCurrent?: boolean; restart?: boolean } = {}
 ): Promise<void> {
     let controller = tailSyncControllers.get(sessionId)
     if (!controller) {
@@ -1224,11 +1292,17 @@ export function syncTailMessages(
             api,
             running: null,
             trailingRequested: false,
-            runningPrefersLatest: false
+            runningPrefersLatest: false, abort: null, retryTimer: null, retryAttempt: 0
         }
         tailSyncControllers.set(sessionId, controller)
     }
     controller.api = api
+    if (options.restart) {
+        controller.retryAttempt = 0
+        controller.trailingRequested = false
+        activateMessageWindow(sessionId)
+        return startTailSync(sessionId, controller)
+    }
     if (!controller.running) {
         return startTailSync(sessionId, controller)
     }
@@ -1539,6 +1613,9 @@ export function subscribeMessageWindow(sessionId: string, listener: () => void):
 export function clearMessageWindow(sessionId: string): void {
     const api = tailSyncControllers.get(sessionId)?.api
     if (api) getHistoryPageRepository(api).invalidateSession(sessionId)
+    const controller = tailSyncControllers.get(sessionId)
+    controller?.abort?.abort()
+    if (controller?.retryTimer) clearTimeout(controller.retryTimer)
     tailSyncControllers.delete(sessionId)
     clearPersistedState(sessionId)
     const previous = states.get(sessionId)
@@ -1556,6 +1633,9 @@ function markMessageWindowForLatestReset(sessionId: string, messages: DecryptedM
 
     const api = tailSyncControllers.get(sessionId)?.api
     if (api) getHistoryPageRepository(api).invalidateSession(sessionId)
+    const controller = tailSyncControllers.get(sessionId)
+    controller?.abort?.abort()
+    if (controller?.retryTimer) clearTimeout(controller.retryTimer)
     tailSyncControllers.delete(sessionId)
     clearPersistedState(sessionId)
     setState(sessionId, buildState(previous, {
@@ -1708,21 +1788,30 @@ export function removeOptimisticMessage(sessionId: string, localId: string): voi
     }, true)
 }
 
+export function markMessagesDispatching(sessionId: string, localIds: string[]): void {
+    markMessagesDeliveryState(sessionId, localIds, 'dispatching')
+}
+
 export function markMessagesIndeterminate(sessionId: string, localIds: string[]): void {
+    markMessagesDeliveryState(sessionId, localIds, 'indeterminate')
+}
+
+function markMessagesDeliveryState(sessionId: string, localIds: string[], deliveryState: 'dispatching' | 'indeterminate'): void {
     if (localIds.length === 0) return
     const idSet = new Set(localIds)
     updateState(sessionId, (previous) => {
         let changed = false
         const messages = previous.messages.map((message) => {
             if (!message.localId || !idSet.has(message.localId)
-                || (message.deliveryState === 'indeterminate' && message.status !== 'failed')) {
+                || message.invokedAt != null
+                || (message.deliveryState === deliveryState && message.status !== 'failed')) {
                 return message
             }
             changed = true
             return {
                 ...message,
                 ...(optimisticMessage(message) && message.status === 'failed' ? { status: 'queued' as const } : {}),
-                deliveryState: 'indeterminate' as const
+                deliveryState
             }
         })
         return changed ? buildState(previous, { messages }) : previous

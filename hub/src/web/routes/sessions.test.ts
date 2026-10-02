@@ -67,6 +67,7 @@ function createApp(session: Session, opts?: {
     listCodexModelsForSession?: SyncEngine['listCodexModelsForSession']
     forkConversation?: SyncEngine['forkConversation']
     clearConversation?: SyncEngine['clearConversation']
+    codexGoal?: SyncEngine['codexGoal']
     implementCodexPlan?: SyncEngine['implementCodexPlan']
     rewindConversation?: SyncEngine['rewindConversation']
     suggestSessionTitle?: SyncEngine['suggestSessionTitle']
@@ -141,6 +142,7 @@ function createApp(session: Session, opts?: {
         resolveSessionAccess: () => sessionExists
             ? { ok: true, sessionId: session.id, session }
             : { ok: false, reason: 'not-found' },
+        codexGoal: opts?.codexGoal,
         applySessionConfig,
         listCursorModelsForSession,
         listCodexModelsForSession: opts?.listCodexModelsForSession ?? (async () => ({
@@ -1751,4 +1753,42 @@ describe('sessions routes', () => {
         expect(body.sessions.map((s) => s.id)).toEqual(['new-inactive'])
     })
 
+})
+
+
+describe('Native goal controls', () => {
+    it('returns the confirmed native goal and reports failures without false success', async () => {
+        const session = createSession({ metadata: { path: '/mnt/cache/data-cache', host: 'test', flavor: 'codex', capabilities: { concurrentClients: true } } })
+        let failure = false
+        const calls: unknown[] = []
+        const { app } = createApp(session, { codexGoal: async (id, namespace, request) => {
+            calls.push([id, namespace, request])
+            if (failure) throw new Error('Native goal unavailable')
+            return { goal: { threadId: 'thread', objective: 'clear', status: 'active', tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1, updatedAt: 1 } }
+        } })
+        const post = () => app.request('/api/sessions/session-1/codex/goal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set', objective: 'clear' }) })
+        const saved = await post()
+        expect(saved.status).toBe(200)
+        expect((await saved.json() as import('@hapi/protocol/apiTypes').CodexGoalResponse).goal?.objective).toBe('clear')
+        expect(calls).toEqual([['session-1', 'default', { action: 'set', objective: 'clear' }]])
+        failure = true
+        expect((await post()).status).toBe(503)
+    })
+    it('rejects invalid, unsupported and inaccessible requests before dispatch', async () => {
+        for (const [active, shared, exists, body, expected] of [
+            [true, true, true, { action: 'set', objective: ' ' }, 400],
+            [true, true, true, { action: 'set', objective: 'x'.repeat(4001) }, 400],
+            [false, true, true, { action: 'get' }, 409],
+            [true, false, true, { action: 'clear' }, 409],
+            [true, true, false, { action: 'clear' }, 404]
+        ] as const) {
+            let called = false
+            const { app } = createApp(createSession({ active, metadata: { path: '/mnt/cache/data-cache', host: 'test', flavor: 'codex', capabilities: { concurrentClients: shared } } }), {
+                sessionExists: exists, codexGoal: async () => { called = true; return { goal: null } }
+            })
+            const response = await app.request('/api/sessions/session-1/codex/goal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+            expect(response.status).toBe(expected)
+            expect(called).toBe(false)
+        }
+    })
 })

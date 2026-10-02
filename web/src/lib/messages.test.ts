@@ -18,6 +18,17 @@ function userMessage(partial: Partial<DecryptedMessage> & { id: string }): Decry
 }
 
 describe('mergeMessages', () => {
+    it.each(['overlay-first', 'native-first', 'same-page'])('replaces a native queue overlay by its exact accepted identity: %s', (ordering) => {
+        const overlay = { ...userMessage({ id: 'hub-queue', localId: 'client-send', invokedAt: 2_700 }), seq: null }
+        const native = userMessage({ id: 'native:thread:turn:item:user', localId: 'client-send', seq: 160_001, invokedAt: 2_000 })
+        const other = { ...overlay, id: 'other-hub-queue', localId: 'other-send' }
+        const messages = ordering === 'overlay-first' ? mergeMessages([overlay, other], [native])
+            : ordering === 'native-first' ? mergeMessages([native, other], [overlay])
+                : mergeMessages([], [overlay, native, other])
+        expect(messages).toHaveLength(2)
+        expect(messages.find(message => message.localId === 'client-send')).toEqual(native)
+        expect(messages.find(message => message.localId === 'other-send')).toEqual(other)
+    })
     it('preserves invokedAt when a stale snapshot omits the ack timestamp', () => {
         const invokedAt = 2_000
         const existing = [userMessage({ id: 'server-1', localId: 'local-1', invokedAt })]

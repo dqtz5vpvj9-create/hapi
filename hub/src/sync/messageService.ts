@@ -200,8 +200,9 @@ export class MessageService {
                 .filter((state) => state.invokedAt === null && state.deliveryState !== 'indeterminate' && state.deliveryState !== 'dispatching')
                 .map((state) => state.localId),
             indeterminateLocalIds: states
-                .filter((state) => state.invokedAt === null && (state.deliveryState === 'indeterminate' || state.deliveryState === 'dispatching'))
+                .filter((state) => state.invokedAt === null && state.deliveryState === 'indeterminate')
                 .map((state) => state.localId),
+            dispatchingLocalIds: states.filter(state => state.invokedAt === null && state.deliveryState === 'dispatching').map(state => state.localId),
             invokedLocalMessages: states.flatMap((state) => state.invokedAt === null
                 ? []
                 : [{ localId: state.localId, invokedAt: state.invokedAt }])
@@ -939,6 +940,7 @@ export class MessageService {
         )
         const actualSessionId = inserted.sessionId
         const msg = inserted.message
+        const nativeHistory = (this.store.sessions.getSession(actualSessionId)?.metadata as Metadata | null)?.codexNativeSession === true
         // A duplicate localId is an idempotent retry, not proof that the
         // original Pi turn still exists. Its stored row may retain steer
         // provenance from a POST whose response was lost, so deliver the
@@ -946,7 +948,7 @@ export class MessageService {
         const cliContent = inserted.inserted
             ? msg.content
             : contentForDeferredDelivery(msg.content)
-        const shouldEmitToCli = msg.deliveryState !== 'indeterminate'
+        const shouldEmitToCli = msg.deliveryState !== 'indeterminate' && msg.deliveryState !== 'dispatching'
         this.onSessionActivity?.(actualSessionId, msg.createdAt)
 
         // Only emit to CLI if the message is not scheduled for the future.
@@ -982,7 +984,9 @@ export class MessageService {
             sessionId: actualSessionId,
             message: {
                 id: msg.id,
-                seq: msg.seq,
+                // Native pending input is a queue overlay, just as in REST.
+                // Its Hub sequence cannot advance a native-history cursor.
+                seq: nativeHistory ? null : msg.seq,
                 localId: msg.localId,
                 content: msg.content,
                 createdAt: msg.createdAt,

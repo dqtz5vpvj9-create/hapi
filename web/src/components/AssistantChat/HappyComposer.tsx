@@ -1,3 +1,4 @@
+import type { CodexGoalRequest } from '@hapi/protocol/apiTypes'
 import {
     getCodexCollaborationModeOptions,
     getCopilotAgentModeOptions,
@@ -12,6 +13,7 @@ import {
     type FormEvent as ReactFormEvent,
     type KeyboardEvent as ReactKeyboardEvent,
     type MutableRefObject,
+    type ReactNode,
     type SyntheticEvent as ReactSyntheticEvent,
     useCallback,
     useEffect,
@@ -30,7 +32,7 @@ import {
 } from '@/components/AssistantChat/RichComposerInput'
 import { useFue } from '@/lib/use-fue'
 import { FueCallout, FueDot } from '@/components/Fue'
-import type { AgentState, CodexCollaborationMode, PermissionMode, PiModelSummary } from '@/types/api'
+import type { AgentState, CodexCollaborationMode, PermissionMode, PiModelSummary, ThreadGoal } from '@/types/api'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
 import type { ConversationStatus } from '@/realtime/types'
 import { useActiveWord } from '@/hooks/useActiveWord'
@@ -48,6 +50,7 @@ import { useComposerEnterBehavior } from '@/hooks/useComposerEnterBehavior'
 import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
 import { Autocomplete } from '@/components/ChatInput/Autocomplete'
 import { StatusBar } from '@/components/AssistantChat/StatusBar'
+import { ComposerGoalControl, isGoalComposerText } from '@/components/AssistantChat/ComposerGoalControl'
 import { ComposerButtons } from '@/components/AssistantChat/ComposerButtons'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import { SortableComposerAttachments } from '@/components/AssistantChat/SortableComposerAttachments'
@@ -283,6 +286,9 @@ export function ModelEffortSettingsSection(props: {
 }
 
 export function HappyComposer(props: {
+    onGoalAction?: (request: CodexGoalRequest) => Promise<ThreadGoal | null>
+    goal?: ThreadGoal | null
+    statusDetails?: ReactNode
     sessionId?: string
     focusInputRef?: MutableRefObject<(() => void) | null>
     onUploadDraftSnapshot?: (text: string, attachments: AttachmentDraftInput[]) => void
@@ -298,6 +304,7 @@ export function HappyComposer(props: {
     active?: boolean
     allowSendWhenInactive?: boolean
     thinking?: boolean
+    abortError?: Error | null
     agentState?: AgentState | null
     backgroundTaskCount?: number
     contextSize?: number
@@ -448,6 +455,7 @@ export function HappyComposer(props: {
         onSchedule: onScheduleProp,
         onClearSchedule: onClearScheduleProp,
         sendError = null,
+        abortError = null,
         onClearSendError,
         onSuppressSendErrorRestore,
         pendingSendIntentRef,
@@ -468,6 +476,7 @@ export function HappyComposer(props: {
     const api = useAui()
     const { composerEnterBehavior } = useComposerEnterBehavior()
     const composerText = useAuiState((s) => s.composer.text)
+    const goalMode = agentFlavor === 'codex' && isGoalComposerText(composerText)
     const attachments = useAuiState((s) => s.composer.attachments)
     const localAttachmentOrderRef = useRef<string[]>([])
     const attachmentOrderRef = externalAttachmentOrderRef ?? localAttachmentOrderRef
@@ -557,7 +566,7 @@ export function HappyComposer(props: {
     const [showSettings, setShowSettings] = useState(false)
     // Anchored settings sheet: the model/effort value buttons open only their
     // own section; the gear (null) opens the full sheet.
-    const [settingsSection, setSettingsSection] = useState<'model' | 'effort' | null>(null)
+    const [settingsSection, setSettingsSection] = useState<'model' | 'effort' | 'permission' | null>(null)
     const [isAborting, setIsAborting] = useState(false)
     const [isSwitching, setIsSwitching] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
@@ -1040,6 +1049,10 @@ export function HappyComposer(props: {
         api.thread().cancelRun()
     }, [abortDisabled, api, haptic])
 
+    useEffect(() => {
+        if (abortError) setIsAborting(false)
+    }, [abortError])
+
     const handleSwitch = useCallback(async () => {
         if (switchDisabled || !onSwitchToRemote) return
         haptic('light')
@@ -1500,10 +1513,10 @@ export function HappyComposer(props: {
     // single section ('model' / 'effort'); the gear passes nothing = full sheet.
     // Re-clicking with a different anchor while open switches the anchor
     // instead of closing, so model->effort moves between sections directly.
-    const handleSettingsToggle = useCallback((section: 'model' | 'effort' | null = null) => {
+    const handleSettingsToggle = useCallback((section: 'model' | 'effort' | 'permission' | null = null, anchor?: HTMLButtonElement) => {
         haptic('light')
-        settingsReturnFocusRef.current = section === 'model' ? modelValueButtonRef.current
-            : section === 'effort' ? effortValueButtonRef.current : settingsButtonRef.current
+        settingsReturnFocusRef.current = anchor ?? (section === 'model' ? modelValueButtonRef.current
+            : section === 'effort' ? effortValueButtonRef.current : settingsButtonRef.current)
         if (showSettings && section !== settingsSection) {
             // Open with a different anchor: switch sections, keep the sheet up.
             setSettingsSection(section)
@@ -1580,6 +1593,8 @@ export function HappyComposer(props: {
             if (settingsButtonRef.current?.contains(target)) return
             if (modelValueButtonRef.current?.contains(target)) return
             if (effortValueButtonRef.current?.contains(target)) return
+            if (target instanceof Element && target.closest('[data-composer-settings-trigger]')
+                && settingsOverlayRef.current?.parentElement?.contains(target)) return
             dismissSettings()
         }
 
@@ -1801,14 +1816,14 @@ export function HappyComposer(props: {
         // Unified settings sheet for every flavor (Pi included).
         // Anchored open (settingsSection): a model/effort value button expands
         // only its own area; the gear (null) expands the full sheet.
-        const sheetModelAreaOn = settingsSection !== 'effort'
-        const sheetEffortAreaOn = settingsSection !== 'model'
+        const sheetModelAreaOn = settingsSection === null || settingsSection === 'model'
+        const sheetEffortAreaOn = settingsSection === null || settingsSection === 'effort'
         const sheetOthersOn = settingsSection === null
         const sheetModelSettings = showModelSettings && sheetModelAreaOn
         const sheetModelEffortSettings = showModelEffortSettings && sheetModelAreaOn
         const sheetModelReasoningEffortSettings = showModelReasoningEffortSettings && sheetEffortAreaOn
         const sheetEffortSettings = showEffortSettings && sheetEffortAreaOn
-        const sheetPermissionSettings = showPermissionSettings && sheetOthersOn
+        const sheetPermissionSettings = showPermissionSettings && (sheetOthersOn || settingsSection === 'permission')
         const sheetFastModeSettings = showFastModeSettings && sheetOthersOn
         const sheetCollaborationSettings = showCollaborationSettings && sheetOthersOn
         const sheetCopilotAgentModeSettings = showCopilotAgentModeSettings && sheetOthersOn
@@ -2264,6 +2279,9 @@ export function HappyComposer(props: {
     const rootClassName = isExpanded
         ? 'relative flex min-h-0 flex-1 flex-col'
         : 'relative'
+    const effortValueCompactLabel = showModelReasoningEffortSettings
+        ? codexReasoningEffortOptions.find(option => option.value === (modelReasoningEffort ?? null))?.label ?? modelReasoningEffort ?? 'Default'
+        : effortValueLabel
     const editorClassName = isExpanded
         ? 'h-full min-h-[1.5rem] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent text-base leading-snug text-[var(--app-fg)] focus:outline-none'
         : 'max-h-[7.5rem] min-h-[1.5rem] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent text-base leading-snug text-[var(--app-fg)] focus:outline-none'
@@ -2276,6 +2294,17 @@ export function HappyComposer(props: {
                     {overlays}
 
                     <StatusBar
+                        statusDetails={props.statusDetails}
+                        controlsDisabled={controlsDisabled}
+                        reasoningOpen={showSettings && settingsSection === 'effort'}
+                        permissionOpen={showSettings && settingsSection === 'permission'}
+                        onReasoningClick={showModelReasoningEffortSettings || showEffortSettings ? button => handleSettingsToggle('effort', button) : undefined}
+                        onPermissionClick={showPermissionSettings ? button => handleSettingsToggle('permission', button) : undefined}
+                        composerControl={agentFlavor === 'codex' ? (
+                            <ComposerGoalControl goal={props.goal ?? null}
+                                disabled={disabled || !active || (controlledByUser && !concurrentClients)}
+                                onAction={props.onGoalAction} />
+                        ) : undefined}
                         active={active}
                         thinking={thinking}
                         agentState={agentState}
@@ -2308,6 +2337,12 @@ export function HappyComposer(props: {
                     {dictationActive && dictation.error ? (
                         <div role="alert" className="mb-2 rounded-md bg-[var(--app-subtle-bg)] px-3 py-2 text-sm text-red-600">
                             {dictation.error}
+                        </div>
+                    ) : null}
+
+                    {abortError ? (
+                        <div role="alert" className="mb-2 rounded-md bg-[var(--app-subtle-bg)] px-3 py-2 text-sm text-red-600">
+                            {t('composer.abortFailed')} {abortError.message}
                         </div>
                     ) : null}
 
@@ -2352,7 +2387,7 @@ export function HappyComposer(props: {
                             </div>
                         ) : null}
 
-                        <div className={`flex px-4 py-3 ${
+                        <div className={`flex px-4 py-3 max-sm:pb-1 ${
                             isExpanded ? 'min-h-0 flex-1 items-stretch' : 'items-center'
                         }`}>
                             {richMentionsEnabled ? (
@@ -2440,6 +2475,7 @@ export function HappyComposer(props: {
                         ) : null}
 
                         <ComposerButtons
+                            goalMode={goalMode}
                             canSend={canSend}
                             controlsDisabled={controlsDisabled}
                             showSettingsButton={showSettingsButton}
@@ -2475,11 +2511,12 @@ export function HappyComposer(props: {
                             hasAttachments={blocksScheduling}
                             modelValueLabel={modelValueLabel}
                             modelValueDisabled={modelEffortControlsDisabled}
-                            modelValueOpen={showSettings && settingsSection !== 'effort'}
+                            modelValueOpen={showSettings && (settingsSection === null || settingsSection === 'model')}
                             onModelValueToggle={handleModelValueToggle}
-                            effortValueLabel={effortValueLabel}
+                            effortValueLabel={showModelReasoningEffortSettings ? undefined : effortValueLabel}
+                            effortValueCompactLabel={effortValueCompactLabel}
                             effortValueDisabled={modelEffortControlsDisabled}
-                            effortValueOpen={showSettings && settingsSection !== 'model'}
+                            effortValueOpen={showSettings && (settingsSection === null || settingsSection === 'effort')}
                             onEffortValueToggle={handleEffortValueToggle}
                             scratchlistMode={props.scratchlistMode}
                             scratchlistCount={props.scratchlistCount}

@@ -48,7 +48,13 @@ function compareMessages(a: DecryptedMessage, b: DecryptedMessage): number {
 // can carry a stale optimistic 'queued' status while its invokedAt is already
 // set; normalize so the queued clock never lingers on a delivered message.
 function clearStaleQueuedStatus(list: DecryptedMessage[]): DecryptedMessage[] {
-    return list.map((msg) =>
+    const nativeAccepted = new Set(list.filter(msg => msg.id.startsWith('native:')
+        && typeof msg.seq === 'number' && msg.invokedAt != null && isUserMessage(msg)).map(msg => msg.localId))
+    // The native item is acceptance proof for the exact client identity.
+    // A seq-null Hub queue overlay must not survive beside that item, even
+    // if the overlay arrives after the native page during a concurrent read.
+    return list.filter(msg => !(msg.seq === null && msg.localId && nativeAccepted.has(msg.localId)
+        && isUserMessage(msg))).map((msg) =>
         msg.status === 'queued' && msg.invokedAt != null
             ? { ...msg, status: 'sent' as DecryptedMessage['status'] }
             : msg

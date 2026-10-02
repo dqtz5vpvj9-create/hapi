@@ -157,7 +157,9 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
             }
         } else {
             const message = store.messages.syncNativeQueuedMessage(sid, localId, text)
-            onWebappEvent?.({ type: 'message-received', sessionId: sid, message })
+            onWebappEvent?.({ type: 'message-received', sessionId: sid, message: {
+                ...message, seq: metadata.codexNativeSession ? null : message.seq
+            } })
         }
     })
 
@@ -541,8 +543,8 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
                 sessionAccess.value.namespace
             )
             reply({ ok })
-            if (ok && data.state === 'queued') {
-                onWebappEvent?.({ type: 'messages-requeued', sessionId: data.sid, localIds })
+            if (ok) {
+                onWebappEvent?.({ type: data.state === 'queued' ? 'messages-requeued' : 'messages-dispatching', sessionId: data.sid, localIds })
             }
         } catch (err) {
             console.error('recordSteerDeliveryState failed', err)

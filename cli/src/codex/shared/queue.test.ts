@@ -80,7 +80,7 @@ describe('shared native queue', () => {
         rpc.mockResolvedValue({ data: [{ id: 'n', clientUserMessageId: 'native', input }], nextCursor: null });
         await queue.reconcile(); expect(mirror).toHaveBeenCalledWith('native', input);
         rpc.mockResolvedValue({ data: [], nextCursor: null }); await queue.reconcile();
-        expect(queue.state('native')).toBe('unknown'); expect(mirror).not.toHaveBeenCalledWith('native', null);
+        expect(queue.state('native')).toBe('dispatching'); expect(mirror).not.toHaveBeenCalledWith('native', null);
         await queue.deleted('n'); expect(mirror).toHaveBeenCalledWith('native', null);
     });
     it('treats a failed reconciliation during cancel as indeterminate, not a failed ACK', async () => {
