@@ -55,4 +55,25 @@ for (const width of [390, 1280]) {
         expect(attempts).toBe(3)
         expect(errors).toEqual([])
     })
+
+    test(`a failed stop error clears when the turn ends on its own (${width}px)`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 844 })
+        await page.route('**/api/sessions/abort-retry-fixture/abort', route => route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'Temporary stop failure' }),
+        }))
+        await page.goto('/e2e-fixtures/abort-retry-fixture.html')
+        const stop = page.getByRole('button', { name: 'Abort', exact: true })
+        await stop.click()
+        await expect(page.getByRole('alert')).toContainText('Could not stop the turn.')
+        await expect(stop).toBeEnabled()
+        await page.getByRole('button', { name: 'Receive turn completion' }).click()
+        await expect(page.getByRole('alert')).toHaveCount(0)
+        await expect(stop).toBeDisabled()
+        await page.getByRole('button', { name: 'Receive next turn' }).click()
+        await expect(stop).toBeEnabled()
+        await expect(page.getByRole('alert')).toHaveCount(0)
+    })
+
 }

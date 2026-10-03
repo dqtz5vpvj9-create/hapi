@@ -18,7 +18,7 @@ const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: fals
 function Harness() {
     const [running, setRunning] = useState(true)
     const session = { id: 'abort-retry-fixture', active: true, thinking: running } as Session
-    const { abortSession, abortError } = useSessionActions(api, session.id, 'codex')
+    const { abortSession, abortError, clearAbortError } = useSessionActions(api, session.id, 'codex')
     const runtime = useHappyRuntime({
         session,
         blocks: [],
@@ -39,12 +39,14 @@ function Harness() {
         <main style={{ maxWidth: 680, margin: '24px auto', padding: 12 }}>
             <p>Keep the agent running while the stop request fails.</p>
             <button onClick={() => setRunning(false)}>Receive turn completion</button>
+            <button onClick={() => setRunning(true)}>Receive next turn</button>
             <AssistantRuntimeProvider runtime={runtime}>
                 <HappyComposer
                     sessionId={session.id}
                     active
                     thinking={running}
                     abortError={abortError}
+                    onClearAbortError={clearAbortError}
                     agentFlavor="codex"
                 />
             </AssistantRuntimeProvider>

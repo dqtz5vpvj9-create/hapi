@@ -297,6 +297,7 @@ export function HappyComposer(props: {
     allowSendWhenInactive?: boolean
     thinking?: boolean
     abortError?: Error | null
+    onClearAbortError?: () => void
     agentState?: AgentState | null
     backgroundTaskCount?: number
     contextSize?: number
@@ -448,6 +449,7 @@ export function HappyComposer(props: {
         onClearSchedule: onClearScheduleProp,
         sendError = null,
         abortError = null,
+        onClearAbortError,
         onClearSendError,
         onSuppressSendErrorRestore,
         pendingSendIntentRef,
@@ -1006,8 +1008,10 @@ export function HappyComposer(props: {
     }, [abortDisabled, api, haptic])
 
     useEffect(() => {
-        if (abortError) setIsAborting(false)
-    }, [abortError])
+        if (!abortError) return
+        setIsAborting(false)
+        if (!threadIsRunning) onClearAbortError?.()
+    }, [abortError, threadIsRunning, onClearAbortError])
 
     const handleSwitch = useCallback(async () => {
         if (switchDisabled || !onSwitchToRemote) return
@@ -2244,7 +2248,7 @@ export function HappyComposer(props: {
                         </div>
                     ) : null}
 
-                    {abortError ? (
+                    {abortError && threadIsRunning ? (
                         <div role="alert" className="mb-2 rounded-md bg-[var(--app-subtle-bg)] px-3 py-2 text-sm text-red-600">
                             {t('composer.abortFailed')} {abortError.message}
                         </div>

@@ -1272,6 +1272,7 @@ function SessionChatInner(props: SessionChatProps) {
     const {
         abortSession,
         abortError,
+        clearAbortError,
         switchSession,
         setPermissionMode,
         setCollaborationMode,
@@ -2123,6 +2124,7 @@ function SessionChatInner(props: SessionChatProps) {
                         onResumeStoredDraft={() => handleSend('', undefined, null)}
                         thinking={props.session.thinking}
                         abortError={abortError}
+                        onClearAbortError={clearAbortError}
                         agentState={props.session.agentState}
                         backgroundTaskCount={props.session.backgroundTaskCount}
                         contextSize={reduced.latestUsage?.contextSize}
