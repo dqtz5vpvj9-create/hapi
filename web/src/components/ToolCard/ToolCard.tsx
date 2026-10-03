@@ -1,4 +1,5 @@
 import { ContentParts, richToolParts } from '@/components/Artifacts/ContentParts'
+import { useOptionalHappyChatContext } from '@/components/AssistantChat/context'
 import type { ChatBlock, ChatToolCall, ToolCallBlock } from '@/chat/types'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
@@ -408,6 +409,7 @@ export function ToolDetailDialogContent(input: {
 }
 
 function ToolCardInner(props: ToolCardProps) {
+    const executionActive = useOptionalHappyChatContext()?.activeExecutionToolId === props.block.id
     const { t } = useTranslation()
     const [detailsOpen, setDetailsOpen] = useState(false)
     const presentation = useMemo(() => getToolPresentation({
@@ -486,7 +488,7 @@ function ToolCardInner(props: ToolCardProps) {
         <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--app-hint)]">
             <span className="shrink-0"><DetailsIcon /></span>
             <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">{presentation.icon}</span>
-            <span className="min-w-0 truncate font-mono text-sm" title={toolTitle}>{isCodexAgentCard ? toolTitle : toolName}</span>
+            <span data-execution-active={executionActive || undefined} data-execution-label={executionActive ? t('session.item.running') : undefined} className={cn("min-w-0 truncate font-mono text-sm", executionActive && "hapi-execution-sweep")} title={toolTitle}>{isCodexAgentCard ? toolTitle : toolName}</span>
             <span className={cn('shrink-0', stateColor)} aria-label={props.block.tool.state}><ToolStatusIcon state={props.block.tool.state} /></span>
             <time className="shrink-0 tabular-nums opacity-65" dateTime={new Date(props.block.createdAt).toISOString()}>
                 {new Date(props.block.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}

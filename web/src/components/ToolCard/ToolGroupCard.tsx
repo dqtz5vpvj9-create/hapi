@@ -98,6 +98,7 @@ function formatActionSummary(block: ToolGroupBlock, t: (key: string, params?: Re
 }
 
 function RowLabel(props: { block: ToolCallBlock; metadata: SessionMetadataSummary | null }) {
+    const executionActive = useHappyChatContext().activeExecutionToolId === props.block.id
     const { t } = useTranslation()
     const presentation = useMemo(() => getToolPresentation({
         toolName: props.block.tool.name,
@@ -115,7 +116,7 @@ function RowLabel(props: { block: ToolCallBlock; metadata: SessionMetadataSummar
                     {presentation.icon}
                 </div>
                 <div className="min-w-0 flex-1">
-                    <div className="truncate whitespace-nowrap text-sm font-medium text-[var(--app-fg)]">
+                    <div data-execution-active={executionActive || undefined} data-execution-label={executionActive ? t('session.item.running') : undefined} className={cn("truncate whitespace-nowrap text-sm font-medium text-[var(--app-fg)]", executionActive && "hapi-execution-sweep")}>
                         {presentation.title}
                     </div>
                     {presentation.subtitle ? (
@@ -162,6 +163,7 @@ function CodexExplorationRows(props: {
     onSelect: (toolId: string) => void
 }) {
     const { t } = useTranslation()
+    const activeToolId = useHappyChatContext().activeExecutionToolId
     return props.tools.flatMap((tool) => (
         getCodexCommandActions(tool).map((action, index) => {
             const label = codexActionLabel(action, t)
@@ -173,7 +175,7 @@ function CodexExplorationRows(props: {
                     onClick={() => props.onSelect(tool.id)}
                 >
                     <span className="mt-1 text-xs text-[var(--app-hint)]">└</span>
-                    <span className="shrink-0 text-sm font-medium text-[var(--app-tool-card-accent)]">
+                    <span data-execution-active={activeToolId === tool.id && index === 0 || undefined} data-execution-label={activeToolId === tool.id && index === 0 ? t('session.item.running') : undefined} className={cn("shrink-0 text-sm font-medium text-[var(--app-tool-card-accent)]", activeToolId === tool.id && index === 0 && "hapi-execution-sweep")}>
                         {label.title}
                     </span>
                     {label.detail ? (
@@ -301,7 +303,7 @@ export function ToolGroupCard(props: {
                     <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--app-hint)]">
                         <span className="shrink-0"><DetailsIcon open={open} /></span>
                         <span className="shrink-0" aria-hidden="true">⚒</span>
-                        <span className="min-w-0 truncate font-mono text-sm" title={primaryTitle}>{primaryTitle}</span>
+                        <span data-execution-active={props.block.tools.some(tool => tool.id === ctx.activeExecutionToolId) && !open || undefined} data-execution-label={!open && props.block.tools.some(tool => tool.id === ctx.activeExecutionToolId) ? t('session.item.running') : undefined} className={cn("min-w-0 truncate font-mono text-sm", !open && props.block.tools.some(tool => tool.id === ctx.activeExecutionToolId) && "hapi-execution-sweep")} title={primaryTitle}>{primaryTitle}</span>
                         <span className={cn('shrink-0', toolStatusColorClass(groupState))} aria-label={t(`toolGroup.rowStatus.${groupState}`)}><ToolStatusIcon state={groupState} /></span>
                         <span className="shrink-0 tabular-nums opacity-65">{new Date(props.block.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
                         <span className="shrink-0 opacity-65">({props.block.tools.length})</span>

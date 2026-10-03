@@ -1,0 +1,25 @@
+[data-color-theme="codex"] .hapi-execution-sweep {
+    color: var(--app-hint);
+    background: linear-gradient(100deg, var(--app-hint) 35%, var(--app-fg) 50%, var(--app-hint) 65%);
+    background-size: 250% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: hapi-execution-sweep 2.8s ease-in-out infinite;
+}
+@keyframes hapi-execution-sweep {
+    from { background-position: 140% 0; }
+    to { background-position: -40% 0; }
+}
+.hapi-execution-thinking { padding: .65rem .25rem; font-size: .8125rem; }
+.hapi-execution-return { position: absolute; bottom: .5rem; left: 50%; transform: translateX(-50%); z-index: 10; border-radius: 999px; padding: .35rem .7rem; background: var(--app-bg); border: 1px solid var(--app-border); color: var(--app-hint); font-size: .75rem; }
+@media (prefers-reduced-motion: reduce) {
+    [data-color-theme="codex"] .hapi-execution-sweep { animation: none; background: none; -webkit-text-fill-color: currentColor; }
+    [data-color-theme="codex"] [data-execution-active]::after { content: " · " attr(data-execution-label); font-size: .75rem; color: var(--app-hint); }
+}
+/* The floating composer reserves this same measured space for the tail arrow. */
+[data-color-theme="codex"] [data-glass-chat] .hapi-execution-return {
+    bottom: calc(var(--glass-composer-height) + .75rem);
+}
+/* The running pill already performs the tail jump while it is present. */
+.hapi-execution-return ~ .app-thread-scroll-bottom { display: none; }

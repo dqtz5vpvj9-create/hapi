@@ -1,3 +1,4 @@
+import { useOptionalAppContext } from '@/lib/app-context'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useNavigate } from '@tanstack/react-router'
@@ -87,6 +88,7 @@ import { useTranslation } from '@/lib/use-translation'
 import type { SendMessageAcceptance, SendMessageSettlement } from '@/hooks/mutations/useSendMessage'
 import { handoffComposerDraft, transferComposerDraftThenNavigate } from '@/lib/composer-draft-transfer'
 import { SessionHeader } from '@/components/SessionHeader'
+import { GlassChrome, GlassScene } from '@/themes/glass/GlassScene'
 import { CursorMigrationBanner } from '@/components/CursorMigrationBanner'
 import { TeamPanel } from '@/components/TeamPanel'
 import { SessionStatusPanel } from '@/components/SessionStatusPanel'
@@ -648,6 +650,8 @@ export function SessionChat(props: SessionChatProps) {
 }
 
 function SessionChatInner(props: SessionChatProps) {
+    const executionConnected = useOptionalAppContext()?.executionConnected === true
+
     const { haptic } = usePlatform()
     const { t } = useTranslation()
     const { codexExplorationCollapsed } = useCodexExplorationCollapse()
@@ -1906,7 +1910,8 @@ function SessionChatInner(props: SessionChatProps) {
     })
 
     return (
-        <div className="flex h-full min-h-0 flex-col">
+        <GlassScene className="app-chat relative flex h-full min-h-0 flex-col" active={!terminalVisible}>
+            <GlassChrome role="header" className="app-chat-header">
             <SessionHeader
                 session={props.session}
                 serviceTier={effectiveCodexServiceTier}
@@ -1937,10 +1942,12 @@ function SessionChatInner(props: SessionChatProps) {
                 }}
             />
 
+            </GlassChrome>
+
+
+            <div className="app-chat-content flex flex-col min-h-0 flex-1">
+            <GlassChrome role="notices" className="app-chat-notices">
             <CursorMigrationBanner metadata={props.session.metadata} />
-
-
-            <div className="flex flex-col min-h-0 flex-1">
             {props.session.teamState && (
                 <TeamPanel teamState={props.session.teamState} />
             )}
@@ -1956,6 +1963,7 @@ function SessionChatInner(props: SessionChatProps) {
             ) : null}
 
             {nativeHistoryOnly ? <div role="status" className="px-3 py-2 text-sm text-[var(--app-hint)]">{t('codexConnect.historyOnly')}</div> : null}
+            </GlassChrome>
             <AssistantRuntimeProvider runtime={runtime}>
                 <ShareSeedConsumer sessionId={props.session.id} sessionActive={props.session.active} />
                 <AbortRestoreConsumer messages={normalizedMessages} onAbortRestore={props.onAbortRestore ?? (() => {})} />
@@ -1973,6 +1981,9 @@ function SessionChatInner(props: SessionChatProps) {
 
                     <NativeDependencyProvider api={props.api} sessionId={props.session.id} epoch={props.messagesEpoch} enabled={props.session.metadata?.codexNativeSession === true} messages={props.messages}>
                     <HappyThread
+                        executionConnected={executionConnected}
+                        executionBlocks={visibleBlocks}
+                        executionAtTail={props.viewMode === 'tail'}
                         // Key with prefix: different components under the same session
                         // (thread, scratchlist, composer) must have distinct keys to avoid
                         // React reconciliation issues when switching sessions rapidly.
@@ -2013,7 +2024,7 @@ function SessionChatInner(props: SessionChatProps) {
                     </NativeDependencyProvider>
                     </div>
 
-                    <div className={outlineOpen ? 'max-sm:hidden' : undefined}>
+                    <GlassChrome role="composer" className={`app-chat-composer ${outlineOpen ? 'max-sm:hidden' : ''}`}>
                         {codexCollaborationModeSupported && codexModelsState.error ? (
                             <div className="px-3 pb-2">
                                 <div className="mx-auto w-full max-w-content rounded-md bg-[var(--app-subtle-bg)] p-3 text-sm text-red-600">
@@ -2275,7 +2286,7 @@ function SessionChatInner(props: SessionChatProps) {
                         onSuppressSendErrorRestore={props.onSuppressSendErrorRestore}
                         pendingSendIntentRef={pendingSendIntentRef}
                         />
-                    </div>
+                    </GlassChrome>
                     </div>
                 </DragDropZone>
             </AssistantRuntimeProvider>
@@ -2303,6 +2314,6 @@ function SessionChatInner(props: SessionChatProps) {
                 isPending={historyActionPending}
                 onConfirm={onRewindForkFallback}
             />
-        </div>
+        </GlassScene>
     )
 }

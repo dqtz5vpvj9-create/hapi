@@ -13,6 +13,7 @@ export type HappyChatContextValue = {
     terminalToolDisplayMode: TerminalToolDisplayMode
     /** Hub-wide AGENT_NOTIFY_SUMMARY chat display; polled once at chat shell. */
     showSessionSummaryInChat: boolean
+    activeExecutionToolId?: string | null
     disabled: boolean
     onRefresh: () => void
     codexPlanProposalId?: string | null

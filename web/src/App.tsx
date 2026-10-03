@@ -1,3 +1,5 @@
+import { useSessionReconnectingState } from '@/hooks/useSessionReconnectingState'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { invalidateHistoryPages } from '@/lib/history-page-repository'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Outlet, useLocation, useMatchRoute, useRouter } from '@tanstack/react-router'
@@ -170,6 +172,7 @@ function AppInner() {
     const queryClient = useQueryClient()
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId' })
     const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
+    const sessionConnection = useSessionReconnectingState(selectedSessionId)
     const { isSyncing, startSync, endSync } = useSyncingState()
     const {
         isReconnecting: sseDisconnected,
@@ -328,6 +331,7 @@ function AppInner() {
     }, [api, selectedSessionId])
 
     const handleSessionSseConnect = useCallback((info: { resumed: boolean }) => {
+        sessionConnection.reportConnect()
         if (!api || !selectedSessionId) {
             return
         }
@@ -339,7 +343,7 @@ function AppInner() {
         void reconcileQueuedStateAfterConnect(api, selectedSessionId).catch((error) => {
             console.error('Failed to reconcile queued state after SSE connect:', error)
         })
-    }, [api, selectedSessionId])
+    }, [api, selectedSessionId, sessionConnection.reportConnect])
 
     const translateIncomingToast = useCallback((title: string, body: string): { title: string; body: string } => {
         const normalizedTitle = title.trim()
@@ -405,8 +409,9 @@ function AppInner() {
         () => getAppSessionSseSubscription(selectedSessionId),
         [selectedSessionId]
     )
+    const executionOnline = useOnlineStatus()
     const sseEnabled = Boolean(api && token)
-    const showReconnectingBanner = sseDisconnected && !isSyncing
+    const showReconnectingBanner = (sseDisconnected || sessionConnection.isReconnecting) && !isSyncing
 
     const { subscriptionId: globalSubscriptionId } = useSSE({
         enabled: sseEnabled,
@@ -427,6 +432,7 @@ function AppInner() {
         subscription: sessionEventSubscription ?? undefined,
         scope: 'full',
         onConnect: handleSessionSseConnect,
+        onDisconnect: sessionConnection.reportDisconnect,
         onEvent: handleSseEvent
     })
 
@@ -521,7 +527,7 @@ function AppInner() {
     }
 
     return (
-        <AppContextProvider value={{ api, token, baseUrl, titleSuggestionAvailable }}>
+        <AppContextProvider value={{ api, token, baseUrl, titleSuggestionAvailable, executionConnected: executionOnline && Boolean(sessionSubscriptionId) }}>
             <VoiceProvider>
                 <PwaUpdateBannerWithStatusOffset
                     isSyncing={isSyncing}
@@ -530,7 +536,7 @@ function AppInner() {
                 <SyncingBanner isSyncing={isSyncing} />
                 <ReconnectingBanner
                     isReconnecting={showReconnectingBanner}
-                    reason={sseDisconnectReason}
+                    reason={sseDisconnected ? sseDisconnectReason : sessionConnection.reason}
                 />
                 <VoiceErrorBanner />
                 <OfflineBanner

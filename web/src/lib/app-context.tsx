@@ -5,6 +5,7 @@ type AppContextValue = {
     api: ApiClient
     token: string
     baseUrl: string
+    executionConnected?: boolean
     titleSuggestionAvailable?: boolean
 }
 
@@ -19,6 +20,10 @@ export function AppContextProvider(props: {
             {props.children}
         </AppContext.Provider>
     )
+}
+
+export function useOptionalAppContext(): AppContextValue | null {
+    return useContext(AppContext)
 }
 
 export function useAppContext(): AppContextValue {

@@ -2,6 +2,7 @@
 @import "katex/dist/katex.min.css";
 @import "./themes/codex.css";
 @import "./themes/codex-layout.css";
+@import "./execution-state.css";
 @config "../tailwind.config.ts";
 
 :root {

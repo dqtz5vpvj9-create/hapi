@@ -42,7 +42,7 @@ export function MessageSyncStatus({ api, sessionId }: { api: ApiClient; sessionI
         : waiting ? t('chat.sync.retrying', { attempt: progress?.retryAttempt ?? 1 }) : t('chat.sync.failed')
     return (
         <div role={failed && !waiting ? 'alert' : 'status'} data-message-sync-status
-            className="absolute left-1/2 top-3 z-20 flex w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)]/95 px-3 py-1.5 text-xs text-[var(--app-hint)] shadow-sm backdrop-blur">
+            className="app-thread-sync-status absolute left-1/2 top-3 z-20 flex w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)]/95 px-3 py-1.5 text-xs text-[var(--app-hint)] shadow-sm backdrop-blur">
             {state.isSyncingTail || waiting ? <Spinner size="sm" label={null} className="shrink-0 text-current" /> : null}
             <div className="min-w-0">
                 <div aria-live="polite">{label}</div>

@@ -1,4 +1,7 @@
+import { getExecutionPresentation } from './executionState'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { MessageSyncStatus } from '@/components/AssistantChat/MessageSyncStatus'
+import { GlassSource } from '@/themes/glass/GlassScene'
 import { ConversationOutlineList } from '@/components/AssistantChat/ConversationOutlineList'
 import { VirtualMessageList, type MessageListNavigation } from '@/components/AssistantChat/VirtualMessageList'
 import { useHistoryPreload } from '@/hooks/useHistoryPreload'
@@ -286,7 +289,7 @@ function ScrollToBottomButton(props: { onClick: () => void; count?: number }) {
             onClick={props.onClick}
             aria-label={label}
             title={label}
-            className={buttonClass}
+            className={`app-thread-scroll-bottom ${buttonClass}`}
         >
             {hasCount ? (
                 <span className="translate-y-px text-[10px] font-semibold leading-none tabular-nums" aria-hidden="true">
@@ -399,7 +402,7 @@ export function ConversationOutlinePanel(props: {
 
     return (
         <aside
-            className="absolute inset-y-0 right-0 z-30 flex w-full max-w-[24rem] flex-col bg-[var(--app-bg)] shadow-2xl sm:w-[24rem]"
+            className="app-thread-outline-panel absolute inset-y-0 right-0 z-30 flex w-full max-w-[24rem] flex-col bg-[var(--app-bg)] shadow-2xl sm:w-[24rem]"
             aria-label={t('session.outline.title')}
         >
             <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 -left-px w-px bg-[var(--app-border)]" />
@@ -492,6 +495,9 @@ export function ConversationOutlinePanel(props: {
 }
 
 export function HappyThread(props: {
+    executionConnected?: boolean
+    executionBlocks?: readonly VisibleChatBlock[]
+    executionAtTail?: boolean
     api: ApiClient
     session: Session
     serviceTier?: string | null
@@ -526,6 +532,8 @@ export function HappyThread(props: {
     onOutlineItemClick?: (item: ConversationOutlineItem) => void
 }) {
     const { t, locale } = useTranslation()
+    const online = useOnlineStatus()
+    const execution = getExecutionPresentation(props.session, props.executionBlocks ?? [], props.executionConnected === true && online, props.executionAtTail === true)
     const outlineHistory = useConversationOutlineHistory(props.api, props.session.id, props.outlineItems, props.outlineEpoch, props.outlineOpen)
     const { preferences: headerMetadata } = useSessionHeaderMetadata()
     const { machines } = useMachines(props.api, true)
@@ -859,12 +867,12 @@ export function HappyThread(props: {
             autoScrollEnabledRef.current = enabled
         }
 
-        const setAtBottomMode = (atBottom: boolean) => {
+        const setAtBottomMode = (atBottom: boolean, captureAnchor = () => captureScrollAnchor(viewport)) => {
             if (atBottom === atBottomRef.current) {
                 return
             }
             atBottomRef.current = atBottom
-            readingAnchorRef.current = atBottom ? null : captureScrollAnchor(viewport)
+            readingAnchorRef.current = atBottom ? null : captureAnchor()
             saveMessageReadingAnchor(sessionIdRef.current, readingAnchorRef.current)
             onViewModeChangeRef.current(atBottom ? 'tail' : 'history')
         }
@@ -940,8 +948,16 @@ export function HappyThread(props: {
                 previousScrollTop: lastScrollTopRef.current
             })
             lastScrollTopRef.current = viewport.scrollTop
+            // These synchronous consumers observe the same reading point.
+            // Keep the sample local to this event; later events and async
+            // page-publication callbacks still capture their current DOM.
+            let eventAnchor: ScrollAnchor | null | undefined
+            const captureCurrentAnchor = () => {
+                if (eventAnchor === undefined) eventAnchor = captureScrollAnchor(viewport)
+                return eventAnchor
+            }
             if (intent.isScrollingUp || intent.isScrollingDown) {
-                readingAnchorRef.current = captureScrollAnchor(viewport)
+                readingAnchorRef.current = captureCurrentAnchor()
                 messageListRef.current?.pinReading(readingAnchorRef.current?.id.replace(/^hapi-message-/, '') ?? null)
                 if (!atBottomRef.current) saveMessageReadingAnchor(sessionIdRef.current, readingAnchorRef.current)
             }
@@ -952,7 +968,7 @@ export function HappyThread(props: {
             // the eventual prepend will preserve that row instead.
             const pending = pendingScrollRef.current
             if (pending && pending.targetHistoryVersion === null && historyLoaderRef.current.runId === pending.runId) {
-                pending.anchor = captureScrollAnchor(viewport)
+                pending.anchor = captureCurrentAnchor()
                 pending.scrollTop = viewport.scrollTop
                 pending.scrollHeight = viewport.scrollHeight
             }
@@ -977,7 +993,7 @@ export function HappyThread(props: {
                     initialScrollDeadlineRef.current = 0
                     clearInitialScrollTimers()
                     setAutoScrollMode(false)
-                    setAtBottomMode(false)
+                    setAtBottomMode(false, captureCurrentAnchor)
                     if (explicitUpwardIntent) {
                         void requestOlderRef.current('user')
                     }
@@ -990,6 +1006,10 @@ export function HappyThread(props: {
             // scroll events cannot bypass backoff or a paused coverage run.
             if (needsCoverage) {
                 void requestOlderRef.current(explicitUpwardIntent ? 'user' : 'coverage')
+                // Loading invokes an external callback before its first await.
+                // It may publish or scroll synchronously, so do not reuse a
+                // sample taken before this boundary.
+                eventAnchor = undefined
             }
 
             if (intent.isScrollingUp && intent.distanceFromBottom > MANUAL_SCROLL_EPSILON_PX
@@ -997,7 +1017,7 @@ export function HappyThread(props: {
                 tailScrollInProgressRef.current = false
                 setShowScrollToBottom(false)
                 setAutoScrollMode(false)
-                setAtBottomMode(false)
+                setAtBottomMode(false, captureCurrentAnchor)
                 return
             }
 
@@ -1006,14 +1026,14 @@ export function HappyThread(props: {
             if (intent.isNearBottom && !tailScrollInProgressRef.current
                 && (readingRestoreRef.current || (!intent.isScrollingDown && !atBottomRef.current))) {
                 setAutoScrollMode(false)
-                setAtBottomMode(false)
+                setAtBottomMode(false, captureCurrentAnchor)
                 return
             }
 
             if (intent.isNearBottom && getMessageWindowState(sessionIdRef.current).hasMoreAfter) {
                 setAutoScrollMode(false)
-                setAtBottomMode(false)
-                readingAnchorRef.current = captureScrollAnchor(viewport)
+                setAtBottomMode(false, captureCurrentAnchor)
+                readingAnchorRef.current = captureCurrentAnchor()
                 const sessionId = sessionIdRef.current
                 void fetchNewerHistory(props.api, sessionId, async () => {
                     // Native keyboard scrolling may report its final offset
@@ -1058,7 +1078,7 @@ export function HappyThread(props: {
 
             setShowScrollToBottom((wasVisible) => getScrollToBottomButtonVisibility(wasVisible, intent))
             setAutoScrollMode(false)
-            setAtBottomMode(false)
+            setAtBottomMode(false, captureCurrentAnchor)
         }
 
         // Gesture fallback: at scrollTop=0 no further scroll events fire. Give
@@ -2045,6 +2065,7 @@ export function HappyThread(props: {
             metadata: props.metadata,
             terminalToolDisplayMode,
             showSessionSummaryInChat,
+            activeExecutionToolId: execution.activeToolId,
             disabled: props.disabled,
             onRefresh: props.onRefresh,
             codexPlanProposalId: props.session.active && props.session.metadata?.capabilities?.concurrentClients
@@ -2071,7 +2092,7 @@ export function HappyThread(props: {
                     <div
                         role="status"
                         aria-live="polite"
-                        className="pointer-events-none absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/90 px-2.5 py-1 text-xs text-[var(--app-hint)] shadow-sm backdrop-blur"
+                        className="app-thread-pull-status pointer-events-none absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/90 px-2.5 py-1 text-xs text-[var(--app-hint)] shadow-sm backdrop-blur"
                     >
                         {props.isLoadingMoreMessages ? (
                             <Spinner size="sm" label={null} className="text-current" />
@@ -2085,6 +2106,7 @@ export function HappyThread(props: {
                         </span>
                     </div>
                 ) : null}
+                <GlassSource>
                 <ThreadPrimitive.Viewport
                     asChild
                     autoScroll={false}
@@ -2126,14 +2148,17 @@ export function HappyThread(props: {
                                     components={THREAD_MESSAGE_COMPONENTS}
                                 />
                             </div>
+                            {execution.thinking ? <div role="status" data-execution-state="thinking" className="hapi-execution-thinking"><span className="hapi-execution-sweep">{t('session.item.thinking')}</span></div> : null}
                         </div>
                     </div>
                 </ThreadPrimitive.Viewport>
+                </GlassSource>
                 {outlineHistory.readingNotice === 'neighbor-restored' ? (
-                    <div role="status" className="absolute left-2 right-2 top-2 z-10 rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-xs shadow-sm">
+                    <div role="status" className="app-thread-reading-notice absolute left-2 right-2 top-2 z-10 rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-xs shadow-sm">
                         {t('session.history.neighborRestored')}
                     </div>
                 ) : null}
+                {execution.running && (showScrollToBottom || !props.executionAtTail) ? <button type="button" data-execution-state="return-to-running" className="hapi-execution-return" onClick={scrollToBottom}>{t('session.item.running')} ↓</button> : null}
                 <NewMessagesIndicator count={props.unseenCount} onClick={scrollToBottom} />
                 {shouldRenderScrollToBottomButton(showScrollToBottom || outlineHistory.readerMode === 'history' || outlineHistory.readerHasMoreAfter, props.unseenCount) ? (
                     <ScrollToBottomButton onClick={scrollToBottom} />
@@ -2142,7 +2167,7 @@ export function HappyThread(props: {
                     <>
                         <button
                             type="button"
-                            className="absolute inset-0 z-20 bg-black/20"
+                            className="app-thread-outline-backdrop absolute inset-0 z-20 bg-black/20"
                             aria-label={t('session.outline.close')}
                             onClick={() => props.onOutlineOpenChange(false)}
                         />
@@ -2160,7 +2185,7 @@ export function HappyThread(props: {
                     </>
                 ) : null}
                 {shareLoading || shareError ? (
-                    <div role={shareError ? 'alert' : 'status'} className="absolute left-2 right-2 top-2 z-40 flex items-center justify-between gap-2 rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-xs">
+                    <div role={shareError ? 'alert' : 'status'} className="app-thread-share-status absolute left-2 right-2 top-2 z-40 flex items-center justify-between gap-2 rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-xs">
                         <span>{t(shareError ?? 'shareTurn.preparing')}</span>
                         <button type="button" onClick={cancelShareCapture}>{t('shareTurn.cancel')}</button>
                     </div>

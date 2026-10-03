@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getEventPresentation, formatDuration, formatMessageTimestamp, formatOutlineTimestamp, formatResetTime } from './presentation'
+import { getEventPresentation, formatDuration, formatMessageTimestamp, formatMessageTimestampTitle, formatOutlineTimestamp, formatResetTime } from './presentation'
 
 describe('formatDuration', () => {
     it('keeps sub-minute durations at one decimal place', () => {
@@ -347,5 +347,31 @@ describe('formatMessageTimestamp', () => {
         const now = new Date(2026, 4, 22, 14, 30)
         const result = formatMessageTimestamp(new Date(2025, 11, 31, 23, 59), now)
         expect(result).toContain('2025')
+    })
+
+    it('adds the date when yesterday becomes a different day in the same year', () => {
+        const date = new Date(2026, 4, 21, 23, 59)
+        const now = new Date(2026, 4, 22, 0, 1)
+        expect(formatMessageTimestamp(date, now)).toBe(date.toLocaleString(undefined, {
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+        }))
+        expect(formatMessageTimestamp(date, now)).not.toContain('2026')
+    })
+
+    it('keeps midnight in the 24-hour label and seconds in the full tooltip', () => {
+        const date = new Date(2026, 4, 22, 0, 5, 9)
+        const now = new Date(2026, 4, 22, 12)
+        expect(formatMessageTimestamp(date, now)).toBe(date.toLocaleTimeString(undefined, {
+            hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+        }))
+        expect(formatMessageTimestampTitle(date)).toBe(date.toLocaleString(undefined, {
+            year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit'
+        }))
+    })
+
+    it('preserves the existing invalid-date display instead of throwing during rendering', () => {
+        const date = new Date(NaN)
+        expect(formatMessageTimestamp(date)).toBe(date.toLocaleString())
+        expect(formatMessageTimestampTitle(date)).toBe(date.toLocaleString())
     })
 })

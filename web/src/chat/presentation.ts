@@ -1,5 +1,10 @@
 import type { AgentEvent } from '@/chat/types'
 
+const messageTimeFormatter = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+const messageDateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+const messageYearFormatter = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+const messageTitleFormatter = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })
+
 function normalizeTimestamp(value: number): Date {
     const ms = value < 1_000_000_000_000 ? value * 1000 : value
     return new Date(ms)
@@ -27,20 +32,22 @@ export function formatResetTime(value: number): string {
 }
 
 export function formatMessageTimestamp(date: Date, now: Date = new Date()): string {
+    // Intl.format throws for invalid dates; preserve Date's existing label.
+    if (Number.isNaN(date.getTime())) return date.toLocaleString()
     const sameDay = date.getFullYear() === now.getFullYear()
         && date.getMonth() === now.getMonth()
         && date.getDate() === now.getDate()
 
     if (sameDay) {
-        return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+        return messageTimeFormatter.format(date)
     }
 
     const sameYear = date.getFullYear() === now.getFullYear()
     if (sameYear) {
-        return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+        return messageDateFormatter.format(date)
     }
 
-    return date.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    return messageYearFormatter.format(date)
 }
 
 export function formatOutlineTimestamp(
@@ -72,14 +79,8 @@ export function formatOutlineTimestamp(
 }
 
 export function formatMessageTimestampTitle(date: Date): string {
-    return date.toLocaleString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        second: '2-digit'
-    })
+    if (Number.isNaN(date.getTime())) return date.toLocaleString()
+    return messageTitleFormatter.format(date)
 }
 
 // Known types: five_hour → "5-hour", seven_day → "7-day".

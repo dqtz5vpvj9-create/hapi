@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { PropsWithChildren } from 'react'
+import type { ComponentProps, PropsWithChildren } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/lib/i18n-context'
 
@@ -28,6 +28,8 @@ vi.mock('@assistant-ui/react', async (importOriginal) => {
 })
 
 import { HappyThread } from '@/components/AssistantChat/HappyThread'
+import * as readingAnchors from '@/lib/reading-anchor'
+import { getMessageReadingAnchor, setMessageViewMode } from '@/lib/message-window-store'
 import type { ApiClient } from '@/api/client'
 import type { Session } from '@/types/api'
 
@@ -48,7 +50,7 @@ class TestResizeObserver {
     disconnect() {}
 }
 
-function renderThread(onViewModeChange = vi.fn(), unseenCount = 0) {
+function renderThread(onViewModeChange = vi.fn(), unseenCount = 0, overrides: Partial<ComponentProps<typeof HappyThread>> = {}) {
     const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false } }
     })
@@ -79,6 +81,7 @@ function renderThread(onViewModeChange = vi.fn(), unseenCount = 0) {
                     outlineItems={[]}
                     outlineEpoch={null}
                     onOutlineOpenChange={vi.fn()}
+                    {...overrides}
                 />
             </I18nProvider>
         </QueryClientProvider>
@@ -125,6 +128,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup()
+    vi.restoreAllMocks()
     vi.clearAllTimers()
     vi.useRealTimers()
     if (originalScrollTo) {
@@ -142,6 +146,109 @@ afterEach(() => {
     } else {
         Reflect.deleteProperty(globalThis, 'ResizeObserver')
     }
+})
+
+function attachReadingRow(viewport: HTMLElement) {
+    const row = document.createElement('div')
+    row.id = 'hapi-message-reading-sample'
+    row.textContent = 'The passage currently being read'
+    viewport.querySelector('.happy-thread-messages')!.append(row)
+    let contentTop = 800
+    vi.spyOn(viewport, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 0, 390, 530))
+    vi.spyOn(row, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, contentTop - viewport.scrollTop, 390, 200))
+    const sentinel = viewport.querySelector('.chat-scroll-content > [aria-hidden="true"]')!
+    let coverage = false
+    vi.spyOn(sentinel, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, coverage ? 0 : 2_000, 390, 1))
+    return { row, setCoverage: (value: boolean) => { coverage = value }, prepend: () => { contentTop += 200 } }
+}
+
+describe('scroll reading samples', () => {
+    it('shares the current passage within an event and saves a fresh bookmark on the next movement', () => {
+        const id = 'event-reading-bookmark'
+        const onViewModeChange = vi.fn(mode => setMessageViewMode(id, mode))
+        const { viewport } = renderThread(onViewModeChange, 0, { sessionId: id })
+        attachReadingRow(viewport)
+        act(() => vi.advanceTimersByTime(2_000))
+        const capture = vi.spyOn(readingAnchors, 'captureReadingAnchor')
+
+        viewport.scrollTop = 520
+        fireEvent.scroll(viewport)
+        expect(capture).toHaveBeenCalledTimes(1)
+        expect(getMessageReadingAnchor(id)?.topOffset).toBe(280)
+
+        viewport.scrollTop = 480
+        fireEvent.scroll(viewport)
+        expect(capture).toHaveBeenCalledTimes(2)
+        const persisted = JSON.parse(sessionStorage.getItem(`hapi:message-reader:v1:${id}`)!)
+        expect(persisted.readingBookmark.topOffset).toBe(320)
+        expect(persisted.viewMode).toBe('history')
+    })
+
+    it('shares pending-page sampling but captures again at publication before preserving the passage through prepend', async () => {
+        const id = 'pending-reading-bookmark'
+        let beforeApply!: (version: number) => boolean
+        let finish!: (outcome: { kind: 'applied'; historyVersion: number; hasMore: boolean; addedRenderableCount: number }) => void
+        const onLoadMore = vi.fn(callback => {
+            beforeApply = callback
+            return new Promise<{ kind: 'applied'; historyVersion: number; hasMore: boolean; addedRenderableCount: number }>(resolve => { finish = resolve })
+        })
+        const overrides = { sessionId: id, hasMoreMessages: true, onLoadMore, historyVersion: 0, messagesVersion: 1 }
+        const { viewport, rerenderThread } = renderThread(vi.fn(mode => setMessageViewMode(id, mode)), 0, overrides)
+        const reading = attachReadingRow(viewport)
+        act(() => vi.advanceTimersByTime(2_000))
+        reading.setCoverage(true)
+        viewport.scrollTop = 520
+        fireEvent.scroll(viewport)
+        expect(onLoadMore).toHaveBeenCalledTimes(1)
+        const capture = vi.spyOn(readingAnchors, 'captureReadingAnchor')
+
+        viewport.scrollTop = 480
+        fireEvent.scroll(viewport)
+        expect(capture).toHaveBeenCalledTimes(1)
+        expect(getMessageReadingAnchor(id)?.topOffset).toBe(320)
+
+        // Publication is a later callback with its own current DOM position.
+        viewport.scrollTop = 460
+        expect(beforeApply(1)).toBe(true)
+        expect(capture).toHaveBeenCalledTimes(2)
+        expect(capture.mock.results[1].value?.topOffset).toBe(340)
+        reading.prepend()
+        Object.defineProperty(viewport, 'scrollHeight', { configurable: true, value: 1_432 })
+        overrides.historyVersion = 1
+        overrides.messagesVersion = 2
+        await act(async () => {
+            finish({ kind: 'applied', historyVersion: 1, hasMore: true, addedRenderableCount: 1 })
+            await Promise.resolve()
+            rerenderThread(0)
+        })
+        expect(viewport.scrollTop).toBe(660)
+        expect(reading.row.getBoundingClientRect().top).toBe(340)
+        fireEvent(window, new Event('pagehide'))
+        expect(getMessageReadingAnchor(id)?.topOffset).toBe(340)
+        const persisted = JSON.parse(sessionStorage.getItem(`hapi:message-reader:v1:${id}`)!)
+        expect(persisted.readingBookmark.topOffset).toBe(340)
+    })
+
+    it('does not reuse a pre-load sample when a loading callback changes scroll synchronously', () => {
+        const id = 'synchronous-loading-reading'
+        let viewport!: HTMLElement
+        const onLoadMore = vi.fn(() => {
+            viewport.scrollTop = 400
+            return new Promise<never>(() => {})
+        })
+        const rendered = renderThread(vi.fn(mode => setMessageViewMode(id, mode)), 0, { sessionId: id, hasMoreMessages: true, onLoadMore })
+        viewport = rendered.viewport
+        const reading = attachReadingRow(viewport)
+        act(() => vi.advanceTimersByTime(2_000))
+        reading.setCoverage(true)
+        const capture = vi.spyOn(readingAnchors, 'captureReadingAnchor')
+        viewport.scrollTop = 520
+        fireEvent.scroll(viewport)
+        expect(onLoadMore).toHaveBeenCalledTimes(1)
+        expect(capture).toHaveBeenCalledTimes(3)
+        expect(viewport.scrollTop).toBe(400)
+        expect(getMessageReadingAnchor(id)?.topOffset).toBe(400)
+    })
 })
 
 describe('mobile initial scroll settling', () => {

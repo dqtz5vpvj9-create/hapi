@@ -78,6 +78,7 @@ function renderCard(block: ToolGroupBlock, options?: {
     loadOlder?: () => Promise<OlderHistoryLoadResult>
     hasMore?: boolean
     isSyncingTail?: boolean
+    activeExecutionToolId?: string
     isLoadingMore?: boolean
 }) {
     const loadOlderMessagesPreservingScroll = options?.loadOlder
@@ -91,6 +92,7 @@ function renderCard(block: ToolGroupBlock, options?: {
                 terminalToolDisplayMode: 'detailed',
                 showSessionSummaryInChat: false,
                 disabled: false,
+                activeExecutionToolId: options?.activeExecutionToolId,
                 onRefresh: vi.fn(),
                 hasMoreMessages: options?.hasMore ?? false,
                 isSyncingTail: options?.isSyncingTail ?? false,
@@ -106,6 +108,14 @@ function renderCard(block: ToolGroupBlock, options?: {
 describe('ToolGroupCard', () => {
     afterEach(() => {
         cleanup()
+    })
+
+    it('keeps exactly one current tool label active across group expansion', () => {
+        const view = renderCard(makeGroup(), { activeExecutionToolId: 'bash-1' })
+        expect(view.container.querySelectorAll('[data-execution-active]')).toHaveLength(1)
+        fireEvent.click(view.container.querySelector('button[aria-expanded]')!)
+        expect(view.container.querySelectorAll('[data-execution-active]')).toHaveLength(1)
+        expect(view.container.querySelector('[data-execution-active]')?.closest('button')?.getAttribute('aria-expanded')).toBeNull()
     })
 
     it('renders a collapsed target-first header', () => {
