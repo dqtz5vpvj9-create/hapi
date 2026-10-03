@@ -1271,6 +1271,7 @@ function SessionChatInner(props: SessionChatProps) {
     ), [agentFlavor, cursorModelEffortOptions, props.session.model])
     const {
         abortSession,
+        abortError,
         switchSession,
         setPermissionMode,
         setCollaborationMode,
@@ -1683,8 +1684,12 @@ function SessionChatInner(props: SessionChatProps) {
 
     // Abort handler
     const handleAbort = useCallback(async () => {
-        await abortSession()
-        props.onRefresh()
+        try {
+            await abortSession()
+            props.onRefresh()
+        } catch {
+            // The mutation error is shown by the composer, which enables retry.
+        }
     }, [abortSession, props.onRefresh])
 
     // Switch to remote handler
@@ -2117,6 +2122,7 @@ function SessionChatInner(props: SessionChatProps) {
                         allowSendWhenInactive
                         onResumeStoredDraft={() => handleSend('', undefined, null)}
                         thinking={props.session.thinking}
+                        abortError={abortError}
                         agentState={props.session.agentState}
                         backgroundTaskCount={props.session.backgroundTaskCount}
                         contextSize={reduced.latestUsage?.contextSize}
