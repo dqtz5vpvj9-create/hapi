@@ -1,0 +1,55 @@
+.session-workspace {
+    position: relative;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    isolation: isolate;
+}
+.session-workspace-chat { flex: 1; min-width: 0; height: 100%; }
+/* Visibility preserves geometry: hiding via display:none would invalidate the
+   virtual list's measurements while the mobile workspace is in front. */
+.session-workspace[data-open="true"][data-split="false"] > .session-workspace-chat { visibility: hidden; }
+.session-workspace-panel {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--app-bg);
+}
+.session-workspace[data-split="true"] > .session-workspace-panel {
+    position: relative;
+    flex: 0 0 46%;
+    border-left: 1px solid var(--app-divider);
+}
+.session-workspace-heading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: max(8px, env(safe-area-inset-top)) 12px 6px 8px;
+}
+.session-workspace-heading > button {
+    display: grid;
+    place-items: center;
+    flex: 0 0 44px;
+    height: 44px;
+    border-radius: 50%;
+}
+.session-workspace-tabs { display: flex; padding: 0 12px; gap: 8px; border-bottom: 1px solid var(--app-divider); }
+.session-workspace-tabs > button {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    font-size: 13px;
+    color: var(--app-hint);
+    border-bottom: 2px solid transparent;
+}
+.session-workspace-tabs > button[aria-current="page"] { color: var(--app-fg); border-bottom-color: currentColor; font-weight: 600; }
+.session-workspace-tabs > button:disabled { opacity: .4; }
+.session-workspace-heading > button:hover,
+.session-workspace-tabs > button:enabled:hover { background: var(--app-subtle-bg); }
+.session-workspace-content { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }

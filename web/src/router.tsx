@@ -20,6 +20,8 @@ import {
     PRESERVE_SESSION_SIDEBAR_SCROLL,
 } from '@/lib/sessionNavigation'
 import { App } from '@/App'
+import { SessionWorkspace, type WorkspaceView } from '@/components/SessionWorkspace'
+import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 import { SessionChat } from '@/components/SessionChat'
 import { SessionList } from '@/components/SessionList'
 import { SessionQuickSwitcher } from '@/components/SessionQuickSwitcher'
@@ -333,8 +335,8 @@ function classifySendError(
 function SessionPage() {
     const { api, titleSuggestionAvailable = false } = useAppContext()
     const { t } = useTranslation()
-    const goBack = useAppGoBack()
     const navigate = useNavigate()
+    const goBack = useCallback(() => { navigate({ to: '/sessions', ...PRESERVE_SESSION_SIDEBAR_SCROLL }) }, [navigate])
     const queryClient = useQueryClient()
     const { addToast } = useToast()
     const { sessionId } = useParams({ from: '/sessions/$sessionId' })
@@ -851,6 +853,10 @@ function SessionDetailRoute() {
     useSessionBrowserTitle(session)
     const basePath = `/sessions/${sessionId}`
     const isChat = pathname === basePath || pathname === `${basePath}/`
+    const workspaceSearch = useSearch({ strict: false })
+    const view: WorkspaceView = pathname.endsWith('/terminal') ? 'terminal'
+        : pathname.endsWith('/file') ? 'file'
+        : workspaceSearch.tab === 'directories' ? 'directories' : 'changes'
     const supersedingSessionId = getSupersedingSessionId(sessionId, session?.metadata)
     const observedSessionRef = useRef<{
         sessionId: string
@@ -896,7 +902,24 @@ function SessionDetailRoute() {
         )
     }
 
-    return isChat ? <SessionPage /> : <Outlet />
+    return <SessionWorkspace
+        key={sessionId}
+        open={!isChat}
+        view={view}
+        path={session?.metadata?.path}
+        terminalAvailable={!!session?.active && isRemoteTerminalSupported(session.metadata)}
+        filesAvailable={!!session?.metadata?.path}
+        onSelect={(next) => {
+            if (next === 'terminal') {
+                navigate({ to: '/sessions/$sessionId/terminal', params: { sessionId }, ...PRESERVE_SESSION_SIDEBAR_SCROLL })
+            } else {
+                navigate({ to: '/sessions/$sessionId/files', params: { sessionId }, search: { tab: next }, ...PRESERVE_SESSION_SIDEBAR_SCROLL })
+            }
+        }}
+        onClose={() => navigate({ to: '/sessions/$sessionId', params: { sessionId }, ...PRESERVE_SESSION_SIDEBAR_SCROLL })}
+        chat={<SessionPage />}
+        panel={<Outlet />}
+    />
 }
 
 function NewSessionPage() {

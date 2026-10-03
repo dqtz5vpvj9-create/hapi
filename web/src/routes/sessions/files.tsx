@@ -1,3 +1,4 @@
+import { useWorkspacePanel } from '@/components/SessionWorkspace'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { PRESERVE_SESSION_SIDEBAR_SCROLL } from '@/lib/sessionNavigation'
@@ -346,6 +347,7 @@ function FileListSkeleton(props: { label: string; rows?: number }) {
 const SCROLL_KEY_PREFIX = 'hapi-dir-scroll-'
 
 export default function FilesPage() {
+    const workspacePanel = useWorkspacePanel()
     const { api, titleSuggestionAvailable = false } = useAppContext()
     const { t, locale } = useTranslation()
     const navigate = useNavigate()
@@ -356,7 +358,10 @@ export default function FilesPage() {
     const { session } = useSession(api, sessionId)
     const scrollRef = useRef<HTMLDivElement>(null)
 
-    const [activeTab, setActiveTab] = useState<FilesTab>(() => search.tab ?? readFilesTab())
+    const [activeTab, setActiveTab] = useState<FilesTab>(() => search.tab ?? (workspacePanel ? 'changes' : readFilesTab()))
+    useEffect(() => {
+        if (search.tab || workspacePanel) setActiveTab(search.tab ?? 'changes')
+    }, [search.tab, workspacePanel])
     const [directorySort, setDirectorySort] = useState<DirectorySort>(readDirectorySort)
     const [fileMenu, setFileMenu] = useState<{ path: string; point: AnchoredMenuPoint } | null>(null)
     const searchQuery = search.query ?? ''
@@ -532,7 +537,7 @@ export default function FilesPage() {
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <SessionHeader
+            {workspacePanel ? null : <SessionHeader
                 session={session}
                 onBack={goBack}
                 onToggleFiles={session.metadata?.path ? handleToggleFiles : undefined}
@@ -554,7 +559,7 @@ export default function FilesPage() {
                         }),
                     )
                 }}
-            />
+            />}
 
             <div className="bg-[var(--app-bg)]">
                 <div className="mx-auto flex w-full max-w-content items-center gap-2 border-b border-[var(--app-border)] p-3">
@@ -598,7 +603,7 @@ export default function FilesPage() {
                 </div>
             </div>
 
-            <div className="bg-[var(--app-bg)] border-b border-[var(--app-divider)]" role="tablist">
+            {workspacePanel ? null : <div className="bg-[var(--app-bg)] border-b border-[var(--app-divider)]" role="tablist">
                 <div className="mx-auto w-full max-w-content grid grid-cols-2">
                     <button
                         type="button"
@@ -625,7 +630,7 @@ export default function FilesPage() {
                         />
                     </button>
                 </div>
-            </div>
+            </div>}
 
             {!gitLoading && gitStatus && !searchQuery && activeTab === 'changes' ? (
                 <div className="bg-[var(--app-bg)]">

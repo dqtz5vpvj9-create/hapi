@@ -1,3 +1,4 @@
+import { useWorkspacePanel } from '@/components/SessionWorkspace'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useParams } from '@tanstack/react-router'
@@ -258,6 +259,7 @@ function QuickKeyButton(props: {
 }
 
 export default function TerminalPage() {
+    const workspacePanel = useWorkspacePanel()
     const { t } = useTranslation()
     const compactControls = useCompactTerminalControls()
     const { sessionId } = useParams({ from: '/sessions/$sessionId/terminal' })
@@ -596,7 +598,7 @@ export default function TerminalPage() {
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
+            {workspacePanel ? <div className="flex justify-end px-4 py-2"><ConnectionIndicator status={status} /></div> : <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                 <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3 border-b border-[var(--app-border)]">
                     <button
                         type="button"
@@ -611,7 +613,7 @@ export default function TerminalPage() {
                     </div>
                     <ConnectionIndicator status={status} />
                 </div>
-            </div>
+            </div>}
 
             {session.active ? null : (
                 <div className="mx-auto w-full max-w-content bg-[var(--app-subtle-bg)] p-3 text-sm text-[var(--app-hint)]">

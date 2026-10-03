@@ -318,3 +318,28 @@ describe('SessionActionMenu - Copy reference action', () => {
         })
     })
 })
+
+
+describe('SessionActionMenu - workspace navigation', () => {
+    it('opens each workspace tool and closes the action menu', () => {
+        const onOpenTerminal = vi.fn(), onOpenFiles = vi.fn(), onOpenChanges = vi.fn(), onClose = vi.fn()
+        renderMenu({ onOpenTerminal, onOpenFiles, onOpenChanges, onClose })
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Terminal' }))
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Project files' }))
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Code changes' }))
+        expect(onOpenTerminal).toHaveBeenCalledOnce()
+        expect(onOpenFiles).toHaveBeenCalledOnce()
+        expect(onOpenChanges).toHaveBeenCalledOnce()
+        expect(onClose).toHaveBeenCalledTimes(3)
+    })
+
+    it('explains an unavailable terminal without opening it or dismissing the menu', () => {
+        const onOpenTerminal = vi.fn(), onClose = vi.fn()
+        renderMenu({ onOpenTerminal, onClose, terminalDisabledReason: 'Session is inactive' })
+        const item = screen.getByRole('menuitem', { name: /Terminal Session is inactive/ })
+        expect(item).toHaveAttribute('aria-disabled', 'true')
+        fireEvent.click(item)
+        expect(onOpenTerminal).not.toHaveBeenCalled()
+        expect(onClose).not.toHaveBeenCalled()
+    })
+})

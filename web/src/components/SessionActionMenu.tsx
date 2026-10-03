@@ -9,7 +9,10 @@ import { useAnchoredMenu } from '@/hooks/useAnchoredMenu'
 import { CopyIcon } from '@/components/icons'
 
 type SessionActionMenuProps = {
-    onToggleFiles?: () => void
+    onOpenFiles?: () => void
+    onOpenChanges?: () => void
+    onOpenTerminal?: () => void
+    terminalDisabledReason?: string
     onToggleTerminal?: () => void
     isOpen: boolean
     onClose: () => void
@@ -283,7 +286,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     // The left text inset includes the icon and gap; mirror it on the right so
     // the text-to-border distance is symmetric without counting the icon twice.
     const baseItemClassName =
-        'flex w-full items-center gap-3 rounded-md py-2 pl-3 pr-[42px] text-left text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]'
+        'flex min-h-11 w-full items-center gap-3 rounded-md py-2 pl-3 pr-[42px] text-left text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]'
 
     return (
         <div
@@ -303,20 +306,33 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 aria-labelledby={headingId}
                 className="flex flex-col gap-1"
             >
-                {props.onToggleFiles || props.onToggleTerminal ? <div className="app-menu-mobile-views hidden">
-                    {props.onToggleFiles ? <button type="button" role="menuitem"
-                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
-                        onClick={() => { onClose(); props.onToggleFiles?.() }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>
-                        {t('session.title')}
+                {props.onOpenFiles || props.onOpenTerminal ? <div role="group" aria-label={t('session.workspace.title')}>
+                    {props.onOpenTerminal ? <button type="button" role="menuitem"
+                        aria-disabled={!!props.terminalDisabledReason}
+                        className={`${baseItemClassName} min-h-11 hover:bg-[var(--app-subtle-bg)] ${props.terminalDisabledReason ? 'opacity-50' : ''}`}
+                        onClick={props.terminalDisabledReason ? undefined : () => { onClose(); props.onOpenTerminal?.() }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3m6 0h4" /></svg>
+                        <span>{t('session.workspace.terminal')}{props.terminalDisabledReason ? <span className="block text-xs text-[var(--app-hint)]">{props.terminalDisabledReason}</span> : null}</span>
+                    </button> : null}
+                    {props.onOpenFiles ? <button type="button" role="menuitem"
+                        className={`${baseItemClassName} min-h-11 hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={() => { onClose(); props.onOpenFiles?.() }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg>
+                        {t('session.workspace.files')}
+                    </button> : null}
+                    {props.onOpenChanges ? <button type="button" role="menuitem"
+                        className={`${baseItemClassName} min-h-11 hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={() => { onClose(); props.onOpenChanges?.() }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 12h6M11 9v6M8 18h6" /></svg>
+                        {t('session.workspace.changes')}
                     </button> : null}
                     {props.onToggleTerminal ? <button type="button" role="menuitem"
-                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        className={`${baseItemClassName} min-h-11 hover:bg-[var(--app-subtle-bg)]`}
                         onClick={() => { onClose(); props.onToggleTerminal?.() }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3m6 0h4" /></svg>
-                        Terminal
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m4 6 6 6-6 6m9 0h7" /></svg>
+                        {t('session.workspace.agentTerminal')}
                     </button> : null}
-                    <div className="my-1 h-px bg-[var(--app-divider)]" />
+                    <div role="separator" className="my-1 h-px bg-[var(--app-divider)]" />
                 </div> : null}
                 <button
                     type="button"
@@ -409,6 +425,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     </button>
                 ) : null}
 
+                <div role="separator" className="my-1 h-px bg-[var(--app-divider)]" />
                 {sessionActive ? (
                     <button
                         type="button"

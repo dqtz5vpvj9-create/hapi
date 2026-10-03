@@ -294,6 +294,13 @@ export default {
   'session.inactive.cannotResume': '此会话已停止，无法恢复。',
 
   // Session header
+  'session.workspace.title': '工作区',
+  'session.workspace.terminal': '终端',
+  'session.workspace.files': '项目文件',
+  'session.workspace.changes': '代码变更',
+  'session.workspace.agentTerminal': '代理终端',
+  'session.workspace.inactive': '会话未连接',
+  'session.workspace.close': '返回对话',
   'session.title': '文件',
   'session.view.returnToChat': '返回会话',
   'session.more': '更多操作',

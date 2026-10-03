@@ -1722,6 +1722,17 @@ function SessionChatInner(props: SessionChatProps) {
         navigate({
             to: '/sessions/$sessionId/files',
             params: { sessionId: props.session.id },
+            search: { tab: 'directories' },
+            ...PRESERVE_SESSION_SIDEBAR_SCROLL,
+        })
+    }, [navigate, props.session.id])
+
+    const handleViewChanges = useCallback(() => {
+        setOutlineOpen(false)
+        navigate({
+            to: '/sessions/$sessionId/files',
+            params: { sessionId: props.session.id },
+            search: { tab: 'changes' },
             ...PRESERVE_SESSION_SIDEBAR_SCROLL,
         })
     }, [navigate, props.session.id])
@@ -1918,6 +1929,10 @@ function SessionChatInner(props: SessionChatProps) {
                 onBack={props.onBack}
                 onToggleFiles={props.session.metadata?.path ? handleToggleFiles : undefined}
                 filesActive={false}
+                onOpenFiles={props.session.metadata?.path ? handleToggleFiles : undefined}
+                onOpenChanges={props.session.metadata?.path ? handleViewChanges : undefined}
+                onOpenTerminal={handleViewTerminal}
+                terminalDisabledReason={!props.session.active ? t('session.workspace.inactive') : !terminalSupported ? t('terminal.unsupportedWindows') : undefined}
                 onToggleOutline={handleToggleOutline}
                 outlineActive={outlineOpen}
                 onToggleTerminal={canViewAgentTerminal ? () => setTerminalVisible(v => !v) : undefined}

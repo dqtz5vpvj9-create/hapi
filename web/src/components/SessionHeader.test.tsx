@@ -243,7 +243,7 @@ describe('SessionHeader', () => {
             </QueryClientProvider>
         )
 
-        const terminal = screen.getByRole('button', { name: 'Terminal' })
+        const terminal = screen.getByRole('button', { name: 'Agent terminal' })
         expect(terminal).toHaveAttribute('aria-pressed', 'true')
         terminal.click()
         expect(onToggleTerminal).toHaveBeenCalledOnce()

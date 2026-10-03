@@ -143,6 +143,10 @@ export function SessionHeader(props: {
     onBack: () => void
     onToggleFiles?: () => void
     filesActive?: boolean
+    onOpenFiles?: () => void
+    onOpenChanges?: () => void
+    onOpenTerminal?: () => void
+    terminalDisabledReason?: string
     onToggleOutline?: () => void
     outlineActive?: boolean
     onToggleTerminal?: () => void
@@ -491,8 +495,8 @@ export function SessionHeader(props: {
                                 type="button"
                                 onClick={props.onToggleTerminal}
                                 className={`app-header-terminal ${headerToggleClass(props.terminalActive ?? false)}`}
-                                title="Terminal"
-                                aria-label="Terminal"
+                                title={t('session.workspace.agentTerminal')}
+                                aria-label={t('session.workspace.agentTerminal')}
                                 aria-pressed={props.terminalActive ?? false}
                             >
                                 <TerminalIcon />
@@ -517,7 +521,10 @@ export function SessionHeader(props: {
             </div>
 
             <SessionActionMenu
-                onToggleFiles={glassLayout ? props.onToggleFiles : undefined}
+                onOpenFiles={props.onOpenFiles}
+                onOpenChanges={props.onOpenChanges}
+                onOpenTerminal={props.onOpenTerminal}
+                terminalDisabledReason={props.terminalDisabledReason}
                 onToggleTerminal={glassLayout ? props.onToggleTerminal : undefined}
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}

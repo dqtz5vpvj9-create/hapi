@@ -294,6 +294,13 @@ export default {
   'session.inactive.cannotResume': 'This session is inactive and cannot be resumed.',
 
   // Session header
+  'session.workspace.title': 'Workspace',
+  'session.workspace.terminal': 'Terminal',
+  'session.workspace.files': 'Project files',
+  'session.workspace.changes': 'Code changes',
+  'session.workspace.agentTerminal': 'Agent terminal',
+  'session.workspace.inactive': 'Session is inactive',
+  'session.workspace.close': 'Back to conversation',
   'session.title': 'Files',
   'session.view.returnToChat': 'Return to conversation',
   'session.more': 'More actions',
