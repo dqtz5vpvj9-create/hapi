@@ -1545,7 +1545,7 @@ export function HappyComposer(props: {
         const handleEscape = (event: KeyboardEvent) => {
             // Child inputs and dialogs handle Escape first. The first-use
             // callout also keeps priority over settings and running turns.
-            if (event.key !== 'Escape' || event.defaultPrevented || richComposerFueStatus === 'engaging') return
+            if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || richComposerFueStatus === 'engaging') return
             if (document.querySelector('[role="dialog"]')) return
             event.preventDefault()
             dismissSettingsWithFocus()

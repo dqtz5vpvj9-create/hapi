@@ -507,4 +507,19 @@ describe('HappyComposer generic model/effort value buttons', () => {
         expect(runtime.cancelRun).not.toHaveBeenCalled()
     })
 
+    it('keeps settings and input focus during IME Escape', () => {
+        localStorage.setItem('hapi.fue.v1.rich-composer-mentions', '1')
+        runtime.snapshot.thread.isRunning = true
+        renderComposer('claude')
+        fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+        const input = screen.getByRole('textbox')
+        input.focus()
+        fireEvent.keyDown(input, { key: 'Escape', isComposing: true })
+        expect(screen.getByText('Permission Mode')).toBeTruthy()
+        expect(input).toHaveFocus()
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
+        fireEvent.keyDown(input, { key: 'Escape' })
+        expect(screen.queryByText('Permission Mode')).toBeNull()
+    })
+
 })
