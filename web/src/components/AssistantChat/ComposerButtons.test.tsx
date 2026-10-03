@@ -15,6 +15,12 @@ import {
     UnifiedButton,
 } from './ComposerButtons'
 
+const theme = vi.hoisted(() => ({ compact: false }))
+vi.mock('@/themes/glass/GlassScene', async () => {
+    const actual = await import('@/themes/glass/GlassScene')
+    return { ...actual, useGlassLayout: () => theme.compact }
+})
+
 const adapter: ChatModelAdapter = {
     async *run() {},
 }
@@ -259,5 +265,46 @@ describe('ComposerButtons responsive toolbar', () => {
         expect(getComposerToolbarJustifyContent('right')).toBe('safe end')
         expect(getComposerToolbarJustifyContent('left')).toBe('flex-start')
         expect(getComposerToolbarJustifyContent('split')).toBe('flex-start')
+    })
+})
+
+
+describe('Codex compact composer actions', () => {
+    afterEach(() => { cleanup(); theme.compact = false })
+    it('keeps model, Goal and permissions direct while Add contains only content actions', () => {
+        theme.compact = true
+        const model = vi.fn(), terminal = vi.fn(), permission = vi.fn(), goal = vi.fn()
+        const noop = () => {}
+        render(<RuntimeProviders><ComposerButtons canSend controlsDisabled={false}
+            compactControls={<button onClick={goal}>Goal</button>}
+            permissionControl={<button onClick={permission}>Yolo</button>}
+            modelValueLabel="Sol · High" onModelValueToggle={model}
+            showSettingsButton onSettingsToggle={noop} expanded={false} onExpandedToggle={noop}
+            showTerminalButton terminalDisabled={false} terminalLabel="Terminal" onTerminal={terminal}
+            showAbortButton abortDisabled={false} isAborting={false} onAbort={noop}
+            showSwitchButton={false} switchDisabled={false} isSwitching={false} onSwitch={noop}
+            voiceEnabled={false} voiceStatus="disconnected" onVoiceToggle={noop} onSend={noop} /></RuntimeProviders>)
+        fireEvent.click(screen.getByRole('button', { name: 'Goal' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Yolo' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Sol · High' }))
+        expect(goal).toHaveBeenCalledOnce(); expect(permission).toHaveBeenCalledOnce(); expect(model).toHaveBeenCalledOnce()
+        expect(screen.queryByRole('button', { name: 'Terminal' })).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Add content' }))
+        expect(screen.getByRole('button', { name: 'Reference another session' })).toBeDisabled()
+        expect(screen.queryByRole('button', { name: 'Terminal' })).toBeNull()
+        expect(screen.queryByRole('button', { name: 'Expand message editor' })).toBeNull()
+        expect(terminal).not.toHaveBeenCalled()
+    })
+    it('stops through the existing abort handler when the draft is empty', () => {
+        theme.compact = true
+        const abort = vi.fn(), noop = () => {}
+        render(<RuntimeProviders><ComposerButtons canSend={false} controlsDisabled={false}
+            showSettingsButton={false} onSettingsToggle={noop} expanded={false} onExpandedToggle={noop}
+            showTerminalButton={false} terminalDisabled={false} terminalLabel="Terminal" onTerminal={noop}
+            showAbortButton abortDisabled={false} isAborting={false} onAbort={abort}
+            showSwitchButton={false} switchDisabled={false} isSwitching={false} onSwitch={noop}
+            voiceEnabled={false} voiceStatus="disconnected" onVoiceToggle={noop} onSend={noop} /></RuntimeProviders>)
+        fireEvent.click(screen.getByRole('button', { name: 'Abort' }))
+        expect(abort).toHaveBeenCalledOnce()
     })
 })

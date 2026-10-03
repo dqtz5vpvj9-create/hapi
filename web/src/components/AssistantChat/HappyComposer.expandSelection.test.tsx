@@ -4,8 +4,8 @@ import {
     useLocalRuntime,
 } from '@assistant-ui/react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { Ref } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ReactNode, Ref } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HappyComposer } from './HappyComposer'
 
 vi.mock('@/components/AssistantChat/ComposerButtons', () => ({
@@ -34,7 +34,9 @@ vi.mock('@/components/AssistantChat/ComposerButtons', () => ({
     ),
 }))
 
-vi.mock('@/components/AssistantChat/StatusBar', () => ({ StatusBar: () => null }))
+vi.mock('@/components/AssistantChat/StatusBar', () => ({
+    StatusBar: (props: { composerControl?: ReactNode }) => props.composerControl ?? null,
+}))
 vi.mock('@/hooks/useComposerDraft', () => ({
     useComposerDraft: () => ({ sessionId: undefined, complete: true, restoredAny: false, hasStoredAttachments: false }),
 }))
@@ -70,12 +72,14 @@ const adapter: ChatModelAdapter = {
     async *run() {},
 }
 
-function TestRuntime(props: { withSettings?: boolean }) {
+function TestRuntime(props: { withSettings?: boolean; withGoal?: boolean }) {
     const runtime = useLocalRuntime(adapter)
     return (
         <AssistantRuntimeProvider runtime={runtime}>
             <HappyComposer
-                agentFlavor={props.withSettings ? 'claude' : undefined}
+                agentFlavor={props.withGoal ? 'codex' : props.withSettings ? 'claude' : undefined}
+                active={props.withGoal ? true : undefined}
+                onGoalAction={props.withGoal ? async () => null : undefined}
                 onPermissionModeChange={props.withSettings ? () => {} : undefined}
             />
             {props.withSettings ? (
@@ -90,7 +94,14 @@ function TestRuntime(props: { withSettings?: boolean }) {
 }
 
 describe('HappyComposer plain-text expansion', () => {
+    afterEach(() => vi.unstubAllGlobals())
+
     beforeEach(() => {
+        vi.stubGlobal('ResizeObserver', class {
+            observe() {}
+            unobserve() {}
+            disconnect() {}
+        })
         localStorage.clear()
         localStorage.setItem('hapi.composer.richMentions', '0')
     })
@@ -175,5 +186,56 @@ describe('HappyComposer plain-text expansion', () => {
 
         fireEvent.pointerDown(screen.getByRole('button', { name: 'Outside action' }))
         expect(screen.queryByText('misc.permissionMode')).not.toBeInTheDocument()
+    })
+
+    it.each(['plain', 'rich'])('preserves the %s draft and selection after cancelling Goal editing twice', async mode => {
+        localStorage.setItem('hapi.composer.richMentions', mode === 'rich' ? '1' : '0')
+        render(<TestRuntime withGoal />)
+        const input = screen.getByRole('textbox')
+        const draft = 'LOCAL_GOAL_CANCEL_DRAFT'
+        if (mode === 'rich') {
+            input.textContent = draft
+            fireEvent.input(input)
+        } else {
+            fireEvent.change(input, { target: { value: draft } })
+        }
+        input.focus()
+        if (mode === 'rich') {
+            const text = input.firstChild!
+            window.getSelection()?.setBaseAndExtent(text, 8, text, 2)
+        } else {
+            (input as HTMLTextAreaElement).setSelectionRange(2, 8, 'backward')
+        }
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            const trigger = screen.getByRole('button', { name: 'composer.goal.control' })
+            fireEvent.pointerDown(trigger)
+            fireEvent.click(trigger)
+            fireEvent.click(screen.getByRole('button', { name: 'composer.goal.create' }))
+            const goalEditor = screen.getByRole('textbox', { name: 'composer.goal.objective' })
+            expect(goalEditor).toHaveFocus()
+            // A focused textarea replaces the browser's contenteditable selection.
+            // jsdom does not implement that browser behavior, so model it here.
+            window.getSelection()?.removeAllRanges()
+            fireEvent.change(goalEditor, { target: { value: 'Discard this goal edit' } })
+            fireEvent.click(screen.getByRole('button', { name: 'button.cancel' }))
+
+            await waitFor(() => {
+                expect(screen.queryByRole('dialog', { name: 'composer.goal.create' })).not.toBeInTheDocument()
+                expect(input).toHaveFocus()
+                if (mode === 'rich') {
+                    expect(input.textContent).toBe(draft)
+                    expect(window.getSelection()?.toString()).toBe('CAL_GO')
+                    expect(window.getSelection()?.anchorOffset).toBe(8)
+                    expect(window.getSelection()?.focusOffset).toBe(2)
+                } else {
+                    const textarea = input as HTMLTextAreaElement
+                    expect(textarea.value).toBe(draft)
+                    expect(textarea.selectionStart).toBe(2)
+                    expect(textarea.selectionEnd).toBe(8)
+                    expect(textarea.selectionDirection).toBe('backward')
+                }
+            })
+        }
     })
 })

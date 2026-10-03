@@ -337,7 +337,29 @@ describe('NewSession launch preferences', () => {
         savePreferredAgent('codex')
     })
 
+    it('exposes the initial task for editing and only hands it off after a successful new spawn', async () => {
+        const onCreated = vi.fn(), onChange = vi.fn()
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo"
+            initialTask="Inspect the list" onInitialTaskChange={onChange} onCreated={onCreated}
+            onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        const task = screen.getByRole('textbox', { name: 'sessions.task.initial' })
+        expect(task).toHaveValue('Inspect the list')
+        fireEvent.change(task, { target: { value: 'Inspect the list and children' } })
+        expect(onChange).toHaveBeenCalledWith('Inspect the list and children')
+        mocks.spawnSession.mockResolvedValueOnce({ type: 'error', message: 'Synthetic failure' })
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(screen.getByText('Synthetic failure')).toBeTruthy())
+        expect(onCreated).not.toHaveBeenCalled()
+        expect(mocks.onSuccess).not.toHaveBeenCalled()
+        mocks.spawnSession.mockResolvedValueOnce({ type: 'success', sessionId: 'fresh-session' })
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(onCreated).toHaveBeenCalledWith('fresh-session'))
+        expect(mocks.onSuccess).toHaveBeenCalledWith('fresh-session')
+        expect(onCreated.mock.invocationCallOrder[0]).toBeLessThan(mocks.onSuccess.mock.invocationCallOrder[0])
+    })
+
     it('connects the selected native thread and opens its binding without importing or spawning', async () => {
+        const onCreated = vi.fn()
         const codexApi = {
             getCodexSessions: vi.fn().mockResolvedValue({ success: true, machineId: 'machine-1', sessions: [{ id: 'native-1', title: 'History', cwd: '/project', file: '/fixture.jsonl', modifiedAt: 1 }] }),
             connectCodexSession: vi.fn().mockResolvedValue({ sessionId: 'native-binding-1', threadId: 'native-1', connectionState: 'attached' }),
@@ -345,7 +367,7 @@ describe('NewSession launch preferences', () => {
             getCodexDuplicateSessions: vi.fn().mockResolvedValue({ success: true, duplicates: [] }),
             resumeSession: vi.fn()
         } as unknown as ApiClient
-        render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" initialTask="Keep this task" onCreated={onCreated} onSuccess={mocks.onSuccess} onCancel={() => {}} />)
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
         fireEvent.click(screen.getByTestId('import-codex'))
@@ -354,6 +376,8 @@ describe('NewSession launch preferences', () => {
         expect(codexApi.syncCodexSession).not.toHaveBeenCalled()
         expect(codexApi.resumeSession).not.toHaveBeenCalled()
         expect(mocks.spawnSession).not.toHaveBeenCalled()
+        expect(onCreated).not.toHaveBeenCalled()
+        expect(screen.getByRole('textbox', { name: 'sessions.task.initial' })).toHaveValue('Keep this task')
     })
 
     it('ignores a late native connection result after the selected machine changes', async () => {

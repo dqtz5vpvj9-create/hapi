@@ -48,7 +48,7 @@ export function SessionTypeSelector(props: {
                                             <>
                                                 <label
                                                     htmlFor="session-type-worktree"
-                                                    className="text-sm capitalize cursor-pointer"
+                                                    className="app-new-session-choice-target text-sm capitalize cursor-pointer"
                                                 >
                                                     {t('newSession.type.worktree')}
                                                 </label>
@@ -61,7 +61,7 @@ export function SessionTypeSelector(props: {
                                 </div>
                             </div>
                         ) : (
-                            <label className="flex items-center gap-2 cursor-pointer min-h-[34px]">
+                            <label className="app-new-session-choice-target flex items-center gap-2 cursor-pointer min-h-[34px]">
                                 <input
                                     id="session-type-simple"
                                     type="radio"

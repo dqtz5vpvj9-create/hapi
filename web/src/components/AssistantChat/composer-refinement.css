@@ -1,0 +1,125 @@
+[data-color-theme="codex"] .app-composer-toolbar.composer-refinement-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 2px;
+}
+[data-color-theme="codex"] .composer-refinement-toolbar [data-testid="composer-toolbar-items"] {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 0;
+    overflow: visible;
+}
+.composer-refinement-send-controls {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    margin-left: auto;
+}
+.composer-refinement-icon {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border-radius: 50%;
+}
+.composer-refinement-icon:hover { background-color: var(--app-secondary-bg); }
+.composer-refinement-icon:disabled { opacity: .5; }
+[data-color-theme="codex"] .app-composer-model.composer-refinement-model {
+    flex: 1;
+    min-width: 44px;
+    max-width: 180px;
+    gap: 4px;
+    padding-inline: 2px;
+    font-size: 14px;
+}
+.composer-refinement-model span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-refinement-model svg { flex-shrink: 0; }
+.composer-refinement-menu {
+    z-index: 70;
+    width: 250px;
+    max-width: calc(100vw - 24px);
+    max-height: var(--radix-popover-content-available-height);
+    overflow-y: auto;
+    border: 1px solid var(--app-border);
+    border-radius: 16px;
+    background: var(--app-bg);
+    padding: 4px;
+    color: var(--app-fg);
+    box-shadow: 0 8px 28px #0002;
+}
+.composer-refinement-menu-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 48px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    text-align: left;
+    font-size: 14px;
+    line-height: 1.3;
+}
+.composer-refinement-menu-row svg { flex-shrink: 0; width: 18px; height: 18px; }
+.composer-refinement-menu-row:hover { background: var(--app-secondary-bg); }
+.composer-refinement-menu-row:disabled { opacity: .5; cursor: not-allowed; }
+.composer-refinement-menu-row[aria-pressed="true"] { color: var(--app-link); background: var(--app-link-muted); }
+.composer-refinement-at { font-size: 22px; line-height: 18px; width: 18px; }
+.composer-refinement-menu-hint { padding: 0 12px 8px; font-size: 12px; color: var(--app-hint); }
+.composer-refinement-count { margin-left: auto; color: var(--app-hint); font-variant-numeric: tabular-nums; }
+.composer-refinement-mode { display: flex; align-items: center; gap: 8px; padding: 0 14px; font-size: 12px; color: var(--app-link); }
+.composer-refinement-mode span { min-width: 0; overflow-wrap: anywhere; }
+.composer-refinement-mode button { width: 44px; height: 44px; flex-shrink: 0; font-size: 20px; border-radius: 50%; }
+.composer-refinement-icon[data-active-mode] { color: var(--app-link); background: var(--app-link-muted); }
+.composer-refinement-editor-expand { align-self: flex-start; margin: -8px -8px 0 4px; }
+.composer-refinement-icon:focus-visible,
+.composer-refinement-model:focus-visible,
+.composer-refinement-menu-row:focus-visible,
+.composer-refinement-mode button:focus-visible { outline: 2px solid var(--app-link); outline-offset: 2px; }
+/* Only the extra Stop + Send pair needs a second row on the smallest
+   viewports. Ordinary 360px phones must retain the single-row toolbar. */
+@media (max-width: 345px) {
+    [data-color-theme="codex"] .composer-refinement-toolbar[data-dual-action="true"] [data-testid="composer-toolbar-items"] { flex-basis: 100%; }
+}
+
+/* Align labels and icons on one optical baseline; the model label must not sit
+   at the top of the flex button when the inherited theme changes its display. */
+[data-color-theme="codex"] .app-composer-toolbar.composer-refinement-toolbar {
+    padding: 0 6px 10px;
+}
+[data-color-theme="codex"] .composer-refinement-toolbar .app-composer-model.composer-refinement-model {
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 500;
+}
+[data-color-theme="codex"] .composer-refinement-toolbar .app-composer-add-menu {
+    background: color-mix(in srgb, var(--app-secondary-bg) 75%, transparent);
+}
+[data-color-theme="codex"] .composer-refinement-toolbar .app-composer-chip { font-size: 13px; justify-content: center; }
+[data-color-theme="codex"] .composer-refinement-menu {
+    border-radius: 18px;
+    padding: 4px 0;
+    width: 250px;
+    box-shadow: inset 0 1px 0 var(--app-glass-edge), 0 10px 36px #00000012, 0 1px 4px #00000008;
+}
+.composer-refinement-menu .composer-refinement-menu-row { border-radius: 0; padding: 12px 18px; min-height: 52px; font-size: 15px; gap: 14px; }
+.composer-refinement-menu .composer-refinement-menu-row + .composer-refinement-menu-row { border-top: 1px solid var(--app-border); }
+.composer-refinement-menu-row svg { width: 20px; height: 20px; }
+
+.composer-refinement-menu .composer-refinement-menu-row:focus-visible {
+    outline: 1px solid var(--app-hint);
+    outline-offset: -4px;
+    border-radius: 12px;
+    background: var(--app-subtle-bg);
+}
+
+.composer-refinement-model .composer-refinement-model-label { display: flex; min-width: 0; }
+.composer-refinement-model .composer-refinement-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.composer-refinement-model .composer-refinement-model-effort { flex-shrink: 0; white-space: pre; }

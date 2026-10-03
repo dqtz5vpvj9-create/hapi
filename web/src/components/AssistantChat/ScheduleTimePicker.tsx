@@ -233,6 +233,18 @@ export function ScheduleTimePicker({ onSchedule, onClose, anchorRef, pendingSche
         return () => document.removeEventListener('pointerdown', handlePointerDown)
     }, [onClose, anchorRef])
 
+    useEffect(() => {
+        const handleEscape = (event: globalThis.KeyboardEvent) => {
+            if (event.key !== 'Escape') return
+            event.preventDefault()
+            event.stopPropagation()
+            onClose()
+            anchorRef.current?.focus({ preventScroll: true })
+        }
+        document.addEventListener('keydown', handleEscape, true)
+        return () => document.removeEventListener('keydown', handleEscape, true)
+    }, [onClose, anchorRef])
+
     // Compute max value for datetime-local input (7 days from now)
     const maxDatetimeLocal = (() => {
         const now = new Date()
@@ -304,10 +316,14 @@ export function ScheduleTimePicker({ onSchedule, onClose, anchorRef, pendingSche
             onPointerDown={(e) => e.stopPropagation()}
         >
             {/* Header */}
-            <div className="px-3 pt-3 pb-2">
+            <div className="flex items-center justify-between gap-2 px-3 pt-1 pb-1">
                 <p className="text-xs font-semibold text-[var(--app-hint)]">
                     {t('composer.scheduleSend')}
                 </p>
+                <button type="button" onClick={() => { onClose(); anchorRef.current?.focus({ preventScroll: true }) }}
+                    className="min-h-11 min-w-11 rounded-lg px-2 text-xs text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]">
+                    {t('button.cancel')}
+                </button>
             </div>
 
             {/* Tab buttons */}

@@ -1,3 +1,4 @@
+import { useGlassLayout } from '@/themes/glass/GlassScene'
 import * as Popover from '@radix-ui/react-popover'
 import { ComposerPrimitive } from '@assistant-ui/react'
 import type { ConversationStatus } from '@/realtime/types'
@@ -11,6 +12,7 @@ import { Children, isValidElement, useRef, useState, type ReactElement, type Rea
 import { useComposerToolbarLayout, type ComposerToolbarItemId, type ComposerToolbarLayout } from '@/hooks/useComposerToolbarLayout'
 import { useNarrowViewport } from '@/hooks/useNarrowViewport'
 import type { ComposerSendIntent } from '@/lib/messageDelivery'
+import './composer-refinement.css'
 
 function ToolbarItemSlot(props: { item: ComposerToolbarItemId; children: ReactNode }) {
     return <>{props.children}</>
@@ -18,7 +20,7 @@ function ToolbarItemSlot(props: { item: ComposerToolbarItemId; children: ReactNo
 
 function OrderedToolbarItems(props: { layout: ComposerToolbarLayout; children: ReactNode;
     mobilePrimary?: ComposerToolbarItemId[]; mobileLabels?: Partial<Record<ComposerToolbarItemId, string>>;
-    moreButtonRef?: Ref<HTMLButtonElement>; onMoreOpen?: () => void }) {
+    compact?: boolean; moreButtonRef?: Ref<HTMLButtonElement>; onMoreOpen?: () => void; primaryControls?: ReactNode; permissionControl?: ReactNode; statusControl?: ReactNode }) {
     const { t } = useTranslation()
     const [moreOpen, setMoreOpen] = useState(false)
     const slots = Children.toArray(props.children).filter(
@@ -36,19 +38,24 @@ function OrderedToolbarItems(props: { layout: ComposerToolbarLayout; children: R
         const primary = items.filter(item => props.mobilePrimary!.includes(item))
         const secondary = items.filter(item => !props.mobilePrimary!.includes(item))
         return <>
-            {renderItems(primary)}
+            {props.compact ? <>
+                {props.primaryControls}
+                {renderItems(primary)}
+                {props.permissionControl}
+            </> : renderItems(primary)}
             {secondary.length ? <Popover.Root open={moreOpen} onOpenChange={open => { setMoreOpen(open); if (open) props.onMoreOpen?.() }}>
                 <Popover.Trigger asChild>
-                    <button ref={props.moreButtonRef} type="button" aria-label={t('session.more')} title={t('session.more')}
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--app-fg)]/60 hover:bg-[var(--app-bg)]">
+                    <button ref={props.moreButtonRef} type="button" aria-label={props.compact ? `${t('composer.attach')} / ${t('session.more')}` : t('session.more')} title={t('session.more')}
+                        className="app-composer-add-menu flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--app-fg)]/60 hover:bg-[var(--app-bg)]">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" />
+                            {props.compact ? <path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z" /> : <><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></>}
                         </svg>
                     </button>
                 </Popover.Trigger>
                 <Popover.Portal>
                     <Popover.Content side="top" align="start" sideOffset={8} aria-label={t('session.more')}
-                        className="z-[60] grid max-w-[calc(100vw-1.5rem)] grid-cols-3 gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-lg">
+                        className="app-glass app-floating-panel z-[60] grid max-h-[var(--radix-popover-content-available-height)] overflow-y-auto max-w-[calc(100vw-1.5rem)] grid-cols-3 gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-lg">
+                        {props.statusControl ? <div className="col-span-3">{props.statusControl}</div> : null}
                         {secondary.map(item => <div key={item} className="relative flex h-16 w-20 flex-col items-center [&>button]:h-full [&>button]:w-full [&>button]:pb-5 [&>div:first-child]:h-full [&>div:first-child]:w-full [&>div:first-child>button]:h-full [&>div:first-child>button]:w-full [&>div:first-child>button]:pb-5"
                             onClick={() => { if (item !== 'scratchlist') setMoreOpen(false) }}>
                             {slotsByItem.get(item)!.props.children}
@@ -594,7 +601,7 @@ export function UnifiedButton(props: {
             disabled={isDisabled}
             aria-label={ariaLabel}
             title={ariaLabel}
-            className={`ml-1 flex shrink-0 self-end h-8 w-8 max-sm:h-11 max-sm:w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+            className={`${routesToScratchlist ? '' : 'app-composer-primary'} ml-1 flex shrink-0 self-end h-8 w-8 max-sm:h-11 max-sm:w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
         >
             {icon}
         </button>
@@ -632,10 +639,15 @@ export function DictationButton(props: {
     )
 }
 
-export function ComposerButtons(props: {
+export type ComposerButtonsProps = {
     canSend: boolean
     controlsDisabled: boolean
     showSettingsButton: boolean
+    permissionControl?: ReactNode
+    compactControls?: ReactNode
+    statusControl?: ReactNode
+    onReferenceSession?: () => void
+    onCaptureInputSelection?: () => (() => void) | null
     settingsButtonRef?: Ref<HTMLButtonElement>
     settingsDisabled?: boolean
     onSettingsToggle: () => void
@@ -646,6 +658,7 @@ export function ComposerButtons(props: {
     terminalLabel: string
     onTerminal: () => void
     showAbortButton: boolean
+    threadIsRunning?: boolean
     abortDisabled: boolean
     isAborting: boolean
     onAbort: () => void
@@ -688,14 +701,164 @@ export function ComposerButtons(props: {
     scratchlistMode?: boolean
     scratchlistCount?: number
     onScratchlistToggle?: () => void
-}) {
+}
+
+function RefinedComposerToolbar(props: ComposerButtonsProps) {
+    const { t, locale } = useTranslation()
+    const [addOpen, setAddOpen] = useState(false)
+    const [sendOptionsOpen, setSendOptionsOpen] = useState(false)
+    const [showSchedulePicker, setShowSchedulePicker] = useState(false)
+    const sendOptionsRef = useRef<HTMLButtonElement>(null)
+    const restoreSelectionRef = useRef<(() => void) | null>(null)
+    const referenceSelectedRef = useRef(false)
+    const scratchlistFue = useFue('scratchlist-toggle')
+    const hasSchedule = props.pendingSchedule != null
+    const scratchlistActive = Boolean(props.scratchlistMode && !hasSchedule)
+    const running = props.showAbortButton && (props.threadIsRunning ?? (!props.abortDisabled || props.isAborting))
+    const showSend = !running || props.canSend || props.voiceStatus !== 'disconnected'
+    const modelSeparator = props.modelValueLabel?.lastIndexOf(' · ') ?? -1
+    const clearSendMode = () => {
+        if (hasSchedule) props.onClearSchedule?.()
+        if (props.scratchlistMode) props.onScratchlistToggle?.()
+    }
+    const modeLabel = hasSchedule
+        ? t('composer.refinement.scheduled', {
+            time: props.pendingSchedule!.type === 'preset'
+                ? new Intl.RelativeTimeFormat(locale, { numeric: 'always' }).format(
+                    Number(props.pendingSchedule!.preset.slice(1, -1)),
+                    props.pendingSchedule!.preset.endsWith('m') ? 'minute' : 'hour',
+                )
+                : new Date(props.pendingSchedule!.ms).toLocaleString(locale),
+        })
+        : scratchlistActive ? t('composer.refinement.scratchlistActive') : null
+
+    return <>
+        {modeLabel ? <div className="composer-refinement-mode" role="status">
+            <span>{modeLabel}</span>
+            <button type="button" onClick={clearSendMode} aria-label={t('composer.refinement.cancelMode')} title={t('composer.refinement.cancelMode')}>×</button>
+        </div> : null}
+        <div className="app-composer-toolbar composer-refinement-toolbar" data-dual-action={running && showSend}>
+            <div data-testid="composer-toolbar-items" className="composer-refinement-controls">
+                <Popover.Root open={addOpen} onOpenChange={setAddOpen}>
+                    <Popover.Trigger asChild>
+                        <button type="button" className="app-composer-add-menu composer-refinement-icon"
+                            aria-label={t('composer.refinement.addContent')} title={t('composer.refinement.addContent')}
+                            onPointerDown={() => { restoreSelectionRef.current = props.onCaptureInputSelection?.() ?? null }}
+                            onKeyDown={event => {
+                                if (event.key === 'Enter' || event.key === ' ') restoreSelectionRef.current = props.onCaptureInputSelection?.() ?? null
+                            }}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                        </button>
+                    </Popover.Trigger>
+                    <Popover.Portal>
+                        <Popover.Content side="top" align="start" sideOffset={8} collisionPadding={12}
+                            aria-label={t('composer.refinement.addContent')}
+                            className="app-glass app-floating-panel composer-refinement-menu"
+                            onCloseAutoFocus={event => {
+                                if (referenceSelectedRef.current) {
+                                    event.preventDefault()
+                                    referenceSelectedRef.current = false
+                                }
+                            }}>
+                            <ComposerPrimitive.AddAttachment className="composer-refinement-menu-row"
+                                disabled={props.controlsDisabled || hasSchedule || props.goalMode}
+                                onClick={() => setAddOpen(false)}>
+                                <AttachmentIcon />{t('composer.refinement.addFiles')}
+                            </ComposerPrimitive.AddAttachment>
+                            <button type="button" className="composer-refinement-menu-row"
+                                disabled={props.controlsDisabled || !props.onReferenceSession}
+                                onClick={() => {
+                                    referenceSelectedRef.current = true
+                                    restoreSelectionRef.current?.()
+                                    props.onReferenceSession?.()
+                                    setAddOpen(false)
+                                }}>
+                                <span className="composer-refinement-at" aria-hidden="true">@</span>{t('composer.refinement.referenceSession')}
+                            </button>
+                        </Popover.Content>
+                    </Popover.Portal>
+                </Popover.Root>
+                {props.compactControls}
+                {props.modelValueLabel ? <button ref={props.modelValueButtonRef} type="button"
+                    className="app-composer-model composer-refinement-model"
+                    aria-label={props.modelValueLabel} title={props.modelValueLabel} aria-expanded={props.modelValueOpen}
+                    disabled={props.modelValueDisabled} onClick={props.onModelValueToggle}>
+                    <span className="composer-refinement-model-label">
+                        <span className="composer-refinement-model-name">{modelSeparator < 0 ? props.modelValueLabel : props.modelValueLabel!.slice(0, modelSeparator)}</span>
+                        {modelSeparator >= 0 ? <span className="composer-refinement-model-effort">{props.modelValueLabel!.slice(modelSeparator)}</span> : null}
+                    </span><ChevronIcon />
+                </button> : props.showSettingsButton ? <button ref={props.settingsButtonRef} type="button"
+                    className="composer-refinement-icon" aria-label={t('composer.settings')}
+                    disabled={props.settingsDisabled ?? props.controlsDisabled} onClick={props.onSettingsToggle}><SettingsIcon /></button> : null}
+                {props.permissionControl}
+                {props.showSwitchButton ? <button type="button" className="composer-refinement-icon"
+                    aria-label={t('composer.switchRemote')} disabled={props.switchDisabled} onClick={props.onSwitch}><SwitchToRemoteIcon /></button> : null}
+            </div>
+            <div className="composer-refinement-send-controls">
+                {props.onSchedule || props.onScratchlistToggle ? <Popover.Root open={sendOptionsOpen} onOpenChange={open => { setSendOptionsOpen(open); if (open) setShowSchedulePicker(false) }}>
+                    <Popover.Trigger asChild>
+                        <button ref={sendOptionsRef} type="button" className="composer-refinement-icon"
+                            aria-label={t('composer.refinement.sendOptions')} title={t('composer.refinement.sendOptions')}
+                            data-active-mode={hasSchedule ? 'schedule' : scratchlistActive ? 'scratchlist' : undefined}>
+                            <ScheduleIcon className="h-[18px] w-[18px]" /><ChevronIcon />
+                        </button>
+                    </Popover.Trigger>
+                    <Popover.Portal>
+                        <Popover.Content side="top" align="end" sideOffset={8} collisionPadding={12}
+                            aria-label={t('composer.refinement.sendOptions')} className="app-glass app-floating-panel composer-refinement-menu">
+                            {props.onSchedule ? <button type="button" className="composer-refinement-menu-row"
+                                disabled={props.controlsDisabled || props.hasAttachments || props.goalMode}
+                                onClick={() => { setSendOptionsOpen(false); setShowSchedulePicker(true) }}>
+                                <ScheduleIcon className="h-[18px] w-[18px]" />{t('composer.scheduleSend')}
+                            </button> : null}
+                            {props.hasAttachments ? <p className="composer-refinement-menu-hint">{t('composer.refinement.scheduleAttachments')}</p> : null}
+                            {props.onScratchlistToggle ? <button type="button" className="composer-refinement-menu-row"
+                                aria-pressed={scratchlistActive} disabled={props.controlsDisabled || props.goalMode}
+                                onClick={() => {
+                                    scratchlistFue.engage()
+                                    if (hasSchedule) props.onClearSchedule?.()
+                                    if (!scratchlistActive) { if (!props.scratchlistMode) props.onScratchlistToggle?.() }
+                                    else props.onScratchlistToggle?.()
+                                    setSendOptionsOpen(false)
+                                }}><ScratchlistToggleIcon />{t('composer.refinement.saveScratchlist')}
+                                {scratchlistActive ? <span aria-hidden="true">✓</span> : props.scratchlistCount ? <span className="composer-refinement-count">{props.scratchlistCount}</span> : null}
+                            </button> : null}
+                            {modeLabel ? <button type="button" className="composer-refinement-menu-row" onClick={() => {
+                                clearSendMode()
+                                setSendOptionsOpen(false)
+                            }}>{t('composer.refinement.sendNormally')}</button> : null}
+                        </Popover.Content>
+                    </Popover.Portal>
+                </Popover.Root> : null}
+                {props.voiceStatus === 'connected' && props.onVoiceMicToggle ? <button type="button" className="composer-refinement-icon"
+                    aria-label={props.voiceMicMuted ? t('voice.unmute') : t('voice.mute')} onClick={props.onVoiceMicToggle}><SpeakerIcon muted={props.voiceMicMuted} /></button> : null}
+                <DictationButton enabled={props.dictationEnabled ?? false} canSend={props.canSend}
+                    voiceEnabled={props.voiceEnabled} voiceStatus={props.voiceStatus} controlsDisabled={props.controlsDisabled} onVoiceToggle={props.onVoiceToggle} />
+                {running ? <button type="button" aria-label={t('composer.abort')} title={t('composer.abort')}
+                    disabled={props.abortDisabled} onClick={props.onAbort} className="app-composer-primary composer-refinement-icon"><AbortIcon spinning={props.isAborting} /></button> : null}
+                {showSend ? <UnifiedButton canSend={props.canSend} voiceStatus={props.voiceStatus} voiceEnabled={props.voiceEnabled}
+                    controlsDisabled={props.controlsDisabled} onSend={props.onSend} onVoiceToggle={props.onVoiceToggle}
+                    voiceLabel={props.dictationEnabled ? t('composer.dictate') : undefined} routesToScratchlist={scratchlistActive} /> : null}
+            </div>
+        </div>
+        {showSchedulePicker ? <ScheduleTimePicker anchorRef={sendOptionsRef} pendingSchedule={props.pendingSchedule}
+            onSchedule={pending => {
+                if (props.scratchlistMode) props.onScratchlistToggle?.()
+                props.onSchedule?.(pending)
+                setShowSchedulePicker(false)
+            }} onClose={() => setShowSchedulePicker(false)} /> : null}
+        {scratchlistFue.status === 'engaging' ? <FueCallout title={t('scratchlist.fueTitle')} body={t('scratchlist.fueBody')}
+            onDismiss={scratchlistFue.dismiss} dismissLabel={t('fue.gotIt')} closeAriaLabel={t('fue.closeAriaLabel')} anchorRef={sendOptionsRef} /> : null}
+    </>
+}
+
+export function ComposerButtons(props: ComposerButtonsProps) {
     const { t } = useTranslation()
     const { layout } = useComposerToolbarLayout()
+    const glassLayout = useGlassLayout()
     const isNarrowViewport = useNarrowViewport()
-    // Narrow viewports collapse the model/effort value buttons into the settings
-    // sheet, so the gear must stay reachable even when a persisted layout hides
-    // it (otherwise no session-settings trigger remains). Wide layouts keep
-    // honoring the user's hidden choice.
+    // Codex keeps common controls direct and every secondary action in More.
+    // Other themes keep the saved toolbar layout and the mobile settings entry.
     const effectiveLayout: ComposerToolbarLayout = isNarrowViewport && layout.hidden.includes('settings')
         ? {
             ...layout,
@@ -712,21 +875,24 @@ export function ComposerButtons(props: {
     const hasAttachments = Boolean(props.hasAttachments || props.goalMode)
     const toolbarJustifyContent = getComposerToolbarJustifyContent(layout.mode)
 
+    if (glassLayout) return <RefinedComposerToolbar {...props} />
+
     return (
-        <div className="flex shrink-0 items-center gap-1 px-2 pb-2">
+        <div className="app-composer-toolbar flex shrink-0 items-center gap-1 px-2 pb-2">
             <div
                 data-testid="composer-toolbar-items"
                 className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto max-sm:flex-wrap max-sm:overflow-x-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 style={{ justifyContent: toolbarJustifyContent }}
             >
-                <OrderedToolbarItems layout={effectiveLayout}
+                <OrderedToolbarItems layout={effectiveLayout} compact={glassLayout}
+                    primaryControls={props.compactControls} permissionControl={props.permissionControl} statusControl={props.statusControl}
                     moreButtonRef={moreButtonRef} onMoreOpen={() => setShowSchedulePicker(false)}
-                    mobilePrimary={isNarrowViewport ? ['attachment', 'settings',
+                    mobilePrimary={glassLayout ? ['model'] : isNarrowViewport ? ['attachment', 'settings',
                         ...(props.expanded ? ['expand' as const] : !props.abortDisabled || props.showSwitchButton ? [] : ['effort' as const]),
                         ...(!props.abortDisabled || props.isAborting ? ['abort' as const] : []),
                         ...(props.showSwitchButton ? ['switch' as const] : [])] : undefined}
                     mobileLabels={{ expand: t(props.expanded ? 'composer.tools.collapse' : 'composer.tools.expand'),
-                        model: t('misc.model'), effort: t('misc.reasoningEffort'), terminal: props.terminalLabel,
+                        attachment: t('composer.attach'), settings: t('composer.settings'), model: t('misc.model'), effort: t('misc.reasoningEffort'), terminal: props.terminalLabel,
                         abort: t('composer.abort'), switch: t('composer.switchRemote'), voiceMic: t('composer.dictate'),
                         scratchlist: t('composer.tools.scratchlist'), schedule: t('composer.tools.schedule') }}>
 
@@ -737,7 +903,7 @@ export function ComposerButtons(props: {
                     disabled={props.controlsDisabled || hasSchedule || props.goalMode}
                     className="flex h-8 w-8 max-sm:h-11 max-sm:w-11 items-center justify-center rounded-full text-[var(--app-fg)]/60 transition-colors hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                    <AttachmentIcon />
+                    {glassLayout ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg> : <AttachmentIcon />}
                 </ComposerPrimitive.AddAttachment>
                 </ToolbarItemSlot>
 
@@ -752,7 +918,7 @@ export function ComposerButtons(props: {
                         onClick={props.onSettingsToggle}
                         disabled={props.settingsDisabled ?? props.controlsDisabled}
                     >
-                        <SettingsIcon />
+                        {glassLayout ? <span className="text-lg">⋯</span> : <SettingsIcon />}
                     </button>
                 ) : null}
                 </ToolbarItemSlot>
@@ -771,7 +937,7 @@ export function ComposerButtons(props: {
                         type="button"
                         aria-label={props.modelValueLabel}
                         title={props.modelValueLabel}
-                        className={`flex h-8 max-sm:h-11 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors ${
+                        className={`app-composer-model flex h-8 max-sm:h-11 items-center gap-1 rounded-full px-3 text-xs font-medium transition-colors ${
                             props.modelValueOpen
                                 ? 'bg-[var(--app-secondary-bg)] text-[var(--app-link)]'
                                 : 'text-[var(--app-fg)]/60 hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)]'
@@ -779,8 +945,7 @@ export function ComposerButtons(props: {
                         onClick={props.onModelValueToggle}
                         disabled={props.modelValueDisabled}
                     >
-                        {props.modelValueLabel}
-                        <ChevronIcon />
+                        {props.modelValueLabel}<ChevronIcon />
                     </button>
                 ) : null}
                 </ToolbarItemSlot>
@@ -945,7 +1110,7 @@ export function ComposerButtons(props: {
                 onVoiceToggle={props.onVoiceToggle}
             />
 
-            <UnifiedButton
+            {glassLayout && props.showAbortButton && !props.abortDisabled && !props.canSend && !props.scratchlistMode ? <button type="button" aria-label={t('composer.abort')} disabled={props.isAborting} onClick={props.onAbort} className="app-composer-primary flex h-11 w-11 shrink-0 items-center justify-center rounded-full"><AbortIcon spinning={props.isAborting} /></button> : <UnifiedButton
                 canSend={props.canSend}
                 voiceStatus={props.voiceStatus}
                 voiceEnabled={props.voiceEnabled}
@@ -963,7 +1128,7 @@ export function ComposerButtons(props: {
                     (props.scratchlistMode ?? false)
                     && props.pendingSchedule == null
                 }
-            />
+            />}
         </div>
     )
 }

@@ -91,7 +91,7 @@ export function DirectorySection(props: {
                         type="button"
                         onClick={props.onChooseFolder}
                         disabled={props.isDisabled}
-                        className="self-stretch shrink-0 flex items-center gap-1 rounded-md border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-2 py-2 text-xs text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)] transition-colors disabled:opacity-50"
+                        className="app-new-session-directory-action self-stretch shrink-0 flex items-center gap-1 rounded-md border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-2 py-2 text-xs text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)] transition-colors disabled:opacity-50"
                         title={t('newSession.browse')}
                     >
                         <FolderIcon className="h-3.5 w-3.5" />
@@ -106,7 +106,7 @@ export function DirectorySection(props: {
                         disabled={props.isDisabled || props.isImportingCodexHistory}
                         aria-label={t('codexSync.tooltip')}
                         aria-busy={props.isImportingCodexHistory}
-                        className="shrink-0 flex items-center gap-1 rounded-md border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-2 py-2 text-xs text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)] transition-colors disabled:opacity-50"
+                        className="app-new-session-directory-action shrink-0 flex items-center gap-1 rounded-md border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-2 py-2 text-xs text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)] transition-colors disabled:opacity-50"
                         title={t('codexSync.tooltip')}
                     >
                         <CodexImportIcon className={`h-3.5 w-3.5 ${props.isImportingCodexHistory ? 'animate-spin' : ''}`} />
@@ -125,7 +125,7 @@ export function DirectorySection(props: {
                                 type="button"
                                 onClick={() => props.onPathClick(path)}
                                 disabled={props.isDisabled}
-                                className="rounded bg-[var(--app-subtle-bg)] px-2 py-1 text-xs text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)] transition-colors truncate max-w-[200px] disabled:opacity-50"
+                                className="app-new-session-path-choice rounded bg-[var(--app-subtle-bg)] px-2 py-1 text-xs text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)] transition-colors truncate max-w-[200px] disabled:opacity-50"
                                 title={path}
                                 aria-label={path}
                             >

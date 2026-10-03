@@ -48,10 +48,11 @@ import { saveDraftAttachments, setRestoredUploadMetadata, type AttachmentDraftIn
 import { persistInactiveComposerAttachments, setComposerDraftSnapshot, updateComposerDraftTextSnapshot, attachmentDraftRevision, resetInactiveComposerAttachmentVisibility } from '@/lib/composer-draft-transfer'
 import { useComposerEnterBehavior } from '@/hooks/useComposerEnterBehavior'
 import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
+import { useGlassLayout } from '@/themes/glass/GlassScene'
 import { Autocomplete } from '@/components/ChatInput/Autocomplete'
 import { StatusBar } from '@/components/AssistantChat/StatusBar'
 import { ComposerGoalControl, isGoalComposerText } from '@/components/AssistantChat/ComposerGoalControl'
-import { ComposerButtons } from '@/components/AssistantChat/ComposerButtons'
+import { ComposerButtons, ComposerExpandButton } from '@/components/AssistantChat/ComposerButtons'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import { SortableComposerAttachments } from '@/components/AssistantChat/SortableComposerAttachments'
 import { ComposerParkingContext } from '@/components/AssistantChat/composerParkingContext'
@@ -962,6 +963,22 @@ export function HappyComposer(props: {
         else textareaRef.current?.focus()
     }, [richMentionsEnabled])
 
+    const captureGoalInputSelection = useCallback(() => {
+        if (richMentionsEnabled) return richInputRef.current?.captureSelection() ?? null
+        const input = textareaRef.current
+        if (!input || document.activeElement !== input) return null
+        const { selectionStart, selectionEnd, selectionDirection } = input
+        return () => {
+            input.focus({ preventScroll: true })
+            input.setSelectionRange(selectionStart, selectionEnd, selectionDirection)
+        }
+    }, [richMentionsEnabled])
+
+    const handleReferenceSession = useCallback(() => {
+        handleUserEdit()
+        richInputRef.current?.beginSessionMention()
+    }, [handleUserEdit])
+
     const handleSuggestionSelect = useCallback((index: number) => {
         const suggestion = suggestions[index]
         if (!suggestion) return
@@ -1748,12 +1765,13 @@ export function HappyComposer(props: {
     // the button caption; clicking opens the settings sheet. Hidden on narrow
     // viewports where only the settings button remains.
     const isNarrowViewport = useNarrowViewport()
+    const glassLayout = useGlassLayout()
     // Pi turns run for minutes with thread.isDisabled set the whole time, so
     // Pi keeps its model/effort controls live mid-turn (#1442) — the generic
     // disable rule (controlsDisabled) would lock them for the entire turn.
     const modelEffortControlsDisabled = agentFlavor === 'pi' ? configurationControlsDisabled : controlsDisabled
     const modelValueLabel = useMemo(() => {
-        if (isNarrowViewport) return undefined
+        if (isNarrowViewport && !glassLayout) return undefined
         if (!onModelChange || !supportsModelChange(agentFlavor)) return undefined
         // Pi models come from the dynamic piModels catalog; show the
         // provider-qualified selection name. No button until the catalog
@@ -1770,12 +1788,12 @@ export function HappyComposer(props: {
             : (!rawKey || rawKey === 'auto' || rawKey === 'default' ? null : rawKey)
         const option = modelOptions.find((candidate) => candidate.value === normalizedKey)
         return option?.label ?? rawKey ?? undefined
-    }, [isNarrowViewport, onModelChange, agentFlavor, selectedPiModel, model, modelOptions, selectedModelBase])
+    }, [isNarrowViewport, glassLayout, onModelChange, agentFlavor, selectedPiModel, model, modelOptions, selectedModelBase])
     const effortValueLabel = useMemo(() => {
         if (showModelReasoningEffortSettings) {
             return `${t('misc.reasoningEffort')}: ${modelReasoningEffort ?? 'Default'}`
         }
-        if (isNarrowViewport) return undefined
+        if (isNarrowViewport && !glassLayout) return undefined
         if (!onEffortChange || !supportsEffort(agentFlavor)) return undefined
         // Pi: without a resolved catalog entry there is no capability map to
         // derive levels from; hide the button until the selected model is known.
@@ -1790,7 +1808,7 @@ export function HappyComposer(props: {
         }
         const option = claudeEffortOptions.find((candidate) => candidate.value === effort)
         return option?.label ?? (effort ? effort : undefined)
-    }, [showModelReasoningEffortSettings, modelReasoningEffort, t, isNarrowViewport, onEffortChange, agentFlavor, selectedPiModel, effort, claudeEffortOptions])
+    }, [showModelReasoningEffortSettings, modelReasoningEffort, t, isNarrowViewport, glassLayout, onEffortChange, agentFlavor, selectedPiModel, effort, claudeEffortOptions])
 
     // Wrapper for DOM onClick consumers: never leak the MouseEvent into the
     // `section` parameter (the gear must always open the full sheet).
@@ -2286,43 +2304,56 @@ export function HappyComposer(props: {
         ? 'h-full min-h-[1.5rem] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent text-base leading-snug text-[var(--app-fg)] focus:outline-none'
         : 'max-h-[7.5rem] min-h-[1.5rem] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent text-base leading-snug text-[var(--app-fg)] focus:outline-none'
 
+    const statusBar = (
+        <StatusBar
+            statusDetails={props.statusDetails}
+            controlsDisabled={controlsDisabled}
+            reasoningOpen={showSettings && settingsSection === 'effort'}
+            permissionOpen={showSettings && settingsSection === 'permission'}
+            onReasoningClick={showModelReasoningEffortSettings || showEffortSettings ? button => handleSettingsToggle('effort', button) : undefined}
+            onPermissionClick={showPermissionSettings ? button => handleSettingsToggle('permission', button) : undefined}
+            composerControl={!glassLayout && agentFlavor === 'codex' ? (
+                <ComposerGoalControl goal={props.goal ?? null}
+                    disabled={disabled || !active || (controlledByUser && !concurrentClients)}
+                    onCaptureInputSelection={captureGoalInputSelection}
+                    onAction={props.onGoalAction} />
+            ) : undefined}
+            active={active}
+            thinking={thinking}
+            agentState={agentState}
+            backgroundTaskCount={backgroundTaskCount}
+            contextSize={contextSize}
+            contextCacheRead={contextCacheRead}
+            contextWindow={contextWindow}
+            contextModel={contextModel}
+            model={model}
+            modelReasoningEffort={modelReasoningEffort}
+            effort={effort}
+            serviceTier={serviceTier}
+            permissionMode={permissionMode}
+            collaborationMode={collaborationMode}
+            copilotAgentMode={copilotAgentMode}
+            agentFlavor={agentFlavor}
+            voiceStatus={effectiveVoiceStatus}
+        />
+    )
+
     return (
         <ComposerParkingContext.Provider value={isParkingScratchlist}>
-        <div className={shellClassName} data-testid="composer-shell" data-expanded={isExpanded || undefined}>
+        <div className={`app-composer-shell ${shellClassName}`} data-testid="composer-shell" data-expanded={isExpanded || undefined}>
             <div className={innerClassName}>
+                {isExpanded && glassLayout ? <div className="mb-2 flex shrink-0 items-center justify-between gap-3 px-1">
+                    <span className="text-sm font-medium text-[var(--app-hint)]">{t('composer.editorTitle')}</span>
+                    <button type="button" onClick={handleExpandedToggle} onMouseDown={event => event.preventDefault()}
+                        aria-label={t('composer.doneEditing')}
+                        className="min-h-11 rounded-full px-4 text-sm font-medium text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]">
+                        {t('composer.doneEditing')}
+                    </button>
+                </div> : null}
                 <ComposerPrimitive.Root className={rootClassName} onSubmit={handleSubmit}>
                     {overlays}
 
-                    <StatusBar
-                        statusDetails={props.statusDetails}
-                        controlsDisabled={controlsDisabled}
-                        reasoningOpen={showSettings && settingsSection === 'effort'}
-                        permissionOpen={showSettings && settingsSection === 'permission'}
-                        onReasoningClick={showModelReasoningEffortSettings || showEffortSettings ? button => handleSettingsToggle('effort', button) : undefined}
-                        onPermissionClick={showPermissionSettings ? button => handleSettingsToggle('permission', button) : undefined}
-                        composerControl={agentFlavor === 'codex' ? (
-                            <ComposerGoalControl goal={props.goal ?? null}
-                                disabled={disabled || !active || (controlledByUser && !concurrentClients)}
-                                onAction={props.onGoalAction} />
-                        ) : undefined}
-                        active={active}
-                        thinking={thinking}
-                        agentState={agentState}
-                        backgroundTaskCount={backgroundTaskCount}
-                        contextSize={contextSize}
-                        contextCacheRead={contextCacheRead}
-                        contextWindow={contextWindow}
-                        contextModel={contextModel}
-                        model={model}
-                        modelReasoningEffort={modelReasoningEffort}
-                        effort={effort}
-                        serviceTier={serviceTier}
-                        permissionMode={permissionMode}
-                        collaborationMode={collaborationMode}
-                        copilotAgentMode={copilotAgentMode}
-                        agentFlavor={agentFlavor}
-                        voiceStatus={effectiveVoiceStatus}
-                    />
+                    {!glassLayout ? statusBar : null}
 
                     {dictationActive && dictation.partialTranscript ? (
                         <div
@@ -2368,7 +2399,7 @@ export function HappyComposer(props: {
                     ) : null}
 
                     <div
-                        className={`overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)] ${
+                        className={`app-glass app-composer-surface overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)] ${
                             isExpanded ? 'flex min-h-0 flex-1 flex-col' : ''
                         } ${
                             sendError ? 'ring-1 ring-red-500' : ''
@@ -2387,7 +2418,7 @@ export function HappyComposer(props: {
                             </div>
                         ) : null}
 
-                        <div className={`flex px-4 py-3 max-sm:pb-1 ${
+                        <div className={`flex min-w-0 px-4 py-3 max-sm:pb-1 ${
                             isExpanded ? 'min-h-0 flex-1 items-stretch' : 'items-center'
                         }`}>
                             {richMentionsEnabled ? (
@@ -2461,6 +2492,9 @@ export function HappyComposer(props: {
                                     className="flex-1 resize-none bg-transparent text-base leading-snug text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                                 />
                             )}
+                            {glassLayout && !isExpanded ? <div className="composer-refinement-editor-expand">
+                                <ComposerExpandButton expanded={false} onToggle={handleExpandedToggle} />
+                            </div> : null}
                         </div>
                         {richMentionsEnabled && richComposerFueStatus === 'engaging' ? (
                             <FueCallout
@@ -2475,6 +2509,12 @@ export function HappyComposer(props: {
                         ) : null}
 
                         <ComposerButtons
+                            onReferenceSession={richMentionsEnabled && autocompletePrefixes.includes('@') ? handleReferenceSession : undefined}
+                            onCaptureInputSelection={captureGoalInputSelection}
+                            compactControls={glassLayout ? <>
+                                {agentFlavor === 'codex' ? <ComposerGoalControl goal={props.goal ?? null} disabled={disabled || !active || (controlledByUser && !concurrentClients)} onCaptureInputSelection={captureGoalInputSelection} onAction={props.onGoalAction} /> : null}
+                            </> : undefined}
+                            permissionControl={glassLayout ? (<StatusBar compact controlsDisabled={controlsDisabled} active={active} thinking={thinking} agentState={agentState} permissionMode={permissionMode} agentFlavor={agentFlavor} permissionOpen={showSettings && settingsSection === 'permission'} onPermissionClick={showPermissionSettings ? button => handleSettingsToggle('permission', button) : undefined} />) : undefined}
                             goalMode={goalMode}
                             canSend={canSend}
                             controlsDisabled={controlsDisabled}
@@ -2491,6 +2531,7 @@ export function HappyComposer(props: {
                             terminalLabel={terminalLabel}
                             onTerminal={onTerminal ?? (() => {})}
                             showAbortButton={showAbortButton}
+                            threadIsRunning={threadIsRunning}
                             abortDisabled={abortDisabled}
                             isAborting={isAborting}
                             onAbort={handleAbort}
@@ -2509,10 +2550,10 @@ export function HappyComposer(props: {
                             onSchedule={handleUserSchedule}
                             onClearSchedule={onUserClearSchedule}
                             hasAttachments={blocksScheduling}
-                            modelValueLabel={modelValueLabel}
+                            modelValueLabel={glassLayout && showSettingsButton ? `${(modelValueLabel ?? model ?? 'Model').replace(/^GPT-/i, '').replace(/-sol$/i, ' Sol').replace(/\s*\([^)]*\)/g, '')} · ${effortValueCompactLabel ?? 'Default'}` : modelValueLabel}
                             modelValueDisabled={modelEffortControlsDisabled}
                             modelValueOpen={showSettings && (settingsSection === null || settingsSection === 'model')}
-                            onModelValueToggle={handleModelValueToggle}
+                            onModelValueToggle={glassLayout ? () => handleSettingsToggle(null, modelValueButtonRef.current ?? undefined) : handleModelValueToggle}
                             effortValueLabel={showModelReasoningEffortSettings ? undefined : effortValueLabel}
                             effortValueCompactLabel={effortValueCompactLabel}
                             effortValueDisabled={modelEffortControlsDisabled}

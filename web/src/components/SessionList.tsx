@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { GlassScene, GlassSource } from '@/themes/glass/GlassScene'
+import { NewTaskInput } from './NewTaskInput'
+import { useNarrowViewport } from '@/hooks/useNarrowViewport'
+import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { buildSessionHierarchy, hierarchyRootId, hierarchyContains, type SessionHierarchy } from '@/lib/sessionHierarchy'
 import { SessionListScrollAnchor } from './SessionListScrollAnchor'
 import { CodexSubagentDialog } from './CodexSubagentDialog'
@@ -777,7 +780,7 @@ export function SessionListSearch(props: {
                     type="button"
                     onClick={() => setDatePickerOpen(open => !open)}
                     className={cn(
-                        'relative shrink-0 transition-colors hover:bg-[var(--app-subtle-bg)]',
+                        'app-session-date-trigger relative shrink-0 transition-colors hover:bg-[var(--app-subtle-bg)]',
                         variant === 'standalone'
                             ? 'rounded-full p-1.5 hover:text-[var(--app-fg)]'
                             : 'flex items-center rounded-r-lg rounded-l-md px-1',
@@ -837,7 +840,7 @@ export function SessionListSearch(props: {
         const hasTextQuery = props.value.length > 0
         const collapsedLabel = hasTextQuery ? `${searchLabel}: ${props.value}` : searchLabel
         return (
-            <div className="relative flex items-center gap-1">
+            <div className="app-session-search-collapsed relative flex items-center gap-1">
                 <div className={cn(
                     'relative flex min-w-0 items-center rounded-full transition-colors',
                     hasTextQuery
@@ -850,7 +853,7 @@ export function SessionListSearch(props: {
                         type="button"
                         onClick={() => props.onExpandedChange(true)}
                         className={cn(
-                            'relative flex min-w-0 items-center gap-1 transition-colors',
+                            'app-session-search-trigger relative flex min-w-0 items-center gap-1 transition-colors',
                             hasTextQuery
                                 ? 'flex-1 rounded-l-full bg-[var(--app-chat-user-chip-bg)] px-2 py-1 text-[var(--app-chat-user-chip-fg)] hover:opacity-90'
                                 : 'shrink-0 rounded-full p-1.5 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'
@@ -859,8 +862,9 @@ export function SessionListSearch(props: {
                         aria-label={collapsedLabel}
                     >
                         <SearchIcon className="h-5 w-5 shrink-0" />
+                        {!hasTextQuery ? <span className="app-session-mobile-label">{t('sessions.task.search')}</span> : null}
                         {hasTextQuery ? (
-                            <span className="min-w-0 truncate text-xs font-medium">{props.value}</span>
+                            <span className="app-session-search-query min-w-0 truncate text-xs font-medium">{props.value}</span>
                         ) : null}
                     </button>
                     {hasTextQuery ? (
@@ -887,7 +891,7 @@ export function SessionListSearch(props: {
 
     return (
         <div
-            className="relative min-w-0 flex-1"
+            className="app-session-search-expanded relative min-w-0 flex-1"
             onBlur={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                     props.onExpandedChange(false)
@@ -1073,6 +1077,7 @@ function SessionItem(props: {
                 aria-describedby={describedBy}
             >
                 <SessionRowSummary
+                    className="app-session-row-summary"
                     session={s}
                     showPath={showPath}
                     showDetailedStatus={showDetailedStatus}
@@ -1241,7 +1246,7 @@ function NativeSubagentItem(props: {
             </button>
             {children.length > 0 ? <>
                 <button type="button" aria-expanded={open}
-                    className="ml-2.5 flex items-center gap-1 rounded px-1 py-1 text-[11px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
+                    className="app-session-subagent-toggle ml-2.5 flex items-center gap-1 rounded px-1 py-1 text-[11px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
                     onClick={() => setExpanded(value => !value)}>
                     <ChevronIcon className="h-3 w-3" collapsed={!open} />
                     {t('sessions.subagents', { n: children.length })}
@@ -1275,7 +1280,7 @@ function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
     const pending = tree.pendingDescendants.get(props.session.id) ?? 0
     const open = expanded || revealChildren || pending > 0
     return (
-        <div data-session-tree-id={props.session.id}>
+        <div className="app-session-tree-item" data-session-tree-id={props.session.id} data-has-subagents={children.length + nativeChildren.length > 0 || undefined}>
             {props.session.metadata?.codexParentThreadId ? (
                 <div className="px-2.5 pt-1 text-[10px] text-[var(--app-hint)]">
                     {t('sessions.subagent')}
@@ -1287,7 +1292,7 @@ function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
             {children.length + nativeChildren.length > 0 ? (
                 <>
                     <button type="button" aria-expanded={open}
-                        className="ml-2.5 flex items-center gap-1 rounded px-1 py-1 text-[11px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
+                        className="app-session-subagent-toggle ml-2.5 flex items-center gap-1 rounded px-1 py-1 text-[11px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
                         onClick={() => setExpanded(value => !value)}>
                         <ChevronIcon className="h-3 w-3" collapsed={!open} />
                         {t('sessions.subagents', { n: children.length + nativeChildren.length })}
@@ -1316,6 +1321,8 @@ export function SessionList(props: {
     sessions: SessionSummary[]
     onSelect: (sessionId: string) => void
     onNewSession: () => void
+    onStartTask?: (machineId?: string) => void
+    hub?: string | null
     onNewSessionInDirectory?: (args: { machineId: string | null; directory: string }) => void
     onBrowse?: () => void
     onRefresh: () => Promise<unknown> | void
@@ -1344,6 +1351,8 @@ export function SessionList(props: {
     const lastSeenVersion = useSessionLastSeenVersion()
     // Transient unread lens — not a Settings preference. Cleared on reload; rows drop as they're seen.
     const [showUnreadOnly, setShowUnreadOnly] = useState(false)
+    const [showRunningOnly, setShowRunningOnly] = useState(false)
+    const narrowViewport = useNarrowViewport()
     const [listView, setListView] = useState<'recent' | 'directory'>(() => {
         try { return localStorage.getItem('hapi.sessionListView') === 'recent' ? 'recent' : 'directory' }
         catch { return 'directory' }
@@ -1482,14 +1491,15 @@ export function SessionList(props: {
             id => lastSeenById[id] ?? 0
         )
     }, [lastSeenVersion, visibleSessions, selectedSessionId, showUnreadOnly])
-    const scopedSessions = useMemo(
-        () => activeMachineFilter === null
-            ? unreadFilteredSessions
-            : unreadFilteredSessions.filter(session =>
-                (session.metadata?.machineId ?? UNKNOWN_MACHINE_ID) === activeMachineFilter
-            ),
+    const machineScopedSessions = useMemo(
+        () => activeMachineFilter === null ? unreadFilteredSessions : unreadFilteredSessions.filter(session =>
+            (session.metadata?.machineId ?? UNKNOWN_MACHINE_ID) === activeMachineFilter),
         [unreadFilteredSessions, activeMachineFilter]
     )
+    const runningCount = buildSessionHierarchy(machineScopedSessions.filter(session => session.active && (session.thinking || session.pendingRequestsCount > 0 || session.backgroundTaskCount > 0)), sidebarSessions).roots.length
+    const scopedSessions = useMemo(() => showRunningOnly
+        ? machineScopedSessions.filter(session => session.active && (session.thinking || session.pendingRequestsCount > 0 || session.backgroundTaskCount > 0))
+        : machineScopedSessions, [machineScopedSessions, showRunningOnly])
     const sessionHierarchy = useMemo(() => buildSessionHierarchy(scopedSessions, sidebarSessions), [scopedSessions, sidebarSessions])
     const machineFilteredSessions = sessionHierarchy.roots
     const selectedRootId = hierarchyRootId(sessionHierarchy, selectedSessionId)
@@ -1725,7 +1735,7 @@ export function SessionList(props: {
         return (
             <div key={group.key} data-session-scroll-anchor>
                 <div
-                    className="group/project sticky top-0 z-10 flex items-center gap-2 bg-[var(--app-bg)] py-1.5 pl-2 pr-2 text-left rounded-lg transition-colors hover:bg-[var(--app-secondary-bg)] min-w-0 w-full select-none"
+                    className="app-session-group-heading group/project sticky top-0 z-10 flex items-center gap-2 bg-[var(--app-bg)] py-1.5 pl-2 pr-2 text-left rounded-lg transition-colors hover:bg-[var(--app-secondary-bg)] min-w-0 w-full select-none"
                     title={group.directory}
                 >
                     <span className="font-medium text-sm truncate flex-1">
@@ -1779,7 +1789,7 @@ export function SessionList(props: {
         return (
             <div key={group.key} data-session-scroll-anchor>
                 <div
-                    className="group/project sticky top-0 z-10 flex items-center gap-2 bg-[var(--app-bg)] py-1.5 pl-2 pr-2 text-left rounded-lg transition-colors hover:bg-[var(--app-secondary-bg)] cursor-pointer min-w-0 w-full select-none"
+                    className="app-session-group-heading group/project sticky top-0 z-10 flex items-center gap-2 bg-[var(--app-bg)] py-1.5 pl-2 pr-2 text-left rounded-lg transition-colors hover:bg-[var(--app-secondary-bg)] cursor-pointer min-w-0 w-full select-none"
                     onClick={() => toggleGroup(group.key, isCollapsed)}
                     title={group.directory}
                 >
@@ -2038,83 +2048,91 @@ export function SessionList(props: {
     }, [])
 
     return (
-        <div className="flex min-h-0 w-full flex-1 flex-col">
-            <div className="session-list-scrollbar-offset mx-auto w-full max-w-content shrink-0">
+        <GlassScene active={narrowViewport} className="app-session-list app-session-list-refined relative flex min-h-0 w-full flex-1 flex-col">
+            <div className="app-session-list-header session-list-scrollbar-offset mx-auto w-full max-w-content shrink-0">
             {showHeaderRow ? (
-                <div className="flex items-center gap-1 px-2 py-1">
-                    {showSearch ? (
-                        <SessionListSearch
-                            value={searchQuery}
-                            onChange={setSearchQuery}
-                            customStart={customStart}
-                            customEnd={customEnd}
-                            sessionActivityDates={sessionActivityDates}
-                            onDateRangeChange={(start, end) => {
-                                setCustomStart(start)
-                                setCustomEnd(end)
-                            }}
-                            expanded={searchExpanded}
-                            onExpandedChange={setSearchExpanded}
-                        />
-                    ) : null}
-                    {!(showSearch && searchExpanded) ? (
-                        <>
-                            <div className="flex-1" />
-                            {showMachineFilterBar ? (
-                                <MachineFilterMenu
-                                    machines={machineFilterItems}
-                                    totalCount={allHierarchy.roots.length}
-                                    value={activeMachineFilter}
-                                    onChange={setMachineFilter}
-                                />
-                            ) : null}
-                            {unreadSessionCount > 0 ? (
+                <div className="app-session-list-toolbar flex items-center gap-1 px-2 py-1">
+                    <div className="app-session-identity"><h1 className="app-session-list-brand hidden">HAPI</h1>
+                        {activeMachineFilter !== null || machineFilters.length === 1 ? <span className="app-session-machine-heading">{resolveMachineLabel(activeMachineFilter ?? machineFilters[0]?.machineId ?? null)}</span> : null}
+                    </div>
+                    <div className="app-session-list-controls contents">
+                        {showSearch ? (
+                            <SessionListSearch
+                                value={searchQuery}
+                                onChange={setSearchQuery}
+                                customStart={customStart}
+                                customEnd={customEnd}
+                                sessionActivityDates={sessionActivityDates}
+                                onDateRangeChange={(start, end) => {
+                                    setCustomStart(start)
+                                    setCustomEnd(end)
+                                }}
+                                expanded={searchExpanded}
+                                onExpandedChange={setSearchExpanded}
+                            />
+                        ) : null}
+                        {!(showSearch && searchExpanded) ? (
+                            <>
+                                <div className="flex-1" />
+                                {showMachineFilterBar ? (
+                                    <MachineFilterMenu
+                                        machines={machineFilterItems}
+                                        totalCount={allHierarchy.roots.length}
+                                        value={activeMachineFilter}
+                                        onChange={setMachineFilter}
+                                    />
+                                ) : null}
+                                {unreadSessionCount > 0 ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setMarkAllReadOpen(true)}
+                                        title={t('sessions.markAllRead.button', { count: unreadSessionCount })}
+                                        aria-label={t('sessions.markAllRead.button', { count: unreadSessionCount })}
+                                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                                    >
+                                        <MarkAllReadIcon className="h-5 w-5" />
+                                    </button>
+                                ) : null}
                                 <button
                                     type="button"
-                                    onClick={() => setMarkAllReadOpen(true)}
-                                    title={t('sessions.markAllRead.button', { count: unreadSessionCount })}
-                                    aria-label={t('sessions.markAllRead.button', { count: unreadSessionCount })}
-                                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
-                                >
-                                    <MarkAllReadIcon className="h-5 w-5" />
-                                </button>
-                            ) : null}
-                            <button
-                                type="button"
-                                onClick={() => setShowUnreadOnly(!showUnreadOnly)}
-                                aria-pressed={showUnreadOnly}
-                                title={t('sessions.unreadFilter.toggle')}
-                                aria-label={t('sessions.unreadFilter.toggle')}
-                                className={cn(
-                                    'flex h-9 w-9 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]',
-                                    showUnreadOnly
-                                        ? 'bg-[var(--app-subtle-bg)]'
-                                        : 'hover:bg-[var(--app-subtle-bg)]'
-                                )}
-                            >
-                                {/* Same shape/color language as session-row unread dots (SessionAttentionIndicator). */}
-                                <span
-                                    aria-hidden
+                                    onClick={() => setShowUnreadOnly(!showUnreadOnly)}
+                                    data-list-unread-filter
+                                    aria-pressed={showUnreadOnly}
+                                    title={t('sessions.unreadFilter.toggle')}
+                                    aria-label={t('sessions.unreadFilter.toggle')}
                                     className={cn(
-                                        'inline-flex h-2.5 w-2.5 shrink-0 rounded-full',
+                                        'flex h-9 w-9 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]',
                                         showUnreadOnly
-                                            ? 'bg-[var(--app-link)]'
-                                            : 'bg-[var(--app-hint)]'
+                                            ? 'bg-[var(--app-subtle-bg)]'
+                                            : 'hover:bg-[var(--app-subtle-bg)]'
                                     )}
-                                />
-                            </button>
-                            {renderHeader ? (
-                                <button
-                                    type="button"
-                                    onClick={props.onNewSession}
-                                    className="session-list-new-button flex h-9 w-9 items-center justify-center rounded-full text-[var(--app-link)] transition-colors"
-                                    title={t('sessions.new')}
                                 >
-                                    <PlusIcon className="h-5 w-5" />
+                                    {/* Same shape/color language as session-row unread dots (SessionAttentionIndicator). */}
+                                    <span
+                                        aria-hidden
+                                        className={cn(
+                                            'inline-flex h-2.5 w-2.5 shrink-0 rounded-full',
+                                            showUnreadOnly
+                                                ? 'bg-[var(--app-link)]'
+                                                : 'bg-[var(--app-hint)]'
+                                        )}
+                                    />
                                 </button>
-                            ) : null}
-                            {props.headerActions}
-                        </>
+                                {renderHeader ? (
+                                    <button
+                                        type="button"
+                                        onClick={props.onNewSession}
+                                        className="session-list-new-button flex h-9 w-9 items-center justify-center rounded-full text-[var(--app-link)] transition-colors"
+                                        title={t('sessions.new')}
+                                    >
+                                        <PlusIcon className="h-5 w-5" />
+                                    </button>
+                                ) : null}
+                            </>
+                        ) : null}
+                    </div>
+                    {!(showSearch && searchExpanded) && props.headerActions ? (
+                        <div className="app-session-list-actions contents">{props.headerActions}</div>
                     ) : null}
                 </div>
             ) : null}
@@ -2129,7 +2147,13 @@ export function SessionList(props: {
             ) : null}
             </div>
 
-            <div role="group" aria-label={t('sessions.view.label')} className="mx-2 mb-2 flex gap-1 rounded-lg bg-[var(--app-secondary-bg)] p-1">
+            <div role="group" aria-label={t('sessions.view.label')} className="app-session-list-views mx-2 mb-2 flex gap-1 rounded-lg bg-[var(--app-secondary-bg)] p-1">
+                {narrowViewport ? <div className="app-session-mobile-tabs">
+                    <button type="button" aria-pressed={listView === 'recent' && !showUnreadOnly && !showRunningOnly} onClick={() => { changeListView('recent'); setShowUnreadOnly(false); setShowRunningOnly(false) }}>{t('sessions.task.recent')}</button>
+                    <button type="button" aria-pressed={showUnreadOnly} onClick={() => { changeListView('recent'); setShowUnreadOnly(value => !value); setShowRunningOnly(false) }}>{t('sessions.task.unread', { n: unreadSessionCount })}</button>
+                    <button type="button" aria-pressed={showRunningOnly} onClick={() => { changeListView('recent'); setShowRunningOnly(value => !value); setShowUnreadOnly(false) }}>{t('sessions.task.running', { n: runningCount })}</button>
+                    <button type="button" aria-pressed={listView === 'directory'} onClick={() => { changeListView('directory'); setShowUnreadOnly(false); setShowRunningOnly(false) }}>{t('sessions.task.folders')}</button>
+                </div> : null}
                 {(['recent', 'directory'] as const).map(view => (
                     <button key={view} type="button" aria-pressed={listView === view}
                         onClick={() => changeListView(view)}
@@ -2138,6 +2162,7 @@ export function SessionList(props: {
                     </button>
                 ))}
             </div>
+            <GlassSource>
             <div className="relative flex min-h-0 flex-1 flex-col">
             {isRefreshing || pullState !== 'idle' || props.isLoading ? (
                 <div
@@ -2159,7 +2184,7 @@ export function SessionList(props: {
                     </span>
                 </div>
             ) : null}
-            <div ref={scrollContainerRef} className="app-scroll-y session-list-scrollbar-left scrollbar-auto-hide min-h-0 flex-1">
+            <div ref={scrollContainerRef} className="app-session-list-content app-scroll-y session-list-scrollbar-left scrollbar-auto-hide min-h-0 flex-1">
             <SessionListScrollAnchor sessions={props.sessions} className="mx-auto flex w-full max-w-content flex-col gap-1 pl-1.5 pr-2 pb-2">
                 {props.sessions.length === 0 && !props.isLoading ? (
                     <SessionsEmptyState
@@ -2168,7 +2193,7 @@ export function SessionList(props: {
                     />
                 ) : null}
 
-                {props.sessions.length > 0 && (isFiltering || activeMachineFilter !== null || showUnreadOnly) && groups.length === 0 && runningSessionTotal === 0 && activeSessionTotal === 0 && globalPinnedSessions.length === 0 ? (
+                {props.sessions.length > 0 && (isFiltering || activeMachineFilter !== null || showUnreadOnly || showRunningOnly) && groups.length === 0 && runningSessionTotal === 0 && activeSessionTotal === 0 && globalPinnedSessions.length === 0 ? (
                     <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
                         {t('sessions.search.noResults')}
                     </div>
@@ -2176,12 +2201,24 @@ export function SessionList(props: {
 
                 {listView === 'recent' ? (
                     <div data-testid="recent-session-list" className="flex flex-col gap-0.5">
-                        {[...machineFilteredSessions].sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)).map(s => (
-                            <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly} key={s.id} session={s} onSelect={props.onSelect} api={api}
-                                titleSuggestionAvailable={titleSuggestionAvailable} selected={s.id === selectedSessionId}
-                                showDetailedStatus={showDetailedStatus} lastSeenVersion={lastSeenVersion}
-                                machineLabel={resolveMachineLabel(s.metadata?.machineId ?? null)} />
-                        ))}
+                        {[...machineFilteredSessions].sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)).map((s, index, sorted) => {
+                            const date = new Date(s.updatedAt)
+                            const previousDate = index > 0 ? new Date(sorted[index - 1].updatedAt) : null
+                            const newDay = !previousDate || previousDate.toDateString() !== date.toDateString()
+                            const today = new Date()
+                            const yesterday = new Date(today)
+                            yesterday.setDate(today.getDate() - 1)
+                            const dateLabel = date.toDateString() === today.toDateString() ? t('sessions.task.today')
+                                : date.toDateString() === yesterday.toDateString() ? t('sessions.task.yesterday')
+                                : date.toLocaleDateString(document.documentElement.lang || undefined, { month: 'short', day: 'numeric' })
+                            return <Fragment key={s.id}>
+                                {narrowViewport && newDay ? <div className="app-session-date-heading">{dateLabel}</div> : null}
+                                <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly} session={s} onSelect={props.onSelect} api={api}
+                                    titleSuggestionAvailable={titleSuggestionAvailable} selected={s.id === selectedSessionId}
+                                    showDetailedStatus={showDetailedStatus} lastSeenVersion={lastSeenVersion}
+                                    machineLabel={showMachineFilterBar && activeMachineFilter === null ? resolveMachineLabel(s.metadata?.machineId ?? null) : undefined} />
+                            </Fragment>
+                        })}
                     </div>
                 ) : <>
                 {globalPinnedSessions.length > 0 ? (
@@ -2261,6 +2298,8 @@ export function SessionList(props: {
             </SessionListScrollAnchor>
             </div>
             </div>
+            </GlassSource>
+            {narrowViewport ? <NewTaskInput hub={props.hub} onContinue={() => props.onStartTask ? props.onStartTask(activeMachineFilter && activeMachineFilter !== UNKNOWN_MACHINE_ID ? activeMachineFilter : undefined) : props.onNewSession()} /> : null}
             {nativeSubagent && api ? <CodexSubagentDialog api={api} parentSessionId={nativeSubagent.parentSessionId}
                 threadId={nativeSubagent.agent.threadId} title={nativeSubagentTitle(nativeSubagent.agent)}
                 isOpen={true} onClose={() => setNativeSubagent(null)} /> : null}
@@ -2278,6 +2317,6 @@ export function SessionList(props: {
                 centerTitle
                 destructive
             />
-        </div>
+        </GlassScene>
     )
 }

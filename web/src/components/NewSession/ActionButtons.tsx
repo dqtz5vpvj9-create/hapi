@@ -13,7 +13,7 @@ export function ActionButtons(props: {
     const { t } = useTranslation()
 
     return (
-        <div className="flex w-full justify-end gap-2 px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <div className="app-new-session-actions flex w-full justify-end gap-2 px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
             <Button
                 variant="secondary"
                 onClick={props.onCancel}

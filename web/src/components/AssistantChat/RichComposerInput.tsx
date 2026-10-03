@@ -36,6 +36,8 @@ import type { SessionSummary } from '@/types/api'
 
 export type RichComposerInputHandle = {
     focus: () => void
+    beginSessionMention: () => void
+    captureSelection: () => (() => void) | null
     /**
      * Re-read the contenteditable → serialize session chips to
      * `[title](/sessions/<id>)` and push into composer state. Call before
@@ -774,6 +776,18 @@ export const RichComposerInput = forwardRef<RichComposerInputHandle, Props>(func
         focus: () => {
             rootRef.current?.focus()
         },
+        captureSelection: () => {
+            const root = rootRef.current
+            const selection = window.getSelection()
+            if (!root || !selection?.anchorNode || !selection.focusNode
+                || !root.contains(selection.anchorNode) || !root.contains(selection.focusNode)) return null
+            const { anchorNode, anchorOffset, focusNode, focusOffset } = selection
+            return () => {
+                if (!root.isConnected) return
+                root.focus({ preventScroll: true })
+                window.getSelection()?.setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset)
+            }
+        },
         flushSerializedText: () => {
             const root = rootRef.current
             if (!root) return value
@@ -805,6 +819,29 @@ export const RichComposerInput = forwardRef<RichComposerInputHandle, Props>(func
                 selection: result.selection,
             })
             return { text: serialized, selection: result.selection }
+        },
+        beginSessionMention: () => {
+            const root = rootRef.current
+            if (!root) return
+            root.focus({ preventScroll: true })
+            const segments = segmentsFromEditor(root)
+            const selection = getMirrorSelection(root)
+            const mirror = mirrorComposerSegments(segments)
+            const previous = mirror[selection.start - 1]
+            const prefix = previous && previous !== ' ' && previous !== '\n' && previous !== COMPOSER_MENTION_MIRROR_CHAR ? ' @' : '@'
+            // Keep the draft after the caret outside the active @ word, so
+            // choosing a reference cannot consume the following prose.
+            const next = mirror[selection.end]
+            const suffix = next && next !== ' ' && next !== '\n' ? ' ' : ''
+            const result = insertSegmentsInComposerSegments(segments, selection, [{ type: 'text', text: prefix + suffix }])
+            const caret = result.selection.start - suffix.length
+            const nextSelection = { start: caret, end: caret }
+            const serialized = serializeComposerSegments(result.segments)
+            renderEditorSegments(root, result.segments)
+            lastEmittedRef.current = serialized
+            setMirrorSelection(root, nextSelection)
+            onValueChange(serialized)
+            onMirrorChange({ text: mirrorComposerSegments(result.segments), selection: nextSelection })
         },
         applyPlainSuggestion: (suggestionText, prefixes = ['@', '/', '$']) => {
             const root = rootRef.current

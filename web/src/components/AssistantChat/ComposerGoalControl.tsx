@@ -5,6 +5,7 @@ import type { ThreadGoal } from '@/types/api'
 import { useTranslation } from '@/lib/use-translation'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useGlassLayout, useGlassSurface } from '@/themes/glass/GlassScene'
 
 export function isGoalComposerText(text: string): boolean {
     return /^\s*\/goal(?:\s|$)/i.test(text)
@@ -14,8 +15,10 @@ export function ComposerGoalControl(props: {
     goal: ThreadGoal | null
     disabled: boolean
     onAction?: (request: CodexGoalRequest) => Promise<ThreadGoal | null>
+    onCaptureInputSelection?: () => (() => void) | null
 }) {
     const { t } = useTranslation()
+    const compact = useGlassLayout()
     const [open, setOpen] = useState(false)
     const [editing, setEditing] = useState(false)
     const [objective, setObjective] = useState('')
@@ -26,7 +29,9 @@ export function ComposerGoalControl(props: {
     const inFlight = useRef(false)
     const triggerRef = useRef<HTMLButtonElement>(null)
     const editorRef = useRef<HTMLTextAreaElement>(null)
+    const glassRef = useGlassSurface<HTMLDivElement>()
     const openingEditor = useRef(false)
+    const restoreInputSelection = useRef<(() => void) | null>(null)
     useEffect(() => setGoal(props.goal), [props.goal])
     const unavailable = props.disabled || !props.onAction
     const trimmed = objective.trim()
@@ -59,6 +64,9 @@ export function ComposerGoalControl(props: {
     return (
         <>
             <Popover.Root open={open} onOpenChange={next => {
+                if (next && !restoreInputSelection.current) {
+                    restoreInputSelection.current = props.onCaptureInputSelection?.() ?? null
+                }
                 setOpen(next)
                 setConfirmClear(false)
                 setError(false)
@@ -66,21 +74,28 @@ export function ComposerGoalControl(props: {
                 <Popover.Trigger asChild>
                     <button ref={triggerRef} type="button" aria-label={t('composer.goal.control')}
                         disabled={props.disabled || busy}
-                        className={`flex min-h-9 shrink-0 items-center gap-1 rounded-md px-2 text-xs disabled:opacity-50 ${goal ? 'bg-[var(--app-link-muted)] text-[var(--app-link)]' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}>
-                        {t('composer.goal.mode')}
+                        onPointerDown={() => { restoreInputSelection.current = props.onCaptureInputSelection?.() ?? null }}
+                        onKeyDown={event => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                restoreInputSelection.current = props.onCaptureInputSelection?.() ?? null
+                            }
+                        }}
+                        className={`app-composer-chip flex min-h-9 shrink-0 items-center gap-1 rounded-md px-2 text-xs disabled:opacity-50 ${goal ? 'bg-[var(--app-link-muted)] text-[var(--app-link)]' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}>
+                        {compact ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="1" /></svg> : t('composer.goal.mode')}
                         {goal ? <span aria-label={t(`session.status.goal.${goal.status}`)} className={`h-1.5 w-1.5 rounded-full ${goal.status === 'active' ? 'bg-emerald-500' : goal.status === 'complete' ? 'bg-[var(--app-hint)]' : 'bg-amber-500'}`} /> : null}
-                        <span aria-hidden="true">⌄</span>
+                        {!compact ? <span aria-hidden="true">⌄</span> : null}
                     </button>
                 </Popover.Trigger>
                 <Popover.Portal>
-                    <Popover.Content side="top" align="start" sideOffset={6} collisionPadding={12}
+                    <Popover.Content ref={glassRef} side="top" align="start" sideOffset={6} collisionPadding={12}
                         aria-label={t('composer.goal.control')}
                         onCloseAutoFocus={event => {
                             if (openingEditor.current) { event.preventDefault(); openingEditor.current = false }
+                            else restoreInputSelection.current = null
                         }}
                         onInteractOutside={event => { if (busy) event.preventDefault() }}
                         onEscapeKeyDown={event => { if (busy) event.preventDefault() }}
-                        className="z-[60] w-72 max-w-[calc(100vw-1.5rem)] max-h-[min(70dvh,28rem)] overflow-y-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-2 text-[var(--app-fg)] shadow-lg">
+                        className="app-glass app-floating-panel app-scroll-y z-[60] w-72 max-w-[calc(100vw-1.5rem)] max-h-[min(var(--radix-popover-content-available-height),28rem)] overflow-y-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-2 text-[var(--app-fg)] shadow-lg">
                         <div className="px-3 py-2">
                             <div className="text-xs font-semibold text-[var(--app-hint)]">{t('composer.goal.current')}</div>
                             {goal ? <>
@@ -116,7 +131,7 @@ export function ComposerGoalControl(props: {
                 </Popover.Portal>
             </Popover.Root>
             <Dialog open={editing} onOpenChange={next => { if (!busy) setEditing(next) }}>
-                <DialogContent className="flex max-h-[80dvh] flex-col gap-4 overflow-y-auto text-[var(--app-fg)]"
+                <DialogContent className="app-goal-editor flex max-h-[80dvh] flex-col gap-4 overflow-y-auto text-[var(--app-fg)]"
                     closeButtonClassName={busy ? 'hidden' : undefined}
                     onEscapeKeyDown={event => { if (busy) event.preventDefault() }}
                     onInteractOutside={event => { if (busy) event.preventDefault() }}
@@ -125,12 +140,18 @@ export function ComposerGoalControl(props: {
                         editorRef.current?.focus()
                         editorRef.current?.setSelectionRange(objective.length, objective.length)
                     }}
-                    onCloseAutoFocus={event => { event.preventDefault(); triggerRef.current?.focus() }}>
-                    <DialogHeader>
+                    onCloseAutoFocus={event => {
+                        event.preventDefault()
+                        const restore = restoreInputSelection.current
+                        restoreInputSelection.current = null
+                        if (restore) restore()
+                        else triggerRef.current?.focus()
+                    }}>
+                    <DialogHeader className="app-goal-editor-header">
                         <DialogTitle>{t(goal ? 'composer.goal.edit' : 'composer.goal.create')}</DialogTitle>
                         <DialogDescription>{t('composer.goal.editorHint')}</DialogDescription>
                     </DialogHeader>
-                    <div>
+                    <div className="app-goal-editor-body">
                         <label htmlFor="goal-objective" className="mb-2 block text-sm font-medium">{t('composer.goal.objective')}</label>
                         <textarea ref={editorRef} id="goal-objective" value={objective} rows={6} disabled={busy}
                             placeholder={t('composer.goal.placeholder')}
@@ -146,7 +167,7 @@ export function ComposerGoalControl(props: {
                         <p id="goal-length" className={`mt-1 text-right text-xs ${length > 4000 ? 'text-red-600' : 'text-[var(--app-hint)]'}`}>{length.toLocaleString()} / 4,000</p>
                     </div>
                     {error ? <p role="alert" className="text-sm text-red-600">{t('composer.goal.error')}</p> : null}
-                    <div className="flex justify-end gap-2">
+                    <div className="app-goal-editor-actions flex justify-end gap-2">
                         <Button type="button" variant="secondary" disabled={busy} onClick={() => setEditing(false)}>{t('button.cancel')}</Button>
                         <Button type="button" disabled={busy || unavailable || !trimmed || length > 4000}
                             onClick={() => void apply({ action: 'set', objective: trimmed })}>

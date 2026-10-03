@@ -289,7 +289,7 @@ export function MachineFilterMenu(props: {
                         role="menu"
                         aria-label={t('sessions.machineFilter.label')}
                         style={anchor ? getMachineFilterMenuClampStyle(anchor) : undefined}
-                        className="absolute right-0 top-full z-30 mt-1 max-h-80 w-64 overflow-y-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-xl"
+                        className="app-glass app-floating-panel absolute right-0 top-full z-30 mt-1 max-h-80 w-64 overflow-y-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-xl"
                     >
                         <MachineFilterMenuRow
                             label={t('sessions.machineFilter.all')}

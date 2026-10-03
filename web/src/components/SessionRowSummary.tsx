@@ -1,3 +1,4 @@
+import { useNarrowViewport } from '@/hooks/useNarrowViewport'
 import { useMemo } from 'react'
 import type { SessionSummary } from '@/types/api'
 import { AgentFlavorIcon } from '@/components/AgentFlavorIcon'
@@ -135,6 +136,7 @@ export function SessionRowSummary(props: {
         machineLabel,
     } = props
     const { t } = useTranslation()
+    const narrowViewport = useNarrowViewport()
     const sessionName = getSessionTitle(s)
     const worktreeLabel = getWorktreeSessionLabel(s)
     const todoProgress = getTodoProgress(s)
@@ -165,9 +167,9 @@ export function SessionRowSummary(props: {
 
     return (
         <div className={`flex w-full min-w-0 flex-col gap-1 ${className ?? ''}`}>
-            <div className={`grid grid-cols-[minmax(9rem,1fr)_minmax(0,max-content)] items-center gap-2 ${!s.active ? 'opacity-50' : ''}`}>
+            <div className={`app-session-row-main grid grid-cols-[minmax(9rem,1fr)_minmax(0,max-content)] items-center gap-2 ${!s.active ? 'opacity-50' : ''}`}>
                 <div className="flex min-w-0 items-center gap-2">
-                    <AgentFlavorIcon flavor={s.metadata?.flavor} className="h-4 w-4 shrink-0 -translate-y-px" />
+                    <AgentFlavorIcon flavor={s.metadata?.flavor} className="app-session-row-agent h-4 w-4 shrink-0 -translate-y-px" />
                     <div
                         className={`min-w-0 flex-1 truncate text-sm font-medium ${s.active ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
                         title={sessionName}
@@ -188,7 +190,7 @@ export function SessionRowSummary(props: {
                             aria-label={attentionLabel ?? undefined}
                         />
                     ) : s.active && s.thinking ? (
-                        <LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow text-[var(--app-badge-success-text)]" />
+                        <LoaderIcon className="app-session-row-spinner h-3.5 w-3.5 shrink-0 animate-spin-slow text-[var(--app-badge-success-text)]" />
                     ) : urgentAttention && nestedTooltips && attentionId ? (
                         <SessionAttentionIndicator
                             attention={attention}
@@ -271,7 +273,7 @@ export function SessionRowSummary(props: {
                         </span>
                     ) : null}
                 </div>
-                <div className="flex min-w-0 items-center justify-end gap-2 overflow-hidden text-xs">
+                <div className="app-session-row-time flex min-w-0 items-center justify-end gap-2 overflow-hidden text-xs">
                     {todoProgress ? (
                         <span className="flex shrink-0 items-center gap-1 text-[var(--app-hint)]">
                             <BulbIcon className="h-3 w-3" />
@@ -288,13 +290,18 @@ export function SessionRowSummary(props: {
                     ) : null}
                 </div>
             </div>
+            {narrowViewport ? <div className="app-session-row-mobile-meta">
+                {urgentAttention || s.pendingRequestsCount > 0 ? <span className="app-session-row-execution text-[var(--app-badge-warning-text)]">{attentionLabel ?? t('session.item.pending')}</span>
+                    : s.active && (s.thinking || (s.backgroundTaskCount ?? 0) > 0) ? <span className="app-session-row-execution"><LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow" />{t('session.item.running')}</span> : null}
+                <span className="truncate">{[s.metadata?.flavor === 'codex' ? 'Codex' : s.metadata?.flavor, projectLabel ?? (s.metadata?.worktree?.basePath ?? s.metadata?.path ?? '').split(/[\\/]/).filter(Boolean).at(-1), machineLabel].filter(Boolean).join(' · ')}</span>
+            </div> : null}
             {projectLabel || machineLabel ? (
-                <div className="truncate text-xs text-[var(--app-hint)]" title={[projectLabel, machineLabel].filter(Boolean).join(' · ')}>
+                <div className="app-session-row-desktop-meta truncate text-xs text-[var(--app-hint)]" title={[projectLabel, machineLabel].filter(Boolean).join(' · ')}>
                     {[projectLabel, machineLabel].filter(Boolean).join(' · ')}
                 </div>
             ) : showPath || worktreeLabel ? (
                 <div
-                    className="truncate text-xs text-[var(--app-hint)]"
+                    className="app-session-row-desktop-meta truncate text-xs text-[var(--app-hint)]"
                     title={worktreeLabel
                         ? s.metadata?.worktree?.worktreePath ?? s.metadata?.path
                         : undefined}

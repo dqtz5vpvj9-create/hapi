@@ -20,6 +20,7 @@ import {
 import { isFastServiceTier } from './codexFastMode'
 import { useTranslation } from '@/lib/use-translation'
 import { useSessionHeaderMetadata } from '@/hooks/useSessionHeaderMetadata'
+import { useGlassSurface } from '@/themes/glass/GlassScene'
 
 // Vibing messages for thinking state
 const VIBING_MESSAGES = [
@@ -192,6 +193,7 @@ export function shouldShowCodexFastBadge(
 }
 
 export function StatusBar(props: {
+    compact?: boolean
     composerControl?: ReactNode
     statusDetails?: ReactNode
     onReasoningClick?: (button: HTMLButtonElement) => void
@@ -225,6 +227,8 @@ export function StatusBar(props: {
 }) {
     const { t } = useTranslation()
     const { preferences: headerMetadata } = useSessionHeaderMetadata()
+    const detailsGlassRef = useGlassSurface<HTMLDivElement>()
+    const contextGlassRef = useGlassSurface<HTMLDivElement>()
     const connectionStatus = useMemo(
         () => getConnectionStatus(props.active, props.thinking, props.agentState, props.voiceStatus, props.backgroundTaskCount ?? 0, t),
         [props.active, props.thinking, props.agentState, props.voiceStatus, props.backgroundTaskCount, t]
@@ -309,10 +313,15 @@ export function StatusBar(props: {
             <span className="hidden sm:inline">{reasoningLabel}</span>
         </>
     )
-    const controlClass = 'inline-flex min-h-9 min-w-9 items-center justify-center gap-1 whitespace-nowrap rounded-md bg-[var(--app-subtle-bg)] px-2 text-xs hover:bg-[var(--app-link-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:opacity-50'
+    const controlClass = 'app-composer-chip inline-flex min-h-9 min-w-9 items-center justify-center gap-1 whitespace-nowrap rounded-md bg-[var(--app-subtle-bg)] px-2 text-xs hover:bg-[var(--app-link-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:opacity-50'
+
+    if (props.compact) return displayPermissionMode ? <button type="button" disabled={props.controlsDisabled || !props.onPermissionClick}
+        aria-label={`${t('misc.permissionMode')}: ${permissionModeLabel}`} aria-expanded={props.permissionOpen}
+        onClick={event => props.onPermissionClick?.(event.currentTarget)}
+        className={`app-composer-permission ${controlClass} ${permissionModeColor}`}>{permissionModeLabel}</button> : null
 
     return (
-        <div className="flex min-w-0 items-center justify-between gap-1 px-2 pb-1">
+        <div className="app-glass app-composer-status flex min-w-0 items-center justify-between gap-1 px-2 pb-1">
             <div className="flex min-w-0 items-center gap-1.5">
                 {props.statusDetails ? (
                     <Popover.Root>
@@ -323,9 +332,9 @@ export function StatusBar(props: {
                             </button>
                         </Popover.Trigger>
                         <Popover.Portal>
-                            <Popover.Content side="top" align="start" sideOffset={8} collisionPadding={12}
+                            <Popover.Content ref={detailsGlassRef} side="top" align="start" sideOffset={8} collisionPadding={12}
                                 aria-label={t('session.status.title')}
-                                className="z-[60] w-80 max-w-[calc(100vw-1.5rem)] max-h-[min(70dvh,28rem)] overflow-y-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-lg">
+                                className="app-glass app-floating-panel app-scroll-y z-[60] w-80 max-w-[calc(100vw-1.5rem)] max-h-[min(var(--radix-popover-content-available-height),28rem)] overflow-y-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-lg">
                                 {props.statusDetails}
                             </Popover.Content>
                         </Popover.Portal>
@@ -361,11 +370,12 @@ export function StatusBar(props: {
                         </Popover.Trigger>
                         <Popover.Portal>
                             <Popover.Content
+                                ref={contextGlassRef}
                                 side="top"
                                 align="start"
                                 sideOffset={6}
                                 collisionPadding={8}
-                                className="z-50 rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 shadow-lg"
+                                className="app-glass app-floating-panel app-scroll-y z-[60] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 shadow-lg"
                             >
                                 <div className="flex max-w-[min(22rem,calc(100vw-1rem))] flex-col gap-1 text-xs leading-tight text-[var(--app-fg)]">
                                     {contextUsageDetails?.cacheRead ? (

@@ -1,3 +1,5 @@
+import { SessionListHeaderActions } from '@/components/SessionListHeaderActions'
+import { loadNewTaskDraft, saveNewTaskDraft, stageNewTaskDraft } from '@/lib/new-task-draft'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -247,7 +249,7 @@ function SessionsPage() {
                 className={`${isSessionsIndex ? 'flex' : 'hidden split:flex'} w-full shrink-0 flex-col bg-[var(--app-bg)]`}
                 style={{ '--sidebar-w': `${sidebar.width}px` } as React.CSSProperties}
             >
-                <div className="flex min-h-0 flex-1 flex-col pt-[env(safe-area-inset-top)]">
+                <div className="app-session-sidebar flex min-h-0 flex-1 flex-col pt-[env(safe-area-inset-top)]">
                     {error ? (
                         <div className="mx-auto w-full max-w-content px-3 py-2">
                             <div className="text-sm text-red-600">{error}</div>
@@ -262,52 +264,19 @@ function SessionsPage() {
                             to: '/sessions/new',
                             ...PRESERVE_SESSION_SIDEBAR_SCROLL,
                         })}
+                        hub={baseUrl}
+                        onStartTask={machineId => navigate({ to: '/sessions/new', search: machineId ? { machineId } : {}, ...PRESERVE_SESSION_SIDEBAR_SCROLL })}
                         onNewSessionInDirectory={handleNewSessionInDirectory}
                         onBrowse={canBrowse ? () => navigate({ to: '/browse' }) : undefined}
                         onRefresh={handleRefresh}
                         isLoading={isLoading}
                         renderHeader={false}
-                        headerActions={(
-                            <div className="flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setQuickSwitchOpen(true)}
-                                    className="min-h-9 rounded-md px-2 text-sm text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
-                                    title={`${t('sessions.quickSwitch.title')} (Ctrl/Cmd+K)`}
-                                >
-                                    {t('sessions.quickSwitch.button')}
-                                </button>
-                                {canBrowse && (
-                                    <button
-                                        type="button"
-                                        onClick={() => navigate({ to: '/browse' })}
-                                        className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                                        title={t('browse.nav')}
-                                    >
-                                        <FolderOpenIcon className="h-5 w-5" />
-                                    </button>
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={() => navigate({ to: '/settings' })}
-                                    className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                                    title={t('settings.title')}
-                                >
-                                    <SettingsIcon className="h-5 w-5" />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => navigate({
-                                        to: '/sessions/new',
-                                        ...PRESERVE_SESSION_SIDEBAR_SCROLL,
-                                    })}
-                                    className="session-list-new-button flex h-9 w-9 items-center justify-center rounded-full text-[var(--app-link)] transition-colors"
-                                    title={t('sessions.new')}
-                                >
-                                    <PlusIcon className="h-5 w-5" />
-                                </button>
-                            </div>
-                        )}
+                        headerActions={<SessionListHeaderActions
+                            onSwitch={() => setQuickSwitchOpen(true)}
+                            onBrowse={canBrowse ? () => navigate({ to: '/browse' }) : undefined}
+                            onSettings={() => navigate({ to: '/settings' })}
+                            onNew={() => navigate({ to: '/sessions/new', ...PRESERVE_SESSION_SIDEBAR_SCROLL })}
+                        />}
                         api={api}
                         titleSuggestionAvailable={titleSuggestionAvailable}
                         machineLabelsById={machineLabelsById}
@@ -931,12 +900,15 @@ function SessionDetailRoute() {
 }
 
 function NewSessionPage() {
-    const { api } = useAppContext()
+    const { api, baseUrl } = useAppContext()
     const navigate = useNavigate()
     const goBack = useAppGoBack()
     const queryClient = useQueryClient()
     const { machines, isLoading: machinesLoading, error: machinesError } = useMachines(api, true)
     const { t } = useTranslation()
+    const [initialTask, setInitialTask] = useState(() => loadNewTaskDraft(baseUrl))
+    const updateInitialTask = (text: string) => { setInitialTask(text); saveNewTaskDraft(baseUrl, text) }
+    const handleCreated = (sessionId: string) => stageNewTaskDraft(baseUrl, sessionId, initialTask)
     const { directory: initialDirectory, machineId: initialMachineId, shareTransferId } = newSessionRoute.useSearch()
 
     const handleCancel = useCallback(() => {
@@ -989,7 +961,8 @@ function NewSessionPage() {
                     <button
                         type="button"
                         onClick={goBack}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
+                        aria-label={t('common.back')}
+                        className="app-page-back flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
                     >
                         <BackIcon />
                     </button>
@@ -1014,6 +987,9 @@ function NewSessionPage() {
                     onCancel={handleCancel}
                     onSuccess={handleSuccess}
                     onChooseFolder={handleChooseFolder}
+                    initialTask={initialTask}
+                    onInitialTaskChange={updateInitialTask}
+                    onCreated={handleCreated}
                     initialDirectory={initialDirectory}
                     initialMachineId={initialMachineId}
                 />

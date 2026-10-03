@@ -90,6 +90,9 @@ export function NewSession(props: {
     onSuccess: (sessionId: string) => void
     onCancel: () => void
     onChooseFolder?: (args: { machineId: string | null; directory: string }) => void
+    initialTask?: string
+    onInitialTaskChange?: (text: string) => void
+    onCreated?: (sessionId: string) => void
     initialDirectory?: string
     initialMachineId?: string
 }) {
@@ -1706,6 +1709,7 @@ export function NewSession(props: {
                 clearNewSessionFormDraft()
                 setLastUsedMachineId(machineId)
                 addRecentPath(machineId, trimmedDirectory)
+                props.onCreated?.(result.sessionId)
                 props.onSuccess(result.sessionId)
                 return
             }
@@ -1781,7 +1785,15 @@ export function NewSession(props: {
     )
 
     return (
-        <div className="flex flex-col divide-y divide-[var(--app-divider)] [&>div]:pr-[10px] lg:[&>div]:pr-3">
+        <div className="app-new-session-form flex flex-col divide-y divide-[var(--app-divider)] [&>div]:pr-[10px] lg:[&>div]:pr-3">
+            {props.initialTask !== undefined ? <div className="px-3 py-3">
+                <label htmlFor="new-session-initial-task" className="mb-1 block text-sm font-medium">{t('sessions.task.initial')}</label>
+                <textarea id="new-session-initial-task" rows={3} value={props.initialTask} disabled={isFormDisabled}
+                    onChange={event => props.onInitialTaskChange?.(event.target.value)}
+                    placeholder={t('sessions.task.placeholder')}
+                    className="w-full resize-y rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-3 text-base text-[var(--app-fg)]" />
+                <p className="mt-1 text-xs text-[var(--app-hint)]">{t('sessions.task.initialHint')}</p>
+            </div> : null}
             <MachineSelector
                 machines={props.machines}
                 machineId={machineId}

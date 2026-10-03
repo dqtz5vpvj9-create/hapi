@@ -1,0 +1,99 @@
+/* Only the phone list uses the new entry surface. Sidebar geometry is unchanged. */
+.app-session-mobile-label, .app-session-mobile-tabs, .app-session-machine-heading,
+.app-new-task-input, .app-session-row-mobile-meta { display: none; }
+.app-session-identity { display: contents; }
+
+@media (max-width: 640px) {
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-mobile-new { display: none; }
+    [data-color-theme="codex"] .app-session-list-refined,
+    [data-color-theme="default"] .app-session-list-refined { --list-pill-inset: calc(88px + env(safe-area-inset-bottom)); }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-list-toolbar {
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 10px 20px 8px;
+    }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-identity {
+        display: flex; min-width: 0; align-items: center; gap: 12px; grid-row: 1; grid-column: 1;
+    }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-brand {
+        display: block; font-size: 28px; line-height: 44px; font-weight: 650; letter-spacing: -0.04em;
+    }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-machine-heading {
+        display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-hint); font-size: 14px;
+    }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-actions { display: block; grid-row: 1; grid-column: 2; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-controls {
+        display: flex; grid-row: 2; grid-column: 1 / -1; gap: 4px; padding: 0; background: transparent; box-shadow: none; min-width: 0;
+    }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-controls > .flex-1:not(.app-session-search-expanded),
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-controls [data-list-unread-filter],
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .session-list-new-button { display: none; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-search-collapsed { flex: 1; min-width: 0; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-search-collapsed > div { flex: 1; min-width: 0; max-width: none; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-list-controls .app-session-search-trigger {
+        flex: 1; min-height: 44px; justify-content: flex-start; gap: 8px; padding-inline: 12px; width: 100%; text-align: left; border-radius: 22px; background: var(--app-secondary-bg); font-size: 14px;
+    }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-mobile-label { display: inline; white-space: nowrap; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-controls button { min-width: 44px; min-height: 44px; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-search-expanded input { min-height: 44px; border-radius: 22px; font-size: 16px; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-views {
+        margin: 0 20px 4px; padding: 0; border-radius: 0; background: transparent; min-height: 44px;
+    }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-views > button { display: none; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-mobile-tabs { display: flex; align-items: center; justify-content: flex-start; gap: 22px; width: 100%; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-mobile-tabs button {
+        min-height: 44px; padding: 0 2px; border-radius: 0; white-space: nowrap; font-size: 14px; font-weight: 400; color: var(--app-hint); background: transparent; box-shadow: none;
+    }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-mobile-tabs button[aria-pressed="true"] {
+        color: var(--app-fg); border-bottom: 2px solid currentColor; background: transparent; box-shadow: none;
+    }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-content > div { padding-inline: 20px; padding-bottom: var(--list-pill-inset); }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-list-content .session-list-item {
+        border-radius: 0; padding: 17px 0; min-height: 84px; border-bottom: 1px solid var(--app-border);
+    }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-main { grid-template-columns: minmax(0, 1fr) auto; opacity: 1; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-main [title] { color: var(--app-fg); font-size: 17px; line-height: 24px; font-weight: 500; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-agent,
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-spinner,
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-desktop-meta { display: none; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-mobile-meta { display: flex; align-items: center; min-width: 0; gap: 6px; font-size: 13px; line-height: 21px; color: var(--app-hint); }
+    .app-session-row-execution { display: inline-flex; align-items: center; flex-shrink: 0; gap: 5px; }
+    .app-session-row-execution::after { content: '·'; color: var(--app-hint); }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-tree-item { position: relative; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-tree-item[data-has-subagents] > .session-list-item .app-session-row-mobile-meta { padding-right: 110px; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-subagent-toggle {
+        position: absolute; right: 0; top: 39px; min-height: 44px; margin: 0; padding: 0 0 0 6px; font-size: 12px;
+    }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-new-task-input {
+        display: flex; position: absolute; inset: auto 22px calc(16px + env(safe-area-inset-bottom) + var(--app-floating-bottom-offset, 0px)); z-index: 30; align-items: center; min-height: 60px; padding: 8px; border-radius: 32px; margin-inline: auto; max-width: 540px; gap: 0;
+        background-color: color-mix(in srgb, var(--app-dialog-bg) 82%, transparent); background-image: linear-gradient(150deg, var(--app-glass-edge, #ffffff70), transparent 60%); box-shadow: inset 0 0 0 1px #ffffff70, 0 10px 32px #00000014, 0 2px 6px #00000008;
+        -webkit-backdrop-filter: var(--glass-local-filter, blur(18px) saturate(1.1)); backdrop-filter: var(--glass-local-filter, blur(18px) saturate(1.1));
+    }
+    .app-new-task-input button { display: flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 44px; min-height: 44px; border-radius: 50%; color: var(--app-fg); }
+    .app-new-task-input input { min-width: 0; width: 100%; height: 44px; background: transparent; outline: none; padding-inline: 8px; font-size: 17px; color: var(--app-fg); }
+    .app-new-task-input input::placeholder { color: var(--app-hint); }
+    .app-new-task-input button:focus-visible, .app-new-task-input input:focus-visible { outline: 2px solid var(--app-link); outline-offset: -2px; }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-new-task-input { background: var(--app-dialog-bg); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--app-border); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .app-session-row-execution svg { animation: none; }
+}
+
+@media (max-width: 640px) {
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-mobile-tabs button:last-child { margin-left: auto; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-mobile-tabs button[aria-pressed="true"] { font-weight: 550; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-time { font-size: 12px; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-execution svg { color: #6c9ce8; }
+    .app-session-date-heading { padding: 18px 0 2px; font-size: 12px; line-height: 20px; color: var(--app-hint); }
+    .app-session-date-heading:first-child { padding-top: 12px; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-new-task-input .app-new-task-next {
+        background: var(--app-button); color: var(--app-button-text);
+    }
+    .app-new-task-input > button:first-child svg { width: 24px; height: 24px; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-search-trigger { font-size: 16px; }
+}
+@media (max-width: 360px) {
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-mobile-tabs { gap: 14px; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-mobile-tabs button { font-size: 13px; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-main [title] { font-size: 16px; }
+}

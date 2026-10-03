@@ -20,7 +20,7 @@ export function AgentSelector(props: {
                 {props.agents.map((agentType) => (
                     <label
                         key={agentType}
-                        className="flex items-center gap-1.5 cursor-pointer"
+                        className="app-new-session-choice-target flex items-center gap-1.5 cursor-pointer"
                     >
                         <input
                             type="radio"
