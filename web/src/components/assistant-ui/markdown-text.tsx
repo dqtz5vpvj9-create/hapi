@@ -1,7 +1,10 @@
+import { ArtifactCard } from '@/components/Artifacts/ArtifactCard'
+import { fileArtifactMime, fileArtifactRef } from '@/components/Artifacts/fileArtifacts'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import '@assistant-ui/react-markdown/styles/dot.css'
 
 import type { ComponentPropsWithoutRef, ComponentType, MouseEvent, ReactNode } from 'react'
-import { useState, useCallback, useEffect, useMemo, createContext, useContext } from 'react'
+import { Children, isValidElement, useState, useCallback, useEffect, useMemo, createContext, useContext } from 'react'
 import {
     MarkdownTextPrimitive,
     unstable_memoizeMarkdownComponents as memoizeMarkdownComponents,
@@ -251,6 +254,17 @@ export function isExternalHttpHref(href: string | null | undefined): boolean {
 // <img src> is also stripped because DENY_SCHEMES includes 'data'. However,
 // react-markdown's own defaultUrlTransform strips all data: URLs identically,
 // so this is not a regression introduced by this PR.
+export function markdownUrlTransform(url: string, key?: string): string {
+    if (key === 'src' && url && !/^(?:https?:|data:|blob:|javascript:|vbscript:)/i.test(url)) {
+        let path = url
+        if (url.startsWith('file://')) {
+            try { path = decodeURIComponent(new URL(url).pathname) } catch { return '' }
+        } else if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^[a-z]:[\\/]/i.test(url)) return ''
+        return `hapi-image:${encodeURIComponent(path)}`
+    }
+    return denyOnlyTransform(url)
+}
+
 export function denyOnlyTransform(url: string): string {
     if (!url) return url
     const trimmed = url.trimStart()
@@ -533,6 +547,9 @@ function Code(props: ComponentPropsWithoutRef<'code'>) {
 
 function FilePathAnchor(props: ComponentPropsWithoutRef<'a'> & { filePath: string; sessionId: string }) {
     const { filePath, sessionId, ...anchorProps } = props
+    const [preview, setPreview] = useState(false)
+    const { t } = useTranslation()
+    const canPreview = fileArtifactMime(filePath) !== 'application/octet-stream'
     const navigate = useNavigate()
     const rel = anchorProps.target === '_blank' ? (anchorProps.rel ?? 'noreferrer') : anchorProps.rel
     const search = new URLSearchParams({ path: encodeBase64(filePath), origin: 'chat' }).toString()
@@ -556,6 +573,7 @@ function FilePathAnchor(props: ComponentPropsWithoutRef<'a'> & { filePath: strin
     }
 
     return (
+        <span>
         <a
             {...anchorProps}
             href={href}
@@ -563,6 +581,9 @@ function FilePathAnchor(props: ComponentPropsWithoutRef<'a'> & { filePath: strin
             onClick={handleClick}
             className={cn('aui-md-a font-medium text-[var(--app-link)] underline decoration-[color:var(--app-link-muted)] underline-offset-3', anchorProps.className)}
         />
+        {canPreview ? <button type="button" className="ml-2 text-xs text-[var(--app-link)]" onClick={() => setPreview(true)}>{t('artifact.preview')}</button> : null}
+        <Dialog open={preview} onOpenChange={setPreview}><DialogContent className="max-h-[95dvh] max-w-4xl overflow-auto"><DialogHeader><DialogTitle>{filePath.split(/[\\/]/).at(-1)}</DialogTitle></DialogHeader>{preview ? <ArtifactCard artifact={fileArtifactRef(filePath)} /> : null}</DialogContent></Dialog>
+        </span>
     )
 }
 
@@ -772,6 +793,9 @@ function A(props: ComponentPropsWithoutRef<'a'>) {
 }
 
 function Paragraph(props: ComponentPropsWithoutRef<'p'>) {
+    if (Children.toArray(props.children).some(child => isValidElement(child) && child.type === Image)) {
+        return <div className={cn('aui-md-p my-2.5 leading-7', props.className)}>{props.children}</div>
+    }
     return <p {...props} className={cn('aui-md-p my-2.5 leading-7 first:mt-0 last:mb-0', props.className)} />
 }
 
@@ -874,6 +898,11 @@ function Em(props: ComponentPropsWithoutRef<'em'>) {
 }
 
 function Image(props: ComponentPropsWithoutRef<'img'>) {
+    const chat = useOptionalHappyChatContext()
+    if (chat && props.src?.startsWith('hapi-image:')) {
+        const path = decodeURIComponent(props.src.slice('hapi-image:'.length))
+        return <ArtifactCard artifact={fileArtifactRef(path)} />
+    }
     return <img {...props} className={cn('aui-md-img my-3 max-w-full rounded-xl', props.className)} />
 }
 
@@ -923,7 +952,7 @@ export function MarkdownText({ smooth }: { smooth?: boolean } = {}) {
                 rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
                 components={defaultComponents}
                 componentsByLanguage={MARKDOWN_COMPONENTS_BY_LANGUAGE}
-                urlTransform={denyOnlyTransform}
+                urlTransform={markdownUrlTransform}
                 className={cn(MARKDOWN_CLASSNAME)}
             />
         </UriConfirmProvider>

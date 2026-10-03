@@ -1,3 +1,4 @@
+import { ChatContentPartSchema } from '@hapi/protocol/artifacts';
 import {
     AgentStateSchema,
     AttachmentMetadataSchema,
@@ -93,7 +94,8 @@ export const UserMessageSchema = z.object({
     content: z.object({
         type: z.literal('text'),
         text: z.string(),
-        attachments: z.array(AttachmentMetadataSchema).optional()
+        attachments: z.array(AttachmentMetadataSchema).optional(),
+        parts: z.array(ChatContentPartSchema).optional()
     }),
     localKey: z.string().optional(),
     meta: MessageMetaSchema.optional()

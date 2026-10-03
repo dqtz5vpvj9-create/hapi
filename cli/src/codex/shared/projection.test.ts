@@ -94,6 +94,20 @@ describe('shared history projection', () => {
         const events = send.mock.calls.map(([body]) => body).filter(body => body.type === 'token_count');
         expect(events.map(body => body.model)).toEqual(['model-a', 'model-c']);
     });
+    it('projects native image-only inputs and history tools as resource references', async () => {
+        const user = vi.fn(); const send = vi.fn();
+        const session = { getMetadata: () => ({}), updateMetadata: vi.fn(), sendUserMessage: user, sendAgentMessage: send } as unknown as ApiSessionClient;
+        const projection = new SharedCodexProjection(session, 'thread', async () => {}, undefined, true);
+        await projection.history({ turns: [{ id: 'turn', status: 'completed', items: [
+            { id: 'user', type: 'userMessage', content: [{ type: 'image', url: 'data:image/png;base64,aGVsbG8=' }] },
+            { id: 'image', type: 'imageGeneration', status: 'completed', savedPath: '/outside/chart.png' }
+        ] }] });
+        expect(user.mock.calls[0][0]).toBe('');
+        expect(user.mock.calls[0][3][0]).toMatchObject({ type: 'artifact', artifact: { fileName: 'image-1' } });
+        expect(send.mock.calls.find(([body]) => body.type === 'tool-call-result')?.[0]).toMatchObject({ output: { content: [{ type: 'artifact' }] } });
+        expect(JSON.stringify(user.mock.calls)).not.toContain('aGVsbG8=');
+    });
+
     it('keeps image-only native inputs visible without embedding data URLs', () => {
         expect(inputText([{ type: 'image', url: 'data:image/png;base64,large' }])).toBe('[Image]');
         expect(inputText([{ type: 'localImage', path: '/tmp/image.png' }])).toBe('[Image: /tmp/image.png]');

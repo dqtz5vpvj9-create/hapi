@@ -1,4 +1,18 @@
 export default {
+    'artifact.groupCount': '{n} 个资源',
+    'artifact.loading': '正在读取资源…',
+    'artifact.load': '打开预览 / 准备下载',
+    'artifact.download': '下载',
+    'artifact.expand': '展开',
+    'artifact.source': '源码',
+    'artifact.preview': '预览',
+    'artifact.retry': '重试',
+    'artifact.codecError': '浏览器无法播放此媒体，可以下载原文件。',
+    'artifact.csvLimit': '最多预览 200 行，完整内容请下载文件。',
+    'artifact.downloadOnly': '此格式可下载查看。',
+    'artifact.htmlIsolation': '交互预览在隔离环境中运行；外部脚本、网络请求和相对路径文件被阻止。',
+    'artifact.offline': 'Agent 已离线，请重新打开会话后读取原资源。',
+
   'sessions.nativeSubagentHistory': '原生子代理记录',
   'sessions.subagentLoadEarlier': '加载更早记录',
   'sessions.subagentLoading': '加载中…',

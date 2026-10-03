@@ -54,6 +54,14 @@ describe('getToolGroupActionKind', () => {
 })
 
 describe('isEligibleForToolGrouping', () => {
+    it('keeps generated images and other resource results visible between surrounding tool groups', () => {
+        const generated = makeToolBlock('image', 'imageGeneration')
+        generated.tool.result = { content: [{ type: 'artifact', artifact: { id: 'output', fileName: 'output.png', mimeType: 'image/png' } }] }
+        expect(isEligibleForToolGrouping(generated)).toBe(false)
+        const blocks = buildVisibleChatBlocks([makeToolBlock('before', 'Read'), makeToolBlock('before2', 'Read'), generated, makeToolBlock('after', 'Read'), makeToolBlock('after2', 'Read')], { hasMoreMessages: false })
+        expect(blocks.map(block => block.id)).toEqual(['tool-group:before', 'image', 'tool-group:after'])
+    })
+
     it('excludes interactive, subagent, and plan cards', () => {
         expect(isEligibleForToolGrouping(makeToolBlock('read-1', 'Read'))).toBe(true)
         expect(isEligibleForToolGrouping(makeToolBlock('task-1', 'Task'))).toBe(false)

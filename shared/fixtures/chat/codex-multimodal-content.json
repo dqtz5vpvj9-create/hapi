@@ -1,0 +1,280 @@
+{
+    "description": "Native image inputs retain ordered content and artifact descriptors; tool images and HTML remain in their original tool result.",
+    "expected": {
+        "blocks": [
+            {
+                "attachments": [
+                    {
+                        "artifact": {
+                            "fileName": "input.png",
+                            "id": "native-image",
+                            "mimeType": "image/png"
+                        },
+                        "filename": "input.png",
+                        "id": "native-image",
+                        "mimeType": "image/png",
+                        "path": "",
+                        "size": 0
+                    }
+                ],
+                "createdAt": 1755000000000,
+                "id": "media-user",
+                "kind": "user-text",
+                "localId": null,
+                "parts": [
+                    {
+                        "text": "Before",
+                        "type": "text"
+                    },
+                    {
+                        "artifact": {
+                            "fileName": "input.png",
+                            "id": "native-image",
+                            "mimeType": "image/png"
+                        },
+                        "type": "artifact"
+                    },
+                    {
+                        "text": "After",
+                        "type": "text"
+                    }
+                ],
+                "text": "Before\nAfter"
+            },
+            {
+                "createdAt": 1755000000001,
+                "id": "media-call",
+                "kind": "tool-call",
+                "localId": null,
+                "tool": {
+                    "id": "media-call",
+                    "input": {
+                        "prompt": "Draw a chart"
+                    },
+                    "name": "imageGeneration",
+                    "result": {
+                        "content": [
+                            {
+                                "text": "Generated chart",
+                                "type": "text"
+                            },
+                            {
+                                "artifact": {
+                                    "fileName": "chart.png",
+                                    "id": "generated-chart",
+                                    "mimeType": "image/png"
+                                },
+                                "type": "artifact"
+                            },
+                            {
+                                "artifact": {
+                                    "fileName": "report.html",
+                                    "id": "html-report",
+                                    "mimeType": "text/html"
+                                },
+                                "type": "artifact"
+                            }
+                        ]
+                    },
+                    "state": "completed"
+                }
+            }
+        ],
+        "hasReadyEvent": false,
+        "latestUsage": null,
+        "visibleBlocks": [
+            {
+                "attachments": [
+                    {
+                        "artifact": {
+                            "fileName": "input.png",
+                            "id": "native-image",
+                            "mimeType": "image/png"
+                        },
+                        "filename": "input.png",
+                        "id": "native-image",
+                        "mimeType": "image/png",
+                        "path": "",
+                        "size": 0
+                    }
+                ],
+                "createdAt": 1755000000000,
+                "id": "media-user",
+                "kind": "user-text",
+                "localId": null,
+                "parts": [
+                    {
+                        "text": "Before",
+                        "type": "text"
+                    },
+                    {
+                        "artifact": {
+                            "fileName": "input.png",
+                            "id": "native-image",
+                            "mimeType": "image/png"
+                        },
+                        "type": "artifact"
+                    },
+                    {
+                        "text": "After",
+                        "type": "text"
+                    }
+                ],
+                "text": "Before\nAfter"
+            },
+            {
+                "createdAt": 1755000000001,
+                "id": "media-call",
+                "kind": "tool-call",
+                "localId": null,
+                "tool": {
+                    "id": "media-call",
+                    "input": {
+                        "prompt": "Draw a chart"
+                    },
+                    "name": "imageGeneration",
+                    "result": {
+                        "content": [
+                            {
+                                "text": "Generated chart",
+                                "type": "text"
+                            },
+                            {
+                                "artifact": {
+                                    "fileName": "chart.png",
+                                    "id": "generated-chart",
+                                    "mimeType": "image/png"
+                                },
+                                "type": "artifact"
+                            },
+                            {
+                                "artifact": {
+                                    "fileName": "report.html",
+                                    "id": "html-report",
+                                    "mimeType": "text/html"
+                                },
+                                "type": "artifact"
+                            }
+                        ]
+                    },
+                    "state": "completed"
+                }
+            }
+        ]
+    },
+    "fixtureVersion": 1,
+    "input": {
+        "agentState": null,
+        "messages": [
+            {
+                "content": {
+                    "content": {
+                        "attachments": [
+                            {
+                                "artifact": {
+                                    "fileName": "input.png",
+                                    "id": "native-image",
+                                    "mimeType": "image/png"
+                                },
+                                "filename": "input.png",
+                                "id": "native-image",
+                                "mimeType": "image/png",
+                                "path": "",
+                                "size": 0
+                            }
+                        ],
+                        "parts": [
+                            {
+                                "text": "Before",
+                                "type": "text"
+                            },
+                            {
+                                "artifact": {
+                                    "fileName": "input.png",
+                                    "id": "native-image",
+                                    "mimeType": "image/png"
+                                },
+                                "type": "artifact"
+                            },
+                            {
+                                "text": "After",
+                                "type": "text"
+                            }
+                        ],
+                        "text": "Before\nAfter",
+                        "type": "text"
+                    },
+                    "role": "user"
+                },
+                "createdAt": 1755000000000,
+                "id": "media-user",
+                "localId": null,
+                "seq": 1
+            },
+            {
+                "content": {
+                    "content": {
+                        "data": {
+                            "callId": "media-call",
+                            "input": {
+                                "prompt": "Draw a chart"
+                            },
+                            "name": "imageGeneration",
+                            "type": "tool-call"
+                        },
+                        "type": "codex"
+                    },
+                    "role": "agent"
+                },
+                "createdAt": 1755000000001,
+                "id": "media-tool",
+                "localId": null,
+                "seq": 2
+            },
+            {
+                "content": {
+                    "content": {
+                        "data": {
+                            "callId": "media-call",
+                            "output": {
+                                "content": [
+                                    {
+                                        "text": "Generated chart",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "artifact": {
+                                            "fileName": "chart.png",
+                                            "id": "generated-chart",
+                                            "mimeType": "image/png"
+                                        },
+                                        "type": "artifact"
+                                    },
+                                    {
+                                        "artifact": {
+                                            "fileName": "report.html",
+                                            "id": "html-report",
+                                            "mimeType": "text/html"
+                                        },
+                                        "type": "artifact"
+                                    }
+                                ]
+                            },
+                            "type": "tool-call-result"
+                        },
+                        "type": "codex"
+                    },
+                    "role": "agent"
+                },
+                "createdAt": 1755000000002,
+                "id": "media-result",
+                "localId": null,
+                "seq": 3
+            }
+        ],
+        "options": {
+            "hasMoreMessages": false
+        }
+    },
+    "name": "codex-multimodal-content"
+}

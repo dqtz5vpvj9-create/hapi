@@ -746,7 +746,8 @@ func reduceTimeline(_ messages: [NormalizedMessage], context: ReducerContext) ->
                 attachments: attachments,
                 status: msg.status,
                 originalText: msg.originalText,
-                meta: msg.meta
+                meta: msg.meta,
+                parts: msg.parts
             ))))
             continue
         }

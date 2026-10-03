@@ -1,3 +1,4 @@
+import type { ChatContentPart } from '@hapi/protocol/artifacts'
 import { useCallback, useMemo, useRef } from 'react'
 import type React from 'react'
 import type { AppendMessage, AttachmentAdapter, ThreadMessage, ThreadMessageLike } from '@assistant-ui/react'
@@ -40,6 +41,7 @@ export type HappyChatMessageMetadata = {
     event?: AgentEvent
     source?: CliOutputBlock['source']
     attachments?: AttachmentMetadata[]
+    parts?: ChatContentPart[]
     invokedAt?: number | null
     steered?: boolean
     durationMs?: number
@@ -508,6 +510,7 @@ function toThreadMessageLike(
                     localId: block.localId,
                     originalText: block.originalText,
                     attachments: block.attachments,
+                    parts: block.parts,
                     invokedAt: block.invokedAt,
                     steered: block.steered
                 } satisfies HappyChatMessageMetadata

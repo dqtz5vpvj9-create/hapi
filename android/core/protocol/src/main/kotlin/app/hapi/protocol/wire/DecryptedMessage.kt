@@ -105,4 +105,5 @@ data class AttachmentMetadata(
     val size: Long,
     val path: String,
     val previewUrl: String? = null,
+    val artifact: JsonObject? = null,
 )

@@ -1,4 +1,5 @@
 import type { ChatBlock, RoundSummary, ToolCallBlock } from '@/chat/types'
+import { ChatContentPartSchema } from '@hapi/protocol/artifacts'
 import { isCodexExplorationTool } from '@/chat/codexCommandPresentation'
 import { isSubagentToolName } from '@/chat/subagentTool'
 import { isAskUserQuestionToolName } from '@/components/ToolCard/askUserQuestion'
@@ -223,6 +224,12 @@ function isInteractiveToolBlock(block: ToolCallBlock): boolean {
 }
 
 export function isEligibleForToolGrouping(block: ToolCallBlock): boolean {
+    const result = block.tool.result
+    const content = result && typeof result === 'object' && 'content' in result ? result.content : result
+    if (Array.isArray(content) && content.some(value => {
+        const part = ChatContentPartSchema.safeParse(value)
+        return part.success && part.data.type !== 'text'
+    })) return false
     if (isSubagentToolName(block.tool.name)) return false
     if (PLAN_TOOL_NAMES.has(block.tool.name)) return false
     if (MILESTONE_TOOL_NAMES.has(block.tool.name)) return false

@@ -1,3 +1,6 @@
+import { artifactMimeFromFilename } from '@hapi/protocol/artifacts'
+import { ArtifactCard } from '@/components/Artifacts/ArtifactCard'
+import { richToolParts } from '@/components/Artifacts/ContentParts'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { ToolCallMessagePartProps } from '@assistant-ui/react'
 import type { ChatBlock } from '@/chat/types'
@@ -65,6 +68,14 @@ export function computeTinyImageScale(width: number, height: number): number {
 
 /** Exported for generated-media fetch and renderer tests. */
 export function GeneratedImageCard(props: { block: GeneratedImageBlock }) {
+    const mime = props.block.mimeType === 'application/octet-stream' ? artifactMimeFromFilename(props.block.fileName) : props.block.mimeType
+    if (mime === 'application/octet-stream' || mime === 'application/pdf' || mime?.startsWith('text/') || mime === 'application/json') {
+        return <ArtifactCard artifact={{ id: props.block.imageId, fileName: props.block.fileName, mimeType: mime }} legacyImageId={props.block.imageId} />
+    }
+    return <LegacyGeneratedImageCard {...props} />
+}
+
+function LegacyGeneratedImageCard(props: { block: GeneratedImageBlock }) {
     const ctx = useHappyChatContext()
     const { t } = useTranslation()
     const [objectUrl, setObjectUrl] = useState<string | null>(null)
@@ -295,7 +306,7 @@ function HappyNestedBlockList(props: {
                     const taskChildren = isTask ? splitTaskChildren(block) : null
 
                     return (
-                        <div key={`tool:${block.id}`} data-hapi-share-exclude="true" className="py-1">
+                        <div key={`tool:${block.id}`} data-hapi-share-exclude={richToolParts(block.tool.result) ? undefined : 'true'} className="py-1">
                             <ToolCard
                                 api={ctx.api}
                                 sessionId={ctx.sessionId}
@@ -388,7 +399,7 @@ export function HappyToolMessage(props: ToolCallMessagePartProps) {
     const taskChildren = isTask ? splitTaskChildren(block) : null
 
     return (
-        <div data-hapi-share-exclude="true" className="py-1 min-w-0 max-w-full overflow-x-hidden">
+        <div data-hapi-share-exclude={richToolParts(block.tool.result) ? undefined : 'true'} className="py-1 min-w-0 max-w-full overflow-x-hidden">
             <ToolCard
                 api={ctx.api}
                 sessionId={ctx.sessionId}

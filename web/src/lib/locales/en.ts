@@ -1,4 +1,18 @@
 export default {
+    'artifact.groupCount': '{n} resources',
+    'artifact.loading': 'Loading resource…',
+    'artifact.load': 'Open preview / prepare download',
+    'artifact.download': 'Download',
+    'artifact.expand': 'Expand',
+    'artifact.source': 'Source',
+    'artifact.preview': 'Preview',
+    'artifact.retry': 'Retry',
+    'artifact.codecError': 'This browser cannot play this media. You can download the file.',
+    'artifact.csvLimit': 'Preview shows up to 200 rows. Download for the complete file.',
+    'artifact.downloadOnly': 'This format is available as a download.',
+    'artifact.htmlIsolation': 'Interactive preview is isolated. External scripts, network requests and relative files are blocked.',
+    'artifact.offline': 'Agent is offline. Reopen the session to load the original resource.',
+
   'sessions.nativeSubagentHistory': 'Native subagent history',
   'sessions.subagentLoadEarlier': 'Load earlier messages',
   'sessions.subagentLoading': 'Loading…',

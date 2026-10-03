@@ -199,6 +199,32 @@ The spec drives a Vite-served fixture page (`web/e2e-fixtures/scratchlist-fixtur
 that mounts the production `ScratchlistPanel` in isolation, so no hub /
 auth / socket setup is required.
 
+## Chat media and documents
+
+Codex chat preserves the order of text, images and audio in user messages and
+tool results. Generated images and MCP resources also appear in restored
+history. Images support zoom; audio and video use browser playback controls.
+PDF files have page navigation, and Markdown, CSV, JSON and text files have
+inline previews. Other files remain downloadable.
+
+The hub stores resource references, while the agent reads bytes when a preview
+is opened. Uploaded files retain their existing upload lifecycle. If the agent
+is offline, the original file was deleted, or a resource exceeds the 25 MiB
+limit, the card explains why the preview is unavailable and offers retry.
+
+HTML previews run in an isolated iframe. Inline scripts can provide local
+interaction, but external scripts, network access, parent-page access and MCP
+app callbacks are unavailable. Browser codec support determines which audio
+and video formats can play.
+
+The media browser test mounts the production preview components in a local
+fixture, without creating a hub session:
+
+```bash
+cd web
+node node_modules/@playwright/test/cli.js test -c playwright.config.ts e2e/artifacts.spec.ts
+```
+
 ## Build
 
 ```bash

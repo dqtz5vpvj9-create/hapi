@@ -8,13 +8,15 @@ private func projectAttachments(_ attachments: [AttachmentMetadata]?) -> JSONVal
     guard let attachments, !attachments.isEmpty else { return nil }
     // previewUrl is a web-serving convenience — dropped.
     return .array(attachments.map { attachment in
-        .object([
+        var object: [String: JSONValue] = [
             "id": .string(attachment.id),
             "filename": .string(attachment.filename),
             "mimeType": .string(attachment.mimeType),
             "size": .number(Double(attachment.size)),
             "path": .string(attachment.path),
-        ])
+        ]
+        if let artifact = attachment.artifact { object["artifact"] = artifact }
+        return .object(object)
     })
 }
 
@@ -69,6 +71,7 @@ public func projectChatBlock(_ block: ChatBlock) -> JSONValue {
     case .userText(let userText):
         projected["localId"] = localIdValue(userText.localId)
         projected["text"] = .string(userText.text)
+        if let parts = userText.parts { projected["parts"] = parts }
         if let attachments = projectAttachments(userText.attachments) {
             projected["attachments"] = attachments
         }

@@ -2,6 +2,7 @@ package app.hapi.protocol.chat
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
 
 /**
  * Port of `web/src/chat/types.ts`.
@@ -291,6 +292,7 @@ data class ChatAttachment(
     val size: Double,
     val path: String,
     val previewUrl: String? = null,
+    val artifact: JsonObject? = null,
 )
 
 /** `NormalizedMessage` — one wire message after decode, before reduction. */
@@ -313,6 +315,7 @@ sealed class NormalizedMessage {
         override val createdAt: Long,
         val text: String,
         val attachments: List<ChatAttachment>? = null,
+        val parts: JsonArray? = null,
         override val isSidechain: Boolean = false,
         override val meta: JsonElement? = null,
         override val usage: UsageData? = null,
@@ -465,6 +468,7 @@ class UserTextBlock(
     var status: String?,
     var originalText: String?,
     override var meta: JsonElement?,
+    var parts: JsonArray? = null,
 ) : ChatBlock() {
     override val kind: String get() = "user-text"
 }

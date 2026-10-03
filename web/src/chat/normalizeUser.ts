@@ -1,3 +1,4 @@
+import { ArtifactRefSchema, ChatContentPartSchema } from '@hapi/protocol/artifacts'
 import type { NormalizedMessage } from '@/chat/types'
 import type { AttachmentMetadata } from '@/types/api'
 import { isObject } from '@hapi/protocol'
@@ -20,7 +21,8 @@ function parseAttachments(raw: unknown): AttachmentMetadata[] | undefined {
                 mimeType: item.mimeType,
                 size: item.size,
                 path: item.path,
-                previewUrl: typeof item.previewUrl === 'string' ? item.previewUrl : undefined
+                previewUrl: typeof item.previewUrl === 'string' ? item.previewUrl : undefined,
+                artifact: ArtifactRefSchema.safeParse(item.artifact).success ? ArtifactRefSchema.parse(item.artifact) : undefined
             })
         }
     }
@@ -53,7 +55,7 @@ export function normalizeUserRecord(
             localId,
             createdAt,
             role: 'user',
-            content: { type: 'text', text: content.text, attachments },
+            content: { type: 'text', text: content.text, attachments, ...(Array.isArray(content.parts) ? { parts: content.parts.flatMap(part => { const parsed = ChatContentPartSchema.safeParse(part); return parsed.success ? [parsed.data] : [] }) } : {}) },
             isSidechain: false,
             meta
         }

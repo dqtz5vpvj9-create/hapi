@@ -765,6 +765,7 @@ export function reduceTimeline(
                 invokedAt: msg.invokedAt,
                 text: msg.content.text,
                 attachments: msg.content.attachments,
+                ...(msg.content.parts ? { parts: msg.content.parts } : {}),
                 status: msg.status,
                 originalText: msg.originalText,
                 meta: msg.meta,

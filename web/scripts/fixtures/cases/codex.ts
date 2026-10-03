@@ -7,6 +7,22 @@ import { T0, wireMessage } from './support'
  * stream snapshots keyed by data.id.
  */
 export const codexCases: FixtureCase[] = [
+    {
+        name: 'codex-multimodal-content',
+        description: 'Native image inputs retain ordered content and artifact descriptors; tool images and HTML remain in their original tool result.',
+        messages: [
+            wireMessage({ id: 'media-user', seq: 1, createdAt: T0, content: { role: 'user', content: { type: 'text', text: 'Before\nAfter',
+                attachments: [{ id: 'native-image', filename: 'input.png', mimeType: 'image/png', size: 0, path: '', artifact: { id: 'native-image', fileName: 'input.png', mimeType: 'image/png' } }],
+                parts: [{ type: 'text', text: 'Before' }, { type: 'artifact', artifact: { id: 'native-image', fileName: 'input.png', mimeType: 'image/png' } }, { type: 'text', text: 'After' }]
+            } } }),
+            wireMessage({ id: 'media-tool', seq: 2, createdAt: T0 + 1, content: { role: 'agent', content: { type: 'codex', data: { type: 'tool-call', name: 'imageGeneration', callId: 'media-call', input: { prompt: 'Draw a chart' } } } } }),
+            wireMessage({ id: 'media-result', seq: 3, createdAt: T0 + 2, content: { role: 'agent', content: { type: 'codex', data: { type: 'tool-call-result', callId: 'media-call', output: { content: [
+                { type: 'text', text: 'Generated chart' }, { type: 'artifact', artifact: { id: 'generated-chart', fileName: 'chart.png', mimeType: 'image/png' } },
+                { type: 'artifact', artifact: { id: 'html-report', fileName: 'report.html', mimeType: 'text/html' } }
+            ] } } } } }),
+        ],
+    },
+
     ...([true, false] as const).map((available): FixtureCase => {
         const callId = 'codex-proposed-plan:root:turn:plan-item'
         const data = [

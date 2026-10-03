@@ -81,6 +81,28 @@ function copyKaTeXFonts(): Plugin {
     }
 }
 
+function pdfAssets(): Plugin {
+    const directory = resolve(__dirname, 'node_modules/pdfjs-dist')
+    const files = new Map(['cmaps', 'standard_fonts', 'wasm'].flatMap(folder =>
+        readdirSync(resolve(directory, folder)).map(name => [`${folder}/${name}`, resolve(directory, folder, name)] as const)))
+    return {
+        name: 'pdf-assets',
+        configureServer(server) {
+            server.middlewares.use((request, response, next) => {
+                const url = (request.url ?? '').split('?')[0]
+                const prefix = `${base}pdf-assets/`
+                const file = url.startsWith(prefix) ? files.get(url.slice(prefix.length)) : undefined
+                if (!file) { next(); return }
+                response.setHeader('Content-Type', file.endsWith('.wasm') ? 'application/wasm' : file.endsWith('.js') ? 'text/javascript' : 'application/octet-stream')
+                response.end(readFileSync(file))
+            })
+        },
+        generateBundle() {
+            for (const [name, file] of files) this.emitFile({ type: 'asset', fileName: `pdf-assets/${name}`, source: readFileSync(file) })
+        }
+    }
+}
+
 export default defineConfig({
     appType: 'spa',
     define: {
@@ -104,6 +126,7 @@ export default defineConfig({
         react(),
         spaFallback(),
         copyKaTeXFonts(),
+        pdfAssets(),
         VitePWA({
             // User-controlled reload avoids mid-session surprise reloads (autoUpdate reloads all tabs).
             registerType: 'prompt',

@@ -341,3 +341,5 @@ the stored expectations or from canonical serialization:
   `catalogs/modes.json` from `shared/src/modes.ts` and compares)
 - `web/src/lib/sessionPatch.fixtures.test.ts` — sse suite
 - `web/src/lib/message-window-store.fixtures.test.ts` — pagination suite
+
+Ordered multimodal user content is retained in optional `user-text.parts`. Each part is text, an artifact reference, a resource link, or an unsupported-content card. Attachments retain optional `artifact` descriptors (`id`, `fileName`, `mimeType`, optional size, label and externalUrl). Native clients preserve these fields; resource bytes are fetched on demand and are not fixture data. Tool-result content preserves the same ordered parts inside its existing result JSON.

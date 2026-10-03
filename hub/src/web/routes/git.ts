@@ -158,6 +158,23 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
         return c.json(result)
     })
 
+    app.get('/sessions/:id/artifacts/:artifactId', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const session = requireSessionFromParam(c, engine)
+        if (session instanceof Response) return session
+        if (!session.session.active) return c.json({ success: false, code: 'offline', error: 'Agent is offline. Reopen the session to load the original resource.' }, 409)
+        const result = await runRpc(() => engine.readArtifact(session.sessionId, c.req.param('artifactId')))
+        if (!result.success || result.content === undefined) return c.json(result, 'code' in result && result.code === 'denied' ? 403 : 'code' in result && result.code === 'too-large' ? 413 : 404)
+        const mimeType = result.mimeType ?? 'application/octet-stream'
+        return c.body(Uint8Array.from(Buffer.from(result.content, 'base64')), 200, {
+            'Content-Type': mimeType,
+            'Content-Disposition': `attachment; filename="${encodeURIComponent(result.fileName ?? 'resource')}"`,
+            'X-Content-Type-Options': 'nosniff',
+            'Cache-Control': 'private, no-store',
+        })
+    })
+
     app.get('/sessions/:id/generated-images/:imageId', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) {

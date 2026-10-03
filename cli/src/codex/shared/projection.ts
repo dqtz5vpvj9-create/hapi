@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { ApiSessionClient } from '@/api/apiSession';
 import { normalizeSessionDisplayTitle } from '@/agent/sessionDisplayRename';
-import { registerGeneratedImageFromPath } from '@/modules/common/generatedImages';
+import { projectNativeContent } from './artifacts';
 import { AppServerEventConverter } from '../utils/appServerEventConverter';
 import { record, string } from './gateway';
 import { codexPlanProposalId } from './plan';
@@ -131,8 +131,10 @@ export class SharedCodexProjection {
                 const firstInTurn = turnId ? [...this.turns].find(([, value]) => value === turnId)?.[0] : undefined;
                 if (turnId) this.turns.set(id, turnId);
                 await this.committed(id);
-                const text = inputText(item.content);
-                if (text) this.session.sendUserMessage(text, undefined, id);
+                const { parts } = projectNativeContent(this.threadId, turnId ?? '', item);
+                const text = parts.filter(part => part.type === 'text').map(part => part.text).join('\n');
+                const rich = parts.some(part => part.type !== 'text');
+                if (text || parts.length) this.session.sendUserMessage(text, undefined, id, rich ? parts : undefined);
                 this.session.updateMetadata(metadata => ({ ...metadata, conversationHistoryTurns: Object.fromEntries(this.turns),
                     ...(turnId && (!firstInTurn || firstInTurn === id) ? { conversationHistoryPoints: { ...metadata.conversationHistoryPoints, [id]: true } } : {})
                 }));
@@ -142,6 +144,18 @@ export class SharedCodexProjection {
             this.send({ type: 'agent-run-update', agentId: this.threadId, cardId: `codex-agent:${this.threadId}`,
                 status: method === 'turn/started' ? 'running' : record(p.turn).status === 'completed' ? 'completed' : 'failed'
             }, `lifecycle:${turnId}:${method}`);
+        }
+        const special = item.type === 'dynamicToolCall' || item.type === 'functionCallOutput' || item.type === 'imageView' || item.type === 'imageGeneration';
+        if (special && itemId && turnId && (method === 'item/started' || method === 'item/completed')) {
+            const name = string(item.tool) ?? string(item.name) ?? String(item.type);
+            const key = `${turnId}:${itemId}`;
+            this.send({ type: 'tool-call', name, callId: itemId, input: item.arguments ?? { path: item.path, prompt: item.revisedPrompt } }, `${key}:native-tool-start`);
+            if (method === 'item/completed') {
+                const { parts } = projectNativeContent(this.threadId, turnId, item);
+                this.send({ type: 'tool-call-result', callId: itemId, output: { content: parts },
+                    is_error: item.success === false || item.status === 'failed' || item.failure != null }, `${key}:native-tool-end`);
+            }
+            return;
         }
         const events = this.converter.handleNotification(method, params);
         for (const event of events) {
@@ -165,7 +179,9 @@ export class SharedCodexProjection {
                 this.send({ type: 'tool-call', name: `mcp__${invocation.server}__${invocation.tool}`, callId, input: invocation.arguments ?? {} }, key);
             } else if (event.type === 'mcp_tool_call_end' && callId) {
                 const result = record(event.result);
-                this.send({ type: 'tool-call-result', callId, output: result.Ok ?? result.Err ?? event.result, is_error: 'Err' in result }, key);
+                this.send({ type: 'tool-call-result', callId, output: item.type === 'mcpToolCall' && projectNativeContent(this.threadId, turnId ?? '', item).parts.some(part => part.type !== 'text')
+                    ? { content: projectNativeContent(this.threadId, turnId ?? '', item).parts }
+                    : result.Ok ?? result.Err ?? event.result, is_error: 'Err' in result }, key);
             } else if (event.type === 'codex_tool_call_begin' && callId) {
                 this.send({ type: 'tool-call', name: event.name, callId, input: event.input ?? event.arguments }, key);
             } else if (event.type === 'codex_tool_call_end' && callId) {
@@ -181,9 +197,6 @@ export class SharedCodexProjection {
             } else if (event.type === 'plan_update') {
                 this.send({ type: 'tool-call', name: 'update_plan', callId: 'codex-plan-state', input: { plan: event.plan, source: 'codex' } }, key);
                 this.send({ type: 'tool-call-result', callId: 'codex-plan-state', output: { plan: event.plan, source: 'codex', status: 'updated' } }, `${key}:result`);
-            } else if (!this.readOnlyHistory && event.type === 'generated_image' && typeof event.saved_path === 'string') {
-                const image = await registerGeneratedImageFromPath({ path: event.saved_path, id: createHash('sha256').update(`${this.threadId}:${key}`).digest('hex'), fileName: string(event.file_name) });
-                if (image) this.send({ type: 'generated-image', imageId: image.id, fileName: image.fileName, mimeType: image.mimeType }, key);
             } else if (event.type === 'turn_aborted' && !this.parentThreadId) {
                 // Reuse the durable session status event, with a turn identity
                 // shared by live notifications and history replay.

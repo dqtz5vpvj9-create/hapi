@@ -528,6 +528,22 @@ export class ApiClient {
         return await this.request<FileSearchResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/files${qs ? `?${qs}` : ''}`)
     }
 
+    async getArtifactBlob(sessionId: string, artifactId: string, signal?: AbortSignal, attempt = 0, overrideToken?: string): Promise<Blob> {
+        const token = overrideToken ?? this.getToken?.() ?? this.token
+        const response = await fetch(this.buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}`), {
+            headers: token ? { authorization: `Bearer ${token}` } : {}, signal, cache: 'no-store'
+        })
+        if (response.status === 401 && attempt === 0 && this.onUnauthorized) {
+            const refreshed = await this.onUnauthorized()
+            if (refreshed) { this.token = refreshed; return this.getArtifactBlob(sessionId, artifactId, signal, 1, refreshed) }
+        }
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({})) as { error?: string; code?: string }
+            throw new ApiError(body.error ?? `HTTP ${response.status}`, response.status, body.code)
+        }
+        return response.blob()
+    }
+
     async getGeneratedImageBlob(sessionId: string, imageId: string, attempt: number = 0, overrideToken?: string | null): Promise<Blob> {
         const headers = new Headers()
         const liveToken = this.getToken ? this.getToken() : null

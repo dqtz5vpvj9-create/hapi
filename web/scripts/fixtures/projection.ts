@@ -29,7 +29,8 @@ function projectAttachments(attachments: AttachmentMetadata[] | undefined): Json
         filename: attachment.filename,
         mimeType: attachment.mimeType,
         size: attachment.size,
-        path: attachment.path
+        path: attachment.path,
+        ...(attachment.artifact ? { artifact: attachment.artifact } : {})
     }))
 }
 
@@ -83,6 +84,7 @@ export function projectChatBlock(block: ChatBlock): JsonObject {
             projected.localId = block.localId
             projected.text = block.text
             withOptional(projected, 'attachments', projectAttachments(block.attachments))
+            withOptional(projected, 'parts', block.parts)
             return projected
         case 'agent-text':
         case 'agent-reasoning':

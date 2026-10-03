@@ -1,3 +1,4 @@
+import { ContentParts } from '@/components/Artifacts/ContentParts'
 import { MessagePrimitive, useAuiState, type TextMessagePart } from '@assistant-ui/react'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import type { HappyChatMessageMetadata } from '@/lib/assistant-runtime'
@@ -29,6 +30,7 @@ export function HappyUserMessage() {
         const custom = s.message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
         return custom?.localId ?? null
     })
+    const parts = useAuiState((s) => (s.message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined)?.parts)
     const attachments = useAuiState((s) => {
         if (s.message.role !== 'user') return undefined
         const custom = s.message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
@@ -106,8 +108,10 @@ export function HappyUserMessage() {
             <div className={getUserBubbleClassName(status)}>
                 <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
-                        {hasText ? <UserBubbleContent text={text} /> : null}
-                        {hasAttachments ? <MessageAttachments attachments={attachments} /> : null}
+                        {parts?.length ? <ContentParts parts={parts} /> : <>
+                            {hasText ? <UserBubbleContent text={text} /> : null}
+                            {hasAttachments ? <MessageAttachments attachments={attachments} /> : null}
+                        </>}
                     </div>
                     {showStatus && (
                         <div className="happy-message-actions-first-line flex shrink-0 items-center gap-1">

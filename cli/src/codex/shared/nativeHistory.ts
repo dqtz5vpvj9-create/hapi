@@ -1,3 +1,4 @@
+import { userContentWithParts, type ChatContentPart } from '@hapi/protocol/artifacts';
 import { AGENT_MESSAGE_PAYLOAD_TYPE } from '@hapi/protocol';
 import { MessagesQuerySchema, MessageOutlineQuerySchema, MessageContextQuerySchema, MessageDependenciesQuerySchema,
     type MessagesResponse, type MessageOutlineResponse, type MessageContextResponse, type MessageDependenciesResponse } from '@hapi/protocol/apiTypes';
@@ -139,7 +140,7 @@ export class NativeCodexHistory {
             if (label && !parent) this.labels.set(id, { messageId: id, label, at: origin.at, seq: message.seq!, createdAt: origin.at });
         };
         const sink = { getMetadata: () => null, updateMetadata: () => {},
-            sendUserMessage: (text: string, _meta: unknown, id: string) => append({ role: 'user', content: { type: 'text', text }, meta: { sentFrom: 'cli' } }, id),
+            sendUserMessage: (text: string, _meta: unknown, id: string, parts?: ChatContentPart[]) => append({ role: 'user', content: userContentWithParts(text, parts), meta: { sentFrom: 'cli' } }, id),
             sendAgentMessage: (body: unknown) => append({ role: 'agent', content: { type: AGENT_MESSAGE_PAYLOAD_TYPE, data: body }, meta: { sentFrom: 'cli' } }, string(record(body).id)!),
             sendSessionEvent: (event: unknown, id: string) => append({ role: 'agent', content: { type: 'event', data: event, id } }, id)
         } as unknown as ApiSessionClient;

@@ -1,3 +1,4 @@
+import { ContentParts, richToolParts } from '@/components/Artifacts/ContentParts'
 import type { ChatBlock, ChatToolCall, ToolCallBlock } from '@/chat/types'
 import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
@@ -438,7 +439,8 @@ function ToolCardInner(props: ToolCardProps) {
     const useCompactTerminalCard = shouldUseCompactTerminalToolCard(toolName, props.terminalToolDisplayMode)
     const isPlan = toolName === 'ExitPlanMode' || toolName === 'exit_plan_mode'
     const needsApproval = props.block.tool.permission?.status === 'pending'
-    const showInline = shouldShowInlineToolCardBody(toolName, presentation.minimal, props.terminalToolDisplayMode)
+    const richParts = richToolParts(props.block.tool.result)
+    const showInline = Boolean(richParts) || shouldShowInlineToolCardBody(toolName, presentation.minimal, props.terminalToolDisplayMode)
         || (needsApproval && !isSubagentToolName(toolName) && !isAskUserQuestionToolName(toolName) && !isRequestUserInputToolName(toolName))
     const terminalCommand = TERMINAL_RELATED_TOOL_NAMES.has(toolName)
         ? (Array.isArray((props.block.tool.input as { command?: unknown } | null)?.command)
@@ -494,7 +496,7 @@ function ToolCardInner(props: ToolCardProps) {
 
     return (
         <Card data-hapi-tool-state={props.block.tool.state} className="min-w-0 max-w-full overflow-hidden rounded-md border-0 bg-transparent shadow-none">
-            <CardHeader className="space-y-0 px-0 py-1">
+            <CardHeader data-hapi-share-exclude={richParts ? 'true' : undefined} className="space-y-0 px-0 py-1">
                 <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
                     <DialogTrigger asChild>
                         <button
@@ -539,7 +541,7 @@ function ToolCardInner(props: ToolCardProps) {
                         </div>
                     ) : null}
 
-                    {showInline ? (
+                    {richParts ? <ContentParts parts={richParts} /> : showInline ? (
                         CompactToolView ? (
                             compactViewOwnsInteractions ? (
                                 <div className={cn(inlineBodySpacing, 'rounded-xl')}>

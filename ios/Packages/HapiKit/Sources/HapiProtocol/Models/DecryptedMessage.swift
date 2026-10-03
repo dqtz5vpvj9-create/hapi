@@ -77,6 +77,7 @@ public struct AttachmentMetadata: Codable, Equatable, Sendable {
     public var path: String
     /// Web-serving detail; present on wire payloads, absent from fixtures.
     public var previewUrl: String?
+    public var artifact: JSONValue?
 
     public init(
         id: String,
@@ -84,7 +85,8 @@ public struct AttachmentMetadata: Codable, Equatable, Sendable {
         mimeType: String,
         size: Int,
         path: String,
-        previewUrl: String? = nil
+        previewUrl: String? = nil,
+        artifact: JSONValue? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -92,5 +94,6 @@ public struct AttachmentMetadata: Codable, Equatable, Sendable {
         self.size = size
         self.path = path
         self.previewUrl = previewUrl
+        self.artifact = artifact
     }
 }

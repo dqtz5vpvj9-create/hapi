@@ -1,3 +1,4 @@
+import type { ChatContentPart } from '@hapi/protocol/artifacts'
 import type { AttachmentMetadata, MessageStatus } from '@/types/api'
 import type { ThreadGoal } from '@/types/api'
 import type { InlineMediaSource } from '@/chat/inlineMediaSource'
@@ -140,7 +141,7 @@ export type NormalizedAgentContent =
 
 export type NormalizedMessage = ({
     role: 'user'
-    content: { type: 'text'; text: string; attachments?: AttachmentMetadata[] }
+    content: { type: 'text'; text: string; attachments?: AttachmentMetadata[]; parts?: ChatContentPart[] }
 } | {
     role: 'agent'
     content: NormalizedAgentContent[]
@@ -224,6 +225,7 @@ export type UserTextBlock = {
     invokedAt?: number | null
     text: string
     attachments?: AttachmentMetadata[]
+    parts?: ChatContentPart[]
     status?: MessageStatus
     originalText?: string
     meta?: unknown

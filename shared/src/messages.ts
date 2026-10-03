@@ -186,6 +186,7 @@ function hasConversationBlock(value: unknown): boolean {
     if (value.type === 'text') {
         return hasConversationBlock(value.text)
             || (Array.isArray(value.attachments) && value.attachments.length > 0)
+            || (Array.isArray(value.parts) && value.parts.some(part => isObject(part) && ['artifact', 'resource-link', 'unsupported'].includes(String(part.type))))
     }
     if (value.type === 'thinking') return hasConversationBlock(value.thinking)
     if (value.type === 'image' || value.type === 'document') return isObject(value.source)

@@ -410,6 +410,7 @@ describe('hasConversationMessageContent', () => {
         ['user string', { role: 'user', content: 'Hello' }],
         ['user blocks', { role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
         ['attachment only', { role: 'user', content: { type: 'text', text: '', attachments: [{ id: 'file' }] } }],
+        ['unsupported image only', { role: 'user', content: { type: 'text', text: '', parts: [{ type: 'unsupported', label: 'Image bytes unavailable' }] } }],
         ['Claude output', { role: 'agent', content: { type: 'output', data: { type: 'assistant', message: { content: [{ type: 'text', text: 'Answer' }] } } } }],
         ['Claude tool', { role: 'agent', content: { type: 'output', data: { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', id: 'call' }] } } } }],
         ['Claude user echo', { role: 'agent', content: { type: 'output', data: { type: 'user', message: { content: [{ type: 'text', text: 'Prompt' }] } } } }],

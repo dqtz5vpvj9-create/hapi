@@ -1,3 +1,4 @@
+import { registerArtifactHandlers } from './handlers/artifacts'
 import type { RpcHandlerManager } from '@/api/rpc/RpcHandlerManager'
 import { registerAgyModelHandlers } from './handlers/agyModels'
 import { registerBashHandlers } from './handlers/bash'
@@ -30,6 +31,7 @@ export function registerCommonHandlers(rpcHandlerManager: RpcHandlerManager, wor
     registerCopilotModelHandlers(rpcHandlerManager)
     registerKimiModelHandlers(rpcHandlerManager)
     registerFileHandlers(rpcHandlerManager, workingDirectory)
+    registerArtifactHandlers(rpcHandlerManager, workingDirectory)
     registerDirectoryHandlers(rpcHandlerManager, workingDirectory)
     registerRipgrepHandlers(rpcHandlerManager, workingDirectory)
     registerDifftasticHandlers(rpcHandlerManager, workingDirectory)

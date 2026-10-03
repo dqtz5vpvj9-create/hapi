@@ -2,6 +2,7 @@ package app.hapi.protocol.chat
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /** Port of `web/src/chat/toolGroups.ts` — the visible-layer tool grouping. */
@@ -197,6 +198,11 @@ private fun isInteractiveToolBlock(block: ToolCallBlock): Boolean =
         || isRequestUserInputToolName(block.tool.name)
 
 fun isEligibleForToolGrouping(block: ToolCallBlock): Boolean {
+    val result = block.tool.result
+    val content = (result as? JsonObject)?.get("content") ?: result
+    if ((content as? JsonArray)?.any { part ->
+        ((part as? JsonObject)?.get("type") as? JsonPrimitive)?.content in setOf("artifact", "resource-link", "unsupported")
+    } == true) return false
     if (isSubagentToolName(block.tool.name)) return false
     if (PLAN_TOOL_NAMES.contains(block.tool.name)) return false
     if (MILESTONE_TOOL_NAMES.contains(block.tool.name)) return false

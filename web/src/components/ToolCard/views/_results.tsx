@@ -1,3 +1,4 @@
+import { ContentParts, parseContentParts, richToolParts } from '@/components/Artifacts/ContentParts'
 import type { ToolViewComponent, ToolViewProps } from '@/components/ToolCard/views/_all'
 import type { ReactNode } from 'react'
 import { isObject, safeStringify } from '@hapi/protocol'
@@ -982,6 +983,8 @@ const SkillResultView: ToolViewComponent = (props: ToolViewProps) => {
 
 const GenericResultView: ToolViewComponent = (props: ToolViewProps) => {
     const result = props.block.tool.result
+    const parts = parseContentParts(isObject(result) ? result.content : result)
+    if (parts?.some(part => part.type !== 'text')) return <ContentParts parts={parts} />
 
     if (result === undefined || result === null) {
         return <ResultStatusPill text={placeholderForState(props.block.tool.state)} />
@@ -1070,9 +1073,17 @@ export const toolResultViewRegistry: Record<string, ToolViewComponent> = {
     exit_plan_mode: MarkdownResultView
 }
 
+const artifactResultViews = new Map<ToolViewComponent, ToolViewComponent>()
+
 export function getToolResultViewComponent(toolName: string): ToolViewComponent {
-    if (toolName.startsWith('mcp__')) {
-        return GenericResultView
+    const View = toolName.startsWith('mcp__') ? GenericResultView : toolResultViewRegistry[toolName] ?? GenericResultView
+    let wrapped = artifactResultViews.get(View)
+    if (!wrapped) {
+        wrapped = props => {
+            const parts = richToolParts(props.block.tool.result)
+            return parts ? <ContentParts parts={parts} /> : <View {...props} />
+        }
+        artifactResultViews.set(View, wrapped)
     }
-    return toolResultViewRegistry[toolName] ?? GenericResultView
+    return wrapped
 }

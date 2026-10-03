@@ -222,6 +222,14 @@ export type UserInput =
         path: string;
     }
     | {
+        type: 'audio';
+        url: string;
+    }
+    | {
+        type: 'localAudio';
+        path: string;
+    }
+    | {
         type: 'skill';
         name: string;
         path: string;

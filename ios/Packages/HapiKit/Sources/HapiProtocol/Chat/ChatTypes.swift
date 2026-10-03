@@ -666,6 +666,7 @@ public struct NormalizedMessage: Equatable, Sendable {
     /// Execution-machine wall clock (epoch ms) parsed from the Claude
     /// entry's own `timestamp`; `nil` when unparseable.
     public var agentTimestamp: Int?
+    public var parts: JSONValue?
     /// Tracer output: the Task/Agent message id this sidechain message
     /// groups under.
     public var sidechainId: String?
@@ -684,6 +685,7 @@ public struct NormalizedMessage: Equatable, Sendable {
         invokedAt: Int? = nil,
         model: String? = nil,
         agentTimestamp: Int? = nil,
+        parts: JSONValue? = nil,
         sidechainId: String? = nil
     ) {
         self.id = id
@@ -699,6 +701,7 @@ public struct NormalizedMessage: Equatable, Sendable {
         self.invokedAt = invokedAt
         self.model = model
         self.agentTimestamp = agentTimestamp
+        self.parts = parts
         self.sidechainId = sidechainId
     }
 
@@ -787,6 +790,7 @@ public struct UserTextBlock: Equatable, Sendable {
     public var status: String?
     public var originalText: String?
     public var meta: JSONValue?
+    public var parts: JSONValue? = nil
 }
 
 public struct AgentTextBlock: Equatable, Sendable {

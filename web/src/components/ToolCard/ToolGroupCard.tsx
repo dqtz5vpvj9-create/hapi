@@ -1,3 +1,4 @@
+import { toolArtifactCount } from '@/components/Artifacts/ContentParts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ToolGroupBlock } from '@/chat/toolGroups'
 import type { ToolCallBlock } from '@/chat/types'
@@ -304,6 +305,7 @@ export function ToolGroupCard(props: {
                         <span className={cn('shrink-0', toolStatusColorClass(groupState))} aria-label={t(`toolGroup.rowStatus.${groupState}`)}><ToolStatusIcon state={groupState} /></span>
                         <span className="shrink-0 tabular-nums opacity-65">{new Date(props.block.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
                         <span className="shrink-0 opacity-65">({props.block.tools.length})</span>
+                        {props.block.tools.some(tool => toolArtifactCount(tool.tool.result) > 0) ? <span className="shrink-0">{t('artifact.groupCount', { n: props.block.tools.reduce((count, tool) => count + toolArtifactCount(tool.tool.result), 0) })}</span> : null}
                     </div>
                 </button>
             </CardHeader>

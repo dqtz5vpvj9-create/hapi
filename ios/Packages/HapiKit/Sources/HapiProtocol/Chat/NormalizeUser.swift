@@ -26,7 +26,8 @@ func parseAttachments(_ raw: JSONValue?) -> [AttachmentMetadata]? {
             mimeType: mimeType,
             size: intSize,
             path: path,
-            previewUrl: object["previewUrl"]?.stringValue
+            previewUrl: object["previewUrl"]?.stringValue,
+            artifact: object["artifact"]
         ))
     }
     return attachments.isEmpty ? nil : attachments
@@ -61,7 +62,8 @@ func normalizeUserRecord(
             createdAt: createdAt,
             content: .user(text: text, attachments: attachments),
             isSidechain: false,
-            meta: meta
+            meta: meta,
+            parts: object["parts"]
         )
     }
 

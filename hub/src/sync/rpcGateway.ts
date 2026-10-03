@@ -1,3 +1,4 @@
+import type { ArtifactReadResponse } from '@hapi/protocol/artifacts'
 import type { CodexGoalRequest, CodexGoalResponse } from '@hapi/protocol/apiTypes'
 import { CodexSubagentMessagesResponseSchema } from '@hapi/protocol/apiTypes'
 import type { AgentFlavor, CodexCollaborationMode, CopilotAgentMode, PermissionMode } from '@hapi/protocol/types'
@@ -398,6 +399,10 @@ export class RpcGateway {
 
     async readSessionFile(sessionId: string, path: string): Promise<RpcReadFileResponse> {
         return await this.sessionRpc(sessionId, RPC_METHODS.ReadFile, { path }) as RpcReadFileResponse
+    }
+
+    async readArtifact(sessionId: string, data: { id: string } | { path: string; sessionId: string; mimeType?: string }): Promise<ArtifactReadResponse> {
+        return await this.sessionRpc(sessionId, RPC_METHODS.ReadArtifact, data) as ArtifactReadResponse
     }
 
     async readGeneratedImage(sessionId: string, imageId: string): Promise<RpcGeneratedImageResponse> {

@@ -12,7 +12,7 @@ import {
     MARKDOWN_COMPONENTS_BY_LANGUAGE,
     MARKDOWN_CLASSNAME,
     defaultComponents,
-    denyOnlyTransform,
+    markdownUrlTransform,
     UriConfirmProvider,
 } from '@/components/assistant-ui/markdown-text'
 import { SyntaxHighlighter } from '@/components/assistant-ui/shiki-highlighter'
@@ -84,7 +84,7 @@ function StandaloneMarkdownContent(props: MarkdownRendererProps) {
                     remarkPlugins={props.preserveSingleLineBreaks ? MARKDOWN_PLUGINS_STANDALONE_WITH_BREAKS : MARKDOWN_PLUGINS_STANDALONE}
                     rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
                     components={components}
-                    urlTransform={denyOnlyTransform}
+                    urlTransform={markdownUrlTransform}
                 >
                     {props.content}
                 </ReactMarkdown>
@@ -106,7 +106,7 @@ function MarkdownContent(props: MarkdownRendererProps) {
                     rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
                     components={mergedComponents}
                     componentsByLanguage={MARKDOWN_COMPONENTS_BY_LANGUAGE}
-                    urlTransform={denyOnlyTransform}
+                    urlTransform={markdownUrlTransform}
                     className={cn(MARKDOWN_CLASSNAME, props.className)}
                 />
             </TextMessagePartProvider>

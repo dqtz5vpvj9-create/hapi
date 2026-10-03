@@ -14,6 +14,33 @@ function buildApp(engine: Partial<SyncEngine>): Hono<WebAppEnv> {
     return app
 }
 
+describe('chat artifact route', () => {
+    it('returns original resource bytes without immutable caching', async () => {
+        const engine = { resolveSessionAccess: () => ({ ok: true, sessionId: 'session-1', session: { active: true } }),
+            readArtifact: async () => ({ success: true, content: Buffer.from('<p>Report</p>').toString('base64'), mimeType: 'text/html', fileName: 'report.html' }) } as unknown as SyncEngine
+        const response = await buildApp(engine).request('/api/sessions/session-1/artifacts/resource-1')
+        expect(response.status).toBe(200)
+        expect(await response.text()).toBe('<p>Report</p>')
+        expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+        expect(response.headers.get('Content-Disposition')).toStartWith('attachment;')
+    })
+    it('rejects a foreign session before requesting any artifact', async () => {
+        let calls = 0
+        const engine = { resolveSessionAccess: () => ({ ok: false, reason: 'access-denied' }), readArtifact: async () => { calls++; return {} } } as unknown as SyncEngine
+        expect((await buildApp(engine).request('/api/sessions/foreign/artifacts/resource')).status).toBe(403)
+        expect(calls).toBe(0)
+    })
+    it('distinguishes offline, oversized and missing resources', async () => {
+        for (const [active, code, status] of [[false, 'offline', 409], [true, 'too-large', 413], [true, 'missing', 404]] as const) {
+            const engine = { resolveSessionAccess: () => ({ ok: true, sessionId: 'session-1', session: { active } }),
+                readArtifact: async () => ({ success: false, code, error: code }) } as unknown as SyncEngine
+            const response = await buildApp(engine).request('/api/sessions/session-1/artifacts/resource')
+            expect(response.status).toBe(status)
+            expect(await response.json()).toMatchObject({ code })
+        }
+    })
+})
+
 describe('generated images route', () => {
     it('serves generated images with an immutable cache header instead of no-store', async () => {
         const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])

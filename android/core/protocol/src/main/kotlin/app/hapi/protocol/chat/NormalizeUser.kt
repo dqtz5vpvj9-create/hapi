@@ -3,6 +3,7 @@ package app.hapi.protocol.chat
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
 
 /** Port of `web/src/chat/normalizeUser.ts`. */
 
@@ -24,6 +25,7 @@ private fun parseAttachments(raw: JsonElement?): List<ChatAttachment>? {
                 size = size,
                 path = path,
                 previewUrl = asString(record["previewUrl"]),
+                artifact = record["artifact"] as? JsonObject,
             )
         )
     }
@@ -58,6 +60,7 @@ fun normalizeUserRecord(
                 createdAt = createdAt,
                 text = text,
                 attachments = parseAttachments(record["attachments"]),
+                parts = record["parts"] as? JsonArray,
                 isSidechain = false,
                 meta = meta,
             )

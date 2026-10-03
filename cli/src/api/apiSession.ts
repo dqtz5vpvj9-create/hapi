@@ -1,3 +1,4 @@
+import type { ChatContentPart } from '@hapi/protocol/artifacts';
 type QueueCancelResult = boolean | 'in-flight' | 'indeterminate' | 'consumed'
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
@@ -1104,8 +1105,8 @@ export class ApiSessionClient extends EventEmitter {
         })
     }
 
-    sendUserMessage(text: string, meta?: MessageMeta, localId?: string): void {
-        if (!text) {
+    sendUserMessage(text: string, meta?: MessageMeta, localId?: string, parts?: ChatContentPart[]): void {
+        if (!text && !parts?.length) {
             return
         }
 
@@ -1113,7 +1114,11 @@ export class ApiSessionClient extends EventEmitter {
             role: 'user',
             content: {
                 type: 'text',
-                text
+                text,
+                ...(parts ? { parts, attachments: parts.flatMap(part => part.type === 'artifact' ? [{
+                    id: part.artifact.id, filename: part.artifact.fileName, mimeType: part.artifact.mimeType,
+                    size: part.artifact.size ?? 0, path: '', artifact: part.artifact
+                }] : []) } : {})
             },
             meta: {
                 sentFrom: 'cli',

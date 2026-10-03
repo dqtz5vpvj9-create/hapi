@@ -1,3 +1,4 @@
+import { ArtifactRefSchema } from './artifacts'
 import { z } from 'zod'
 import { COPILOT_AGENT_MODES, type CopilotAgentMode } from './copilotModes'
 import { CODEX_COLLABORATION_MODES, PERMISSION_MODES } from './modes'
@@ -331,7 +332,8 @@ export const AttachmentMetadataSchema = z.object({
     mimeType: z.string(),
     size: z.number(),
     path: z.string(),
-    previewUrl: z.string().optional()
+    previewUrl: z.string().optional(),
+    artifact: ArtifactRefSchema.optional()
 })
 
 export type AttachmentMetadata = z.infer<typeof AttachmentMetadataSchema>

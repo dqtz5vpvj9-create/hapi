@@ -25,6 +25,7 @@ private fun projectAttachments(attachments: List<ChatAttachment>?): JsonArray? {
             obj["mimeType"] = JsonPrimitive(attachment.mimeType)
             obj["size"] = jsNumber(attachment.size)
             obj["path"] = JsonPrimitive(attachment.path)
+            attachment.artifact?.let { obj["artifact"] = it }
             JsonObject(obj)
         }
     )
@@ -94,6 +95,7 @@ fun projectChatBlock(block: ChatBlock): JsonObject {
         is UserTextBlock -> {
             projected["localId"] = nullableString(block.localId)
             projected["text"] = JsonPrimitive(block.text)
+            block.parts?.let { projected["parts"] = it }
             projectAttachments(block.attachments)?.let { projected["attachments"] = it }
         }
         is AgentTextBlock -> {

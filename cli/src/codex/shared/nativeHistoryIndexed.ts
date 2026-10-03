@@ -1,3 +1,4 @@
+import { userContentWithParts, type ChatContentPart } from '@hapi/protocol/artifacts';
 import { AGENT_MESSAGE_PAYLOAD_TYPE } from '@hapi/protocol';
 import { MessagesQuerySchema, MessageContextQuerySchema, MessageOutlineQuerySchema, MessageDependenciesQuerySchema,
     type MessagesResponse, type MessageContextResponse, type MessageOutlineResponse, type MessageDependenciesResponse } from '@hapi/protocol/apiTypes';
@@ -147,7 +148,7 @@ export class NativeIndexedHistory {
                 append(id, stableId, content, order, source.item.started_at_ms ?? source.item.created_at_ms);
             };
             const sink = { getMetadata: () => null, updateMetadata: () => {},
-                sendUserMessage: (text: string, _meta: unknown, id: string) => write({ role: 'user', content: { type: 'text', text }, meta: { sentFrom: 'cli' } }, id),
+                sendUserMessage: (text: string, _meta: unknown, id: string, parts?: ChatContentPart[]) => write({ role: 'user', content: userContentWithParts(text, parts), meta: { sentFrom: 'cli' } }, id),
                 sendAgentMessage: (body: unknown) => write({ role: 'agent', content: { type: AGENT_MESSAGE_PAYLOAD_TYPE, data: body }, meta: { sentFrom: 'cli' } }, string(record(body).id)!),
                 sendSessionEvent: (event: unknown, id: string) => write({ role: 'agent', content: { type: 'event', data: event, id } }, id)
             } as unknown as ApiSessionClient;

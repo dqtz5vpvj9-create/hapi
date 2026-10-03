@@ -129,6 +129,17 @@ describe('extractCodexBashDisplay', () => {
 })
 
 describe('getToolResultViewComponent registry', () => {
+    it.each(['Bash', 'Read', 'CodexBash'])('preserves artifact previews in the %s detail view', toolName => {
+        const ResultView = getToolResultViewComponent(toolName)
+        const block: ToolCallBlock = { id: 'rich', localId: null, createdAt: 0, kind: 'tool-call', children: [],
+            tool: { id: 'rich', name: toolName, state: 'completed', input: {}, createdAt: 0,
+                startedAt: null, completedAt: 0, execStartedAt: null, execCompletedAt: null, description: null,
+                result: { content: [{ type: 'artifact', artifact: { id: 'report', fileName: 'report.pdf', mimeType: 'application/pdf' } }] } } }
+        render(<I18nProvider><ResultView block={block} metadata={null} surface="dialog" /></I18nProvider>)
+        expect(screen.getByText('report.pdf')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Open preview / prepare download' })).toBeInTheDocument()
+    })
+
     it('uses the same view for Write, Edit, MultiEdit, NotebookEdit', () => {
         const writeView = getToolResultViewComponent('Write')
         const editView = getToolResultViewComponent('Edit')

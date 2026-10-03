@@ -733,6 +733,7 @@ fun reduceTimeline(
                     invokedAt = msg.invokedAt,
                     text = msg.text,
                     attachments = msg.attachments,
+                    parts = msg.parts,
                     status = msg.status,
                     originalText = msg.originalText,
                     meta = msg.meta,

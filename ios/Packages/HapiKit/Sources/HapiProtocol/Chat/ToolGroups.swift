@@ -284,6 +284,11 @@ private func isInteractiveToolBlock(_ block: ToolCallBlock) -> Bool {
 
 /// Port of `isEligibleForToolGrouping`.
 public func isEligibleForToolGrouping(_ block: ToolCallBlock) -> Bool {
+    let content = block.tool.result?.objectValue?["content"] ?? block.tool.result
+    if content?.arrayValue?.contains(where: { part in
+        guard let type = part.objectValue?["type"]?.stringValue else { return false }
+        return ["artifact", "resource-link", "unsupported"].contains(type)
+    }) == true { return false }
     if isSubagentToolName(block.tool.name) { return false }
     if planToolNames.contains(block.tool.name) { return false }
     if milestoneToolNames.contains(block.tool.name) { return false }

@@ -1,13 +1,7 @@
+import { ArtifactCard } from '@/components/Artifacts/ArtifactCard'
 import type { AttachmentMetadata } from '@/types/api'
-import { FileIcon } from '@/components/FileIcon'
 import { isImageMimeType } from '@/lib/fileAttachments'
 import { ImagePreview } from '@/components/ImagePreview'
-
-function formatFileSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
 
 function ImageAttachment(props: { attachment: AttachmentMetadata }) {
     const { attachment } = props
@@ -31,19 +25,7 @@ function ImageAttachment(props: { attachment: AttachmentMetadata }) {
 
 function FileAttachment(props: { attachment: AttachmentMetadata }) {
     const { attachment } = props
-    return (
-        <div className="flex items-center gap-2 rounded-lg bg-[var(--app-bg)] px-3 py-2">
-            <FileIcon fileName={attachment.filename} size={24} />
-            <div className="min-w-0 flex-1">
-                <div className="truncate text-base font-medium text-[var(--app-fg)]">
-                    {attachment.filename}
-                </div>
-                <div className="text-xs text-[var(--app-hint)]">
-                    {formatFileSize(attachment.size)}
-                </div>
-            </div>
-        </div>
-    )
+    return <ArtifactCard artifact={attachment.artifact ?? { id: attachment.id, fileName: attachment.filename, mimeType: attachment.mimeType, size: attachment.size }} previewUrl={attachment.previewUrl} />
 }
 
 export function MessageAttachments(props: { attachments: AttachmentMetadata[] }) {

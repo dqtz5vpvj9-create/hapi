@@ -1,3 +1,4 @@
+import { CODEX_ARTIFACT_PREFIX, type ArtifactReadResponse } from '@hapi/protocol/artifacts'
 import type { CodexGoalRequest, CodexGoalResponse } from '@hapi/protocol/apiTypes'
 /**
  * Sync Engine for HAPI Telegram Bot (Direct Connect)
@@ -4301,6 +4302,24 @@ export class SyncEngine {
 
     async readSessionFile(sessionId: string, path: string): Promise<RpcReadFileResponse> {
         return await this.rpcGateway.readSessionFile(sessionId, path)
+    }
+
+    async readArtifact(sessionId: string, artifactId: string): Promise<ArtifactReadResponse> {
+        if (artifactId.startsWith(CODEX_ARTIFACT_PREFIX)) {
+            return this.rpcGateway.readArtifact(sessionId, { id: artifactId })
+        }
+        if (artifactId.startsWith('session-file:')) {
+            const path = Buffer.from(artifactId.slice('session-file:'.length), 'base64url').toString('utf8')
+            return this.rpcGateway.readArtifact(sessionId, { path, sessionId })
+        }
+        for (const row of this.store.messages.getAllMessages(sessionId)) {
+            const record = unwrapRoleWrappedRecordEnvelope(row.content)
+            if (record?.role !== 'user' || !record.content || typeof record.content !== 'object') continue
+            const content = record.content as { attachments?: Array<{ id: string; path: string; mimeType: string }> }
+            const attachment = content.attachments?.find(item => item.id === artifactId)
+            if (attachment) return this.rpcGateway.readArtifact(sessionId, { path: attachment.path, sessionId, mimeType: attachment.mimeType })
+        }
+        return { success: false, code: 'missing', error: 'Resource is not registered in this conversation' }
     }
 
     async readGeneratedImage(sessionId: string, imageId: string): Promise<RpcGeneratedImageResponse> {

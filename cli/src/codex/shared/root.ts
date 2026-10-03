@@ -1,3 +1,5 @@
+import { readFileArtifact, type FileArtifactRequest } from '@/modules/common/handlers/artifacts';
+import { readNativeArtifact } from './artifacts';
 import { readCodexActivity } from '../utils/codexActivity';
 import { codexSubagentMetadata } from '../utils/codexSubagentMetadata';
 import { join } from 'node:path';
@@ -146,6 +148,8 @@ export class SharedCodexRoot {
                 for (const attachment of message.content.attachments ?? []) {
                     if (attachment.mimeType.startsWith('image/')) {
                         input.push({ type: 'localImage', path: attachment.path });
+                    } else if (attachment.mimeType.startsWith('audio/')) {
+                        input.push({ type: 'localAudio', path: attachment.path });
                     }
                 }
                 await this.queue.enqueue(id, input, this.interrupted);
@@ -158,6 +162,12 @@ export class SharedCodexRoot {
             if (this.stopping) return false;
             await this.refresh();
             return ['rejected', 'canceled', 'released'].includes(this.queue.state(id) ?? '');
+        });
+        this.session.rpcHandlerManager.registerHandler(RPC_METHODS.ReadArtifact, async (data: { id?: string } & Partial<FileArtifactRequest>) => {
+            await this.bound;
+            if (!data.id) return readFileArtifact(data as FileArtifactRequest, this.bootstrap.workingDirectory);
+            return readNativeArtifact(data.id, this.bootstrap.workingDirectory, id => this.ownsThread(id),
+                (method, params) => this.client.request(method, params), this.session.sessionId);
         });
         this.session.onReconnect(() => {
             if (!this.threadId || this.closed || this.stopping) return;
