@@ -6,11 +6,16 @@ import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useSession } from '@/hooks/queries/useSession'
 import { useTerminalSocket } from '@/hooks/useTerminalSocket'
-import { useQuickKeyInput, QuickKeyRows, type QuickInput } from '@/components/QuickKeys/QuickKeys'
+import { QuickKeyRows, type QuickInput } from '@/components/QuickKeys/QuickKeys'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useTranslation } from '@/lib/use-translation'
 import { randomId } from '@/lib/randomId'
 import { TerminalView } from '@/components/Terminal/TerminalView'
+import { applyTerminalModifiers, useTerminalKeys, type TerminalModifier } from '@/components/Terminal/useTerminalKeys'
+import { TouchBar } from '@/components/Terminal/termbeam/TouchBar'
+import { SelectOverlay } from '@/components/Terminal/termbeam/SelectOverlay'
+import { KeyEditor } from '@/components/Terminal/termbeam/KeyEditor'
+import { useTouchBarKeys } from '@/components/Terminal/termbeam/useTouchBarKeys'
 import { LoadingState } from '@/components/LoadingState'
 import { Button } from '@/components/ui/button'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
@@ -198,17 +203,14 @@ const BASIC_COMMANDS = [
     { label: 'top', command: 'top' },
 ]
 
-const COMPACT_COMMAND_INPUTS: QuickInput[] = [
-    { label: 'Ctrl+C', sequence: '\u0003', description: 'Interrupt process' },
-    { label: 'Esc', sequence: '\u001b', description: 'Escape' },
-]
+type TerminalQuickInput = Omit<QuickInput, 'modifier'> & { modifier?: TerminalModifier }
 
 function QuickKeyButton(props: {
-    input: QuickInput
+    input: TerminalQuickInput
     disabled: boolean
     isActive: boolean
     onPress: (sequence: string) => void
-    onToggleModifier: (modifier: 'ctrl' | 'alt') => void
+    onToggleModifier: (modifier: TerminalModifier) => void
     compact?: boolean
 }) {
     const { input, disabled, isActive, onPress, onToggleModifier, compact = false } = props
@@ -240,9 +242,11 @@ function QuickKeyButton(props: {
         <button
             type="button"
             {...longPressHandlers}
+            onPointerDown={(event) => event.preventDefault()}
+            onMouseDown={(event) => event.preventDefault()}
             disabled={disabled}
             aria-pressed={modifier ? isActive : undefined}
-            className={`${compact ? 'h-9 min-w-0 w-full rounded-md border border-[var(--app-border)]' : 'flex-1 border-l border-[var(--app-border)] first:border-l-0'} px-2 py-1.5 text-xs font-medium text-[var(--app-fg)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-button)] focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent active:bg-[var(--app-subtle-bg)] sm:px-3 sm:text-sm ${
+            className={`${compact ? 'h-11 min-w-0 w-full rounded-lg bg-[var(--app-secondary-bg)]' : 'flex-1 border-l border-[var(--app-border)] first:border-l-0'} px-2 py-1.5 text-xs font-medium text-[var(--app-fg)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-button)] focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent active:bg-[var(--app-subtle-bg)] sm:px-3 sm:text-sm ${
                 isActive ? 'bg-[var(--app-link)] text-[var(--app-bg)]' : 'hover:bg-[var(--app-subtle-bg)]'
             }`}
             aria-label={input.description}
@@ -285,8 +289,13 @@ export default function TerminalPage() {
         code: number | null
         signal: string | null
     } | null>(null)
-    const [inputMode, setInputMode] = useState<TerminalInputMode>('command')
+    const [inputMode, setInputMode] = useState<TerminalInputMode>('direct')
     const [directKeyPage, setDirectKeyPage] = useState<DirectKeyPage>('control')
+    const [snippetsOpen, setSnippetsOpen] = useState(false)
+    const [copyOpen, setCopyOpen] = useState(false)
+    const [keyEditorOpen, setKeyEditorOpen] = useState(false)
+    const { keys: touchBarKeys, updateKeys, settings: toolbarSettings, updateSettings, saveError } = useTouchBarKeys()
+    const [moreKeysOpen, setMoreKeysOpen] = useState(false)
     const [commandDraft, setCommandDraft] = useState('')
     const [pasteDialogOpen, setPasteDialogOpen] = useState(false)
     const [manualPasteText, setManualPasteText] = useState('')
@@ -329,7 +338,7 @@ export default function TerminalPage() {
     // Raw terminal input AND the quick-key buttons share one sticky-modifier
     // state via the dispatcher, so toggling Ctrl then typing sends the control
     // code. onData is intentionally ungated; the buttons gate via `disabled`.
-    const { ctrlActive, altActive, dispatch, toggleModifier, resetModifiers } = useQuickKeyInput({ onSend: write })
+    const { ctrlActive, altActive, shiftActive, dispatch, toggleModifier, resetModifiers, consumeModifiers, lockedModifiers, lockModifier } = useTerminalKeys(write)
 
     const handleTerminalMount = useCallback(
         (terminal: Terminal) => {
@@ -380,7 +389,11 @@ export default function TerminalPage() {
         connectOnceRef.current = false
         setExitInfo(null)
         setCommandDraft('')
-        setInputMode('command')
+        setInputMode('direct')
+        setMoreKeysOpen(false)
+        setCopyOpen(false)
+        setSnippetsOpen(false)
+        setKeyEditorOpen(false)
         setDirectKeyPage('control')
         if (exitNavTimerRef.current) {
             clearTimeout(exitNavTimerRef.current)
@@ -425,12 +438,28 @@ export default function TerminalPage() {
             if (!text || quickInputDisabled) {
                 return false
             }
-            write(text)
             resetModifiers()
-            terminalRef.current?.focus()
+            if (compactControls && inputMode === 'command') {
+                const input = commandInputRef.current
+                const start = input?.selectionStart ?? commandDraft.length
+                const end = input?.selectionEnd ?? start
+                setCommandDraft(commandDraft.slice(0, start) + text + commandDraft.slice(end))
+                requestAnimationFrame(() => {
+                    input?.focus()
+                    input?.setSelectionRange(start + text.length, start + text.length)
+                })
+                return true
+            }
+            const terminal = terminalRef.current
+            if (terminal) {
+                terminal.paste(text)
+                terminal.focus()
+            } else {
+                write(text)
+            }
             return true
         },
-        [quickInputDisabled, write, resetModifiers]
+        [quickInputDisabled, write, resetModifiers, compactControls, inputMode, commandDraft]
     )
 
     const handlePasteAction = useCallback(async () => {
@@ -470,10 +499,12 @@ export default function TerminalPage() {
             if (quickInputDisabled) {
                 return
             }
-            dispatch(sequence)
+            const data = terminalRef.current?.modes.applicationCursorKeysMode
+                ? sequence.replace(/^\u001b\[([ABCDHF])$/, '\u001bO$1') : sequence
+            dispatch(data)
             if (compactControls && inputMode === 'command') {
                 commandInputRef.current?.focus()
-            } else {
+            } else if (!compactControls || terminalRef.current?.textarea === document.activeElement) {
                 terminalRef.current?.focus()
             }
         },
@@ -481,12 +512,11 @@ export default function TerminalPage() {
     )
 
     const handleModifierToggle = useCallback(
-        (modifier: 'ctrl' | 'alt') => {
+        (modifier: TerminalModifier) => {
             if (quickInputDisabled) {
                 return
             }
             toggleModifier(modifier)
-            terminalRef.current?.focus()
         },
         [quickInputDisabled, toggleModifier]
     )
@@ -527,16 +557,17 @@ export default function TerminalPage() {
         (mode: TerminalInputMode) => {
             setInputMode(mode)
             resetModifiers()
-            requestAnimationFrame(() => {
-                if (mode === 'command') {
-                    commandInputRef.current?.focus()
-                } else {
-                    terminalRef.current?.focus()
-                }
-            })
+            if (mode === 'direct' && terminalRef.current) {
+                terminalRef.current.options.disableStdin = false
+                terminalRef.current.focus()
+            }
         },
         [resetModifiers]
     )
+
+    useEffect(() => {
+        if (inputMode === 'command') commandInputRef.current?.focus()
+    }, [inputMode])
 
     const handleRetry = useCallback(() => {
         const size = lastSizeRef.current
@@ -634,34 +665,9 @@ export default function TerminalPage() {
             </div>
 
             <div className="bg-[var(--app-bg)] border-t border-[var(--app-border)] pb-[env(safe-area-inset-bottom)]">
-                <div className="mx-auto w-full max-w-content px-3">
+                <div className="mx-auto w-full max-w-content px-1">
                     {compactControls ? (
-                        <div className="flex flex-col gap-2 py-2">
-                            <div
-                                className="grid grid-cols-2 rounded-md bg-[var(--app-secondary-bg)] p-0.5"
-                                role="group"
-                                aria-label={t('terminal.inputMode.label')}
-                            >
-                                {(['command', 'direct'] as const).map((mode) => {
-                                    const active = inputMode === mode
-                                    return (
-                                        <button
-                                            key={mode}
-                                            type="button"
-                                            onClick={() => handleInputModeChange(mode)}
-                                            aria-pressed={active}
-                                            className={`h-8 rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${
-                                                active
-                                                    ? 'bg-[var(--app-bg)] text-[var(--app-fg)] shadow-sm'
-                                                    : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'
-                                            }`}
-                                        >
-                                            {t(`terminal.inputMode.${mode}`)}
-                                        </button>
-                                    )
-                                })}
-                            </div>
-
+                        <div className="flex flex-col gap-1.5">
                             {inputMode === 'command' ? (
                                 <div className="flex items-end gap-2">
                                     <textarea
@@ -677,120 +683,97 @@ export default function TerminalPage() {
                                         autoCorrect="off"
                                         spellCheck={false}
                                         disabled={quickInputDisabled}
-                                        className="h-10 min-w-0 flex-1 resize-none rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-sm leading-5 text-[var(--app-fg)] outline-none placeholder:text-[var(--app-hint)] focus:border-[var(--app-link)] focus:ring-1 focus:ring-[var(--app-link)] disabled:cursor-not-allowed disabled:opacity-50"
+                                        className="h-11 min-w-0 flex-1 resize-none rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-base leading-6 text-[var(--app-fg)] outline-none placeholder:text-[var(--app-hint)] focus:border-[var(--app-link)]"
                                     />
                                     <button
                                         type="button"
                                         onClick={handleCommandSubmit}
                                         disabled={commandSubmitDisabled}
                                         aria-label={t('terminal.command.run')}
-                                        title={t('terminal.command.run')}
-                                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--app-button)] text-[var(--app-button-text)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:cursor-not-allowed disabled:opacity-40"
+                                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-[var(--app-button)] text-[var(--app-button-text)] disabled:opacity-40"
                                     >
                                         <SendIcon />
                                     </button>
                                 </div>
                             ) : null}
-
-                            {inputMode === 'command' ? (
-                                <>
-                                    <div
-                                        className="grid grid-cols-4 gap-1.5"
-                                        role="group"
-                                        aria-label={t('terminal.command.shortcuts')}
-                                    >
-                                        {BASIC_COMMANDS.map((item) => (
-                                            <button
-                                                key={item.label}
-                                                type="button"
-                                                onClick={() => handleCommandTemplate(item.command)}
-                                                disabled={quickInputDisabled}
-                                                className="h-9 min-w-0 overflow-hidden rounded-md border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-1 text-[11px] font-medium text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-button)] disabled:cursor-not-allowed disabled:opacity-50"
-                                            >
-                                                <span className="block truncate font-mono">{item.label}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div
-                                        className="grid grid-cols-4 gap-1.5 pb-0.5"
-                                        data-testid="compact-terminal-quick-keys"
-                                    >
-                                        {COMPACT_COMMAND_INPUTS.map((input) => (
-                                            <QuickKeyButton
-                                                key={input.label}
-                                                input={input}
-                                                disabled={quickInputDisabled}
-                                                isActive={false}
-                                                onPress={handleQuickInput}
-                                                onToggleModifier={handleModifierToggle}
-                                                compact
-                                            />
-                                        ))}
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <div
-                                        className="grid grid-cols-4 rounded-md bg-[var(--app-secondary-bg)] p-0.5"
-                                        role="group"
-                                        aria-label={t('terminal.direct.pages')}
-                                    >
-                                        {DIRECT_KEY_PAGE_IDS.map((page) => {
-                                            const active = directKeyPage === page
-                                            return (
+                            {moreKeysOpen ? (
+                                <div id="terminal-more-keys" className="max-h-[min(10rem,25dvh)] overflow-y-auto rounded-lg border border-[var(--app-border)] p-2">
+                                    {inputMode === 'command' ? (
+                                        <div className="grid grid-cols-4 gap-1.5" aria-label={t('terminal.command.shortcuts')}>
+                                            {BASIC_COMMANDS.map(item => (
                                                 <button
-                                                    key={page}
+                                                    key={item.label}
                                                     type="button"
-                                                    onClick={() => setDirectKeyPage(page)}
-                                                    aria-pressed={active}
-                                                    className={`h-8 min-w-0 rounded-md px-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] ${
-                                                        active
-                                                            ? 'bg-[var(--app-bg)] text-[var(--app-fg)] shadow-sm'
-                                                            : 'text-[var(--app-hint)] hover:text-[var(--app-fg)]'
-                                                    }`}
-                                                >
-                                                    <span className="block truncate">
-                                                        {t(`terminal.direct.page.${page}`)}
-                                                    </span>
-                                                </button>
-                                            )
-                                        })}
-                                    </div>
-                                    <div
-                                        className="grid grid-cols-4 gap-1.5 pb-0.5"
-                                        data-testid="compact-terminal-quick-keys"
-                                    >
-                                        {directKeyPage === 'control' ? (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    void handlePasteAction()
-                                                }}
-                                                disabled={quickInputDisabled}
-                                                className="h-9 min-w-0 rounded-md border border-[var(--app-border)] bg-[var(--app-secondary-bg)] px-1.5 text-xs font-medium text-[var(--app-fg)] transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-button)] disabled:cursor-not-allowed disabled:opacity-50"
-                                            >
-                                                {t('button.paste')}
-                                            </button>
-                                        ) : null}
-                                        {COMPACT_DIRECT_INPUTS[directKeyPage].map((input) => {
-                                            const modifier = input.modifier
-                                            const isActive =
-                                                (modifier === 'ctrl' && ctrlActive) || (modifier === 'alt' && altActive)
-                                            return (
-                                                <QuickKeyButton
-                                                    key={input.label}
-                                                    input={input}
+                                                    onClick={() => handleCommandTemplate(item.command)}
                                                     disabled={quickInputDisabled}
-                                                    isActive={isActive}
-                                                    onPress={handleQuickInput}
-                                                    onToggleModifier={handleModifierToggle}
-                                                    compact
-                                                />
-                                            )
-                                        })}
-                                    </div>
-                                </>
-                            )}
+                                                    className="h-11 truncate rounded-md bg-[var(--app-secondary-bg)] px-1 text-xs font-mono disabled:opacity-50"
+                                                >
+                                                    {item.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="mb-2 grid grid-cols-4 gap-1" role="group" aria-label={t('terminal.direct.pages')}>
+                                                {DIRECT_KEY_PAGE_IDS.map(page => (
+                                                    <button
+                                                        key={page}
+                                                        type="button"
+                                                        onClick={() => setDirectKeyPage(page)}
+                                                        aria-pressed={directKeyPage === page}
+                                                        className={`h-8 rounded-md text-xs ${directKeyPage === page ? 'bg-[var(--app-secondary-bg)] text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
+                                                    >
+                                                        {t(`terminal.direct.page.${page}`)}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <div className="grid grid-cols-4 gap-1.5">
+                                                {COMPACT_DIRECT_INPUTS[directKeyPage].filter(input => !touchBarKeys.some(key => input.modifier ? key.modifier === input.modifier : key.send === input.sequence && !key.modifier && !key.action)).map(input => (
+                                                    <QuickKeyButton
+                                                        key={input.label}
+                                                        input={input}
+                                                        disabled={quickInputDisabled}
+                                                        isActive={input.modifier === 'alt' && altActive}
+                                                        onPress={handleQuickInput}
+                                                        onToggleModifier={handleModifierToggle}
+                                                        compact
+                                                    />
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            ) : null}
+                            <TouchBar
+                                onCommand={() => handleInputModeChange(inputMode === 'command' ? 'direct' : 'command')}
+                                commandMode={inputMode === 'command'}
+                                onMoreKeys={() => setMoreKeysOpen(value => !value)}
+                                onCustomize={() => setKeyEditorOpen(true)}
+                                settings={toolbarSettings}
+                                keys={touchBarKeys}
+                                disabled={quickInputDisabled}
+                                modifiers={{ ctrl: ctrlActive, alt: altActive, shift: shiftActive }}
+                                onPress={handleQuickInput}
+                                onToggleModifier={handleModifierToggle}
+                                resolveSequence={sequence => applyTerminalModifiers(sequence, { ctrl: ctrlActive, alt: altActive, shift: shiftActive }, terminalRef.current?.modes.applicationCursorKeysMode)}
+                                onRepeat={sequence => { if (!quickInputDisabled) write(sequence) }}
+                                onResetModifiers={consumeModifiers}
+                                lockedModifiers={lockedModifiers}
+                                onLockModifier={lockModifier}
+                                onSnippets={() => { terminalRef.current?.blur(); setSnippetsOpen(true) }}
+                                onCopy={() => { terminalRef.current?.blur(); setCopyOpen(true) }}
+                                onPaste={() => { void handlePasteAction() }}
+                                onKeyboard={() => {
+                                    if (inputMode === 'command') {
+                                        commandInputRef.current?.blur()
+                                        handleInputModeChange('direct')
+                                    } else if (terminalRef.current?.textarea === document.activeElement) {
+                                        terminalRef.current.blur()
+                                    } else {
+                                        terminalRef.current?.focus()
+                                    }
+                                }}
+                            />
                         </div>
                     ) : (
                         <div className="flex flex-col gap-2 py-2">
@@ -815,6 +798,20 @@ export default function TerminalPage() {
                     )}
                 </div>
             </div>
+
+            <Dialog open={snippetsOpen} onOpenChange={setSnippetsOpen}>
+                <DialogContent>
+                    <DialogHeader><DialogTitle>{t('terminal.keys.snippets')}</DialogTitle><DialogDescription>{t('terminal.keys.escapeHint')}</DialogDescription></DialogHeader>
+                    <div className="max-h-[50dvh] overflow-y-auto space-y-1">
+                        {touchBarKeys.filter(key => key.id.startsWith('custom-') || key.id.startsWith('ctrl-')).map(key => <button key={key.id} type="button" disabled={quickInputDisabled} className="block w-full rounded-md p-3 text-left text-sm hover:bg-[var(--app-secondary-bg)]" onClick={() => { setSnippetsOpen(false); if (key.action === 'paste') { void handlePasteAction() } else { resetModifiers(); write(key.send); terminalRef.current?.focus() } }}>{key.label}</button>)}
+                        {!touchBarKeys.some(key => key.id.startsWith('custom-') || key.id.startsWith('ctrl-')) ? <p className="py-3 text-sm text-[var(--app-hint)]">{t('terminal.keys.emptySnippets')}</p> : null}
+                    </div>
+                    <Button onClick={() => { setSnippetsOpen(false); setKeyEditorOpen(true) }}>{t('terminal.keys.add')}</Button>
+                </DialogContent>
+            </Dialog>
+            <SelectOverlay terminal={terminalRef.current} open={copyOpen} onClose={() => setCopyOpen(false)} />
+            <KeyEditor settings={toolbarSettings} onSettingsChange={updateSettings} open={keyEditorOpen} keys={touchBarKeys} onChange={updateKeys} onClose={() => setKeyEditorOpen(false)} />
+            {saveError ? <div role="alert" className="px-3 text-xs text-[var(--app-badge-error-text)]">{t('terminal.keys.saveError')}</div> : null}
 
             <Dialog
                 open={pasteDialogOpen}

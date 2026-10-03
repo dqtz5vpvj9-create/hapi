@@ -94,9 +94,13 @@ See `src/router.tsx` for route definitions.
 
 ### Terminal (`src/routes/sessions/terminal.tsx`)
 
-- Remote terminal via xterm.js
-- Real-time via Socket.IO `/terminal`
-- Resize handling
+- Remote terminal via xterm.js and Socket.IO `/terminal`.
+- Mobile interaction adapted from [TermBeam](https://github.com/dorlugasigal/TermBeam):
+  collapsible touch bar, held navigation keys, editable shortcuts, momentum
+  scroll, pinch font sizing, and selectable scrollback for copy.
+- Keys are saved in the current browser. Whole-command editing remains optional.
+- Source revision, adaptation notes, and MIT license are retained in
+  [`src/components/Terminal/termbeam/`](src/components/Terminal/termbeam/UPSTREAM.md).
 
 ### Voice assistant
 
@@ -248,3 +252,5 @@ bun run build:web -- --base /<repo>/
 4. Open the static site, click the top-right Hub button on the login screen, and enter the hapi hub origin.
 
 Clear the hub override in the same dialog to return to same-origin behavior.
+
+The mobile keyboard layout and configuration follow [Haven](src/components/Terminal/termbeam/HAVEN.md), including content-sized 32px keys, paired navigation columns, row placement, macros and JSON editing.

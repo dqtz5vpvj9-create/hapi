@@ -1,0 +1,48 @@
+/* SPDX-License-Identifier: AGPL-3.0-only
+ * Haven ToolbarKeyButton/KeyColumn dimensions; see HAVEN.md. */
+.touchBarWrapper {
+    position: relative;
+    user-select: none;
+    -webkit-user-select: none;
+    padding: 2px 0;
+    --key-bg: color-mix(in srgb, #a6a2ee 16%, var(--app-secondary-bg));
+}
+.toolbar { display: flex; align-items: flex-end; gap: 2px; }
+.scroller { flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; touch-action: pan-x; }
+.scroller::-webkit-scrollbar { display: none; }
+.columns { display: flex; width: max-content; gap: 2px; }
+.column { display: grid; grid-template-rows: 32px 32px; gap: 2px; flex-shrink: 0; }
+.column .keyBtn { width: 100%; }
+.placeholder { display: block; height: 32px; }
+.rows { display: flex; flex-direction: column; gap: 2px; }
+.inlineRow { display: flex; width: max-content; gap: 2px; }
+.gridRow { display: grid; gap: 2px; }
+.gridRow .keyBtn { min-width: 0; padding: 0 2px; white-space: normal; overflow-wrap: anywhere; }
+.keyBtn {
+    min-width: var(--key-min-width, 0px);
+    height: 32px;
+    padding: 0 8px;
+    background: var(--key-bg, color-mix(in srgb, #a6a2ee 16%, var(--app-secondary-bg)));
+    color: var(--app-fg);
+    border: 0;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 12px;
+    font-weight: 400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.keyBtn svg { width: 18px; height: 18px; flex-shrink: 0; }
+.glyph { font-size: 16px; line-height: 16px; font-weight: 600; }
+.locked { outline: 2px solid currentColor; outline-offset: -3px; }
+.active { background: var(--app-button); color: var(--app-button-text); }
+.keyBtn:active { background: color-mix(in srgb, #a6a2ee 32%, var(--app-secondary-bg)); }
+.keyBtn:disabled { opacity: 0.5; cursor: default; }
+.keyBtn:focus-visible, .collapseHandle:focus-visible, .menuActions button:focus-visible { outline: 2px solid var(--app-link); outline-offset: -2px; }
+.menuActions button { display: block; width: 100%; min-height: 40px; padding: 8px 12px; border-radius: 6px; text-align: left; font-size: 14px; }
+.menuActions button:hover { background: var(--app-secondary-bg); }
+.collapseHandle { display: block; width: 100%; height: 24px; color: var(--app-hint); }

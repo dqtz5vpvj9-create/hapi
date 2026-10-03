@@ -69,6 +69,7 @@ vi.mock('@/hooks/queries/useSession', () => ({
 }))
 
 const capturedTerminalIds: string[] = []
+let terminalProps: { disableStdin?: boolean; onMount?: (terminal: import('@xterm/xterm').Terminal) => void }
 
 vi.mock('@/hooks/useTerminalSocket', () => ({
     useTerminalSocket: (opts: { terminalId: string }) => {
@@ -78,7 +79,10 @@ vi.mock('@/hooks/useTerminalSocket', () => ({
 }))
 
 vi.mock('@/components/Terminal/TerminalView', () => ({
-    TerminalView: () => <div data-testid="terminal-view" />
+    TerminalView: (props: typeof terminalProps) => {
+        terminalProps = props
+        return <div data-testid="terminal-view" />
+    }
 }))
 
 function renderWithProviders() {
@@ -87,6 +91,10 @@ function renderWithProviders() {
             <TerminalPage />
         </I18nProvider>
     )
+}
+
+function openKeyboardOptions() {
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Show or hide keyboard' }))
 }
 
 describe('TerminalPage paste behavior', () => {
@@ -187,8 +195,64 @@ describe('TerminalPage compact command input', () => {
         })
     })
 
+    it('starts with live terminal input and two rows of essential keys', () => {
+        renderWithProviders()
+        expect(terminalProps.disableStdin).toBe(false)
+        expect(screen.queryByRole('textbox', { name: 'Command input' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'ls' })).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Tab' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Arrow left' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Shift' })).toBeInTheDocument()
+    })
+
+    it('sends Shift+Left once and resets Shift for the next key', () => {
+        renderWithProviders()
+        fireEvent.click(screen.getByRole('button', { name: 'Shift' }))
+        expect(screen.getByRole('button', { name: 'Shift' })).toHaveAttribute('aria-pressed', 'true')
+        fireEvent.click(screen.getByRole('button', { name: 'Arrow left' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Arrow left' }))
+        expect(writeMock.mock.calls).toEqual([['\u001b[1;2D'], ['\u001b[D']])
+        expect(screen.getByRole('button', { name: 'Shift' })).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it('saves a custom Shift+Left key and restores it after remounting', () => {
+        const view = renderWithProviders()
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'Customize keys' }))
+        fireEvent.change(screen.getByRole('textbox', { name: 'Label' }), { target: { value: 'Follow-up' } })
+        fireEvent.change(screen.getByRole('combobox', { name: 'Action' }), { target: { value: 'key' } })
+        fireEvent.change(screen.getByRole('combobox', { name: 'Key' }), { target: { value: 'Left' } })
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Shift' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Add key' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+        view.unmount()
+        renderWithProviders()
+        fireEvent.click(screen.getByRole('button', { name: 'Follow-up' }))
+        expect(writeMock).toHaveBeenCalledExactlyOnceWith('\u001b[1;2D')
+        localStorage.removeItem('hapi-terminal-touchbar-keys')
+    })
+
+    it('pastes into the optional command editor without executing the text', async () => {
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { readText: vi.fn(async () => '你好') }
+        })
+        renderWithProviders()
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'Command' }))
+        const input = screen.getByRole('textbox', { name: 'Command input' }) as HTMLTextAreaElement
+        fireEvent.change(input, { target: { value: 'echo world' } })
+        input.setSelectionRange(5, 10)
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
+        await waitFor(() => expect(input).toHaveValue('echo 你好'))
+        expect(writeMock).not.toHaveBeenCalled()
+    })
+
     it('sends spaces and Chinese punctuation as one command', () => {
         renderWithProviders()
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'Command' }))
         const input = screen.getByRole('textbox', { name: 'Command input' })
 
         fireEvent.change(input, {
@@ -202,6 +266,8 @@ describe('TerminalPage compact command input', () => {
 
     it('keeps Enter inside an active IME composition from submitting', () => {
         renderWithProviders()
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'Command' }))
         const input = screen.getByRole('textbox', { name: 'Command input' })
 
         fireEvent.change(input, { target: { value: '你好' } })
@@ -213,6 +279,8 @@ describe('TerminalPage compact command input', () => {
 
     it('keeps WebKit IME confirmation from submitting when keyCode is 229', () => {
         renderWithProviders()
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'Command' }))
         const input = screen.getByRole('textbox', { name: 'Command input' })
 
         fireEvent.change(input, { target: { value: '你好' } })
@@ -224,8 +292,12 @@ describe('TerminalPage compact command input', () => {
 
     it('inserts a basic command for review before running it', () => {
         renderWithProviders()
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'Command' }))
         const input = screen.getByRole('textbox', { name: 'Command input' })
 
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'More keys' }))
         fireEvent.click(screen.getByRole('button', { name: 'ls' }))
 
         expect(input).toHaveValue('ls')
@@ -237,10 +309,14 @@ describe('TerminalPage compact command input', () => {
 
     it('keeps the cursor after the space in commands that need an argument', () => {
         renderWithProviders()
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'Command' }))
         const input = screen.getByRole('textbox', {
             name: 'Command input',
         }) as HTMLTextAreaElement
 
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'More keys' }))
         fireEvent.click(screen.getByRole('button', { name: 'cd' }))
 
         expect(input).toHaveValue('cd ')
@@ -251,7 +327,8 @@ describe('TerminalPage compact command input', () => {
     it('provides an explicit space key in direct mode', () => {
         renderWithProviders()
 
-        fireEvent.click(screen.getByRole('button', { name: 'Direct' }))
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'More keys' }))
         expect(screen.queryByRole('textbox', { name: 'Command input' })).not.toBeInTheDocument()
 
         fireEvent.click(screen.getByRole('button', { name: 'Space' }))
@@ -278,12 +355,13 @@ describe('TerminalPage compact command input', () => {
         expect(writeMock).toHaveBeenCalledWith('\u0003')
     })
 
-    it('shows direct terminal keys in paged multi-row grids', () => {
+    it('keeps extra keys available in an expandable panel', () => {
         renderWithProviders()
 
-        fireEvent.click(screen.getByRole('button', { name: 'Direct' }))
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'More keys' }))
 
-        expect(screen.getByTestId('compact-terminal-quick-keys')).toHaveClass('grid-cols-4')
+        expect(screen.getByTestId('termbeam-touchbar')).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Shift Tab' })).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Enter' })).toBeInTheDocument()
 
@@ -300,7 +378,8 @@ describe('TerminalPage compact command input', () => {
     it('sends added direct terminal key sequences', () => {
         renderWithProviders()
 
-        fireEvent.click(screen.getByRole('button', { name: 'Direct' }))
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'More keys' }))
         fireEvent.click(screen.getByRole('button', { name: 'Shift Tab' }))
         fireEvent.click(screen.getByRole('button', { name: 'Enter' }))
 
@@ -319,13 +398,13 @@ describe('TerminalPage compact command input', () => {
     it('sends dedicated Ctrl+X and Ctrl+S C0 sequences from the Control pad', () => {
         renderWithProviders()
 
-        fireEvent.click(screen.getByRole('button', { name: 'Direct' }))
+        openKeyboardOptions()
+        fireEvent.click(screen.getByRole('button', { name: 'More keys' }))
         fireEvent.click(screen.getByRole('button', { name: 'Cancel / prefix (C-x)' }))
         fireEvent.click(screen.getByRole('button', { name: 'XOFF / search / save (C-s)' }))
 
         expect(writeMock).toHaveBeenNthCalledWith(1, '\u0018')
         expect(writeMock).toHaveBeenNthCalledWith(2, '\u0013')
-        // Keep Ctrl+L; density still fits a 4-col grid with the two Jed chords.
         expect(screen.getByRole('button', { name: 'Clear screen' })).toBeInTheDocument()
     })
 })

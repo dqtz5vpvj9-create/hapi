@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { CanvasAddon } from '@xterm/addon-canvas'
 import '@xterm/xterm/css/xterm.css'
 import { ensureBuiltinFontLoaded, getFontProvider } from '@/lib/terminalFont'
+import { attachTerminalGestures } from './termbeam/terminalGestures'
 import { getInitialTerminalFontSize } from '@/hooks/useTerminalFontSize'
 
 function resolveThemeColors(): { background: string; foreground: string; selectionBackground: string } {
@@ -22,6 +23,8 @@ export function TerminalView(props: {
     disableStdin?: boolean
 }) {
     const containerRef = useRef<HTMLDivElement | null>(null)
+    const [fontSize, setFontSize] = useState<number>(getInitialTerminalFontSize)
+    const fitRef = useRef<FitAddon | null>(null)
     const terminalRef = useRef<Terminal | null>(null)
     const onMountRef = useRef(props.onMount)
     const onResizeRef = useRef(props.onResize)
@@ -44,16 +47,24 @@ export function TerminalView(props: {
     }, [props.disableStdin])
 
     useEffect(() => {
+        const terminal = terminalRef.current
+        if (!terminal) return
+        terminal.options.fontSize = fontSize
+        fitRef.current?.fit()
+        onResizeRef.current?.(terminal.cols, terminal.rows)
+    }, [fontSize])
+
+    useEffect(() => {
         const container = containerRef.current
         if (!container) return
 
         const abortController = new AbortController()
 
         const fontProvider = getFontProvider()
-        const fontSize = getInitialTerminalFontSize()
         const { background, foreground, selectionBackground } = resolveThemeColors()
         const terminal = new Terminal({
             cursorBlink: true,
+            scrollback: 10_000,
             disableStdin: props.disableStdin ?? false,
             fontFamily: fontProvider.getFontFamily(),
             fontSize,
@@ -72,12 +83,16 @@ export function TerminalView(props: {
         const canvasAddon = new CanvasAddon()
         terminal.loadAddon(fitAddon)
         terminal.loadAddon(webLinksAddon)
-        terminal.loadAddon(canvasAddon)
+        const touchDevice = window.matchMedia('(pointer: coarse)').matches
+        if (!touchDevice) terminal.loadAddon(canvasAddon)
         terminal.open(container)
         terminalRef.current = terminal
+        fitRef.current = fitAddon
+        const removeGestures = attachTerminalGestures(container, terminal, setFontSize)
 
         const observer = new ResizeObserver(() => {
             requestAnimationFrame(() => {
+                if (abortController.signal.aborted) return
                 fitAddon.fit()
                 onResizeRef.current?.(terminal.cols, terminal.rows)
             })
@@ -118,6 +133,8 @@ export function TerminalView(props: {
         // Cleanup on abort
         abortController.signal.addEventListener('abort', () => {
             observer.disconnect()
+            removeGestures()
+            fitRef.current = null
             fitAddon.dispose()
             webLinksAddon.dispose()
             canvasAddon.dispose()
@@ -126,6 +143,7 @@ export function TerminalView(props: {
         })
 
         requestAnimationFrame(() => {
+            if (abortController.signal.aborted) return
             fitAddon.fit()
             onResizeRef.current?.(terminal.cols, terminal.rows)
         })

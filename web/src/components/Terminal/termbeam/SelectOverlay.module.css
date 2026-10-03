@@ -1,0 +1,12 @@
+/* Adapted from TermBeam Overlays.module.css; see UPSTREAM.md and LICENSE. */
+.selectContent { flex: 1; min-height: 0; overflow: auto; padding: 12px; border: 1px solid var(--app-border); border-radius: 6px; }
+.selectPre {
+    margin: 0;
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    color: var(--app-fg);
+    white-space: pre;
+    word-break: normal;
+    user-select: text;
+    -webkit-user-select: text;
+}
