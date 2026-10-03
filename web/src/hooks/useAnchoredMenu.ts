@@ -14,6 +14,8 @@ type MenuPosition = {
     top: number
     left: number
     transformOrigin: string
+    viewportHeight: number
+    viewportWidth: number
 }
 
 /**
@@ -47,27 +49,35 @@ export function useAnchoredMenu(options: {
         if (!menuEl) return
 
         const menuRect = menuEl.getBoundingClientRect()
-        const viewportWidth = window.innerWidth
-        const viewportHeight = window.innerHeight
+        const viewport = window.visualViewport
+        const viewportWidth = viewport?.width ?? window.innerWidth
+        const viewportHeight = viewport?.height ?? window.innerHeight
+        const viewportTop = viewport?.offsetTop ?? 0
+        const viewportLeft = viewport?.offsetLeft ?? 0
         const padding = 8
         const gap = 8
 
-        const spaceBelow = viewportHeight - anchorPoint.y
-        const spaceAbove = anchorPoint.y
-        const openAbove = spaceBelow < menuRect.height + gap && spaceAbove > spaceBelow
+        const height = Math.min(menuRect.height, viewportHeight - padding * 2)
+        const width = Math.min(menuRect.width, viewportWidth - padding * 2)
+        const spaceBelow = viewportTop + viewportHeight - anchorPoint.y
+        const spaceAbove = anchorPoint.y - viewportTop
+        const openAbove = spaceBelow < height + gap && spaceAbove > spaceBelow
 
-        let top = openAbove ? anchorPoint.y - menuRect.height - gap : anchorPoint.y + gap
+        let top = openAbove ? anchorPoint.y - height - gap : anchorPoint.y + gap
         // Center the menu on a trigger button, or start its left edge at a
         // pointer, then clamp it so it never leaves the viewport.
-        let left = align === 'start' ? anchorPoint.x : anchorPoint.x - menuRect.width / 2
+        let left = align === 'start' ? anchorPoint.x : anchorPoint.x - width / 2
         const transformOrigin = openAbove
             ? 'bottom center'
             : align === 'start' ? 'top left' : 'top center'
 
-        top = Math.min(Math.max(top, padding), viewportHeight - menuRect.height - padding)
-        left = Math.min(Math.max(left, padding), viewportWidth - menuRect.width - padding)
+        top = Math.min(Math.max(top, viewportTop + padding), viewportTop + viewportHeight - height - padding)
+        left = Math.min(Math.max(left, viewportLeft + padding), viewportLeft + viewportWidth - width - padding)
 
-        setMenuPosition({ top, left, transformOrigin })
+        setMenuPosition(previous => previous?.top === top && previous.left === left
+            && previous.transformOrigin === transformOrigin && previous.viewportHeight === viewportHeight
+            && previous.viewportWidth === viewportWidth
+            ? previous : { top, left, transformOrigin, viewportHeight, viewportWidth })
     }, [align, anchorPoint])
 
     useLayoutEffect(() => {
@@ -101,12 +111,16 @@ export function useAnchoredMenu(options: {
         document.addEventListener('keydown', handleKeyDown)
         window.addEventListener('resize', handleReflow)
         window.addEventListener('scroll', handleReflow, true)
+        window.visualViewport?.addEventListener('resize', handleReflow)
+        window.visualViewport?.addEventListener('scroll', handleReflow)
 
         return () => {
             document.removeEventListener('pointerdown', handlePointerDown)
             document.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('resize', handleReflow)
             window.removeEventListener('scroll', handleReflow, true)
+            window.visualViewport?.removeEventListener('resize', handleReflow)
+            window.visualViewport?.removeEventListener('scroll', handleReflow)
         }
     }, [isOpen, onClose, updatePosition])
 
@@ -114,7 +128,8 @@ export function useAnchoredMenu(options: {
         if (!isOpen) return
 
         const frame = window.requestAnimationFrame(() => {
-            const firstItem = menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')
+            const firstItem = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
+                .find(item => item.getClientRects().length > 0 && !item.matches(':disabled, [aria-disabled="true"]'))
             firstItem?.focus()
         })
 
@@ -125,6 +140,8 @@ export function useAnchoredMenu(options: {
         ? {
             top: `max(${menuPosition.top}px, calc(env(safe-area-inset-top) + 8px))`,
             left: menuPosition.left,
+            maxHeight: `calc(${menuPosition.viewportHeight}px - 16px - env(safe-area-inset-top))`,
+            maxWidth: menuPosition.viewportWidth - 16,
             transformOrigin: menuPosition.transformOrigin,
         }
         : undefined

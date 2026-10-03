@@ -119,7 +119,7 @@ function DirectoryFileRow(props: {
             <button
                 type="button"
                 {...rowHandlers}
-                className="min-w-0 flex-1 text-left"
+                className="app-file-tree-target min-w-0 flex-1 text-left"
             >
                 <div className="truncate font-medium">{props.fileName}</div>
                 {props.metadata ? <div className="truncate text-xs text-[var(--app-hint)]">{props.metadata}</div> : null}
@@ -128,7 +128,7 @@ function DirectoryFileRow(props: {
                 type="button"
                 onClick={props.onDownload}
                 disabled={props.downloadDisabled}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)] disabled:cursor-wait disabled:opacity-50"
+                className="app-file-icon-action flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)] disabled:cursor-wait disabled:opacity-50"
                 title={t('files.directories.download')}
                 aria-label={t('files.directories.downloadNamed', { name: props.fileName })}
             >
@@ -195,7 +195,7 @@ function DirectoryNode(props: {
             <button
                 type="button"
                 onClick={() => props.onToggle(props.path)}
-                className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-[var(--app-subtle-bg)] transition-colors"
+                className="app-file-tree-target flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-[var(--app-subtle-bg)] transition-colors"
                 style={{ paddingLeft: indent }}
             >
                 <ChevronIcon collapsed={!isExpanded} className="text-[var(--app-hint)]" />
@@ -333,4 +333,3 @@ export function DirectoryTree(props: {
         </div>
     )
 }
-

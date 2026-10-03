@@ -962,6 +962,8 @@ export default {
   'settings.display.appearance.oled': 'OLED Black',
   'settings.display.appearance.light': 'Light',
   'settings.display.colorTheme': 'Color theme',
+  'settings.display.colorTheme.codex': 'Codex Glass',
+  'settings.display.colorTheme.codex.description': 'Quiet monochrome surfaces, floating controls and soft frosted glass.',
   'settings.display.colorTheme.default': 'Default',
   'settings.display.colorTheme.notion': 'Notion',
   'settings.display.colorTheme.one': 'One',

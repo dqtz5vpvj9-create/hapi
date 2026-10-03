@@ -66,9 +66,9 @@ export function SettingsRow(props: { label: string; description?: string; traili
 export function SettingsSwitch(props: { label: string; description?: string; checked: boolean; onChange: (checked: boolean) => void }) {
     return (
         <SettingsRow label={props.label} description={props.description} trailing={
-            <label className="relative inline-flex h-6 w-11 items-center">
+            <label className="app-settings-switch-target relative inline-flex h-6 w-11 items-center">
                 <input type="checkbox" checked={props.checked} onChange={(event) => props.onChange(event.target.checked)} className="peer sr-only" aria-label={props.label} />
-                <span className="absolute inset-0 rounded-full bg-[var(--app-border)] transition-colors peer-checked:bg-[var(--app-link)]" />
+                <span className="app-settings-switch-track absolute inset-0 rounded-full bg-[var(--app-border)] transition-colors peer-checked:bg-[var(--app-link)]" />
                 <span className="absolute left-0.5 h-5 w-5 rounded-full bg-[var(--app-bg)] shadow-sm transition-transform peer-checked:translate-x-5" />
             </label>
         } />
@@ -88,7 +88,7 @@ export function SettingsChoiceGroup<T extends string | number>(props: {
     return (
         <div className="px-3 py-3">
             <SettingsFieldLabel hidden={props.hideLabel} description={props.description}>{props.label}</SettingsFieldLabel>
-            <div role="radiogroup" aria-label={props.label} className={`grid ${columns} gap-2`}>
+            <div role="radiogroup" aria-label={props.label} className={`app-settings-choice-grid ${props.columns === 5 ? 'app-settings-choice-compact' : ''} grid ${columns} gap-2`}>
                 {props.options.map((option) => {
                     const selected = props.value === option.value
                     return (
@@ -98,7 +98,7 @@ export function SettingsChoiceGroup<T extends string | number>(props: {
                             role="radio"
                             aria-checked={selected}
                             onClick={() => props.onChange(option.value)}
-                            className={`min-w-0 rounded-lg border px-2 py-2 text-center text-sm transition-colors ${selected
+                            className={`app-settings-choice-option min-w-0 rounded-lg border px-2 py-2 text-center text-sm transition-colors ${selected
                                 ? 'border-[var(--app-link)] bg-[var(--app-subtle-bg)] text-[var(--app-link)]'
                                 : 'border-[var(--app-border)] text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
                         >

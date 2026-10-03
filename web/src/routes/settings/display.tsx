@@ -30,7 +30,7 @@ function ColorThemePicker() {
         <div className="px-3 py-3">
             <SettingsFieldLabel>{t('settings.display.colorTheme')}</SettingsFieldLabel>
             <div role="radiogroup" aria-label={t('settings.display.colorTheme')} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {getColorThemeOptions().map((option) => (
+                {[...getColorThemeOptions()].sort((a, b) => Number(b.value === 'codex') - Number(a.value === 'codex')).map((option) => (
                     <ColorThemeOption
                         key={option.value}
                         theme={option.value}
@@ -46,9 +46,27 @@ function ColorThemePicker() {
 
 function ColorThemeOption(props: { theme: ColorThemePreset; label: string; selected: boolean; onSelect: (theme: ColorThemePreset) => void }) {
     const preview = getColorThemePreview(props.theme)
+    const { t } = useTranslation()
+    if (props.theme === 'codex') {
+        return (
+            <label className={`col-span-2 flex min-w-0 cursor-pointer items-center gap-4 rounded-2xl border p-3 text-left sm:col-span-4 focus-within:ring-2 focus-within:ring-[var(--app-link)] ${props.selected ? 'border-[var(--app-link)] bg-[var(--app-subtle-bg)]' : 'border-[var(--app-border)]'}`}>
+                <input type="radio" name="color-theme" value={props.theme} checked={props.selected} onChange={() => props.onSelect(props.theme)} className="sr-only" />
+                <span className="theme-codex-preview" aria-hidden="true">
+                    <span className="theme-codex-preview-nav"><i /><i /><i /></span>
+                    <span className="theme-codex-preview-text" />
+                    <span className="theme-codex-preview-input"><i /></span>
+                </span>
+                <span className="min-w-0 flex-1">
+                    <span className="block font-medium">{props.label}</span>
+                    <span className="mt-1 block text-xs leading-relaxed text-[var(--app-hint)]">{t('settings.display.colorTheme.codex.description')}</span>
+                </span>
+                {props.selected ? <span className="text-[var(--app-link)]" aria-hidden="true">✓</span> : null}
+            </label>
+        )
+    }
     return (
         <label
-            className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-2 text-left text-sm transition-colors ${props.selected
+            className={`app-settings-color-option flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-2 py-2 text-left text-sm transition-colors focus-within:ring-2 focus-within:ring-[var(--app-link)] ${props.selected
                 ? 'border-[var(--app-link)] bg-[var(--app-subtle-bg)] text-[var(--app-link)]'
                 : 'border-[var(--app-border)] text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
         >
@@ -79,8 +97,8 @@ function SessionPreviewLimitControl() {
 
     return (
         <SettingsRow label={t('settings.display.sessionPreviewLimit')} trailing={
-            <div className="flex h-9 items-center rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)]">
-                <button type="button" onClick={() => step(-1)} disabled={sessionPreviewLimit <= MIN_SESSION_PREVIEW_LIMIT} aria-label={t('settings.display.sessionPreviewLimit.decrease')} className="flex h-8 w-8 items-center justify-center disabled:opacity-40"><MinusIcon /></button>
+            <div className="app-settings-stepper flex h-9 items-center rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)]">
+                <button type="button" onClick={() => step(-1)} disabled={sessionPreviewLimit <= MIN_SESSION_PREVIEW_LIMIT} aria-label={t('settings.display.sessionPreviewLimit.decrease')} className="app-settings-stepper-action flex h-8 w-8 items-center justify-center disabled:opacity-40"><MinusIcon /></button>
                 <input
                     aria-label={t('settings.display.sessionPreviewLimit')}
                     type="number"
@@ -96,7 +114,7 @@ function SessionPreviewLimitControl() {
                     }}
                     className="h-8 w-14 border-x border-[var(--app-border)] bg-transparent text-center text-sm text-[var(--app-fg)] outline-none"
                 />
-                <button type="button" onClick={() => step(1)} disabled={sessionPreviewLimit >= MAX_SESSION_PREVIEW_LIMIT} aria-label={t('settings.display.sessionPreviewLimit.increase')} className="flex h-8 w-8 items-center justify-center disabled:opacity-40"><PlusIcon /></button>
+                <button type="button" onClick={() => step(1)} disabled={sessionPreviewLimit >= MAX_SESSION_PREVIEW_LIMIT} aria-label={t('settings.display.sessionPreviewLimit.increase')} className="app-settings-stepper-action flex h-8 w-8 items-center justify-center disabled:opacity-40"><PlusIcon /></button>
             </div>
         } />
     )

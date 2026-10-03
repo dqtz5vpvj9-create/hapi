@@ -4,6 +4,7 @@ import type { ThemeColorKeyId } from './useThemeColors'
 export type ColorScheme = 'light' | 'dark' | 'oled'
 export type ColorThemePreset =
     | 'default'
+    | 'codex'
     | 'notion'
     | 'one'
     | 'proof'
@@ -50,6 +51,7 @@ const COLOR_THEME_KEY = 'hapi-color-theme'
 
 const COLOR_THEME_OPTIONS: ReadonlyArray<ColorThemeOption> = [
     { value: 'default', labelKey: 'settings.display.colorTheme.default', preview: { light: '#ffffff', dark: '#1c1c1e', accent: '#111827' } },
+    { value: 'codex', labelKey: 'settings.display.colorTheme.codex', preview: { light: '#fafafa', dark: '#151515', accent: '#171717' } },
     { value: 'notion', labelKey: 'settings.display.colorTheme.notion', preview: { light: '#fafafa', dark: '#191919', accent: '#3183d8' } },
     { value: 'one', labelKey: 'settings.display.colorTheme.one', preview: { light: '#fbfbff', dark: '#1f2433', accent: '#526fff' } },
     { value: 'proof', labelKey: 'settings.display.colorTheme.proof', preview: { light: '#f8f7f2', dark: '#18231f', accent: '#2f7d5b' } },
@@ -69,6 +71,10 @@ const COLOR_THEME_OPTIONS: ReadonlyArray<ColorThemeOption> = [
 ]
 
 const PALETTES: Record<Exclude<ColorThemePreset, 'default'>, Record<'light' | 'dark', ThemePalette>> = {
+    codex: {
+        light: { ...palette('#171717', '#fafafa', '#171717', '#737373', '#f0f0f0'), dialog: '#ffffff' },
+        dark: { ...palette('#f5f5f5', '#151515', '#f5f5f5', '#a3a3a3', '#242424'), dialog: '#292929' },
+    },
     notion: {
         light: palette('#3183d8', '#fafafa', '#37352f', '#787774', '#f1f1ef'),
         dark: palette('#3183d8', '#191919', '#d9d9d8', '#9b9a97', '#252525'),
@@ -205,12 +211,12 @@ export function getColorThemeStorageKey(): string {
 }
 
 export function getColorThemeBackground(theme: ColorThemePreset, scheme: ColorScheme): string | null {
-    return theme === 'default' ? null : PALETTES[theme][toPaletteScheme(scheme)].background
+    return theme === 'default' ? null : getPalette(theme, scheme).background
 }
 
 export function getColorThemePickerValue(theme: ColorThemePreset, scheme: ColorScheme, id: ThemeColorKeyId): string | null {
     if (theme === 'default') return null
-    const palette = PALETTES[theme][toPaletteScheme(scheme)]
+    const palette = getPalette(theme, scheme)
     const values: Record<ThemeColorKeyId, string> = {
         background: palette.background,
         surface: palette.secondary,
@@ -234,14 +240,25 @@ export function applyColorTheme(theme: ColorThemePreset = getStoredColorTheme(),
         return
     }
 
-    const values = PALETTES[theme][toPaletteScheme(scheme)]
+    const values = getPalette(theme, scheme)
+    // References follow user palette overrides without leaking Codex actions
+    // into another preset when themes change.
+    const chipActionProperties = {
+        '--app-chat-user-chip-action-bg': 'var(--app-secondary-bg)',
+        '--app-chat-user-chip-action-fg': 'var(--app-fg)',
+        '--app-chat-user-chip-action-hover-fg': 'var(--app-link)',
+    }
+    for (const [property, value] of Object.entries(chipActionProperties)) {
+        if (theme === 'codex') root.style.setProperty(property, value)
+        else root.style.removeProperty(property)
+    }
     const properties: Record<string, string> = {
         '--app-bg': values.background,
         '--app-fg': values.foreground,
         '--app-hint': values.hint,
         '--app-link': values.accent,
-        '--app-button': values.accent,
-        '--app-button-text': values.buttonText,
+        '--app-button': theme === 'codex' ? values.foreground : values.accent,
+        '--app-button-text': theme === 'codex' ? values.background : values.buttonText,
         '--app-banner-bg': values.accent,
         '--app-banner-text': values.buttonText,
         '--app-secondary-bg': values.secondary,
@@ -282,7 +299,7 @@ function removeThemeProperties(root: HTMLElement): void {
     const properties = [
         '--app-bg', '--app-fg', '--app-hint', '--app-link', '--app-button', '--app-button-text', '--app-banner-bg', '--app-banner-text',
         '--app-secondary-bg', '--app-dialog-bg', '--app-chat-user-bg', '--app-chat-user-fg', '--app-chat-user-chip-bg',
-        '--app-chat-user-chip-fg', '--app-tool-card-bg', '--app-tool-card-hover-bg', '--app-tool-card-accent',
+        '--app-chat-user-chip-fg', '--app-chat-user-chip-action-bg', '--app-chat-user-chip-action-fg', '--app-chat-user-chip-action-hover-fg', '--app-tool-card-bg', '--app-tool-card-hover-bg', '--app-tool-card-accent',
         '--app-tool-card-muted-action-fg', '--app-tool-card-subtitle', '--app-code-header-bg', '--app-code-header-fg', '--app-code-bg',
         '--app-inline-code-bg', '--app-inline-code-fg', '--app-md-quote-bg', '--app-md-quote-border', '--app-md-quote-fg', '--app-md-table-bg',
         '--app-md-table-head-bg', '--app-reasoning-bg', '--app-border', '--app-divider', '--app-subtle-bg', '--app-scrollbar-thumb', '--app-scrollbar-thumb-hover',
@@ -295,6 +312,11 @@ function getDocumentColorScheme(): ColorScheme {
     if (!isBrowser()) return 'light'
     const theme = document.documentElement.getAttribute('data-theme')
     return theme === 'dark' || theme === 'oled' ? theme : 'light'
+}
+
+function getPalette(theme: Exclude<ColorThemePreset, 'default'>, scheme: ColorScheme): ThemePalette {
+    const values = PALETTES[theme][toPaletteScheme(scheme)]
+    return theme === 'codex' && scheme === 'oled' ? { ...values, background: '#000000' } : values
 }
 
 function toPaletteScheme(scheme: ColorScheme): 'light' | 'dark' {

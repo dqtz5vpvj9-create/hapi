@@ -65,13 +65,19 @@ function textAtPoint(document: Document, x: number, y: number): { node: Text; of
  * every line of a long code block. Row identity remains the non-text fallback. */
 export function captureReadingAnchor(viewport: HTMLElement): ReadingAnchor | null {
     const bounds = viewport.getBoundingClientRect()
+    // Floating controls cover part of the scrollport. Probe only text the
+    // reader can see, while offsets stay relative to the real scrollport so
+    // restoration and the virtual list retain their existing coordinate system.
+    const style = getComputedStyle(viewport)
+    const readableTop = bounds.top + (parseFloat(style.scrollPaddingTop) || 0)
+    const readableBottom = bounds.bottom - (parseFloat(style.scrollPaddingBottom) || 0)
     const rows = Array.from(viewport.querySelectorAll<HTMLElement>(MESSAGE_SELECTOR))
-    const first = rows.find(row => { const rect = row.getBoundingClientRect(); return rect.bottom > bounds.top && rect.top < bounds.bottom })
+    const first = rows.find(row => { const rect = row.getBoundingClientRect(); return rect.bottom > readableTop && rect.top < readableBottom })
     if (!first) return null
     const fallback = { id: first.id, topOffset: first.getBoundingClientRect().top - bounds.top }
     for (const dy of [8, 24, 48, 80, 128, 208, 320]) {
-        const y = bounds.top + dy
-        if (y >= bounds.bottom) break
+        const y = readableTop + dy
+        if (y >= readableBottom) break
         for (const fraction of [0.08, 0.25, 0.5, 0.75, 0.92]) {
             const point = textAtPoint(viewport.ownerDocument, bounds.left + bounds.width * fraction, y)
             if (!point || !point.node.data.trim()) continue
@@ -81,7 +87,7 @@ export function captureReadingAnchor(viewport: HTMLElement): ReadingAnchor | nul
             const rect = characterRect(point.node, offset)
             // Caret hit tests can return nearby text when the pointer is over
             // an image or a gap. Only accept an actually visible nearby line.
-            if (!rect || rect.top < bounds.top || rect.bottom > bounds.bottom
+            if (!rect || rect.top < readableTop || rect.bottom > readableBottom
                 || y < rect.top - 2 || y > rect.bottom + 2) continue
             const codeElement = point.node.parentElement?.closest<HTMLElement>('[data-hapi-large-code]')
             const source = codeElement && codeSources.get(codeElement)

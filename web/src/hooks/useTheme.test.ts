@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { getAppearanceOptions, getThemeColor, initializeTheme, useAppearance } from '@/hooks/useTheme'
+import { useColorTheme } from '@/hooks/useColorTheme'
 
 describe('useTheme', () => {
     beforeEach(() => {
@@ -16,6 +17,27 @@ describe('useTheme', () => {
 
         expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
         expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content).toBe(getThemeColor('dark'))
+    })
+
+    it('restores Codex Glass across appearance changes and keeps OLED and browser chrome black', () => {
+        localStorage.setItem('hapi-color-theme', 'codex')
+        localStorage.setItem('hapi-appearance', 'oled')
+        initializeTheme()
+        const { result: appearance } = renderHook(() => useAppearance())
+        const { result: preset } = renderHook(() => useColorTheme())
+        expect(document.documentElement).toHaveAttribute('data-color-theme', 'codex')
+        expect(document.documentElement.style.getPropertyValue('--app-bg')).toBe('#000000')
+        expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content).toBe('#000000')
+
+        act(() => appearance.current.setAppearance('light'))
+        expect(document.documentElement.style.getPropertyValue('--app-bg')).toBe('#fafafa')
+        expect(document.documentElement.style.getPropertyValue('--app-button')).toBe('#171717')
+        expect(localStorage.getItem('hapi-color-theme')).toBe('codex')
+
+        act(() => preset.current.setColorTheme('default'))
+        expect(document.documentElement.style.getPropertyValue('--app-bg')).toBe('')
+        expect(localStorage.getItem('hapi-color-theme')).toBeNull()
+        expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content).toBe(getThemeColor('light'))
     })
 
     it('creates a browser theme color meta tag when the page does not provide one', () => {

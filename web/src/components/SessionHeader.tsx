@@ -28,6 +28,7 @@ import { formatSessionHeaderTimestamp } from '@/lib/sessionHeaderTimestamp'
 import { selectMobileSessionHeaderSecondary } from '@/lib/sessionHeaderMobileMetadata'
 import { useMinuteTick } from '@/hooks/useMinuteTick'
 import { markSessionUnread } from '@/lib/sessionLastSeen'
+import { useGlassLayout } from '@/themes/glass/GlassScene'
 
 /** Same preference order as session-list chips: display label → host → short id. */
 export function resolveSessionHeaderMachineLabel(
@@ -155,6 +156,7 @@ export function SessionHeader(props: {
     onSessionReopened?: (newSessionId: string) => void | Promise<void>
 }) {
     const { t, locale } = useTranslation()
+    const glassLayout = useGlassLayout()
     const queryClient = useQueryClient()
     const { addToast } = useToast()
     const { session, api, onSessionDeleted, onSessionReopened } = props
@@ -369,13 +371,14 @@ export function SessionHeader(props: {
 
     return (
         <>
-            <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
+            <div className="app-header bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                 <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3">
                     {/* Back button */}
                     <button
                         type="button"
                         onClick={props.onBack}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
+                        aria-label={t('common.back')}
+                        className="app-glass app-header-back flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
                     >
                         <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -393,7 +396,7 @@ export function SessionHeader(props: {
                     </button>
 
                     {/* Session info - two lines: title and path */}
-                    <div className="min-w-0 flex-1">
+                    <div className="app-glass app-header-title min-w-0 flex-1">
                         <div className="truncate font-semibold">
                             {title}
                         </div>
@@ -456,62 +459,66 @@ export function SessionHeader(props: {
                         </div>
                     </div>
 
-                    {props.onToggleFiles ? (
+                    <div className="app-glass app-header-actions contents">
+                        {props.onToggleFiles ? (
+                            <button
+                                type="button"
+                                onClick={props.onToggleFiles}
+                                className={`app-header-files ${headerToggleClass(props.filesActive ?? false)}`}
+                                title={props.filesActive ? t('session.view.returnToChat') : t('session.title')}
+                                aria-label={props.filesActive ? t('session.view.returnToChat') : t('session.title')}
+                                aria-pressed={props.filesActive ?? false}
+                            >
+                                <FilesIcon />
+                            </button>
+                        ) : null}
+
+                        {props.onToggleOutline ? (
+                            <button
+                                type="button"
+                                onClick={props.onToggleOutline}
+                                className={headerToggleClass(props.outlineActive ?? false)}
+                                title={props.outlineActive ? t('session.outline.close') : t('session.outline.open')}
+                                aria-label={props.outlineActive ? t('session.outline.close') : t('session.outline.open')}
+                                aria-pressed={props.outlineActive ?? false}
+                            >
+                                <OutlineIcon />
+                            </button>
+                        ) : null}
+
+                        {props.onToggleTerminal ? (
+                            <button
+                                type="button"
+                                onClick={props.onToggleTerminal}
+                                className={`app-header-terminal ${headerToggleClass(props.terminalActive ?? false)}`}
+                                title="Terminal"
+                                aria-label="Terminal"
+                                aria-pressed={props.terminalActive ?? false}
+                            >
+                                <TerminalIcon />
+                            </button>
+                        ) : null}
+
                         <button
                             type="button"
-                            onClick={props.onToggleFiles}
-                            className={headerToggleClass(props.filesActive ?? false)}
-                            title={props.filesActive ? t('session.view.returnToChat') : t('session.title')}
-                            aria-label={props.filesActive ? t('session.view.returnToChat') : t('session.title')}
-                            aria-pressed={props.filesActive ?? false}
+                            onClick={handleMenuToggle}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            ref={menuAnchorRef}
+                            aria-haspopup="menu"
+                            aria-expanded={menuOpen}
+                            aria-controls={menuOpen ? menuId : undefined}
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
+                            title={t('session.more')}
                         >
-                            <FilesIcon />
+                            <MoreVerticalIcon />
                         </button>
-                    ) : null}
-
-                    {props.onToggleOutline ? (
-                        <button
-                            type="button"
-                            onClick={props.onToggleOutline}
-                            className={headerToggleClass(props.outlineActive ?? false)}
-                            title={props.outlineActive ? t('session.outline.close') : t('session.outline.open')}
-                            aria-label={props.outlineActive ? t('session.outline.close') : t('session.outline.open')}
-                            aria-pressed={props.outlineActive ?? false}
-                        >
-                            <OutlineIcon />
-                        </button>
-                    ) : null}
-
-                    {props.onToggleTerminal ? (
-                        <button
-                            type="button"
-                            onClick={props.onToggleTerminal}
-                            className={headerToggleClass(props.terminalActive ?? false)}
-                            title="Terminal"
-                            aria-label="Terminal"
-                            aria-pressed={props.terminalActive ?? false}
-                        >
-                            <TerminalIcon />
-                        </button>
-                    ) : null}
-
-                    <button
-                        type="button"
-                        onClick={handleMenuToggle}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        ref={menuAnchorRef}
-                        aria-haspopup="menu"
-                        aria-expanded={menuOpen}
-                        aria-controls={menuOpen ? menuId : undefined}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
-                        title={t('session.more')}
-                    >
-                        <MoreVerticalIcon />
-                    </button>
+                    </div>
                 </div>
             </div>
 
             <SessionActionMenu
+                onToggleFiles={glassLayout ? props.onToggleFiles : undefined}
+                onToggleTerminal={glassLayout ? props.onToggleTerminal : undefined}
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 sessionId={session.id}

@@ -1,0 +1,501 @@
+/* The scroll owner and virtual rows keep their normal geometry. Chrome overlays
+   the same viewport; measured insets leave the first and last messages readable. */
+[data-color-theme="codex"] .app-dialog {
+    --dialog-top-margin: max(12px, env(safe-area-inset-top));
+    --dialog-bottom-margin: max(12px, env(safe-area-inset-bottom));
+    --dialog-available-height: calc(var(--dialog-visible-height, var(--app-viewport-height, 100dvh)) - var(--dialog-top-margin) - var(--dialog-bottom-margin));
+    top: calc(var(--dialog-visible-top, 0px) + var(--dialog-top-margin) + var(--dialog-available-height) / 2);
+    max-height: var(--dialog-available-height);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+[data-color-theme="codex"] .app-dialog-close {
+    width: 44px;
+    height: 44px;
+}
+
+[data-color-theme="codex"] .app-goal-editor {
+    overflow: hidden;
+}
+
+[data-color-theme="codex"] .app-goal-editor-header,
+[data-color-theme="codex"] .app-goal-editor-actions {
+    flex-shrink: 0;
+}
+
+[data-color-theme="codex"] .app-goal-editor-body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+[data-color-theme="codex"] .app-goal-editor-body textarea {
+    min-height: 112px;
+    max-height: calc(var(--dialog-visible-height, var(--app-viewport-height, 100dvh)) / 2);
+}
+
+[data-color-theme="codex"] .app-goal-editor-actions button {
+    min-height: 44px;
+}
+
+[data-color-theme="codex"] [data-glass-chat] {
+    --glass-header-height: 80px;
+    --glass-composer-height: 152px;
+    --glass-notices-height: 0px;
+    --glass-top-inset: calc(var(--glass-header-height) + var(--glass-notices-height));
+    isolation: isolate;
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-chat-header {
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: 40;
+    pointer-events: none;
+}
+
+/* Keep text between the floating islands visually behind navigation. This is a
+   paint-only wash: no ancestor filter, opacity or extra BackdropRoot is created. */
+[data-color-theme="codex"] [data-glass-chat] .app-chat-header::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 -20px;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(to bottom,
+        color-mix(in srgb, var(--app-bg) 94%, transparent),
+        color-mix(in srgb, var(--app-bg) 88%, transparent) calc(100% - 20px),
+        transparent);
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-header {
+    background: transparent;
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-chat-header .app-glass {
+    pointer-events: auto;
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-chat-content {
+    min-height: 0;
+    flex: 1 1 0%;
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-chat-notices {
+    position: absolute;
+    inset: var(--glass-header-height) 0 auto;
+    z-index: 25;
+    pointer-events: none;
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-chat-notices > * {
+    pointer-events: auto;
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-chat-composer {
+    position: absolute;
+    inset: auto 0 0;
+    z-index: 30;
+    pointer-events: none;
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-chat-composer:not(:has([data-expanded="true"]))::before {
+    content: '';
+    position: absolute;
+    inset: -16px 0 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(to bottom,
+        transparent,
+        color-mix(in srgb, var(--app-bg) 72%, transparent) 28px,
+        color-mix(in srgb, var(--app-bg) 86%, transparent));
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-chat-composer > * {
+    pointer-events: auto;
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-chat-composer:has(.app-floating-panel):not(:has([data-expanded="true"])) {
+    z-index: 45;
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-composer-shell:not([data-expanded="true"]) {
+    background: transparent;
+}
+
+/* The shell already owns the mobile keyboard/safe-area sizing. Expanding raises
+   its containing layer without replacing the saved compact-composer inset. */
+[data-color-theme="codex"] [data-glass-chat] .app-chat-composer:has([data-expanded="true"]) {
+    inset: 0;
+    z-index: 60;
+    pointer-events: auto;
+}
+
+[data-color-theme="codex"] [data-glass-chat] .chat-scroll-content {
+    padding-top: calc(var(--glass-top-inset) + 0.75rem);
+    padding-bottom: calc(var(--glass-composer-height) + 0.75rem);
+}
+
+[data-color-theme="codex"] [data-glass-chat] .chat-scroll-y {
+    scroll-padding-top: calc(var(--glass-top-inset) + 0.75rem);
+    scroll-padding-bottom: calc(var(--glass-composer-height) + 0.75rem);
+}
+
+/* These controls belong above the visible message area, not behind floating
+   header/composer surfaces. Class hooks avoid overriding unrelated overlays. */
+[data-color-theme="codex"] [data-glass-chat] .app-thread-scroll-bottom {
+    bottom: calc(var(--glass-composer-height) + 0.75rem);
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-thread-pull-status,
+[data-color-theme="codex"] [data-glass-chat] .app-thread-sync-status,
+[data-color-theme="codex"] [data-glass-chat] .app-thread-reading-notice,
+[data-color-theme="codex"] [data-glass-chat] .app-thread-share-status {
+    top: calc(var(--glass-top-inset) + 0.75rem);
+}
+
+[data-color-theme="codex"] [data-glass-chat] .app-thread-outline-panel,
+[data-color-theme="codex"] [data-glass-chat] .app-thread-outline-backdrop {
+    top: var(--glass-top-inset);
+}
+
+@media (max-width: 639px) {
+    [data-color-theme="codex"] [data-glass-chat] .app-chat-composer .app-floating-panel button {
+        min-height: 44px;
+    }
+
+    /* Page identity and navigation sit above list filters. Single DOM instances
+       keep focus, search expansion and the existing action handlers intact. */
+    [data-color-theme="codex"] .app-session-list-toolbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px 8px;
+        padding: 8px 12px 6px;
+    }
+
+    [data-color-theme="codex"] .app-session-list-brand {
+        display: block;
+        grid-row: 1;
+        grid-column: 1;
+        margin: 0;
+        color: var(--app-fg);
+        font-size: 24px;
+        line-height: 44px;
+        font-weight: 650;
+        letter-spacing: -0.04em;
+    }
+
+    [data-color-theme="codex"] .app-session-list-actions {
+        display: flex;
+        grid-row: 1;
+        grid-column: 2;
+        justify-content: flex-end;
+    }
+
+    [data-color-theme="codex"] .app-session-router-actions {
+        gap: 2px;
+    }
+
+    [data-color-theme="codex"] .app-session-router-actions button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        min-height: 44px;
+        flex-shrink: 0;
+    }
+
+    [data-color-theme="codex"] .app-session-list-controls {
+        display: flex;
+        grid-row: 2;
+        grid-column: 1 / -1;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+        padding: 4px;
+        border-radius: 26px;
+        background: var(--app-glass-bg);
+        box-shadow: inset 0 0 0 1px var(--app-glass-edge), 0 2px 12px rgba(0, 0, 0, 0.025);
+    }
+
+    [data-color-theme="codex"] .app-session-list-controls > button,
+    [data-color-theme="codex"] .app-session-list-controls > div > button[aria-haspopup="menu"],
+    [data-color-theme="codex"] .app-session-search-collapsed > div > button,
+    [data-color-theme="codex"] .app-session-search-trigger,
+    [data-color-theme="codex"] .app-session-date-trigger {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        min-height: 44px;
+        flex-shrink: 0;
+    }
+
+    [data-color-theme="codex"] .app-session-search-collapsed {
+        min-width: 0;
+    }
+
+    [data-color-theme="codex"] .app-session-search-trigger {
+        flex-shrink: 1;
+    }
+
+    [data-color-theme="codex"] .app-session-search-expanded input {
+        min-height: 44px;
+        border: 0;
+        border-radius: 22px;
+        background: transparent;
+        font-size: 16px;
+        padding-right: 48px;
+    }
+
+    [data-color-theme="codex"] .app-session-search-expanded:has(> button) input {
+        padding-right: 92px;
+    }
+
+    [data-color-theme="codex"] .app-session-search-expanded > button {
+        width: 44px;
+        right: 44px;
+        justify-content: center;
+    }
+
+    [data-color-theme="codex"] .app-session-list-views {
+        margin: 6px 12px 12px;
+        padding: 4px;
+        gap: 4px;
+        border-radius: 26px;
+        background: var(--app-secondary-bg);
+    }
+
+    [data-color-theme="codex"] .app-session-list-views button {
+        min-height: 44px;
+        border-radius: 22px;
+        font-weight: 500;
+    }
+
+    [data-color-theme="codex"] .app-session-list-views button[aria-pressed="true"] {
+        background: var(--app-dialog-bg);
+        box-shadow: inset 0 0 0 1px var(--app-glass-edge), 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+
+    [data-color-theme="codex"] .app-session-list-content .session-list-item {
+        min-height: 56px;
+        justify-content: center;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        border-radius: 16px;
+    }
+
+    [data-color-theme="codex"] .app-session-list-content button {
+        min-height: 44px;
+    }
+
+    [data-color-theme="codex"] .app-session-row-summary > div:first-child > div:first-child > div[title] {
+        font-size: 16px;
+        line-height: 24px;
+    }
+
+    [data-color-theme="codex"] .app-session-group-heading {
+        min-height: 48px;
+        margin-top: 4px;
+    }
+
+    [data-color-theme="codex"] .app-session-group-heading button {
+        width: 44px;
+        height: 44px;
+    }
+}
+
+/* Keep the complete query in the trigger label and expanded input. Below 360px,
+   a collapsed toolbar has room for an active-search icon, not readable query text. */
+@media (max-width: 359px) {
+    [data-color-theme="codex"] .app-session-search-query {
+        display: none;
+    }
+}
+
+/* Touch targets belong to specific controls, while their icons and the page's
+   typography stay compact. Classic and desktop layouts keep their dimensions. */
+@media (max-width: 639px) {
+    [data-color-theme="codex"] .app-composer-status {
+        min-height: 44px;
+        padding-block: 0;
+    }
+
+    [data-color-theme="codex"] .app-composer-status button {
+        min-height: 44px;
+    }
+
+    [data-color-theme="codex"] .app-page-back,
+    [data-color-theme="codex"] .app-file-icon-action,
+    [data-color-theme="codex"] .app-settings-stepper-action {
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+    }
+
+    [data-color-theme="codex"] .app-file-icon-action,
+    [data-color-theme="codex"] .app-settings-stepper-action {
+        display: inline-flex;
+    }
+
+    [data-color-theme="codex"] .app-new-session-form select,
+    [data-color-theme="codex"] .app-new-session-form input[type="text"],
+    [data-color-theme="codex"] .app-new-session-directory-action,
+    [data-color-theme="codex"] .app-new-session-path-choice,
+    [data-color-theme="codex"] .app-new-session-actions > button,
+    [data-color-theme="codex"] .app-settings-choice-option,
+    [data-color-theme="codex"] .app-settings-color-option,
+    [data-color-theme="codex"] .app-file-sort-option,
+    [data-color-theme="codex"] .app-file-view-tab {
+        min-height: 44px;
+    }
+
+    [data-color-theme="codex"] .app-new-session-choice-target {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+    }
+
+    [data-color-theme="codex"] .app-settings-choice-compact .app-settings-choice-option {
+        padding-inline: 4px;
+    }
+
+    /* Enlarge only the hit area; the switch track remains 24px tall, and its
+       margins preserve the existing row's spacing around that track. */
+    [data-color-theme="codex"] .app-settings-switch-target {
+        height: 44px;
+        margin-block: -10px;
+    }
+
+    [data-color-theme="codex"] .app-settings-switch-track {
+        top: 10px;
+        bottom: 10px;
+    }
+
+    [data-color-theme="codex"] .app-settings-stepper {
+        height: 46px;
+    }
+
+    [data-color-theme="codex"] .app-settings-stepper input {
+        height: 44px;
+    }
+
+    [data-color-theme="codex"] .app-files-search-input {
+        height: 44px;
+        padding-right: 88px;
+    }
+
+    [data-color-theme="codex"] .app-files-search-clear {
+        right: 44px;
+    }
+
+    [data-color-theme="codex"] .app-file-path-toolbar,
+    [data-color-theme="codex"] .app-file-code-toolbar,
+    [data-color-theme="codex"] .app-file-view-tabs {
+        min-height: 44px;
+        padding-block: 0;
+    }
+
+    [data-color-theme="codex"] .app-file-tree-target {
+        min-height: 44px;
+    }
+
+    /* Markdown previews reuse the chat renderer. Keep its touch-target change
+       inside the file page, without changing chat code blocks or their heights. */
+    [data-color-theme="codex"] .app-file-page [data-hapi-code-header] {
+        min-height: 44px;
+        padding-block: 0;
+    }
+
+    [data-color-theme="codex"] .app-file-page [data-hapi-code-copy],
+    [data-color-theme="codex"] .app-file-page [data-hapi-code-wrap-toggle] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+    }
+}
+
+/* Compact chat chrome uses the existing editor, menus and action handlers. */
+[data-color-theme="codex"] [data-glass-chat] .app-header > div {
+    gap: 6px;
+    padding: 8px 12px;
+}
+[data-color-theme="codex"] [data-glass-chat] .app-header-title {
+    padding: 5px 12px;
+    border-radius: 18px;
+}
+[data-color-theme="codex"] [data-glass-chat] .app-header-actions {
+    padding: 0;
+    border-radius: 22px;
+}
+[data-color-theme="codex"] [data-glass-chat] .app-header-files,
+[data-color-theme="codex"] [data-glass-chat] .app-header-terminal {
+    display: none;
+}
+[data-color-theme="codex"] .app-menu-mobile-views { display: block; }
+[data-color-theme="codex"] .happy-user-bubble {
+    background: light-dark(#e8f1fa, #23384d);
+    color: var(--app-fg);
+}
+[data-color-theme="codex"] .app-composer-surface { border-radius: 22px; }
+[data-color-theme="codex"] .app-composer-surface > div.flex.px-4 {
+    min-height: 52px;
+    padding: 14px 14px 8px;
+}
+[data-color-theme="codex"] .app-composer-toolbar {
+    min-height: 52px;
+    gap: 0;
+    padding: 0 8px 8px;
+}
+[data-color-theme="codex"] .app-composer-toolbar [data-testid="composer-toolbar-items"] {
+    flex-wrap: nowrap;
+    overflow: visible;
+    gap: 0;
+    justify-content: flex-start !important;
+}
+[data-color-theme="codex"] .app-composer-toolbar button {
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    flex-shrink: 0;
+}
+[data-color-theme="codex"] .app-composer-toolbar svg:not([width="10"]) {
+    width: 20px;
+    height: 20px;
+}
+[data-color-theme="codex"] .app-composer-toolbar .app-composer-chip {
+    padding-inline: 4px;
+    background: transparent;
+    border-radius: 12px;
+}
+[data-color-theme="codex"] .app-composer-model {
+    max-width: 180px;
+    padding-inline: 6px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    display: flex;
+}
+[data-color-theme="codex"] .app-composer-primary { margin-left: 0; }
+[data-color-theme="codex"] .app-composer-status {
+    background: transparent;
+    background-image: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    margin-bottom: 0;
+    border-radius: 0;
+}
+@media (max-width: 420px) {
+    [data-color-theme="codex"] .app-composer-model { max-width: 104px; font-size: 11px; }
+}
+[data-color-theme="codex"][data-theme="dark"] .happy-user-bubble,
+[data-color-theme="codex"][data-theme="oled"] .happy-user-bubble { background: #23384d; }
+
+[data-color-theme="codex"] .app-composer-add-menu { order: -1; }

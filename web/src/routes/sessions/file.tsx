@@ -159,7 +159,7 @@ function FileContentHeader(props: {
     return (
         <div
             data-hapi-file-content-header="true"
-            className="flex items-center justify-between gap-3 bg-[var(--app-code-header-bg)] px-3 py-2"
+            className="app-file-code-toolbar flex items-center justify-between gap-3 bg-[var(--app-code-header-bg)] px-3 py-2"
         >
             <div className="min-w-0 flex-1 truncate font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--app-code-header-fg)]">
                 {props.label}
@@ -172,7 +172,7 @@ function FileContentHeader(props: {
                         data-hapi-wrap-enable-label={props.wrapEnableLabel}
                         data-hapi-wrap-disable-label={props.wrapDisableLabel}
                         onClick={props.onToggleWrap}
-                        className={`rounded-md p-1 transition-colors hover:bg-[var(--app-code-copy-hover-bg)] hover:text-[var(--app-fg)] ${props.codeWrap ? 'text-[var(--app-fg)]' : 'text-[var(--app-code-header-fg)]'}`}
+                        className={`app-file-icon-action rounded-md p-1 transition-colors hover:bg-[var(--app-code-copy-hover-bg)] hover:text-[var(--app-fg)] ${props.codeWrap ? 'text-[var(--app-fg)]' : 'text-[var(--app-code-header-fg)]'}`}
                         title={wrapLabel}
                         aria-label={wrapLabel}
                         aria-pressed={props.codeWrap}
@@ -184,7 +184,7 @@ function FileContentHeader(props: {
                     <button
                         type="button"
                         onClick={props.onCopy}
-                        className="rounded-md p-1 text-[var(--app-code-header-fg)] transition-colors hover:bg-[var(--app-code-copy-hover-bg)] hover:text-[var(--app-fg)]"
+                        className="app-file-icon-action rounded-md p-1 text-[var(--app-code-header-fg)] transition-colors hover:bg-[var(--app-code-copy-hover-bg)] hover:text-[var(--app-fg)]"
                         title={props.copyLabel}
                         aria-label={props.copyLabel}
                     >
@@ -382,13 +382,14 @@ export default function FilePage() {
     const fileMetadata = formatFileMetadata(fileContentResult?.size, fileContentResult?.modified, locale)
 
     return (
-        <div className="flex h-full min-h-0 flex-col">
+        <div className="app-file-page flex h-full min-h-0 flex-col">
             <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
                 <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3 border-b border-[var(--app-border)]">
                     <button
                         type="button"
                         onClick={goBack}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
+                        aria-label={t('common.back')}
+                        className="app-page-back flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
                     >
                         <BackIcon />
                     </button>
@@ -400,13 +401,13 @@ export default function FilePage() {
             </div>
 
             <div className="bg-[var(--app-bg)]">
-                <div className="mx-auto w-full max-w-content px-3 py-2 flex items-center gap-2 border-b border-[var(--app-divider)]">
+                <div className="app-file-path-toolbar mx-auto w-full max-w-content px-3 py-2 flex items-center gap-2 border-b border-[var(--app-divider)]">
                     <FileIcon fileName={fileName} size={20} />
                     <span className="min-w-0 flex-1 truncate text-xs text-[var(--app-hint)]">{filePath || t('file.page.unknownPath')}</span>
                     <button
                         type="button"
                         onClick={() => copyPath(filePath)}
-                        className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                        className="app-file-icon-action shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
                         title={t('file.page.copyPath')}
                     >
                         {pathCopied ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
@@ -415,7 +416,7 @@ export default function FilePage() {
                         <button
                             type="button"
                             onClick={() => downloadBase64File(fileName, fileContentResult!.content!, imageMimeType)}
-                            className="shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
+                            className="app-file-icon-action shrink-0 rounded p-1 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] transition-colors"
                             title={t('file.page.download')}
                         >
                             <DownloadIcon className="h-3.5 w-3.5" />
@@ -426,20 +427,20 @@ export default function FilePage() {
 
             {diffContent || (markdownFile && displayMode === 'file') ? (
                 <div className="bg-[var(--app-bg)]">
-                    <div className="mx-auto w-full max-w-content px-3 py-2 flex items-center gap-2 border-b border-[var(--app-divider)]">
+                    <div className="app-file-view-tabs mx-auto w-full max-w-content px-3 py-2 flex items-center gap-2 border-b border-[var(--app-divider)]">
                         {diffContent ? (
                             <>
                                 <button
                                     type="button"
                                     onClick={() => setDisplayMode('diff')}
-                                    className={`rounded px-3 py-1 text-xs font-semibold ${displayMode === 'diff' ? 'bg-[var(--app-button)] text-[var(--app-button-text)] opacity-80' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}
+                                    className={`app-file-view-tab rounded px-3 py-1 text-xs font-semibold ${displayMode === 'diff' ? 'bg-[var(--app-button)] text-[var(--app-button-text)] opacity-80' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}
                                 >
                                     {t('file.page.tab.diff')}
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setDisplayMode('file')}
-                                    className={`rounded px-3 py-1 text-xs font-semibold ${displayMode === 'file' ? 'bg-[var(--app-button)] text-[var(--app-button-text)] opacity-80' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}
+                                    className={`app-file-view-tab rounded px-3 py-1 text-xs font-semibold ${displayMode === 'file' ? 'bg-[var(--app-button)] text-[var(--app-button-text)] opacity-80' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}
                                 >
                                     {t('file.page.tab.file')}
                                 </button>
@@ -451,14 +452,14 @@ export default function FilePage() {
                                 <button
                                     type="button"
                                     onClick={() => setMarkdownPreviewMode('source')}
-                                    className={`rounded px-3 py-1 text-xs font-semibold ${showMarkdownSource ? 'bg-[var(--app-button)] text-[var(--app-button-text)] opacity-80' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}
+                                    className={`app-file-view-tab rounded px-3 py-1 text-xs font-semibold ${showMarkdownSource ? 'bg-[var(--app-button)] text-[var(--app-button-text)] opacity-80' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}
                                 >
                                     {t('file.page.tab.source')}
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setMarkdownPreviewMode('preview')}
-                                    className={`rounded px-3 py-1 text-xs font-semibold ${!showMarkdownSource ? 'bg-[var(--app-button)] text-[var(--app-button-text)] opacity-80' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}
+                                    className={`app-file-view-tab rounded px-3 py-1 text-xs font-semibold ${!showMarkdownSource ? 'bg-[var(--app-button)] text-[var(--app-button-text)] opacity-80' : 'bg-[var(--app-subtle-bg)] text-[var(--app-hint)]'}`}
                                 >
                                     {t('file.page.tab.preview')}
                                 </button>

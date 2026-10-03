@@ -1,4 +1,5 @@
-import { useId } from 'react'
+import { useCallback, useId } from 'react'
+import { useGlassSurface } from '@/themes/glass/GlassScene'
 import { useTranslation } from '@/lib/use-translation'
 import { HoverTooltip } from '@/components/HoverTooltip'
 import { safeCopyToClipboard } from '@/lib/clipboard'
@@ -8,6 +9,8 @@ import { useAnchoredMenu } from '@/hooks/useAnchoredMenu'
 import { CopyIcon } from '@/components/icons'
 
 type SessionActionMenuProps = {
+    onToggleFiles?: () => void
+    onToggleTerminal?: () => void
     isOpen: boolean
     onClose: () => void
     sessionId: string
@@ -211,6 +214,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         menuId
     } = props
     const { menuRef, menuStyle } = useAnchoredMenu({ isOpen, onClose, anchorPoint })
+    const glassRef = useGlassSurface<HTMLDivElement>()
+    const panelRef = useCallback((element: HTMLDivElement | null) => {
+        menuRef.current = element
+        glassRef(element)
+    }, [menuRef, glassRef])
     const internalId = useId()
     const resolvedMenuId = menuId ?? `session-action-menu-${internalId}`
     const headingId = `${resolvedMenuId}-heading`
@@ -279,8 +287,8 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
 
     return (
         <div
-            ref={menuRef}
-            className="fixed z-50 box-border w-max max-w-[calc(100vw-16px)] rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg animate-menu-pop"
+            ref={panelRef}
+            className="app-glass app-floating-panel fixed z-50 box-border w-max max-w-[calc(100vw-16px)] max-h-[calc(var(--app-viewport-height,100dvh)-16px)] overflow-y-auto rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg animate-menu-pop"
             style={menuStyle}
         >
             <div
@@ -295,6 +303,21 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 aria-labelledby={headingId}
                 className="flex flex-col gap-1"
             >
+                {props.onToggleFiles || props.onToggleTerminal ? <div className="app-menu-mobile-views hidden">
+                    {props.onToggleFiles ? <button type="button" role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={() => { onClose(); props.onToggleFiles?.() }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>
+                        {t('session.title')}
+                    </button> : null}
+                    {props.onToggleTerminal ? <button type="button" role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={() => { onClose(); props.onToggleTerminal?.() }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3m6 0h4" /></svg>
+                        Terminal
+                    </button> : null}
+                    <div className="my-1 h-px bg-[var(--app-divider)]" />
+                </div> : null}
                 <button
                     type="button"
                     role="menuitem"

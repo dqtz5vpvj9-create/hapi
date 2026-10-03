@@ -1,0 +1,183 @@
+/* Material and shape belong to the preset. Blink samples live pixels locally;
+   the scene engine provides bounded SourceGraphic refraction in other engines.
+   Message rows never have their own filters or mirrored history. */
+[data-color-theme="codex"] {
+    --app-glass-bg: var(--app-dialog-bg);
+    --app-glass-filter: none;
+    --app-glass-edge: rgba(255, 255, 255, 0.9);
+    --app-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.065), 0 1px 3px rgba(0, 0, 0, 0.035);
+}
+
+[data-color-theme="codex"][data-theme="dark"],
+[data-color-theme="codex"][data-theme="oled"] {
+    --app-glass-edge: rgba(255, 255, 255, 0.12);
+    --app-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+@supports (background-color: color-mix(in srgb, white 88%, transparent)) and ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    [data-color-theme="codex"] {
+        --app-glass-bg: color-mix(in srgb, var(--app-dialog-bg) 88%, transparent);
+        --app-glass-filter: blur(18px) saturate(1.1);
+    }
+}
+
+[data-color-theme="codex"] .app-glass {
+    background-color: var(--app-glass-bg);
+    background-image: linear-gradient(145deg, var(--app-glass-edge), transparent 48%);
+    box-shadow: inset 0 0 0 1px var(--app-glass-edge), var(--app-glass-shadow);
+    -webkit-backdrop-filter: var(--glass-local-filter, var(--app-glass-filter));
+    backdrop-filter: var(--glass-local-filter, var(--app-glass-filter));
+}
+
+[data-color-theme="codex"] .app-header {
+    background: var(--app-bg);
+}
+
+[data-color-theme="codex"] .app-header-title {
+    border-radius: 24px;
+    padding: 8px 14px;
+    box-shadow: inset 0 0 0 1px var(--app-glass-edge), 0 2px 12px rgba(0, 0, 0, 0.025);
+}
+
+[data-color-theme="codex"] .app-header-back {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    color: var(--app-fg);
+}
+
+[data-color-theme="codex"] .app-header-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 0;
+    padding: 4px;
+    border-radius: 24px;
+}
+
+[data-color-theme="codex"] .app-header-actions button {
+    color: var(--app-hint);
+    width: 44px;
+    height: 44px;
+}
+
+@media (max-width: 639px) {
+    [data-color-theme="codex"] [data-glass-chat] .app-header-files,
+    [data-color-theme="codex"] [data-glass-chat] .app-header-terminal {
+        display: none;
+    }
+    [data-color-theme="codex"] .app-menu-mobile-views {
+        display: block;
+    }
+}
+
+[data-color-theme="codex"] .app-header-actions button[aria-pressed="true"] {
+    color: var(--app-link);
+    background: var(--app-subtle-bg);
+}
+
+[data-color-theme="codex"] .app-composer-chip {
+    border-radius: 999px;
+}
+
+[data-color-theme="codex"] .app-composer-surface {
+    border-radius: 26px;
+}
+
+[data-color-theme="codex"] .app-composer-status {
+    border-radius: 999px;
+    margin-bottom: 6px;
+    padding: 2px 8px;
+    box-shadow: inset 0 0 0 1px var(--app-glass-edge), 0 2px 12px rgba(0, 0, 0, 0.025);
+}
+
+[data-color-theme="codex"] .app-composer-primary {
+    background: var(--app-button);
+    color: var(--app-button-text);
+}
+
+[data-color-theme="codex"] .app-composer-primary:disabled {
+    background: var(--app-secondary-bg);
+    color: var(--app-hint);
+    opacity: 1;
+}
+
+[data-color-theme="codex"] .app-floating-panel,
+[data-color-theme="codex"] .app-dialog {
+    border-radius: 22px;
+    border-color: var(--app-border);
+}
+
+[data-color-theme="codex"] .app-dialog-overlay {
+    background: rgba(0, 0, 0, 0.22);
+}
+
+[data-color-theme="codex"] .app-session-list-header {
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+/* A full-screen dismiss layer must stay rectangular so corner taps close it. */
+[data-color-theme="codex"] .app-session-list-header button:not(.fixed.inset-0),
+[data-color-theme="codex"] .app-settings-header button {
+    border-radius: 999px;
+}
+
+[data-color-theme="codex"] .app-session-list-header .session-list-new-button {
+    background: var(--app-button);
+    color: var(--app-button-text);
+}
+
+[data-color-theme="codex"] .app-settings-header {
+    border-bottom-color: transparent;
+}
+
+@media (min-width: 1024px) {
+    [data-color-theme="codex"] .app-session-sidebar {
+        background: var(--app-secondary-bg);
+    }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+    [data-color-theme="codex"] {
+        --app-glass-bg: var(--app-dialog-bg);
+        --app-glass-filter: none;
+    }
+    [data-color-theme="codex"] .app-glass {
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+    }
+}
+
+@media (prefers-contrast: more) {
+    [data-color-theme="codex"] {
+        --app-glass-bg: var(--app-dialog-bg);
+        --app-glass-filter: none;
+        --app-glass-edge: var(--app-fg);
+    }
+    [data-color-theme="codex"] .app-glass {
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+        background-image: none;
+        box-shadow: inset 0 0 0 1px var(--app-fg);
+    }
+}
+
+/* A small, literal preview of the theme in Display settings. */
+.theme-codex-preview {
+    position: relative;
+    display: block;
+    width: 88px;
+    height: 74px;
+    flex-shrink: 0;
+    border-radius: 14px;
+    background: #f0f0f0;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+}
+.theme-codex-preview-nav { position: absolute; inset: 8px 8px auto; display: flex; gap: 4px; }
+.theme-codex-preview-nav i { height: 12px; width: 12px; border-radius: 12px; background: #fff; }
+.theme-codex-preview-nav i:nth-child(2) { flex: 1; }
+.theme-codex-preview-text { position: absolute; inset: 30px 16px auto; height: 2px; background: #737373; box-shadow: 0 6px 0 #b0b0b0; }
+.theme-codex-preview-input { position: absolute; inset: auto 7px 7px; height: 20px; border-radius: 8px; background: #fff; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08); }
+.theme-codex-preview-input i { position: absolute; right: 5px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #171717; }

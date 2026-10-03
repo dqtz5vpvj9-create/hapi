@@ -960,6 +960,8 @@ export default {
   'settings.display.appearance.oled': 'OLED 纯黑',
   'settings.display.appearance.light': '浅色',
   'settings.display.colorTheme': '颜色主题',
+  'settings.display.colorTheme.codex': 'Codex 玻璃',
+  'settings.display.colorTheme.codex.description': '简洁的黑白层次，轻盈的悬浮控件与磨砂玻璃。',
   'settings.display.colorTheme.default': '默认',
   'settings.display.colorTheme.notion': 'Notion',
   'settings.display.colorTheme.one': 'One',

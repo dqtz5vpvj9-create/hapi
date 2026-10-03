@@ -117,7 +117,7 @@ function DirectorySortMenu(props: { sort: DirectorySort; onChange: (sort: Direct
         : props.sort.field === 'modified'
             ? [{ value: 'asc', label: t('files.sort.oldest') }, { value: 'desc', label: t('files.sort.newest') }]
             : [{ value: 'asc', label: t('files.sort.smallest') }, { value: 'desc', label: t('files.sort.largest') }]
-    const optionClass = 'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-[var(--app-subtle-bg)]'
+    const optionClass = 'app-file-sort-option flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-[var(--app-subtle-bg)]'
 
     return (
         <Popover.Root>
@@ -125,8 +125,8 @@ function DirectorySortMenu(props: { sort: DirectorySort; onChange: (sort: Direct
                 <button
                     type="button"
                     className={props.embedded
-                        ? 'flex w-10 shrink-0 self-stretch items-center justify-center rounded-r-md rounded-l-sm text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'
-                        : 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}
+                        ? 'app-file-icon-action flex w-10 shrink-0 self-stretch items-center justify-center rounded-r-md rounded-l-sm text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'
+                        : 'app-file-icon-action flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}
                     title={t('files.sort.title')}
                     aria-label={t('files.sort.title')}
                 >
@@ -564,7 +564,7 @@ export default function FilesPage() {
                             value={searchQuery}
                             onChange={(event) => setSearchQuery(event.target.value)}
                             placeholder={t('files.page.searchPlaceholder')}
-                            className="h-9 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] py-2 pl-9 pr-20 text-sm text-[var(--app-fg)] outline-none placeholder:text-[var(--app-hint)] focus:border-[var(--app-link)] focus:ring-1 focus:ring-[var(--app-link)]"
+                            className="app-files-search-input h-9 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] py-2 pl-9 pr-20 text-sm text-[var(--app-fg)] outline-none placeholder:text-[var(--app-hint)] focus:border-[var(--app-link)] focus:ring-1 focus:ring-[var(--app-link)]"
                             autoCapitalize="none"
                             autoCorrect="off"
                         />
@@ -572,7 +572,7 @@ export default function FilesPage() {
                             <button
                                 type="button"
                                 onClick={() => setSearchQuery('')}
-                                className="absolute inset-y-0 right-10 flex items-center rounded p-0.5 text-[var(--app-hint)] hover:text-[var(--app-fg)]"
+                                className="app-file-icon-action app-files-search-clear absolute inset-y-0 right-10 flex items-center rounded p-0.5 text-[var(--app-hint)] hover:text-[var(--app-fg)]"
                                 title={t('sessions.search.clear')}
                                 aria-label={t('sessions.search.clear')}
                             >
@@ -589,7 +589,7 @@ export default function FilesPage() {
                         variant="outline"
                         type="button"
                         onClick={handleRefresh}
-                        className="h-9 w-9 shrink-0 px-0"
+                        className="app-file-icon-action h-9 w-9 shrink-0 px-0"
                         title={t('files.page.refreshFilesystem')}
                         aria-label={t('files.page.refreshFilesystem')}
                     >
