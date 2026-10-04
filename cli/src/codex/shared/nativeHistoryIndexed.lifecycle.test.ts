@@ -146,6 +146,38 @@ describe('indexed native lifecycle metadata', () => {
             expect(f.calls.every(call => call.params.turnId !== 'abandoned')).toBe(true);
         } finally { f.close(); }
     });
+    it('reads copied legacy fork history without requiring a sparse parent cutoff or adding the later parent branch', async () => {
+        const { f, home, request } = fixture();
+        try {
+            f.addTurn('inherited', 'completed', false, true);
+            f.addTurn('parent-after-fork', 'completed', false, true);
+            f.addTurn('child', 'completed', false, true);
+            const parent = '22222222-2222-2222-2222-222222222222';
+            f.database.query('INSERT INTO thread_turns SELECT ?,turn_id,rollout_ordinal,status,started_at,completed_at,rollout_end_ordinal FROM thread_turns WHERE thread_id=?').run(parent, f.threadId);
+            f.database.query('INSERT INTO thread_items SELECT ?,turn_id,item_id,rollout_ordinal,created_at_ms,started_at_ms,completed_at_ms,item_type,item_json FROM thread_items WHERE thread_id=?').run(parent, f.threadId);
+            f.database.query("DELETE FROM thread_turns WHERE thread_id=? AND turn_id='parent-after-fork'").run(f.threadId);
+            f.database.query("DELETE FROM thread_items WHERE thread_id=? AND turn_id='parent-after-fork'").run(f.threadId);
+            f.turns.splice(f.turns.findIndex(turn => turn.id === 'parent-after-fork'), 1);
+            for (let index = f.items.length - 1; index >= 0; index--) {
+                if (f.items[index].turnId === 'parent-after-fork') f.items.splice(index, 1);
+            }
+            const directory = join(home, 'sessions', '2026', '10', '01'); mkdirSync(directory, { recursive: true });
+            writeFileSync(join(directory, `rollout-2026-10-01T01-00-00-${f.threadId}.jsonl`), JSON.stringify({
+                type: 'session_meta', ordinal: 0, payload: { id: f.threadId, forked_from_id: parent }
+            }) + '\n');
+            const reader = new NativeIndexedHistory(f.threadId, { request }, home);
+            const page = await reader.read({ limit: 20 }) as any;
+            expect(page.messages.filter((message: any) => message.content.role === 'user').map((message: any) => message.content.content.text))
+                .toEqual(['QUESTION inherited', 'QUESTION child']);
+            expect(page.messages).toHaveLength(4);
+            const outline = await reader.read({ operation: 'outline', limit: 10 }) as any;
+            expect(outline.entries.map((entry: any) => entry.label)).toEqual(['QUESTION inherited', 'QUESTION child']);
+            const latest = await reader.read({ limit: 2 }) as any;
+            const earlier = await reader.read({ limit: 2, beforeAt: latest.page.nextBeforeAt, beforeSeq: latest.page.nextBeforeSeq, epoch: latest.page.epoch }) as any;
+            expect([...earlier.messages, ...latest.messages].map((message: any) => message.id)).toEqual(page.messages.map((message: any) => message.id));
+            expect(f.calls.every(call => call.params.threadId === f.threadId && Number(call.params.limit) <= 32)).toBe(true);
+        } finally { f.close(); }
+    });
     it('retains canonical inherited fork items and excludes the parent branch after the exclusive fork boundary', async () => {
         const { f, home, request } = fixture();
         try {

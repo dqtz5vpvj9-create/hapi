@@ -71,7 +71,10 @@ export function nativeMetadataGenerations(home: string, threadId: string): { ids
         const paths = globSync(join(home, 'sessions', '*', '*', '*', `rollout-*-${id}*.jsonl`)).sort();
         const headers = paths.map(path => ({ id: nativeMetadataThreadId(id, path), header: sessionHeader(path, id) }));
         const parent = headers[0]?.header.payload;
-        if (parent?.forked_from_id) {
+        // Older forks copied their inherited history into the child's rollout.
+        // Only sparse forks with an explicit cutoff read the parent index; a
+        // legacy fork must use its own index to avoid adding the parent's later branch.
+        if (parent?.forked_from_id && parent.forked_from_ordinal_exclusive != null) {
             if (!Number.isSafeInteger(parent.forked_from_ordinal_exclusive)) throw new NativeMetadataUnavailable();
             visit(parent.forked_from_id, inheritedCutoff === undefined ? parent.forked_from_ordinal_exclusive : Math.min(parent.forked_from_ordinal_exclusive!, inheritedCutoff));
         }
