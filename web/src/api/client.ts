@@ -317,10 +317,13 @@ export class ApiClient {
         })
     }
 
-    async getCodexSessions(cwd?: string | null, machineId?: string | null): Promise<CodexLocalSessionsResponse> {
+    async getCodexSessions(cwd?: string | null, machineId?: string | null, page?: { search?: string; cursor?: number; limit?: number }): Promise<CodexLocalSessionsResponse> {
         const params = new URLSearchParams()
         if (cwd?.trim()) params.set('cwd', cwd.trim())
         if (machineId?.trim()) params.set('machineId', machineId.trim())
+        if (page?.search) params.set('search', page.search)
+        if (page?.cursor !== undefined) params.set('cursor', String(page.cursor))
+        if (page?.limit !== undefined) params.set('limit', String(page.limit))
         const query = params.size ? `?${params.toString()}` : ''
         return await this.request<CodexLocalSessionsResponse>(`/api/codex/sessions${query}`, { signal: AbortSignal.timeout(30_000) })
     }

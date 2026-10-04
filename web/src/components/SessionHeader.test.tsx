@@ -70,6 +70,22 @@ function renderHeaderWithApi(session: Session, api: ApiClient) {
     )
 }
 
+it.each([
+    ['codex', 'codex-thread-1'],
+    ['claude', 'claude-thread-1'],
+] as const)('copies the current %s native ID from the header', async (flavor, originalId) => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderHeader(baseSession({ metadata: {
+        flavor, path: '/repo', host: 'machine',
+        codexSessionId: 'codex-thread-1', codexSourceSessionId: 'ancestor-thread',
+        claudeSessionId: 'claude-thread-1'
+    } }))
+    fireEvent.click(screen.getByTitle('More actions'))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy original session ID' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith(originalId))
+})
+
 describe('resolveSessionHeaderMachineLabel', () => {
     it('prefers cached/display labels, then host, then short machine id', () => {
         expect(resolveSessionHeaderMachineLabel(

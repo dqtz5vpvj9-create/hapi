@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { ConnectCodexSessionRequestSchema, ConnectCodexSessionResponseSchema } from '@hapi/protocol/apiTypes'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
@@ -71,6 +72,7 @@ type CodexLocalSessionSummary = {
 type CodexLocalSessionsResponse = {
     success: true
     sessions: CodexLocalSessionSummary[]
+    nextCursor?: number | null
     machineId?: string
 } | {
     success: false
@@ -958,14 +960,15 @@ async function listCodexSessionsViaMachine(options: {
     cwd?: string | null
     machineId?: string | null
     sessionIds?: string[]
-}): Promise<{ sessions: RemoteCodexSession[]; machineId?: string; error?: string }> {
+    page?: { search?: string; cursor?: number; limit?: number }
+}): Promise<{ sessions: RemoteCodexSession[]; machineId?: string; error?: string; nextCursor?: number | null }> {
     const machineId = resolveCodexImportMachineId(options.cwd, options.namespace, options.engine, options.machineId)
     if (!machineId || !options.engine) {
         return { sessions: [], error: 'No online machine available for Codex history import' }
     }
     let result: unknown
     try {
-        result = await options.engine.listCodexSessionsForMachine(machineId, options.cwd, options.sessionIds)
+        result = await options.engine.listCodexSessionsForMachine(machineId, options.cwd, options.sessionIds, options.page)
     } catch (error) {
         return { sessions: [], machineId, error: error instanceof Error ? error.message : 'Failed to list local Codex sessions' }
     }
@@ -975,7 +978,7 @@ async function listCodexSessionsViaMachine(options: {
     if ((result as { success?: unknown }).success !== true) {
         return { sessions: [], machineId, error: typeof (result as { error?: unknown }).error === 'string' ? (result as { error: string }).error : 'Failed to list local Codex sessions' }
     }
-    return { sessions: asRemoteCodexSessions((result as { sessions?: unknown }).sessions, Boolean(options.sessionIds?.length)), machineId }
+    return { sessions: asRemoteCodexSessions((result as { sessions?: unknown }).sessions, Boolean(options.sessionIds?.length)), machineId, nextCursor: (result as { nextCursor?: number | null }).nextCursor ?? null }
 }
 
 function buildImportedSessionMetadata(
@@ -2229,13 +2232,16 @@ export function createCodexDesktopRoutes(options: {
     })
 
     app.get('/codex/sessions', async (c) => {
+        const page = z.object({ search: z.string().optional(), cursor: z.coerce.number().int().nonnegative().optional(), limit: z.coerce.number().int().min(1).max(200).optional() }).safeParse(c.req.query())
+        if (!page.success) return c.json({ error: 'Invalid Codex search parameters' }, 400)
         const cwd = c.req.query('cwd')?.trim() || null
         const machineId = c.req.query('machineId')?.trim() || null
         const remote = await listCodexSessionsViaMachine({
             engine: options.getSyncEngine(),
             namespace: c.get('namespace'),
             cwd,
-            machineId
+            machineId,
+            page: page.data
         })
         if (remote.error) {
             return c.json({
@@ -2247,6 +2253,7 @@ export function createCodexDesktopRoutes(options: {
         }
         return c.json({
             success: true,
+            nextCursor: remote.nextCursor ?? null,
             sessions: remote.sessions.map(({ messages: _messages, ...summary }) => summary),
             ...(remote.machineId ? { machineId: remote.machineId } : {})
         } satisfies CodexLocalSessionsResponse)

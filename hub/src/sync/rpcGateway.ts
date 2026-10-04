@@ -479,8 +479,8 @@ export class RpcGateway {
         return CodexSessionLineageRpcResponseSchema.parse(result).sessions
     }
 
-    async listCodexSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[]): Promise<RpcListCodexSessionsResponse> {
-        const result = await this.machineRpc(machineId, RPC_METHODS.ListCodexSessions, { cwd: cwd ?? null, sessionIds }, 30_000)
+    async listCodexSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[], page?: { search?: string; cursor?: number; limit?: number }): Promise<RpcListCodexSessionsResponse> {
+        const result = await this.machineRpc(machineId, RPC_METHODS.ListCodexSessions, { cwd: cwd ?? null, sessionIds, ...page }, 30_000)
         return ListCodexSessionsRpcResponseSchema.parse(result)
     }
 

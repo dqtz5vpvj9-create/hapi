@@ -186,9 +186,12 @@ vi.mock('../../utils/formatRunnerSpawnError', () => ({
     formatRunnerSpawnError: () => null
 }))
 vi.mock('@/components/CodexSessionSyncDialog', () => ({
-    CodexSessionSyncDialog: (props: { isOpen: boolean; isLoading: boolean; sessions: Array<{ id: string }>; error?: string | null; onRetry: () => void; onConfirm: (ids: string[]) => Promise<void> }) => props.isOpen ? (
+    CodexSessionSyncDialog: (props: { isOpen: boolean; isLoading: boolean; sessions: Array<{ id: string }>; error?: string | null; onRetry: () => void; onConfirm: (ids: string[]) => Promise<void>; onSearchChange: (search: string, cwd: string | null) => void; hasMore: boolean; onLoadMore: () => void }) => props.isOpen ? (
         <>
             <div data-testid="codex-list-error">{props.error}</div>
+            <div data-testid="codex-search-results">{props.sessions.map(session => session.id).join(',')}</div>
+            <input data-testid="codex-search" onChange={event => props.onSearchChange(event.target.value, null)} />
+            {props.hasMore ? <button data-testid="codex-more" disabled={props.isLoading} onClick={props.onLoadMore}>more</button> : null}
             <button data-testid="codex-retry" onClick={props.onRetry}>retry</button>
             <button data-testid="import-codex" disabled={props.isLoading || props.sessions.length === 0} onClick={() => void props.onConfirm(props.sessions.map((s) => s.id))}>import</button>
         </>
@@ -395,6 +398,42 @@ describe('NewSession launch preferences', () => {
         await act(async () => resolve({ sessionId: 'late-binding', threadId: 'native-1', connectionState: 'attached' }));
         expect(mocks.onSuccess).not.toHaveBeenCalled();
     });
+
+    it('debounces incremental searches, resets the cursor, and rejects an older page arriving during debounce', async () => {
+        let finishOldPage!: (value: unknown) => void
+        const codexApi = {
+            getCodexSessions: vi.fn()
+                .mockResolvedValueOnce({ success: true, sessions: [{ id: 'recent' }], nextCursor: 50 })
+                .mockImplementationOnce(() => new Promise(resolve => { finishOldPage = resolve }))
+                .mockResolvedValue({ success: true, sessions: [{ id: 'old-o-debug' }], nextCursor: null })
+        } as unknown as ApiClient
+        render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
+        await waitFor(() => expect(screen.getByTestId('codex-more')).toBeEnabled())
+        fireEvent.click(screen.getByTestId('codex-more'))
+        expect(codexApi.getCodexSessions).toHaveBeenLastCalledWith(null, 'machine-1', { search: '', cursor: 50, limit: 50 })
+        fireEvent.change(screen.getByTestId('codex-search'), { target: { value: 'o-' } })
+        fireEvent.change(screen.getByTestId('codex-search'), { target: { value: 'o-debug' } })
+        await act(async () => finishOldPage({ success: true, sessions: [{ id: 'stale' }], nextCursor: 100 }))
+        expect(screen.getByTestId('codex-search-results')).toBeEmptyDOMElement()
+        await waitFor(() => expect(screen.getByTestId('codex-search-results')).toHaveTextContent('old-o-debug'))
+        expect(codexApi.getCodexSessions).toHaveBeenCalledTimes(3)
+        expect(codexApi.getCodexSessions).toHaveBeenLastCalledWith(null, 'machine-1', { search: 'o-debug', cursor: undefined, limit: 50 })
+        expect(screen.queryByTestId('codex-more')).not.toBeInTheDocument()
+    })
+
+    it('appends subsequent search pages without duplicate sessions', async () => {
+        const codexApi = {
+            getCodexSessions: vi.fn()
+                .mockResolvedValueOnce({ success: true, sessions: [{ id: 'first' }], nextCursor: 50 })
+                .mockResolvedValueOnce({ success: true, sessions: [{ id: 'first' }, { id: 'second' }], nextCursor: null })
+        } as unknown as ApiClient
+        render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
+        await waitFor(() => expect(screen.getByTestId('codex-more')).toBeEnabled())
+        fireEvent.click(screen.getByTestId('codex-more'))
+        await waitFor(() => expect(screen.getByTestId('codex-search-results')).toHaveTextContent('first,second'))
+    })
 
     it('surfaces an unavailable Codex list in the dialog and retries successfully', async () => {
         const codexApi = { getCodexSessions: vi.fn().mockRejectedValueOnce(new Error('Runner unavailable')).mockResolvedValueOnce({ success: true, sessions: [{ id: 'native-1' }] }) } as unknown as ApiClient

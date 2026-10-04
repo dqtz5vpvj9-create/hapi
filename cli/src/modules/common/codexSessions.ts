@@ -466,6 +466,81 @@ function listIndexedCodexSessions(limit: number): LocalCodexSessionSummary[] | n
     }
 }
 
+export type CodexSessionSearch = { search?: string; cwd?: string | null; cursor?: number; limit?: number }
+
+/** Search the full index before paging; never restrict a search to the newest sessions. */
+export function searchLocalCodexSessions(options: CodexSessionSearch = {}): { sessions: LocalCodexSessionSummary[]; nextCursor: number | null } {
+    const cursor = options.cursor ?? 0
+    const limit = options.limit ?? 50
+    const search = options.search?.trim().toLowerCase() ?? ''
+    const cwd = options.cwd?.trim() || null
+    const home = getCodexHome()
+    const databases = existsSync(home) ? readdirSync(home).filter(file => /^state_\d+\.sqlite$/.test(file))
+        .sort((a, b) => Number(b.match(/\d+/)?.[0]) - Number(a.match(/\d+/)?.[0])) : []
+    if (!databases.length) {
+        const paths: string[] = []
+        for (const root of getCodexSessionRoots()) collectJsonlFiles(root, paths)
+        const files = paths.map(file => ({ file, modifiedAt: statSync(file).mtimeMs }))
+            .sort((a, b) => b.modifiedAt - a.modifiedAt || b.file.localeCompare(a.file))
+        const titles = readCodexSessionIndexTitles()
+        const sessions = new Map<string, LocalCodexSessionSummary>()
+        let offset = cursor
+        while (offset < files.length && sessions.size < limit) {
+            const session = parseCodexLocalSession(files[offset++].file, false, titles)
+            if (!session || (cwd && session.cwd !== cwd)) continue
+            if (search && ![session.title, session.lastUserMessage, session.cwd, session.originator, session.cliVersion, session.id]
+                .some(value => value?.toLowerCase().includes(search))) continue
+            if (!sessions.has(session.id)) sessions.set(session.id, session)
+        }
+        return { sessions: [...sessions.values()], nextCursor: offset < files.length ? offset : null }
+    }
+    const { Database } = require('bun:sqlite') as typeof import('bun:sqlite')
+    const db = new Database(join(home, databases[0]), { readonly: true })
+    try {
+        const columns = new Set((db.query('PRAGMA table_info(threads)').all() as Array<{ name: string }>).map(column => column.name))
+        const searchable = ['name', 'title', 'preview', 'first_user_message', 'cwd', 'originator', 'cli_version', 'id'].filter(column => columns.has(column))
+        const titles = readCodexSessionIndexTitles()
+        const conditions = ['archived = 0']
+        const bindings: Array<string | number> = []
+        if (cwd) { conditions.push('cwd = ?'); bindings.push(cwd) }
+        if (search) {
+            const matchingNames = [...titles].filter(([, title]) => title.threadName.toLowerCase().includes(search)).map(([id]) => id)
+            const predicates = searchable.map(column => `instr(lower(coalesce(${column}, '')), ?) > 0`)
+            bindings.push(...searchable.map(() => search))
+            if (matchingNames.length) {
+                predicates.push(`id IN (${matchingNames.map(() => '?').join(', ')})`)
+                bindings.push(...matchingNames)
+            }
+            conditions.push(`(${predicates.join(' OR ')})`)
+        }
+        const query = db.query(`SELECT * FROM threads WHERE ${conditions.join(' AND ')} ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`)
+        const sessions: LocalCodexSessionSummary[] = []
+        let offset = cursor
+        let hasMore = false
+        do {
+            const rows = query.all(...bindings, limit + 1, offset) as IndexedCodexThread[]
+            let consumed = 0
+            for (const row of rows.slice(0, limit)) {
+                consumed++
+                let source: unknown = row.source
+                try { source = JSON.parse(row.source) } catch { /* Plain CLI source. */ }
+                if (isCodexSubagentSource(source) || !existsSync(row.rollout_path)) continue
+                sessions.push({
+                    id: row.id,
+                    title: truncateText(row.name || titles.get(row.id)?.threadName || row.title || row.first_user_message || basename(row.cwd) || row.id.slice(0, 8), 80),
+                    lastUserMessage: truncateText(row.preview || row.first_user_message || '', 140) || null,
+                    cwd: row.cwd, file: row.rollout_path, modifiedAt: row.updated_at * 1000,
+                    originator: row.originator ?? null, cliVersion: row.cli_version, source: row.source, threadSource: row.thread_source ?? null
+                })
+                if (sessions.length === limit) break
+            }
+            offset += consumed
+            hasMore = rows.length > consumed
+        } while (hasMore && sessions.length < limit)
+        return { sessions, nextCursor: hasMore ? offset : null }
+    } finally { db.close() }
+}
+
 export function listLocalCodexSessionSummaries(limit = DEFAULT_CODEX_SESSION_SCAN_LIMIT): LocalCodexSessionSummary[] {
     return listIndexedCodexSessions(limit) ?? listLocalCodexSessions(false, limit)
 }

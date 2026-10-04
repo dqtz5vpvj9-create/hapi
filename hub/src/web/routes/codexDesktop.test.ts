@@ -1109,6 +1109,30 @@ describe('Codex Desktop import routes', () => {
         }
     })
 
+    it('forwards incremental search and pagination to the selected machine and preserves its cursor', async () => {
+        const store = new Store(':memory:')
+        const calls: unknown[][] = []
+        const engine = {
+            getOnlineMachinesByNamespace: () => [createMachine('online-machine', ['/project'])],
+            listCodexSessionsForMachine: async (...args: unknown[]) => {
+                calls.push(args)
+                return { success: true, sessions: [], nextCursor: 100 }
+            }
+        } as unknown as SyncEngine
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => { c.set('namespace', 'default'); await next() })
+        app.route('/api', createCodexDesktopRoutes({ store, getSyncEngine: () => engine }))
+        try {
+            const response = await app.request('/api/codex/sessions?machineId=online-machine&search=o-debug&cursor=50&limit=50')
+            expect(response.status).toBe(200)
+            expect(await response.json()).toEqual({ success: true, sessions: [], machineId: 'online-machine', nextCursor: 100 })
+            expect(calls).toEqual([['online-machine', null, undefined, { search: 'o-debug', cursor: 50, limit: 50 }]])
+            const invalid = await app.request('/api/codex/sessions?cursor=-1')
+            expect(invalid.status).toBe(400)
+            expect(calls.length).toBe(1)
+        } finally { store.close() }
+    })
+
     it('does not fall back to another Runner when the requested machine is offline', async () => {
         const store = new Store(':memory:')
         let listCalls = 0

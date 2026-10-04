@@ -45,6 +45,9 @@ export function CodexSessionSyncDialog(props: {
     isOpen: boolean
     onClose: () => void
     sessions: CodexLocalSessionSummary[]
+    onSearchChange?: (search: string, cwd: string | null) => void
+    hasMore?: boolean
+    onLoadMore?: () => void
     currentCodexSessionId: string | null
     currentWorkDirectory?: string | null
     onConfirm: (sessionIds: string[]) => Promise<void>
@@ -63,6 +66,9 @@ export function CodexSessionSyncDialog(props: {
     const {
         isOpen,
         sessions,
+        onSearchChange,
+        hasMore,
+        onLoadMore,
         currentCodexSessionId,
         currentWorkDirectory,
         onConfirm,
@@ -99,14 +105,16 @@ export function CodexSessionSyncDialog(props: {
         () => new Set(selectedSessionIds),
         [selectedSessionIds]
     )
+    const knownWorkdirsRef = useRef(new Set<string>())
     const workdirOptions = useMemo(() => {
-        const directories = new Set<string>()
+        const directories = onSearchChange ? knownWorkdirsRef.current : new Set<string>()
+        if (onSearchChange && currentWorkDirectory?.trim()) directories.add(currentWorkDirectory.trim())
         for (const session of sessions) {
             const cwd = getCodexSessionCwd(session)
             if (cwd) directories.add(cwd)
         }
         return Array.from(directories).sort((a, b) => a.localeCompare(b))
-    }, [sessions])
+    }, [sessions, onSearchChange, currentWorkDirectory])
     const defaultWorkdirFilter = useMemo(() => {
         const directory = currentWorkDirectory?.trim()
         if (!directory || !workdirOptions.includes(directory)) return ALL_WORKDIR_FILTER
@@ -116,12 +124,12 @@ export function CodexSessionSyncDialog(props: {
         const query = searchQuery.trim().toLowerCase()
         return sessions.filter((session) => {
             if (workdirFilter !== ALL_WORKDIR_FILTER && getCodexSessionCwd(session) !== workdirFilter) return false
-            if (!query) return true
+            if (!query || onSearchChange) return true
             return [session.title, session.lastUserMessage, session.cwd, session.originator, session.cliVersion, session.id]
                 .filter((value): value is string => typeof value === 'string' && value.length > 0)
                 .some((value) => value.toLowerCase().includes(query))
         })
-    }, [searchQuery, sessions, workdirFilter])
+    }, [searchQuery, sessions, workdirFilter, onSearchChange])
 
     useEffect(() => {
         if (isOpen && !wasOpenRef.current) {
@@ -131,6 +139,7 @@ export function CodexSessionSyncDialog(props: {
             setHasInitializedWorkdirFilter(false)
             setWorkdirFilter(ALL_WORKDIR_FILTER)
             setSearchQuery('')
+            knownWorkdirsRef.current.clear()
             setArchiveError(null)
             closeArchiveMenu()
             return
@@ -143,23 +152,24 @@ export function CodexSessionSyncDialog(props: {
             setHasInitializedWorkdirFilter(false)
             setWorkdirFilter(ALL_WORKDIR_FILTER)
             setSearchQuery('')
+            knownWorkdirsRef.current.clear()
             setArchiveError(null)
             closeArchiveMenu()
         }
     }, [defaultWorkdirFilter, isOpen])
 
     useEffect(() => {
-        if (!isOpen || isLoading || hasInitializedWorkdirFilter || sessions.length === 0) return
+        if (onSearchChange || !isOpen || isLoading || hasInitializedWorkdirFilter || sessions.length === 0) return
         // 中文注释：必须等本地 transcript 列表加载完成后再按当前目录初始化，否则从目录树 + 进入时会因选项未加载而落到“全部目录”。
         setWorkdirFilter(defaultWorkdirFilter)
         setHasInitializedWorkdirFilter(true)
-    }, [defaultWorkdirFilter, hasInitializedWorkdirFilter, isLoading, isOpen, sessions.length])
+    }, [defaultWorkdirFilter, hasInitializedWorkdirFilter, isLoading, isOpen, sessions.length, onSearchChange])
 
     useEffect(() => {
-        if (workdirFilter === ALL_WORKDIR_FILTER) return
+        if (onSearchChange || workdirFilter === ALL_WORKDIR_FILTER) return
         if (workdirOptions.includes(workdirFilter)) return
         setWorkdirFilter(defaultWorkdirFilter)
-    }, [defaultWorkdirFilter, workdirFilter, workdirOptions])
+    }, [defaultWorkdirFilter, workdirFilter, workdirOptions, onSearchChange])
 
     useEffect(() => {
         if (!isOpen || isLoading || hasInitializedSelection) return
@@ -296,14 +306,19 @@ export function CodexSessionSyncDialog(props: {
                         </div>
                     </div>
 
-                    {sessions.length > 0 ? (
+                    {sessions.length > 0 || onSearchChange ? (
                         <label className="block min-w-0 text-xs text-[var(--app-hint)]">
                             <span className="mb-1 block">{t('codexSync.confirm.cwdFilter')}</span>
                             <SelectControl
                                 className="h-8 rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] pl-2 text-xs text-[var(--app-fg)] outline-none focus:ring-2 focus:ring-[var(--app-link)]"
                                 value={workdirFilter}
-                                disabled={isPending || isLoading || workdirOptions.length === 0}
-                                onChange={(event) => setWorkdirFilter(event.target.value)}
+                                disabled={isPending || (!onSearchChange && isLoading) || workdirOptions.length === 0}
+                                onChange={(event) => {
+                                    const cwd = event.target.value
+                                    setWorkdirFilter(cwd)
+                                    setSelectedSessionIds([])
+                                    onSearchChange?.(searchQuery, cwd === ALL_WORKDIR_FILTER ? null : cwd)
+                                }}
                             >
                                 <option value={ALL_WORKDIR_FILTER}>
                                     {t('codexSync.confirm.cwdFilterAll')}
@@ -317,22 +332,36 @@ export function CodexSessionSyncDialog(props: {
                         </label>
                     ) : null}
 
-                    {sessions.length > 0 ? (
+                    {sessions.length > 0 || onSearchChange ? (
                         <label className="block min-w-0 text-xs text-[var(--app-hint)]">
                             <span className="mb-1 block">{t('codexSync.confirm.search')}</span>
                             <input
                                 type="search"
                                 className="h-8 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2 text-xs text-[var(--app-fg)] outline-none focus:ring-2 focus:ring-[var(--app-link)]"
                                 value={searchQuery}
-                                disabled={isPending || isLoading}
+                                disabled={isPending || (!onSearchChange && isLoading)}
                                 placeholder={t('codexSync.confirm.searchPlaceholder')}
-                                onChange={(event) => setSearchQuery(event.target.value)}
+                                onChange={(event) => {
+                                    setSearchQuery(event.target.value)
+                                    setSelectedSessionIds([])
+                                    onSearchChange?.(event.target.value, workdirFilter === ALL_WORKDIR_FILTER ? null : workdirFilter)
+                                }}
                             />
                         </label>
                     ) : null}
 
-                    <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)]">
-                        {isLoading ? (
+                    <div
+                        className="max-h-[50vh] overflow-y-auto rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)]"
+                        data-testid="codex-session-list"
+                        onScroll={(event) => {
+                            const list = event.currentTarget
+                            if (hasMore && !isLoading && !isPending && !error
+                                && list.scrollHeight - list.scrollTop - list.clientHeight <= 80) {
+                                onLoadMore?.()
+                            }
+                        }}
+                    >
+                        {isLoading && sessions.length === 0 ? (
                             <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
                                 {t(mode === 'connect' ? 'codexConnect.loading' : 'codexSync.confirm.loading')}
                             </div>
@@ -343,11 +372,11 @@ export function CodexSessionSyncDialog(props: {
                             </div>
                         ) : sessions.length === 0 ? (
                             <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
-                                {t('codexSync.confirm.empty')}
+                                {t(searchQuery.trim() ? 'codexSync.confirm.noMatches' : 'codexSync.confirm.empty')}
                             </div>
                         ) : filteredSessions.length === 0 ? (
                             <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
-                                {t('codexSync.confirm.emptyForWorkdir')}
+                                {t(searchQuery.trim() ? 'codexSync.confirm.noMatches' : 'codexSync.confirm.emptyForWorkdir')}
                             </div>
                         ) : (
                             <div className="divide-y divide-[var(--app-border)]">
@@ -416,7 +445,7 @@ export function CodexSessionSyncDialog(props: {
                                                         </span>
                                                     ) : null}
                                                 </div>
-                                                {mode === 'connect' ? <div className="mt-1 text-xs text-[var(--app-hint)]">{t(session.connectionState === 'attached' ? 'codexConnect.attached' : session.connectionState === 'history' ? 'codexConnect.historyOnly' : 'codexConnect.unavailable')}{session.connectionError ? `: ${session.connectionError}` : ''}</div> : null}
+                                                {mode === 'connect' ? <div className="mt-1 text-xs text-[var(--app-hint)]">{t(session.connectionState === 'attached' ? 'codexConnect.attached' : session.connectionState === 'history' ? 'codexConnect.saved' : 'codexConnect.unavailable')}{session.connectionError ? `: ${session.connectionError}` : ''}</div> : null}
                                                 {preview ? (
                                                     <div className="mt-0.5 truncate text-xs text-[var(--app-hint)]">
                                                         {preview}
@@ -458,6 +487,9 @@ export function CodexSessionSyncDialog(props: {
                             </div>
                         )}
                     </div>
+                    {hasMore ? <Button type="button" variant="secondary" size="sm" disabled={isLoading || isPending} onClick={onLoadMore}>
+                        {t('codexSync.confirm.loadMore')}
+                    </Button> : null}
                 </div>
 
                 <div className="mt-4 flex justify-end gap-2">
@@ -475,7 +507,7 @@ export function CodexSessionSyncDialog(props: {
                         onClick={() => void handleConfirm()}
                         disabled={isPending || isLoading || Boolean(error) || selectedSessionIds.length === 0}
                     >
-                        {mode === 'connect' ? t(isPending ? 'codexConnect.connecting' : sessions.find(s => s.id === selectedSessionIds[0])?.connectionState === 'history' ? 'codexConnect.viewHistory' : 'codexConnect.connect') : selectionMode === 'single' ? t('codexSync.confirm.useSelected') : (isPending ? t('codexSync.confirm.confirming') : t('codexSync.confirm.confirm'))}
+                        {mode === 'connect' ? t(isPending ? 'codexConnect.connecting' : sessions.find(s => s.id === selectedSessionIds[0])?.connectionState === 'history' ? 'codexConnect.resume' : 'codexConnect.connect') : selectionMode === 'single' ? t('codexSync.confirm.useSelected') : (isPending ? t('codexSync.confirm.confirming') : t('codexSync.confirm.confirm'))}
                     </Button>
                 </div>
             </DialogContent>

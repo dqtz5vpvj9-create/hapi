@@ -294,11 +294,14 @@ export const CodexLocalSessionWithMessagesSchema = CodexLocalSessionSummarySchem
 
 export const ListCodexSessionsRpcRequestSchema = z.object({
     cwd: z.string().nullable().optional(),
-    sessionIds: z.array(z.string().min(1)).optional()
+    sessionIds: z.array(z.string().min(1)).optional(),
+    search: z.string().optional(),
+    cursor: z.number().int().nonnegative().optional(),
+    limit: z.number().int().min(1).max(200).optional()
 })
 
 export const ListCodexSessionsRpcResponseSchema = z.union([
-    z.object({ success: z.literal(true), sessions: z.array(z.union([CodexLocalSessionWithMessagesSchema, CodexLocalSessionSummarySchema])) }),
+    z.object({ success: z.literal(true), sessions: z.array(z.union([CodexLocalSessionWithMessagesSchema, CodexLocalSessionSummarySchema])), nextCursor: z.number().int().nonnegative().nullable().optional() }),
     z.object({ success: z.literal(false), error: z.string() })
 ])
 

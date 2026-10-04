@@ -62,7 +62,7 @@ import { readCodexSubagentMessages } from '../codex/utils/codexSubagentHistory'
 import { lookupCodexSessionLineage } from '../codex/utils/codexLineageLookup'
 import { connectNativeCodexThread, nativeCodexEligibility } from '../codex/shared/nativeConnection'
 import { ConnectCodexSessionRequestSchema } from '@hapi/protocol/apiTypes'
-import { archiveLocalCodexSession, listLocalCodexSessionSummaries, listLocalCodexSessionsWithMessagesByIds } from '../modules/common/codexSessions'
+import { archiveLocalCodexSession, searchLocalCodexSessions, listLocalCodexSessionSummaries, listLocalCodexSessionsWithMessagesByIds } from '../modules/common/codexSessions'
 import { listLocalPiSessionSummaries, listLocalPiSessionsWithMessagesByIds } from '../modules/common/piSessions'
 import { buildSocketIoExtraHeaderOptions } from './hubExtraHeaders'
 import { collectMachineHealth } from '@/utils/machineHealth'
@@ -411,17 +411,24 @@ export class ApiMachineClient {
                 const requestedIds = parsed.data.sessionIds
                     ? new Set(parsed.data.sessionIds)
                     : null
-                const allSessions = requestedIds
-                    ? listLocalCodexSessionsWithMessagesByIds(requestedIds)
-                    : listLocalCodexSessionSummaries()
+                let page = requestedIds ? null : searchLocalCodexSessions(parsed.data)
+                let candidates = requestedIds ? listLocalCodexSessionsWithMessagesByIds(requestedIds) : page!.sessions
                 const eligibility = requestedIds ? null : await nativeCodexEligibility()
                 const sessions = []
-                for (const session of allSessions) {
-                    if (await this.isLocalSessionWithinWorkspaceRoots(session)) {
-                        sessions.push(eligibility ? { ...session, connectionState: eligibility.error ? 'unavailable' as const : eligibility.loaded.has(session.id) ? 'attached' as const : 'history' as const, ...(eligibility.error ? { connectionError: eligibility.error } : {}) } : session)
+                const limit = parsed.data.limit ?? 50
+                while (true) {
+                    for (const session of candidates) {
+                        if (await this.isLocalSessionWithinWorkspaceRoots(session)) {
+                            sessions.push(eligibility ? { ...session, connectionState: eligibility.error ? 'unavailable' as const : eligibility.loaded.has(session.id) ? 'attached' as const : 'history' as const, ...(eligibility.error ? { connectionError: eligibility.error } : {}) } : session)
+                        }
                     }
+                    if (!page || page.nextCursor === null || sessions.length >= limit) break
+                    // Fill the visible page after permission filtering, so an inaccessible
+                    // batch cannot hide permitted sessions further down the index.
+                    page = searchLocalCodexSessions({ ...parsed.data, cursor: page.nextCursor, limit: limit - sessions.length })
+                    candidates = page.sessions
                 }
-                return { success: true, sessions }
+                return { success: true, sessions, nextCursor: page?.nextCursor ?? null }
             }
         )
 

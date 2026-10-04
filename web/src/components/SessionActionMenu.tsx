@@ -3,7 +3,6 @@ import { useGlassSurface } from '@/themes/glass/GlassScene'
 import { useTranslation } from '@/lib/use-translation'
 import { HoverTooltip } from '@/components/HoverTooltip'
 import { safeCopyToClipboard } from '@/lib/clipboard'
-import { buildSessionReferenceText } from '@/lib/sessionReference'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useAnchoredMenu } from '@/hooks/useAnchoredMenu'
 import { CopyIcon } from '@/components/icons'
@@ -17,7 +16,7 @@ type SessionActionMenuProps = {
     isOpen: boolean
     onClose: () => void
     sessionId: string
-    sessionTitle: string
+    originalSessionId?: string
     sessionActive: boolean
     onRename: () => void
     sessionPinned?: boolean
@@ -198,7 +197,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         isOpen,
         onClose,
         sessionId,
-        sessionTitle,
+        originalSessionId,
         sessionActive,
         onRename,
         sessionPinned = false,
@@ -231,10 +230,10 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onRename()
     }
 
-    const handleCopyReference = async () => {
+    const handleCopyId = async (id: string) => {
         onClose()
         try {
-            await safeCopyToClipboard(buildSessionReferenceText(sessionTitle, sessionId))
+            await safeCopyToClipboard(id)
             haptic.notification('success')
         } catch {
             haptic.notification('error')
@@ -348,10 +347,22 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     type="button"
                     role="menuitem"
                     className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
-                    onClick={() => void handleCopyReference()}
+                    onClick={() => void handleCopyId(sessionId)}
                 >
                     <CopyIcon className="h-[18px] w-[18px] text-[var(--app-hint)]" />
-                    {t('session.action.copyReference')}
+                    {t('session.action.copyHapiId')}
+                </button>
+
+                <button
+                    type="button"
+                    role="menuitem"
+                    className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)] disabled:cursor-not-allowed disabled:opacity-50`}
+                    disabled={!originalSessionId}
+                    title={!originalSessionId ? t('session.action.originalIdUnavailable') : undefined}
+                    onClick={() => originalSessionId && void handleCopyId(originalSessionId)}
+                >
+                    <CopyIcon className="h-[18px] w-[18px] text-[var(--app-hint)]" />
+                    {t('session.action.copyOriginalId')}
                 </button>
 
                 {onMarkUnread ? (

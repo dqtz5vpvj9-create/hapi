@@ -4417,8 +4417,8 @@ export class SyncEngine {
         return await this.rpcGateway.readCodexSubagentMessages(machineId, query)
     }
 
-    async listCodexSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[]) {
-        return await this.rpcGateway.listCodexSessionsForMachine(machineId, cwd, sessionIds)
+    async listCodexSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[], page?: { search?: string; cursor?: number; limit?: number }) {
+        return await this.rpcGateway.listCodexSessionsForMachine(machineId, cwd, sessionIds, page)
     }
 
     async listPiSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[]): Promise<RpcListPiSessionsResponse> {

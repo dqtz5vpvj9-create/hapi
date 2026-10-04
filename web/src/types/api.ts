@@ -237,6 +237,7 @@ export type CodexLocalSessionSummary = {
 
 export type CodexLocalSessionsResponse = {
     success: true
+    nextCursor?: number | null
     sessions: CodexLocalSessionSummary[]
     machineId?: string
 } | {

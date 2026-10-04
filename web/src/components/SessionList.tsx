@@ -1096,7 +1096,7 @@ function SessionItem(props: {
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 sessionId={s.id}
-                sessionTitle={sessionName}
+                originalSessionId={s.metadata?.agentSessionId}
                 sessionActive={s.active}
                 sessionPinned={Boolean(s.pinned)}
                 sessionGlobalPinned={Boolean(s.globalPinned)}

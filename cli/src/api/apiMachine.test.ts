@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, rmSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, mkdirSync, realpathSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -134,7 +134,7 @@ async function callCursorChatStoreStatus(
     return JSON.parse(raw) as unknown
 }
 
-async function callListCodexSessions(client: ApiMachineClient, machineId: string, params: { cwd?: string | null; sessionIds?: string[] }): Promise<unknown> {
+async function callListCodexSessions(client: ApiMachineClient, machineId: string, params: { cwd?: string | null; sessionIds?: string[]; search?: string; cursor?: number; limit?: number }): Promise<unknown> {
     const manager = (client as unknown as { rpcHandlerManager: { handleRequest: (req: { method: string; params: string }) => Promise<string> } }).rpcHandlerManager
     const raw = await manager.handleRequest({
         method: `${machineId}:listCodexSessions`,
@@ -572,6 +572,23 @@ describe('ApiMachineClient Codex transcript handlers', () => {
         rmSync(workspaceRoot, { recursive: true, force: true })
         rmSync(outsideRoot, { recursive: true, force: true })
         rmSync(codexHome, { recursive: true, force: true })
+    })
+
+    it('fills search pages after permission filtering instead of hiding older permitted matches', async () => {
+        const allowed = writeCodexTranscript(codexHome, 'allowed.jsonl', { id: 'allowed-session-id', cwd: workspaceRoot }, 'allowed prompt')
+        utimesSync(allowed, 1, 1)
+        for (let i = 0; i < 3; i++) {
+            const outside = writeCodexTranscript(codexHome, `outside-${i}.jsonl`, { id: `outside-${i}`, cwd: outsideRoot }, 'outside prompt')
+            utimesSync(outside, 100 + i, 100 + i)
+        }
+        const machine = makeMachine('codex-search-machine')
+        const client = new ApiMachineClient('test-token', machine, [workspaceRoot])
+        try {
+            const result = await callListCodexSessions(client, machine.id, { search: 'prompt', limit: 1 }) as { success: boolean; sessions: Array<{ id: string }>; nextCursor: number | null }
+            expect(result.success).toBe(true)
+            expect(result.sessions.map(session => session.id)).toEqual(['allowed-session-id'])
+            expect(result.nextCursor).toBeNull()
+        } finally { client.shutdown() }
     })
 
     it('filters listed Codex sessions to workspace roots', async () => {

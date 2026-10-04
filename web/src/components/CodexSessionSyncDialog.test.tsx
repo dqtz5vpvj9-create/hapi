@@ -36,6 +36,60 @@ describe('CodexSessionSyncDialog', () => {
         window.localStorage.clear()
     })
 
+    it('offers to resume a saved session and confirms its native ID', async () => {
+        const onConfirm = vi.fn(async () => {})
+        render(<I18nProvider><CodexSessionSyncDialog
+            isOpen onClose={vi.fn()} mode="connect" selectionMode="single"
+            sessions={[{ id: 'saved-thread', title: 'o-debug', cwd: '/android', file: 'saved.jsonl', modifiedAt: Date.now(), connectionState: 'history' }]}
+            currentCodexSessionId={null} onConfirm={onConfirm} isPending={false} isLoading={false}
+            onRestartCodexDesktop={vi.fn(async () => {})} isRestartingCodexDesktop={false}
+        /></I18nProvider>)
+        expect(screen.getByText('Saved session · resumes when opened')).toBeInTheDocument()
+        fireEvent.click(screen.getByText('o-debug'))
+        fireEvent.click(screen.getByRole('button', { name: 'Resume and open' }))
+        await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(['saved-thread']))
+    })
+
+    it('keeps remote search editable while loading and after an empty result, and offers the next page', () => {
+        const search = vi.fn()
+        const more = vi.fn()
+        const props = { isOpen: true, onClose: vi.fn(), sessions: [], currentCodexSessionId: null,
+            onConfirm: vi.fn(), onRestartCodexDesktop: vi.fn(), isPending: false,
+            isRestartingCodexDesktop: false, isLoading: true, onSearchChange: search, hasMore: true, onLoadMore: more }
+        const view = render(<I18nProvider><CodexSessionSyncDialog {...props} /></I18nProvider>)
+        const input = screen.getByRole('searchbox')
+        expect(input).toBeEnabled()
+        fireEvent.change(input, { target: { value: 'o-debug' } })
+        expect(search).toHaveBeenCalledWith('o-debug', null)
+        view.rerender(<I18nProvider><CodexSessionSyncDialog {...props} isLoading={false} /></I18nProvider>)
+        expect(screen.getByRole('searchbox')).toHaveValue('o-debug')
+        expect(screen.getByText('No Codex sessions match this search')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+        expect(more).toHaveBeenCalledOnce()
+        fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } })
+        expect(search).toHaveBeenLastCalledWith('', null)
+    })
+
+    it('loads older sessions near the end of the list and waits for the current page to finish', () => {
+        const more = vi.fn()
+        const props = { isOpen: true, onClose: vi.fn(), sessions: [], currentCodexSessionId: null,
+            onConfirm: vi.fn(), onRestartCodexDesktop: vi.fn(), isPending: false,
+            isRestartingCodexDesktop: false, isLoading: false, hasMore: true, onLoadMore: more }
+        const view = render(<I18nProvider><CodexSessionSyncDialog {...props} /></I18nProvider>)
+        const list = screen.getByTestId('codex-session-list')
+        Object.defineProperties(list, { scrollHeight: { value: 1000 }, clientHeight: { value: 400 } })
+        fireEvent.scroll(list, { target: { scrollTop: 100 } })
+        expect(more).not.toHaveBeenCalled()
+        fireEvent.scroll(list, { target: { scrollTop: 550 } })
+        expect(more).toHaveBeenCalledOnce()
+        view.rerender(<I18nProvider><CodexSessionSyncDialog {...props} isLoading /></I18nProvider>)
+        fireEvent.scroll(list, { target: { scrollTop: 600 } })
+        expect(more).toHaveBeenCalledOnce()
+        view.rerender(<I18nProvider><CodexSessionSyncDialog {...props} hasMore={false} /></I18nProvider>)
+        fireEvent.scroll(list, { target: { scrollTop: 600 } })
+        expect(more).toHaveBeenCalledOnce()
+    })
+
     it('shows list failures with a retry action instead of an empty list', () => {
         const retry = vi.fn()
         render(<I18nProvider><CodexSessionSyncDialog isOpen onClose={vi.fn()} sessions={[]} currentCodexSessionId={null}

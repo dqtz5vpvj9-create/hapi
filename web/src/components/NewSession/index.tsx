@@ -149,6 +149,9 @@ export function NewSession(props: {
     const [isPiImportDialogOpen, setIsPiImportDialogOpen] = useState(false)
     const codexConnectGenerationRef = useRef(0)
     const codexLoadGenerationRef = useRef(0)
+    const codexSearchRef = useRef<{ search: string; cwd: string | null }>({ search: '', cwd: null })
+    const codexSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const [codexNextCursor, setCodexNextCursor] = useState<number | null>(null)
     const piLoadGenerationRef = useRef(0)
     const [isCreating, setIsCreating] = useState(false)
     const createInFlightRef = useRef(false)
@@ -1043,6 +1046,9 @@ export function NewSession(props: {
 
     useEffect(() => {
         codexLoadGenerationRef.current += 1
+        if (codexSearchTimerRef.current) clearTimeout(codexSearchTimerRef.current)
+        codexSearchRef.current = { search: '', cwd: null }
+        setCodexNextCursor(null)
         codexConnectGenerationRef.current += 1
         setIsBulkImportingCodexSessions(false)
         setCodexImportError(null)
@@ -1050,23 +1056,30 @@ export function NewSession(props: {
         setCodexImportSessions([])
     }, [agent, machineId, trimmedDirectory])
 
-    useEffect(() => () => { codexLoadGenerationRef.current += 1; codexConnectGenerationRef.current += 1 }, [])
+    useEffect(() => () => {
+        codexLoadGenerationRef.current += 1
+        codexConnectGenerationRef.current += 1
+        if (codexSearchTimerRef.current) clearTimeout(codexSearchTimerRef.current)
+    }, [])
 
-    const loadCodexImportSessions = useCallback(async () => {
+    const loadCodexImportSessions = useCallback(async (cursor?: number) => {
         if (agent !== 'codex' || !machineId) return
         const generation = ++codexLoadGenerationRef.current
         setIsLoadingCodexImportSessions(true)
         setCodexImportError(null)
         try {
-            const result = await props.api.getCodexSessions(trimmedDirectory || null, machineId)
+            const query = codexSearchRef.current
+            const result = await props.api.getCodexSessions(query.cwd, machineId, { search: query.search, cursor, limit: 50 })
             if (generation !== codexLoadGenerationRef.current) return
             if (!result.success) throw new Error(result.error)
-            setCodexImportSessions(result.sessions)
+            setCodexImportSessions(current => cursor === undefined ? result.sessions
+                : [...new Map([...current, ...result.sessions].map(session => [session.id, session])).values()])
+            setCodexNextCursor(result.nextCursor ?? null)
             setCodexImportMachineId(result.machineId ?? machineId)
             setSelectedCodexImportSessionId((current) => current && result.sessions.some((session) => session.id === current) ? current : null)
         } catch (e) {
             if (generation !== codexLoadGenerationRef.current) return
-            setCodexImportSessions([])
+            if (cursor === undefined) setCodexImportSessions([])
             setCodexImportMachineId(null)
             setSelectedCodexImportSessionId(null)
             setCodexImportError(e instanceof Error ? e.message : t('codexSync.failed.body'))
@@ -1074,6 +1087,18 @@ export function NewSession(props: {
             if (generation === codexLoadGenerationRef.current) setIsLoadingCodexImportSessions(false)
         }
     }, [agent, machineId, props.api, trimmedDirectory, t])
+
+    const searchCodexImportSessions = useCallback((search: string, cwd: string | null) => {
+        codexSearchRef.current = { search, cwd }
+        // Invalidate immediately, including during the debounce interval.
+        codexLoadGenerationRef.current += 1
+        if (codexSearchTimerRef.current) clearTimeout(codexSearchTimerRef.current)
+        setCodexImportSessions([])
+        setCodexNextCursor(null)
+        setCodexImportError(null)
+        setIsLoadingCodexImportSessions(true)
+        codexSearchTimerRef.current = setTimeout(() => void loadCodexImportSessions(), 250)
+    }, [loadCodexImportSessions])
 
     useEffect(() => {
         piLoadGenerationRef.current += 1
@@ -1863,6 +1888,8 @@ export function NewSession(props: {
                     isDisabled={isFormDisabled}
                     error={codexImportError}
                     onChooseHistory={() => {
+                        codexSearchRef.current = { search: '', cwd: null }
+                        setCodexNextCursor(null)
                         setIsCodexImportDialogOpen(true)
                         void loadCodexImportSessions()
                     }}
@@ -2058,8 +2085,17 @@ export function NewSession(props: {
             />
             <CodexSessionSyncDialog
                 isOpen={isCodexImportDialogOpen}
-                onClose={() => { codexConnectGenerationRef.current += 1; setIsBulkImportingCodexSessions(false); setIsCodexImportDialogOpen(false) }}
+                onClose={() => {
+                    codexConnectGenerationRef.current += 1
+                    codexLoadGenerationRef.current += 1
+                    if (codexSearchTimerRef.current) clearTimeout(codexSearchTimerRef.current)
+                    setIsBulkImportingCodexSessions(false)
+                    setIsCodexImportDialogOpen(false)
+                }}
                 sessions={codexImportSessions}
+                onSearchChange={searchCodexImportSessions}
+                hasMore={codexNextCursor !== null}
+                onLoadMore={() => { if (codexNextCursor !== null) void loadCodexImportSessions(codexNextCursor) }}
                 currentCodexSessionId={selectedCodexImportSessionId}
                 currentWorkDirectory={trimmedDirectory}
                 mode="connect"

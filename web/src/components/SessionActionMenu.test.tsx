@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { I18nProvider } from '@/lib/i18n-context'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
-import { SESSION_REFERENCE_STEER_SUFFIX } from '@hapi/protocol/sessionCitation'
 
 vi.mock('@/hooks/usePlatform', () => ({
     usePlatform: () => ({
@@ -17,7 +16,6 @@ function renderMenu(overrides: Partial<React.ComponentProps<typeof SessionAction
         isOpen: true,
         onClose: vi.fn(),
         sessionId: 'sess-123',
-        sessionTitle: 'Test session',
         sessionActive: false,
         onRename: vi.fn(),
         onArchive: vi.fn(),
@@ -57,7 +55,6 @@ describe('SessionActionMenu - Pin action', () => {
                     isOpen={true}
                     onClose={vi.fn()}
                     sessionId="session-1"
-                    sessionTitle="Session 1"
                     sessionActive={false}
                     sessionPinned={true}
                     sessionGlobalPinned={true}
@@ -241,7 +238,6 @@ describe('SessionActionMenu - Codex sync action', () => {
                     isOpen={true}
                     onClose={vi.fn()}
                     sessionId="sess-123"
-                    sessionTitle="Test session"
                     sessionActive={false}
                     onRename={vi.fn()}
                     onExport={vi.fn()}
@@ -287,14 +283,18 @@ describe('SessionActionMenu - Pi sync action', () => {
     })
 })
 
-describe('SessionActionMenu - Copy reference action', () => {
-    it('renders the Copy reference item', () => {
+describe('SessionActionMenu - Copy session IDs', () => {
+    it('shows both ID actions and disables original ID copying until it exists', () => {
         renderMenu()
-
-        expect(screen.getByRole('menuitem', { name: /Copy reference/ })).toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: 'Copy HAPI session ID' })).toBeEnabled()
+        expect(screen.getByRole('menuitem', { name: 'Copy original session ID' })).toBeDisabled()
+        expect(screen.queryByRole('menuitem', { name: 'Copy reference' })).toBeNull()
     })
 
-    it('copies a session citation and closes the menu when Copy reference is clicked', async () => {
+    it.each([
+        ['Copy HAPI session ID', 'abc-def'],
+        ['Copy original session ID', 'native-thread-123'],
+    ])('copies only the correct ID for %s and closes the menu', async (action, expectedId) => {
         const writeText = vi.fn().mockResolvedValue(undefined)
         Object.defineProperty(navigator, 'clipboard', {
             value: { writeText },
@@ -304,17 +304,15 @@ describe('SessionActionMenu - Copy reference action', () => {
         const onClose = vi.fn()
         renderMenu({
             sessionId: 'abc-def',
-            sessionTitle: 'upstream issue/pr discovery',
+            originalSessionId: 'native-thread-123',
             onClose,
         })
 
-        fireEvent.click(screen.getByRole('menuitem', { name: /Copy reference/ }))
+        fireEvent.click(screen.getByRole('menuitem', { name: action }))
 
         expect(onClose).toHaveBeenCalledTimes(1)
         await vi.waitFor(() => {
-            expect(writeText).toHaveBeenCalledWith(
-                `See session "upstream issue/pr discovery" (/sessions/abc-def) for context.${SESSION_REFERENCE_STEER_SUFFIX}`
-            )
+            expect(writeText).toHaveBeenCalledExactlyOnceWith(expectedId)
         })
     })
 })
