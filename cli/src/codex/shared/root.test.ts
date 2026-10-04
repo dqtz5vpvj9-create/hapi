@@ -63,10 +63,10 @@ afterEach(async () => {
     finally { vi.useRealTimers(); }
 });
 
-async function fixture(opts?: { hubArchived?: boolean; external?: boolean; nativeHistory?: boolean; end?: RootHost['end'] }) {
+async function fixture(opts?: { hubArchived?: boolean; external?: boolean; nativeHistory?: boolean; end?: RootHost['end']; name?: string; nativeName?: string | null; syncedName?: string | null }) {
     const directory = await mkdtemp(`${process.env.TMPDIR ?? '/mnt/cache/data-cache'}/hapi-shared-root-`);
     let state: AgentState = { steeringActive: true };
-    let metadata: Metadata = { path: directory, host: 'test', flavor: 'codex' };
+    let metadata: Metadata = { path: directory, host: 'test', flavor: 'codex', name: opts?.name, codexLastSyncedName: opts?.syncedName };
     let reconnect: (() => void) | null = null;
     let userMessage: ((message: UserMessage, localId?: string) => void) | undefined;
     const updateState = vi.fn((fn: (value: AgentState) => AgentState) => { state = fn(state); });
@@ -96,10 +96,11 @@ async function fixture(opts?: { hubArchived?: boolean; external?: boolean; nativ
     } satisfies RootHost);
     cleanups.push(async () => { await root.close(false); await rm(directory, { recursive: true, force: true }); });
     await root.prepare();
+    if (opts && 'nativeName' in opts) Object.assign((root.client as any).thread, { name: opts.nativeName });
     await root.bind('thread', { model: 'mock', thread: { turns: [] } }, false);
     const native = root.client as unknown as {
         initialized: boolean;
-        thread: { id: string; turns: NativeTurn[] };
+        thread: { id: string; name?: string | null; turns: NativeTurn[] };
         queue: Array<{ id: string; clientUserMessageId: string; input: unknown }>;
         items: unknown[];
         notify(method: string, params: unknown): void;
@@ -126,6 +127,42 @@ async function fixture(opts?: { hubArchived?: boolean; external?: boolean; nativ
         end,
     };
 }
+
+it('resumes a saved native thread before accepting new messages on its existing binding', async () => {
+    const f = await fixture({ external: true });
+    await f.root.setNativeConnection(false);
+    await f.root.activate();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const request = f.root.client.request.bind(f.root.client);
+    const calls = vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+        if (method === 'thread/resume') await gate;
+        return request(method, params);
+    });
+    const restoring = f.root.setNativeConnection(true);
+    expect(f.metadata().codexNativeConnection).toBe('history');
+    expect(calls).toHaveBeenCalledWith('thread/resume', { threadId: 'thread', excludeTurns: true });
+    release();
+    await restoring;
+    expect(f.metadata()).toMatchObject({ codexSessionId: 'thread', codexNativeConnection: 'attached' });
+    f.userMessage({ role: 'user', content: { type: 'text', text: 'Continue the saved task' } }, 'resume-message');
+    await (f.root as any).work;
+    expect(f.native.queue).toEqual([expect.objectContaining({ clientUserMessageId: 'resume-message' })]);
+    expect(calls.mock.calls.some(([method]) => method === 'thread/start')).toBe(false);
+});
+
+it('keeps a saved thread detached when native resume fails', async () => {
+    const f = await fixture({ external: true });
+    await f.root.setNativeConnection(false);
+    const request = f.root.client.request.bind(f.root.client);
+    vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+        if (method === 'thread/resume') throw new Error('Native resume failed');
+        return request(method, params);
+    });
+    await expect(f.root.setNativeConnection(true)).rejects.toThrow('Native resume failed');
+    expect(f.metadata()).toMatchObject({ codexSessionId: 'thread', codexNativeConnection: 'history' });
+    expect(f.native.queue).toHaveLength(0);
+});
 
 it.each([false, true])('publishes goal controls through their full lifecycle without queueing a model turn (external=%s)', async external => {
     const f = await fixture({ external });
@@ -601,4 +638,87 @@ it('edits goals directly through RPC, treating reserved command words as objecti
     const count = native.mock.calls.length;
     await expect(apply({ action: 'set', objective: '' })).rejects.toThrow();
     expect(native.mock.calls.length).toBe(count);
+});
+
+
+describe('native session name synchronization', () => {
+    it('repairs an existing imported title on binding without reading transcript content', async () => {
+        const f = await fixture({ external: true, name: 'Old imported title', nativeName: 'Native renamed title' });
+        expect(f.metadata()).toMatchObject({ name: 'Native renamed title', codexLastSyncedName: 'Native renamed title' });
+    });
+
+    it('recovers a missed rename on hub reconnect', async () => {
+        const f = await fixture({ external: true, nativeName: 'Before' });
+        f.native.thread.name = 'Changed while disconnected';
+        f.reconnect();
+        await vi.waitFor(() => expect(f.metadata().name).toBe('Changed while disconnected'));
+    });
+
+    it('repairs a missed notification periodically using metadata only, and stops polling on close', async () => {
+        const f = await fixture({ external: true, nativeName: 'Before' });
+        vi.useFakeTimers();
+        await f.root.activate();
+        const request = vi.spyOn(f.root.client, 'request');
+        f.native.thread.name = 'Changed without an event';
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(f.metadata().name).toBe('Changed without an event');
+        expect(request.mock.calls).toEqual([['thread/read', { threadId: 'thread', includeTurns: false }]]);
+        await f.root.close(false);
+        request.mockClear();
+        await vi.advanceTimersByTimeAsync(40_000);
+        expect(request).not.toHaveBeenCalled();
+    });
+
+    it('keeps a HAPI alias across polls and wrapper restart until the native name changes', async () => {
+        const f = await fixture({ external: true, name: 'My HAPI alias', nativeName: 'Native title', syncedName: 'Native title' });
+        await f.root.refresh();
+        expect(f.metadata().name).toBe('My HAPI alias');
+        f.native.thread.name = 'New native title';
+        await f.root.refresh();
+        expect(f.metadata().name).toBe('New native title');
+    });
+
+    it('does not erase a local name when first observing an unnamed native thread', async () => {
+        const f = await fixture({ external: true, name: 'Local title', nativeName: null });
+        expect(f.metadata()).toMatchObject({ name: 'Local title', codexLastSyncedName: null });
+    });
+
+    it('handles rename and clear notifications immediately, including an omitted threadName', async () => {
+        const f = await fixture({ external: true, nativeName: 'Before' });
+        f.native.notify('thread/name/updated', { threadId: 'thread', threadName: 'Renamed' });
+        expect(f.metadata().name).toBe('Renamed');
+        f.native.notify('thread/name/updated', { threadId: 'thread' });
+        expect(f.metadata().name).toBeUndefined();
+        expect(f.metadata().codexLastSyncedName).toBeNull();
+        f.native.notify('thread/name/updated', { threadId: 'child', threadName: 'Child title' });
+        f.native.notify('thread/name/updated', { threadName: 'Unscoped title' });
+        await (f.root as any).notifications;
+        expect(f.metadata().name).toBeUndefined();
+    });
+
+    it('does not roll back a live rename when an older metadata read finishes later', async () => {
+        const f = await fixture({ external: true, nativeName: 'Before' });
+        const original = f.root.client.request.bind(f.root.client);
+        let release!: (value: unknown) => void;
+        const pending = new Promise(resolve => { release = resolve; });
+        vi.spyOn(f.root.client, 'request').mockImplementation((method, params) => method === 'thread/read' ? pending as any : original(method, params));
+        const refreshing = f.root.refresh();
+        f.native.notify('thread/name/updated', { threadId: 'thread', threadName: 'Latest native title' });
+        release({ thread: { id: 'thread', name: 'Stale title', turns: [] } });
+        await refreshing;
+        expect(f.metadata().name).toBe('Latest native title');
+    });
+
+    it('preserves a newer HAPI rename made while a metadata read is in flight', async () => {
+        const f = await fixture({ external: true, nativeName: 'Before' });
+        const original = f.root.client.request.bind(f.root.client);
+        let release!: (value: unknown) => void;
+        const pending = new Promise(resolve => { release = resolve; });
+        vi.spyOn(f.root.client, 'request').mockImplementation((method, params) => method === 'thread/read' ? pending as any : original(method, params));
+        const refreshing = f.root.refresh();
+        f.root.session.updateMetadata(metadata => ({ ...metadata, name: 'New HAPI alias' }));
+        release({ thread: { id: 'thread', name: 'New native title', turns: [] } });
+        await refreshing;
+        expect(f.metadata()).toMatchObject({ name: 'New HAPI alias', codexLastSyncedName: 'New native title' });
+    });
 });

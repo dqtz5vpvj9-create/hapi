@@ -61,6 +61,9 @@ export class SharedCodexRoot {
     private readonly ancestry = new Map<string, string | null>();
     private heartbeat?: ReturnType<typeof setInterval>;
     private activityCheckedAt = 0;
+    private nameCheckedAt = 0;
+    private nameRevision = 0;
+    private nameRefreshing?: Promise<void>;
     private nativeActivity?: number;
     private work: Promise<unknown> = Promise.resolve();
     private notifications = Promise.resolve();
@@ -89,6 +92,12 @@ export class SharedCodexRoot {
         this.session = bootstrap.session;
         this.client = new CodexAppServerClient({ endpoint: host.endpoint, token: host.token, cwd: bootstrap.workingDirectory });
         this.client.setNotificationHandler((method, params) => {
+            if (method === 'thread/name/updated' && record(params).threadId === this.threadId) {
+                // Capture before queued history/queue work, so an older in-flight read cannot win.
+                this.nameRevision++;
+                this.acceptNativeName(record(params).threadName ?? null, this.nameRevision, this.session.getMetadata()?.name);
+                return;
+            }
             if (method === 'serverRequest/resolved') {
                 this.permissions?.resolved(string(record(params).threadId) ?? '', record(params).requestId); return;
             }
@@ -183,8 +192,15 @@ export class SharedCodexRoot {
     }
 
     async setNativeConnection(loaded: boolean): Promise<void> {
+        if (loaded && this.threadId) {
+            const response = record(await this.client.request('thread/resume', { threadId: this.threadId, excludeTurns: true }));
+            this.acceptSettings(response);
+        }
         this.session.updateMetadata(metadata => ({ ...metadata, codexNativeConnection: loaded ? 'attached' : 'history' }));
-        if (loaded && this.threadId) await this.client.request('thread/resume', { threadId: this.threadId, excludeTurns: true });
+        if (loaded && this.threadId) {
+            await this.refresh(); await this.refreshGoal(); await this.queue.replay();
+            await this.session.flush();
+        }
     }
     async prepare(): Promise<void> {
         // Descendants share this bridge. The projection applies successful
@@ -273,6 +289,11 @@ export class SharedCodexRoot {
         this.session.updateAgentState(state => ({ ...state, steeringActive: active }));
     }
     private alive(): void {
+        if (!this.closed && !this.stopping && this.host.external && this.threadId && this.client.isInitialized()
+            && !this.nameRefreshing && Date.now() - this.nameCheckedAt >= 20_000) {
+            this.nameRefreshing = this.refreshNativeName().catch(error => logger.debug('[Codex shared] title refresh', error))
+                .finally(() => { this.nameRefreshing = undefined; });
+        }
         if (this.host.external && this.threadId && this.host.codexHome && Date.now() - this.activityCheckedAt >= 20_000) {
             this.activityCheckedAt = Date.now();
             try {
@@ -337,9 +358,6 @@ export class SharedCodexRoot {
             return;
         }
         if (method === 'turn/completed' && !this.host.external) this.session.sendSessionEvent({ type: 'ready' });
-        if (method === 'thread/name/updated' && (typeof p.threadName === 'string' || p.threadName === null)) {
-            const name = p.threadName ?? undefined; this.session.updateMetadata(metadata => ({ ...metadata, name }));
-        }
         if (method === 'thread/archived') { await this.host.end(this, false); return; }
         if (method === 'thread/queue/changed') await this.queue.reconcile();
         if (this.host.external) {
@@ -351,6 +369,26 @@ export class SharedCodexRoot {
         }
         else await this.projection.notification(method, params, modelAtReceipt);
         this.alive();
+    }
+    private acceptNativeName(value: unknown, revision: number, displayName: string | undefined): void {
+        if (this.closed || revision !== this.nameRevision || value !== null && typeof value !== 'string') return;
+        const nativeName = value as string | null;
+        if (this.session.getMetadata()?.codexLastSyncedName === nativeName) return;
+        this.session.updateMetadata(metadata => {
+            if (this.closed || revision !== this.nameRevision || metadata.codexLastSyncedName === nativeName) return metadata;
+            // The first unnamed snapshot is not a rename. A newer HAPI edit made
+            // during the read/CAS retry also wins over this older snapshot.
+            const rename = metadata.name === displayName
+                && (nativeName !== null || metadata.codexLastSyncedName !== undefined);
+            return { ...metadata, codexLastSyncedName: nativeName, ...(rename ? { name: nativeName ?? undefined } : {}) };
+        });
+    }
+    private async refreshNativeName(): Promise<void> {
+        this.nameCheckedAt = Date.now();
+        const revision = ++this.nameRevision;
+        const displayName = this.session.getMetadata()?.name;
+        const response = record(await this.client.request('thread/read', { threadId: this.threadId, includeTurns: false }));
+        this.acceptNativeName(record(response.thread).name, revision, displayName);
     }
     async readThread(threadId = this.threadId): Promise<Record<string, unknown>> {
         let thread = record(record(await this.client.request('thread/read', { threadId, includeTurns: false })).thread);
@@ -371,9 +409,13 @@ export class SharedCodexRoot {
     private async refreshNow(): Promise<void> {
         if (!this.threadId || this.closed || !this.client.isInitialized()) return;
         const revision = this.turnRevision;
+        const nameRevision = ++this.nameRevision;
+        const displayName = this.session.getMetadata()?.name;
+        this.nameCheckedAt = Date.now();
         const thread = this.host.external
             ? record(record(await this.client.request('thread/read', { threadId: this.threadId, includeTurns: false })).thread)
             : await this.readThread();
+        this.acceptNativeName(thread.name, nameRevision, displayName);
         if (this.host.external) {
             const latest = record(await this.client.request('thread/turns/list', { threadId: this.threadId, limit: 1, sortDirection: 'desc', itemsView: 'summary' }));
             thread.turns = Array.isArray(latest.data) ? latest.data : [];

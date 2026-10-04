@@ -87,6 +87,8 @@ export const MetadataSchema = z.object({
     codexAgentPath: z.string().optional(),
     codexSubagents: z.array(CodexSubagentSchema).optional(),
     codexNativeSession: z.boolean().optional(),
+    // Last observed native name; unchanged snapshots must not overwrite a HAPI alias.
+    codexLastSyncedName: z.string().nullable().optional(),
     codexNativeConnection: z.enum(['attached', 'history']).optional(),
     // 原始 Codex thread id。导入 Codex 历史后，HAPI 会 fork 出自己的续写 thread；
     // codexSessionId 保存 fork 后的 thread，codexSourceSessionId 保留来源 thread 便于同步/展示。

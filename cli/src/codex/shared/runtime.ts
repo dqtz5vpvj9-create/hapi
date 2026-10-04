@@ -248,11 +248,10 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         }
     });
     const connectNativeThread = (threadId: string) => operation(async () => {
-        const loaded = (await listLoadedNativeThreads(control)).has(threadId);
         const existingRoot = roots.get(threadId);
         if (existingRoot) {
-            await existingRoot.setNativeConnection(loaded);
-            return { sessionId: existingRoot.session.sessionId, threadId, connectionState: loaded ? 'attached' : 'history' };
+            await existingRoot.setNativeConnection(true);
+            return { sessionId: existingRoot.session.sessionId, threadId, connectionState: 'attached' };
         }
         const thread = record(record(await control.request('thread/read', { threadId, includeTurns: false })).thread);
         if (thread.parentThreadId) throw new Error('Connect the root Codex thread instead of a subagent');
@@ -263,11 +262,13 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             return root;
         });
         try {
-            const response = loaded ? record(await root.client.request('thread/resume', { threadId, excludeTurns: true })) : { thread };
-            await root.setNativeConnection(loaded);
+            // Opening a saved session resumes its existing native thread.
+            // Discovery still enumerates only threads that are already loaded.
+            const response = record(await root.client.request('thread/resume', { threadId, excludeTurns: true }));
+            await root.setNativeConnection(true);
             await bind(root, response, false);
             onReady?.({ sessionId: root.session.sessionId, runtime });
-            return { sessionId: root.session.sessionId, threadId, connectionState: loaded ? 'attached' : 'history' };
+            return { sessionId: root.session.sessionId, threadId, connectionState: 'attached' };
         } catch (error) {
             roots.delete(threadId); prepared.delete(root);
             const binding = runtime.sessions[root.session.sessionId]; if (binding) binding.active = false;
