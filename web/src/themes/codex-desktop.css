@@ -1,0 +1,138 @@
+/* Desktop navigation is a separate material layer; messages keep a quiet,
+   bounded reading column. Scope geometry to the existing split breakpoint.
+   Do not change the scroll owner, virtual rows, or measured overlay insets. */
+@media (min-width: 920px) {
+    [data-color-theme="codex"] .app-session-layout {
+        padding: 10px;
+        gap: 0;
+        background: var(--app-bg);
+    }
+
+    [data-color-theme="codex"] .app-session-sidebar-frame {
+        border-radius: 20px;
+        background: color-mix(in srgb, var(--app-secondary-bg) 68%, var(--app-bg));
+        box-shadow: inset 0 0 0 1px var(--app-border), 0 4px 20px #00000004;
+    }
+
+    [data-color-theme="codex"] .app-session-sidebar {
+        background: transparent;
+        padding: 8px 4px;
+        min-width: 0;
+    }
+
+    [data-color-theme="codex"] .sidebar-resize-handle {
+        width: 10px;
+        border: 0;
+        background: transparent;
+        border-radius: 5px;
+    }
+
+    [data-color-theme="codex"] .sidebar-resize-handle:hover,
+    [data-color-theme="codex"] .sidebar-resize-handle[data-dragging] {
+        background: var(--app-border);
+    }
+
+    [data-color-theme="codex"] .app-session-sidebar .max-w-content {
+        max-width: 100%;
+    }
+
+    [data-color-theme="codex"] .app-session-list-toolbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px 4px;
+        padding: 4px 10px 12px;
+    }
+
+    [data-color-theme="codex"] .app-session-identity {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+    }
+
+    [data-color-theme="codex"] .app-session-list-brand {
+        display: block;
+        font-size: 17px;
+        font-weight: 650;
+        letter-spacing: -.04em;
+    }
+
+    [data-color-theme="codex"] .app-session-list-actions {
+        display: block;
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    [data-color-theme="codex"] .app-session-router-actions { gap: 2px; }
+    [data-color-theme="codex"] .app-session-router-actions button { min-height: 32px; }
+    [data-color-theme="codex"] .app-session-router-actions .session-list-new-button { width: 32px; height: 32px; }
+
+    [data-color-theme="codex"] .app-session-list-controls {
+        display: flex;
+        align-items: center;
+        grid-column: 1 / -1;
+        grid-row: 2;
+        gap: 2px;
+        min-width: 0;
+    }
+
+    [data-color-theme="codex"] .app-session-search-collapsed { flex: 1; min-width: 0; }
+    [data-color-theme="codex"] .app-session-search-collapsed > div { flex: 1; max-width: none; }
+    [data-color-theme="codex"] .app-session-search-trigger {
+        flex: 1;
+        width: 100%;
+        min-height: 34px;
+        border-radius: 10px;
+        padding-inline: 10px;
+        gap: 8px;
+        background: color-mix(in srgb, var(--app-bg) 72%, transparent);
+        box-shadow: inset 0 0 0 1px var(--app-border);
+    }
+    [data-color-theme="codex"] .app-session-mobile-label { display: inline; font-size: 13px; }
+    [data-color-theme="codex"] .app-session-list-controls > .flex-1:not(.app-session-search-expanded) { display: none; }
+    [data-color-theme="codex"] .app-session-search-expanded input { min-height: 34px; border-radius: 10px; }
+
+    [data-color-theme="codex"] .app-machine-filter-bar { padding: 0 10px 12px; gap: 6px; }
+    [data-color-theme="codex"] .app-machine-filter-bar > button,
+    [data-color-theme="codex"] .app-machine-filter-bar > div { border-color: transparent; }
+    [data-color-theme="codex"] .app-machine-filter-bar > button[aria-pressed="true"],
+    [data-color-theme="codex"] .app-machine-filter-bar > div:has(button[aria-pressed="true"]) {
+        background: var(--app-dialog-bg);
+        box-shadow: 0 1px 4px #0000000a;
+    }
+
+    [data-color-theme="codex"] .app-session-list-views {
+        margin: 0 12px 8px;
+        padding: 3px;
+        border-radius: 11px;
+        background: color-mix(in srgb, var(--app-fg) 5%, transparent);
+    }
+    [data-color-theme="codex"] .app-session-list-views > button { min-height: 28px; font-size: 12px; border-radius: 8px; }
+    [data-color-theme="codex"] .app-session-list-content { padding-inline: 4px; }
+    [data-color-theme="codex"] .session-list-item { padding: 10px; border-radius: 12px; }
+    [data-color-theme="codex"] .session-list-item[aria-current="page"] {
+        background: color-mix(in srgb, var(--app-link) 10%, var(--app-bg));
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-link) 12%, transparent);
+    }
+    [data-color-theme="codex"] .app-session-row-main { grid-template-columns: minmax(0, 1fr) auto; opacity: 1; }
+    [data-color-theme="codex"] .app-session-row-main [title] { color: var(--app-fg); }
+    [data-color-theme="codex"] .app-session-row-time { font-size: 11px; }
+
+    /* One width token feeds both message layout and the compact composer.
+       Width changes still flow through the existing ResizeObserver anchoring. */
+    [data-color-theme="codex"] [data-glass-chat] { --content-max-w: 860px; }
+    [data-color-theme="codex"] .app-header-layout { max-width: none; padding: 8px 16px; gap: 8px; }
+    [data-color-theme="codex"] .app-header-title { flex: 0 1 560px; margin-right: auto; padding: 8px 16px; border-radius: 20px; }
+    [data-color-theme="codex"] .app-header-context { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
+    [data-color-theme="codex"] .app-header-context > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    [data-color-theme="codex"] .app-header-back { width: 36px; height: 36px; }
+    [data-color-theme="codex"] .app-header-actions { border-radius: 22px; }
+    [data-color-theme="codex"] .app-header-actions button { width: 36px; height: 36px; }
+    [data-color-theme="codex"] .app-composer-surface { border-radius: 22px; }
+}
+
+@media (min-width: 920px) and (prefers-contrast: more) {
+    [data-color-theme="codex"] .app-session-sidebar-frame,
+    [data-color-theme="codex"] .session-list-item[aria-current="page"] {
+        box-shadow: inset 0 0 0 1px var(--app-fg);
+    }
+}

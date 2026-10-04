@@ -64,6 +64,20 @@ See `src/router.tsx` for route definitions.
 
 ### Chat interface (`src/components/SessionChat.tsx`)
 
+The Codex theme has a desktop layout at the existing 920px split breakpoint.
+Navigation occupies a rounded sidebar, while the conversation and compact
+composer share an 860px maximum width. The header retains its three separate
+navigation surfaces with a bounded title. The default sidebar width is 320px;
+previously saved user widths remain in effect and can still be dragged.
+
+The layout follows Apple's [Liquid Glass material guidance](https://developer.apple.com/design/human-interface-guidelines/materials)
+and [navigation-layer principles](https://developer.apple.com/videos/play/wwdc2025/219/):
+controls carry the material treatment and message content remains visually quiet.
+`src/themes/codex-desktop.css` contains the desktop rules. It retains the existing
+scroll owner, virtual rows, and measured header/composer insets; width changes
+are handled by the existing measurement and reading-anchor machinery. This is
+a web adaptation of the design principles, not Apple's native renderer.
+
 - Message thread with infinite scroll.
 - Composer for sending messages.
 - Permission mode and model selection for supported agents.

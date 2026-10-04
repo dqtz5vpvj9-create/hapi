@@ -246,9 +246,9 @@ function SessionsPage() {
                 machineLabelsById={machineLabelsById}
                 onSelect={sessionId => navigate(getSessionListSelectionNavigation(sessionId))}
             />
-            <div className="flex h-full min-h-0">
+            <div className="app-session-layout flex h-full min-h-0">
             <div
-                className={`${isSessionsIndex ? 'flex' : 'hidden split:flex'} w-full shrink-0 flex-col bg-[var(--app-bg)]`}
+                className={`app-session-sidebar-frame ${isSessionsIndex ? 'flex' : 'hidden split:flex'} w-full shrink-0 flex-col bg-[var(--app-bg)]`}
                 style={{ '--sidebar-w': `${sidebar.width}px` } as React.CSSProperties}
             >
                 <div className="app-session-sidebar flex min-h-0 flex-1 flex-col pt-[env(safe-area-inset-top)]">

@@ -3,6 +3,7 @@
 @import "./themes/codex.css";
 @import "./themes/codex-layout.css";
 @import "./themes/session-list-refinement.css";
+@import "./themes/codex-desktop.css";
 @import "./execution-state.css";
 @config "../tailwind.config.ts";
 
