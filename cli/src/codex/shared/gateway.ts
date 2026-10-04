@@ -3,6 +3,7 @@ import { chmod, unlink } from 'node:fs/promises';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
 import WebSocket, { WebSocketServer } from 'ws';
 import { z } from 'zod';
+import { openCodexWebSocket } from './webSocketTransport';
 
 export const EnvelopeSchema = z.object({
     id: z.union([z.string(), z.number()]).optional(),
@@ -45,7 +46,7 @@ export async function startCodexGateway(options: {
     });
     websocket.on('connection', downstream => {
         const connectionId = randomUUID();
-        const upstream = new WebSocket(socketUrl(options.upstream), {
+        const upstream = openCodexWebSocket(socketUrl(options.upstream), {
             headers: { Host: 'localhost', ...(options.upstreamToken ? { Authorization: `Bearer ${options.upstreamToken}` } : {}) },
             handshakeTimeout: 10_000, maxPayload: 64 * 1024 * 1024, perMessageDeflate: false
         });
