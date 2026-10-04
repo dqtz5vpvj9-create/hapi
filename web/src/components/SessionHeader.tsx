@@ -402,9 +402,15 @@ export function SessionHeader(props: {
 
                     {/* Session info - two lines: title and path */}
                     <div className="app-glass app-header-title min-w-0 flex-1">
-                        <div className="truncate font-semibold">
+                        <div className="truncate font-semibold" title={title}>
                             {title}
                         </div>
+                        {glassLayout ? (
+                            machineLabel || agentLabel ? <div className="app-header-identity flex min-w-0 items-center gap-1.5 text-xs text-[var(--app-hint)]">
+                                {agentLabel ? <AgentFlavorIcon flavor={session.metadata?.flavor} className="h-3.5 w-3.5 shrink-0" /> : null}
+                                <span className="truncate" title={machineLabel ?? agentLabel ?? undefined}>{machineLabel ?? agentLabel}</span>
+                            </div> : null
+                        ) : <>
                         {showMobileMetadata ? (
                             <div className="flex min-w-0 flex-nowrap items-center gap-2 overflow-hidden text-xs text-[var(--app-hint)] sm:hidden">
                                 {headerMetadata.agent && agentLabel ? (
@@ -462,6 +468,7 @@ export function SessionHeader(props: {
                                 <span>{headerMetadata.showLabels ? `${t('session.item.worktree')}: ` : ''}{worktreeBranch}</span>
                             ) : null}
                         </div>
+                        </>}
                     </div>
 
                     <div className="app-glass app-header-actions contents">

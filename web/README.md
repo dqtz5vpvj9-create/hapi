@@ -70,6 +70,9 @@ floating new-task input. The conversation and composer fill the right pane,
 sharing responsive side gutters with the header. The three header surfaces
 place back/title on the left and actions on the right. The default sidebar width is 320px;
 previously saved user widths remain in effect and can still be dragged.
+The glass title surface shows only the session name and device identity. Model
+and reasoning controls stay in the composer; the classic header and shared-turn
+metadata continue to use the configurable metadata preferences.
 
 The layout follows Apple's [Liquid Glass material guidance](https://developer.apple.com/design/human-interface-guidelines/materials)
 and [navigation-layer principles](https://developer.apple.com/videos/play/wwdc2025/219/):
