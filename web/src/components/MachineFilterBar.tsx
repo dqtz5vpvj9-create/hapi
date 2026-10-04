@@ -259,7 +259,7 @@ export function MachineFilterMenu(props: {
     }, [open, close])
 
     return (
-        <div ref={wrapperRef} className="relative shrink-0 md:hidden">
+        <div ref={wrapperRef} className="app-machine-filter-menu relative shrink-0 md:hidden">
             <button
                 ref={triggerRef}
                 type="button"
@@ -271,6 +271,11 @@ export function MachineFilterMenu(props: {
                 className="relative flex rounded-full p-1.5 text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]"
             >
                 <FilterIcon className="h-5 w-5" />
+                <span className="app-machine-filter-label hidden min-w-0 truncate">
+                    {props.machines.find(machine => machine.id === props.value)?.label ?? t('sessions.machineFilter.all')}
+                    <span className="ml-1.5 tabular-nums opacity-60">{props.machines.find(machine => machine.id === props.value)?.sessionCount ?? props.totalCount}</span>
+                </span>
+                <svg className="app-machine-filter-chevron hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
                 {props.value !== null ? (
                     <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[var(--app-link)]" />
                 ) : null}

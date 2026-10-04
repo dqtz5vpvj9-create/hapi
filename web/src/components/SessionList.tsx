@@ -2299,7 +2299,7 @@ export function SessionList(props: {
             </div>
             </div>
             </GlassSource>
-            {narrowViewport ? <NewTaskInput hub={props.hub} onContinue={() => props.onStartTask ? props.onStartTask(activeMachineFilter && activeMachineFilter !== UNKNOWN_MACHINE_ID ? activeMachineFilter : undefined) : props.onNewSession()} /> : null}
+            <NewTaskInput hub={props.hub} onContinue={() => props.onStartTask ? props.onStartTask(activeMachineFilter && activeMachineFilter !== UNKNOWN_MACHINE_ID ? activeMachineFilter : undefined) : props.onNewSession()} />
             {nativeSubagent && api ? <CodexSubagentDialog api={api} parentSessionId={nativeSubagent.parentSessionId}
                 threadId={nativeSubagent.agent.threadId} title={nativeSubagentTitle(nativeSubagent.agent)}
                 isOpen={true} onClose={() => setNativeSubagent(null)} /> : null}

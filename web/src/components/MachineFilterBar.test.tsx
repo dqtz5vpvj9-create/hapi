@@ -135,11 +135,11 @@ describe('MachineFilterMenu', () => {
     it('shows an active-filter dot only when a machine is selected', () => {
         const { unmount } = renderMenu()
         const button = screen.getByRole('button', { name: 'Filter sessions by machine' })
-        expect(button.querySelector('span')).toBeNull()
+        expect(button.querySelector('span.absolute')).toBeNull()
         unmount()
 
         renderMenu({ value: 'machine-1' })
-        expect(screen.getByRole('button', { name: 'Filter sessions by machine' }).querySelector('span')).toBeTruthy()
+        expect(screen.getByRole('button', { name: 'Filter sessions by machine' }).querySelector('span.absolute')).toBeTruthy()
     })
 
     it('opens a radio menu listing All plus every machine with counts', () => {

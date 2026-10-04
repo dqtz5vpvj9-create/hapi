@@ -20,7 +20,10 @@ export function SessionListHeaderActions(props: {
         { label: t('settings.title'), title: t('settings.title'), action: props.onSettings },
     ]
     if (!narrow) return <div className="app-session-router-actions flex items-center gap-2">
-        <button type="button" onClick={props.onSwitch} title={`${t('sessions.quickSwitch.title')} (Ctrl/Cmd+K)`} className="min-h-9 rounded-md px-2 text-sm text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]">{t('sessions.quickSwitch.button')}</button>
+        <button type="button" onClick={props.onSwitch} aria-label={t('sessions.quickSwitch.title')} title={`${t('sessions.quickSwitch.title')} (Ctrl/Cmd+K)`} className="app-session-switch min-h-9 rounded-md px-2 text-sm text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]">
+            <svg className="app-session-switch-icon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 7h14l-3-3M19 17H5l3 3M19 7l-3 3M5 17l3-3" /></svg>
+            <span>{t('sessions.quickSwitch.button')}</span>
+        </button>
         {props.onBrowse ? <button type="button" onClick={props.onBrowse} title={t('browse.nav')} aria-label={t('browse.nav')} className="rounded-full p-1.5 text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M3 7h6l2 2h10v11H3zM3 7V4h6l2 3" /></svg>
         </button> : null}

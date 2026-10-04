@@ -1,4 +1,4 @@
-/* Only the phone list uses the new entry surface. Sidebar geometry is unchanged. */
+/* Phone list layout. The Codex desktop entry surface is in codex-desktop.css. */
 .app-session-mobile-label, .app-session-mobile-tabs, .app-session-machine-heading,
 .app-new-task-input, .app-session-row-mobile-meta { display: none; }
 .app-session-identity { display: contents; }

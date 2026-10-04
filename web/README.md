@@ -65,9 +65,10 @@ See `src/router.tsx` for route definitions.
 ### Chat interface (`src/components/SessionChat.tsx`)
 
 The Codex theme has a desktop layout at the existing 920px split breakpoint.
-Navigation occupies a rounded sidebar, while the conversation and compact
-composer share an 860px maximum width. The header retains its three separate
-navigation surfaces with a bounded title. The default sidebar width is 320px;
+Navigation occupies a quiet sidebar with text tabs, a machine picker and a
+floating new-task input. The conversation and compact composer share an 820px
+maximum width. The header retains its three separate navigation surfaces in a
+centered group. The default sidebar width is 320px;
 previously saved user widths remain in effect and can still be dragged.
 
 The layout follows Apple's [Liquid Glass material guidance](https://developer.apple.com/design/human-interface-guidelines/materials)

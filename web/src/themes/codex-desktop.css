@@ -1,138 +1,173 @@
-/* Desktop navigation is a separate material layer; messages keep a quiet,
-   bounded reading column. Scope geometry to the existing split breakpoint.
-   Do not change the scroll owner, virtual rows, or measured overlay insets. */
+/* Desktop has a quiet navigation rail and a bounded reading surface. Keep the
+   existing scroll owner, virtual rows and measured glass overlay insets. */
 @media (min-width: 920px) {
     [data-color-theme="codex"] .app-session-layout {
-        padding: 10px;
-        gap: 0;
+        padding: 0;
         background: var(--app-bg);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
     }
-
     [data-color-theme="codex"] .app-session-sidebar-frame {
-        border-radius: 20px;
-        background: color-mix(in srgb, var(--app-secondary-bg) 68%, var(--app-bg));
-        box-shadow: inset 0 0 0 1px var(--app-border), 0 4px 20px #00000004;
+        background: color-mix(in srgb, var(--app-secondary-bg) 45%, var(--app-bg));
+        border-radius: 0;
+        box-shadow: none;
     }
-
     [data-color-theme="codex"] .app-session-sidebar {
         background: transparent;
-        padding: 8px 4px;
+        padding: 20px 12px 0;
         min-width: 0;
     }
-
     [data-color-theme="codex"] .sidebar-resize-handle {
-        width: 10px;
+        width: 5px;
         border: 0;
-        background: transparent;
-        border-radius: 5px;
+        background: linear-gradient(90deg, var(--app-border) 1px, transparent 1px);
     }
-
     [data-color-theme="codex"] .sidebar-resize-handle:hover,
-    [data-color-theme="codex"] .sidebar-resize-handle[data-dragging] {
-        background: var(--app-border);
-    }
-
-    [data-color-theme="codex"] .app-session-sidebar .max-w-content {
-        max-width: 100%;
-    }
-
+    [data-color-theme="codex"] .sidebar-resize-handle[data-dragging] { background: var(--app-border); }
+    [data-color-theme="codex"] .app-session-sidebar .max-w-content { max-width: 100%; }
     [data-color-theme="codex"] .app-session-list-toolbar {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
-        gap: 12px 4px;
-        padding: 4px 10px 12px;
+        gap: 22px 8px;
+        padding: 0 6px 18px;
     }
-
-    [data-color-theme="codex"] .app-session-identity {
-        display: flex;
-        align-items: center;
-        min-width: 0;
-    }
-
+    [data-color-theme="codex"] .app-session-identity { display: flex; align-items: center; min-width: 0; }
     [data-color-theme="codex"] .app-session-list-brand {
         display: block;
-        font-size: 17px;
+        font-size: 21px;
+        line-height: 36px;
         font-weight: 650;
-        letter-spacing: -.04em;
+        letter-spacing: -.045em;
     }
-
-    [data-color-theme="codex"] .app-session-list-actions {
-        display: block;
-        grid-column: 2;
-        grid-row: 1;
-    }
-
+    [data-color-theme="codex"] .app-session-list-actions { display: block; grid-column: 2; grid-row: 1; }
     [data-color-theme="codex"] .app-session-router-actions { gap: 2px; }
-    [data-color-theme="codex"] .app-session-router-actions button { min-height: 32px; }
-    [data-color-theme="codex"] .app-session-router-actions .session-list-new-button { width: 32px; height: 32px; }
-
+    [data-color-theme="codex"] .app-session-router-actions button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 36px;
+        min-height: 36px;
+        padding: 0;
+        border-radius: 10px;
+    }
+    [data-color-theme="codex"] .app-session-switch > span,
+    [data-color-theme="codex"] .app-session-router-actions .session-list-new-button { display: none; }
+    [data-color-theme="codex"] .app-session-switch-icon { display: block; }
     [data-color-theme="codex"] .app-session-list-controls {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         grid-column: 1 / -1;
         grid-row: 2;
         gap: 2px;
         min-width: 0;
     }
-
     [data-color-theme="codex"] .app-session-search-collapsed { flex: 1; min-width: 0; }
     [data-color-theme="codex"] .app-session-search-collapsed > div { flex: 1; max-width: none; }
     [data-color-theme="codex"] .app-session-search-trigger {
         flex: 1;
         width: 100%;
-        min-height: 34px;
+        min-height: 36px;
         border-radius: 10px;
-        padding-inline: 10px;
+        padding-inline: 8px;
         gap: 8px;
-        background: color-mix(in srgb, var(--app-bg) 72%, transparent);
-        box-shadow: inset 0 0 0 1px var(--app-border);
+        background: color-mix(in srgb, var(--app-fg) 4%, transparent);
+        box-shadow: none;
     }
-    [data-color-theme="codex"] .app-session-mobile-label { display: inline; font-size: 13px; }
+    [data-color-theme="codex"] .app-session-search-trigger svg { width: 16px; height: 16px; }
+    [data-color-theme="codex"] .app-session-mobile-label { display: inline; font-size: 12px; }
     [data-color-theme="codex"] .app-session-list-controls > .flex-1:not(.app-session-search-expanded) { display: none; }
-    [data-color-theme="codex"] .app-session-search-expanded input { min-height: 34px; border-radius: 10px; }
-
-    [data-color-theme="codex"] .app-machine-filter-bar { padding: 0 10px 12px; gap: 6px; }
-    [data-color-theme="codex"] .app-machine-filter-bar > button,
-    [data-color-theme="codex"] .app-machine-filter-bar > div { border-color: transparent; }
-    [data-color-theme="codex"] .app-machine-filter-bar > button[aria-pressed="true"],
-    [data-color-theme="codex"] .app-machine-filter-bar > div:has(button[aria-pressed="true"]) {
-        background: var(--app-dialog-bg);
-        box-shadow: 0 1px 4px #0000000a;
-    }
-
+    [data-color-theme="codex"] .app-session-search-expanded input { min-height: 36px; border-radius: 10px; }
+    [data-color-theme="codex"] .app-machine-filter-bar { display: none; }
+    [data-color-theme="codex"] .app-machine-filter-menu { display: block; order: 5; flex-basis: 100%; margin-top: 10px; }
+    [data-color-theme="codex"] .app-machine-filter-menu > button:first-child { align-items: center; gap: 8px; width: 100%; border-radius: 8px; padding: 6px 8px; font-size: 13px; }
+    [data-color-theme="codex"] .app-machine-filter-menu > button:first-child > svg:first-child { width: 15px; height: 15px; }
+    [data-color-theme="codex"] .app-machine-filter-label { display: block; text-align: left; flex: 1; }
+    [data-color-theme="codex"] .app-machine-filter-chevron { display: block; }
     [data-color-theme="codex"] .app-session-list-views {
-        margin: 0 12px 8px;
-        padding: 3px;
-        border-radius: 11px;
-        background: color-mix(in srgb, var(--app-fg) 5%, transparent);
+        margin: 0 6px 12px;
+        padding: 0;
+        gap: 20px;
+        border-radius: 0;
+        background: transparent;
     }
-    [data-color-theme="codex"] .app-session-list-views > button { min-height: 28px; font-size: 12px; border-radius: 8px; }
-    [data-color-theme="codex"] .app-session-list-content { padding-inline: 4px; }
-    [data-color-theme="codex"] .session-list-item { padding: 10px; border-radius: 12px; }
+    [data-color-theme="codex"] .app-session-list-views > button {
+        flex: none;
+        min-height: 32px;
+        padding: 0 0 4px;
+        font-size: 13px;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        border-bottom: 2px solid transparent;
+    }
+    [data-color-theme="codex"] .app-session-list-views > button[aria-pressed="true"] {
+        border-bottom-color: var(--app-fg);
+        font-weight: 600;
+    }
+    [data-color-theme="codex"] .app-session-list-content { padding: 0 0 86px; scroll-padding-bottom: 86px; }
+    [data-color-theme="codex"] .app-session-list-content > .max-w-content { padding-inline: 0; }
+    [data-color-theme="codex"] .session-list-item { padding: 12px 10px; border-radius: 12px; }
     [data-color-theme="codex"] .session-list-item[aria-current="page"] {
-        background: color-mix(in srgb, var(--app-link) 10%, var(--app-bg));
-        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-link) 12%, transparent);
+        background: light-dark(#e4ecf8, #293749);
+        box-shadow: none;
     }
     [data-color-theme="codex"] .app-session-row-main { grid-template-columns: minmax(0, 1fr) auto; opacity: 1; }
-    [data-color-theme="codex"] .app-session-row-main [title] { color: var(--app-fg); }
+    [data-color-theme="codex"] .app-session-row-main [title] { color: var(--app-fg); font-size: 15px; font-weight: 500; }
+    [data-color-theme="codex"] .session-list-item[aria-current="page"] .app-session-row-main [title] { font-weight: 600; }
     [data-color-theme="codex"] .app-session-row-time { font-size: 11px; }
+    [data-color-theme="codex"] .app-session-row-desktop-meta { padding-left: 24px; font-size: 12px; }
+    [data-color-theme="codex"] .app-session-subagent-toggle { margin-left: 26px; font-size: 11px; }
+    [data-color-theme="codex"] .app-new-task-input {
+        display: flex;
+        align-items: center;
+        position: absolute;
+        z-index: 10;
+        bottom: 18px;
+        left: 4px;
+        right: 4px;
+        min-height: 54px;
+        padding: 6px;
+        gap: 2px;
+        border-radius: 18px;
+    }
+    [data-color-theme="codex"] .app-new-task-input button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        color: var(--app-fg);
+    }
+    [data-color-theme="codex"] .app-new-task-input input {
+        width: 100%;
+        min-width: 0;
+        height: 36px;
+        padding-inline: 2px;
+        font-size: 13px;
+        color: var(--app-fg);
+        background: transparent;
+        outline: none;
+    }
+    [data-color-theme="codex"] .app-new-task-input input::placeholder { color: var(--app-hint); }
+    [data-color-theme="codex"] .app-new-task-input .app-new-task-next { background: var(--app-button); color: var(--app-button-text); }
+    [data-color-theme="codex"] .app-new-task-input :focus-visible { outline: 2px solid var(--app-link); outline-offset: 2px; }
 
-    /* One width token feeds both message layout and the compact composer.
-       Width changes still flow through the existing ResizeObserver anchoring. */
-    [data-color-theme="codex"] [data-glass-chat] { --content-max-w: 860px; }
-    [data-color-theme="codex"] .app-header-layout { max-width: none; padding: 8px 16px; gap: 8px; }
-    [data-color-theme="codex"] .app-header-title { flex: 0 1 560px; margin-right: auto; padding: 8px 16px; border-radius: 20px; }
-    [data-color-theme="codex"] .app-header-context { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
-    [data-color-theme="codex"] .app-header-context > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    [data-color-theme="codex"] .app-header-back { width: 36px; height: 36px; }
-    [data-color-theme="codex"] .app-header-actions { border-radius: 22px; }
+    /* The header is a compact floating group, centered over the reading column.
+       User-selected metadata remains available, including wrapped fields. */
+    [data-color-theme="codex"] [data-glass-chat] { --content-max-w: 820px; }
+    [data-color-theme="codex"] [data-glass-chat] .app-header > .app-header-layout { max-width: 760px; padding: 18px 24px 12px; gap: 10px; }
+    [data-color-theme="codex"] [data-glass-chat] .app-header-title { padding: 10px 18px; border-radius: 22px; }
+    [data-color-theme="codex"] .app-header-title > :first-child { font-size: 15px; letter-spacing: -.015em; }
+    [data-color-theme="codex"] .app-header-context { gap: 2px 10px; font-size: 11px; line-height: 17px; }
+    [data-color-theme="codex"] .app-header-back { width: 38px; height: 38px; }
+    [data-color-theme="codex"] [data-glass-chat] .app-header-actions { border-radius: 22px; padding: 3px; }
     [data-color-theme="codex"] .app-header-actions button { width: 36px; height: 36px; }
-    [data-color-theme="codex"] .app-composer-surface { border-radius: 22px; }
+    [data-color-theme="codex"] .app-composer-surface { border-radius: 24px; }
 }
 
 @media (min-width: 920px) and (prefers-contrast: more) {
-    [data-color-theme="codex"] .app-session-sidebar-frame,
-    [data-color-theme="codex"] .session-list-item[aria-current="page"] {
-        box-shadow: inset 0 0 0 1px var(--app-fg);
-    }
+    [data-color-theme="codex"] .session-list-item[aria-current="page"] { box-shadow: inset 0 0 0 1px var(--app-fg); }
 }
