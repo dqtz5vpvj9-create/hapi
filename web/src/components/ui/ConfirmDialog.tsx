@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
     Dialog,
     DialogContent,
@@ -39,6 +39,10 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 
     const [error, setError] = useState<string | null>(null)
 
+    const pendingRef = useRef(false)
+    const [submitting, setSubmitting] = useState(false)
+    const locked = isPending || submitting
+
     // Clear error when dialog opens/closes
     useEffect(() => {
         if (isOpen) {
@@ -47,6 +51,9 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     }, [isOpen])
 
     const handleConfirm = async () => {
+        if (isPending || pendingRef.current) return
+        pendingRef.current = true
+        setSubmitting(true)
         setError(null)
         try {
             await onConfirm()
@@ -57,11 +64,14 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                     ? err.message
                     : t('dialog.error.default')
             setError(message)
+        } finally {
+            pendingRef.current = false
+            setSubmitting(false)
         }
     }
 
     return (
-        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+        <Dialog open={isOpen} onOpenChange={(open) => !open && !locked && !pendingRef.current && onClose()}>
             <DialogContent className="max-w-sm">
                 <DialogHeader className={centerTitle ? 'pr-0' : undefined}>
                     <DialogTitle
@@ -77,7 +87,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                 </DialogHeader>
 
                 {error ? (
-                    <div className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+                    <div role="alert" className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
                         {error}
                     </div>
                 ) : null}
@@ -87,7 +97,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                         type="button"
                         variant="secondary"
                         onClick={onClose}
-                        disabled={isPending}
+                        disabled={locked}
                     >
                         {t('button.cancel')}
                     </Button>
@@ -95,9 +105,9 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                         type="button"
                         variant={destructive ? 'destructive' : 'secondary'}
                         onClick={handleConfirm}
-                        disabled={isPending}
+                        disabled={locked}
                     >
-                        {isPending ? confirmingLabel : confirmLabel}
+                        {locked ? confirmingLabel : confirmLabel}
                     </Button>
                 </div>
             </DialogContent>

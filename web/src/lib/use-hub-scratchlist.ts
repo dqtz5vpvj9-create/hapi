@@ -157,6 +157,8 @@ export function useHubScratchlist(
 ): {
     entries: ScratchlistEntry[]
     isLoading: boolean
+    loadError: boolean
+    retryLoad: () => Promise<void>
     add: (text: string, attachments?: import('@/types/api').AttachmentMetadata[]) => Promise<boolean>
     remove: (id: string) => Promise<void>
     update: (id: string, text: string) => Promise<void>
@@ -476,11 +478,10 @@ export function useHubScratchlist(
     const remove = useCallback(async (id: string) => {
         try {
             await deleteMutation.mutateAsync({ entryId: id })
-        } catch {
-            // Rollback already happened in onError; surface to caller via
-            // the rejected promise would force the panel to add error UI
-            // we don't have copy for. Swallow here; SSE refetch on next
-            // hub state change will reconcile.
+        } catch (error) {
+            // A concurrent deletion is already the requested outcome. Other
+            // failures must reach the drawer so it cannot report false success.
+            if (!isScratchlistNotFound(error)) throw error
         }
     }, [deleteMutation])
 
@@ -559,6 +560,8 @@ export function useHubScratchlist(
     return {
         entries,
         isLoading: query.isLoading,
+        loadError: query.isError,
+        retryLoad: async () => { await query.refetch() },
         add,
         remove,
         update: updateEntry,

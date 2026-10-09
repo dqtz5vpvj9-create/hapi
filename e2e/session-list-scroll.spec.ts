@@ -14,7 +14,7 @@ for (const nativeAnchoring of [true, false]) {
 
         test('keeps the visible session in place across background pin and activity changes', async ({ page }) => {
             await page.goto('/e2e-fixtures/session-list-scroll-fixture.html')
-            const row = page.getByRole('button', { name: /^Session 20 / })
+            const row = page.getByRole('button', { name: /\bSession 20\b/ })
             await row.waitFor()
             await row.evaluate(element => element.scrollIntoView({ block: 'center' }))
             const before = (await row.boundingBox())!.y
@@ -33,7 +33,7 @@ for (const nativeAnchoring of [true, false]) {
 
         test('keeps a neighboring row in place when the first visible project moves to pinned', async ({ page }) => {
             await page.goto('/e2e-fixtures/session-list-scroll-fixture.html')
-            const row = page.getByRole('button', { name: /^Session 20 / })
+            const row = page.getByRole('button', { name: /\bSession 20\b/ })
             await row.waitFor()
             await page.locator('[title="/project-19"]').evaluate(element => element.scrollIntoView({ block: 'start' }))
             const before = (await row.boundingBox())!.y
@@ -44,7 +44,7 @@ for (const nativeAnchoring of [true, false]) {
 
         test('does not follow a visible project when unpinning moves it to the bottom', async ({ page }) => {
             await page.goto('/e2e-fixtures/session-list-scroll-fixture.html')
-            const row = page.getByRole('button', { name: /^Session 20 / })
+            const row = page.getByRole('button', { name: /\bSession 20\b/ })
             await row.waitFor()
             await page.locator('[title="/project-19"]').evaluate(element => element.scrollIntoView({ block: 'start' }))
             const before = (await row.boundingBox())!.y
@@ -55,7 +55,7 @@ for (const nativeAnchoring of [true, false]) {
 
         test('preserves the viewport when a project automatically collapses after unpinning', async ({ page }) => {
             await page.goto('/e2e-fixtures/session-list-scroll-fixture.html?mixed')
-            const row = page.getByRole('button', { name: /^Session 20 / })
+            const row = page.getByRole('button', { name: /\bSession 20\b/ })
             await row.waitFor()
             await row.evaluate(element => element.scrollIntoView({ block: 'center' }))
             const before = (await row.boundingBox())!.y

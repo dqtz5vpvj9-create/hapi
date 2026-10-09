@@ -67,9 +67,6 @@ function App() {
     // Mirror ScratchlistDrawerHost.handlePromoteToQueue (SessionChat.tsx).
     const handlePromoteToQueue = React.useCallback(async (text: string) => {
         const accepted = await handleSend(text)
-        if (accepted) {
-            setScratchlistMode(false)
-        }
         return accepted
     }, [handleSend])
 
@@ -116,11 +113,14 @@ function App() {
 
                 {scratchlistMode ? (
                     <ScratchlistDrawer
+                        sessionId={sessionId}
+                        api={{} as never}
                         entries={scratchlist.entries}
                         onMove={scratchlist.move}
                         onDelete={scratchlist.remove}
                         onPromoteToComposer={() => setScratchlistMode(false)}
-                        onPromoteToQueue={handlePromoteToQueue}
+                        onQueueComplete={() => setScratchlistMode(false)}
+                        onPromoteToQueue={entry => handlePromoteToQueue(entry.text)}
                     />
                 ) : null}
 

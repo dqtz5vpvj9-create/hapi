@@ -95,13 +95,14 @@ describe('ScratchlistDrawerHost.onPromoteToComposer', () => {
         expect(callbacks.onDelete).not.toHaveBeenCalled()
     })
 
-    it('also protects an attachment-only draft and does not double the exact restored text', () => {
+    it('also protects an attachment-only draft and does not double the exact restored text', async () => {
         composerState.attachments = [{ id: 'new-image' }]
         const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
         renderCopy()
         const copy = screen.getByRole('button', { name: 'Copy into composer' })
         fireEvent.click(copy)
         expect(setText).not.toHaveBeenCalled()
+        await waitFor(() => expect(copy).not.toBeDisabled())
         confirm.mockReturnValue(true)
         fireEvent.click(copy)
         fireEvent.click(copy)

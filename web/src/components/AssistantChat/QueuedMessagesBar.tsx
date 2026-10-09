@@ -518,7 +518,7 @@ export function QueuedMessagesBar({
                                             {text}
                                         </span>
                                     ) : null}
-                                    {msg.deliveryState === 'dispatching' ? (
+                                    {steerPending || msg.deliveryState === 'dispatching' ? (
                                         <div className="mt-1 text-xs text-[var(--app-hint)]">{t('queuedMessages.confirming')}</div>
                                     ) : null}
                                     {msg.deliveryState === 'indeterminate' ? (

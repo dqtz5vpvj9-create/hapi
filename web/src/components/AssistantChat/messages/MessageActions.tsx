@@ -135,7 +135,7 @@ export function MessageActions({
                 confirmingLabel={t('message.fork.confirming')}
                 isPending={forkPending}
                 onConfirm={async () => {
-                    if (!onFork) return
+                    if (!onFork || actionsLocked) throw new Error(t('message.history.busy'))
                     setForkPending(true)
                     try {
                         await onFork()
@@ -158,7 +158,7 @@ export function MessageActions({
                 isPending={rewindPending}
                 destructive
                 onConfirm={async () => {
-                    if (!onRewind) return
+                    if (!onRewind || actionsLocked) throw new Error(t('message.history.busy'))
                     setRewindPending(true)
                     try {
                         await onRewind()

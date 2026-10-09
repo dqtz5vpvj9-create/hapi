@@ -1,3 +1,4 @@
+import { createForkNavigator } from '@/lib/fork-navigation'
 import { WorkspaceActivity } from '@/workspace/WorkspaceActivity'
 import { computePendingRequestKinds } from '@hapi/protocol'
 import { useLayoutEffect, useSyncExternalStore } from 'react'
@@ -468,11 +469,16 @@ export function ScratchlistDrawerHost(props: {
     ) => Promise<boolean | SendMessageAcceptance>
     onExitScratchlistMode: () => void
     disabled?: boolean
+    isLoading?: boolean
+    loadError?: boolean
+    onRetryLoad?: () => Promise<void>
+    onActionError?: (message: string | null) => void
 }) {
     const assistantApi = useAui()
     const { t } = useTranslation()
     const handlePromoteToComposer = useCallback(async (entry: ScratchlistEntry) => {
         if (props.disabled) return
+        props.onActionError?.(null)
         const composer = assistantApi.composer()
         const current = composer.getState()
         if ((current.text.length > 0 || current.attachments.length > 0)
@@ -489,14 +495,21 @@ export function ScratchlistDrawerHost(props: {
             props.onExitScratchlistMode()
         })
         if (entry.attachments && entry.attachments.length > 0) {
-            await rehydrateScratchlistAttachmentsToComposer(
-                props.api,
-                props.sessionId,
-                entry.attachments,
-                assistantApi.composer()
-            )
+            try {
+                await rehydrateScratchlistAttachmentsToComposer(
+                    props.api,
+                    props.sessionId,
+                    entry.attachments,
+                    assistantApi.composer()
+                )
+            } catch (error) {
+                // The drawer has already closed to select the chat attachment
+                // adapter. Surface failure in the surviving session shell.
+                props.onActionError?.(t('scratchlist.copyAttachmentsFailed'))
+                throw error
+            }
         }
-    }, [assistantApi, props.api, props.disabled, props.onExitScratchlistMode, props.sessionId, t])
+    }, [assistantApi, props.api, props.disabled, props.onActionError, props.onExitScratchlistMode, props.sessionId, t])
     const handlePromoteToQueue = useCallback(async (entry: ScratchlistEntry) => {
         if (props.disabled) return false
         let attachments: AttachmentMetadata[] | undefined
@@ -510,9 +523,6 @@ export function ScratchlistDrawerHost(props: {
         // This action is explicitly labelled “Send to queue”. It must retain
         // that contract even when the Pi session is actively thinking.
         const accepted = await props.onSend(entry.text, attachments, undefined, 'queue')
-        if (accepted) {
-            props.onExitScratchlistMode()
-        }
         return Boolean(accepted)
     }, [props.api, props.disabled, props.onSend, props.onExitScratchlistMode, props.sessionId])
     return (
@@ -524,6 +534,10 @@ export function ScratchlistDrawerHost(props: {
             onDelete={props.onDelete}
             onPromoteToComposer={handlePromoteToComposer}
             onPromoteToQueue={handlePromoteToQueue}
+            onQueueComplete={props.onExitScratchlistMode}
+            isLoading={props.isLoading}
+            loadError={props.loadError}
+            onRetryLoad={props.onRetryLoad}
             disabled={props.disabled}
         />
     )
@@ -653,19 +667,22 @@ function SessionChatInner(props: SessionChatProps) {
     const [historyActionPending, setHistoryActionPending] = useState(false)
     const [rewindForkFallback, setRewindForkFallback] = useState<string | null>(null)
 
+    const forkNavigator = useMemo(() => createForkNavigator(
+        (boundary) => props.api.forkConversation(props.session.id, boundary),
+        (sessionId) => navigate({
+            to: '/sessions/$sessionId',
+            params: { sessionId },
+            ...PRESERVE_SESSION_SIDEBAR_SCROLL,
+        }),
+    ), [navigate, props.api, props.session.id])
     const onForkConversation = useCallback(async (messageLocalId?: string) => {
         setHistoryActionPending(true)
         try {
-            const result = await props.api.forkConversation(props.session.id, messageLocalId)
-            await navigate({
-                to: '/sessions/$sessionId',
-                params: { sessionId: result.sessionId },
-                ...PRESERVE_SESSION_SIDEBAR_SCROLL,
-            })
+            await forkNavigator(messageLocalId)
         } finally {
             setHistoryActionPending(false)
         }
-    }, [navigate, props.api, props.session.id])
+    }, [forkNavigator])
 
     const onRewindConversation = useCallback(async (messageLocalId: string) => {
         setHistoryActionPending(true)
@@ -779,6 +796,7 @@ function SessionChatInner(props: SessionChatProps) {
         }
     }, [allSessions, t])
     const [scratchlistMode, setScratchlistMode] = useState(false)
+    const [scratchlistActionError, setScratchlistActionError] = useState<string | null>(null)
     const [isScratchlistParking, setIsScratchlistParking] = useState(false)
     // Mode resets across sessions implicitly: SessionChat is keyed by
     // session.id at the public-export boundary, so a session switch
@@ -2010,11 +2028,16 @@ function SessionChatInner(props: SessionChatProps) {
                              * useScratchlist hook above (so the toolbar counter
                              * and the drawer share one source of truth).
                              */}
+                            {scratchlistActionError ? <p role="alert" className="text-xs py-2 text-[var(--app-warning-text)]">{scratchlistActionError}</p> : null}
                             {scratchlistMode ? (
                                 <ScratchlistDrawerHost
                                     sessionId={props.session.id}
                                     api={props.api}
                                     entries={scratchlist.entries}
+                                    isLoading={scratchlist.isLoading}
+                                    loadError={scratchlist.loadError}
+                                    onRetryLoad={scratchlist.retryLoad}
+                                    onActionError={setScratchlistActionError}
                                     onMove={scratchlist.move}
                                     onDelete={scratchlist.remove}
                                     onSend={props.onSend}

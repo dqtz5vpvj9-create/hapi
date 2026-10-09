@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => ({
     steerMessage: vi.fn(),
     resolveSteer: null as ((result: unknown) => void) | null,
     markMessagesConsumed: vi.fn(),
+    markMessagesDispatching: vi.fn(),
+    syncTailMessages: vi.fn(async () => {}),
     saveDraft: vi.fn(),
     messageWindowState: { messages: [] as unknown[] },
 }))
@@ -47,6 +49,8 @@ vi.mock('@/lib/message-window-store', () => ({
     getMessageWindowState: () => mocks.messageWindowState,
     subscribeMessageWindow: () => () => {},
     markMessagesConsumed: mocks.markMessagesConsumed,
+    markMessagesDispatching: mocks.markMessagesDispatching,
+    syncTailMessages: mocks.syncTailMessages,
 }))
 
 vi.mock('@/hooks/mutations/useCancelQueuedMessage', () => ({
@@ -835,7 +839,7 @@ describe('QueuedMessagesBar steer action', () => {
         })
     })
 
-    it('does not toast on a successful steer (the consumed event clears the row)', async () => {
+    it('reconciles a successful steer without relying only on the consumed event)', async () => {
         renderSteerable(true)
 
         fireEvent.click(screen.getByRole('button', { name: 'Steer queued message' }))
@@ -846,6 +850,8 @@ describe('QueuedMessagesBar steer action', () => {
         })
 
         expect(mocks.addToast).not.toHaveBeenCalled()
+        expect(mocks.markMessagesDispatching).toHaveBeenCalledWith('session-1', ['local-server-message-id'])
+        expect(mocks.syncTailMessages).toHaveBeenCalledWith(expect.anything(), 'session-1', { ensureAfterCurrent: true })
     })
 
     it('reconciles a stale queued row when the steer returns invoked (missed consumption SSE)', async () => {

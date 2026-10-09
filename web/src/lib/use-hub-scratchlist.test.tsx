@@ -291,7 +291,7 @@ describe('useHubScratchlist - delete', () => {
         await waitFor(() => expect(result.current.entries.length).toBe(2))
 
         await act(async () => {
-            await result.current.remove('a')
+            await expect(result.current.remove('a')).rejects.toThrow('HTTP 500')
         })
         // After rollback the entry is restored.
         await waitFor(() => expect(result.current.entries.length).toBe(2))

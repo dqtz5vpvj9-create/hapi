@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
-import { markMessagesConsumed } from '@/lib/message-window-store'
+import { markMessagesConsumed, markMessagesDispatching, syncTailMessages } from '@/lib/message-window-store'
 import { useTranslation } from '@/lib/use-translation'
 import { useToast } from '@/lib/toast-context'
 
@@ -12,12 +12,10 @@ type SteerQueuedMessageInput = {
 /**
  * Mutation: deliver one queued message into the active Pi turn (native steer).
  *
- * Non-optimistic on purpose: the CLI acknowledges the steer via the existing
- * `messages-consumed` event, which flips the row to invoked and removes it from
- * the floating bar. An optimistic removal here would fight that event and
- * would need a revert path for the failure case anyway.
- *
- * Failure surfaces as a toast; the row stays queued and can be retried.
+ * Never optimistically remove a row. After acknowledgment, hold it while
+ * reconciling through SSE or an authoritative read. This also recovers when
+ * the consumption event was missed. A transport failure is not evidence that
+ * the message stayed queued: report uncertainty and refresh its real status.
  */
 export function useSteerQueuedMessage(api: ApiClient | null) {
     const { t } = useTranslation()
@@ -47,7 +45,14 @@ export function useSteerQueuedMessage(api: ApiClient | null) {
                 // stale actionable row (mirrors useCancelQueuedMessage).
                 markMessagesConsumed(input.sessionId, [result.message.localId], result.message.invokedAt)
             }
-            // status === 'steered': the messages-consumed SSE will remove the row.
+            if (result.status === 'steered') {
+                markMessagesDispatching(input.sessionId, [result.localId])
+            }
+        },
+        onSettled: async (_result, _error, input) => {
+            // Keep actions locked until this read finishes. Never resubmit the
+            // steer, and preserve the user's position when reading history.
+            if (api) await syncTailMessages(api, input.sessionId, { ensureAfterCurrent: true }).catch(() => {})
         },
         onError: (error, input) => {
             addToast({

@@ -407,3 +407,31 @@ pickers remain online-only. The no-machine state offers contextual runner setup
 without starting an agent. Login has a bounded timeout and localized errors;
 ordinary read requests are bounded, while mutations are never automatically
 replayed because of a timeout.
+
+### Exceptional workflow recovery
+
+- Fork confirmations block duplicate clicks and dismissals while running. If
+  creating the child succeeds but navigation fails, retrying in the same
+  mounted session opens that child instead of creating another one. A lost
+  create response is not retried automatically; this is not a server-side
+  exactly-once guarantee across reloads.
+- Steering reconciles against an authoritative message read as well as SSE.
+  Actions remain locked during reconciliation; transport errors do not claim
+  that the message definitely stayed queued, and never trigger an automatic
+  resend.
+- The scratchlist distinguishes loading, failed refresh and an empty list.
+  Failed mutations keep notes and display recovery guidance. Queue acceptance
+  and deleting the saved note are separate steps: failed cleanup is retried
+  without resending. An identifier-only tab-session journal preserves this
+  distinction when the drawer closes/reopens or the same tab reloads; it is
+  not a cross-device transaction or a server-side exactly-once guarantee.
+  If sessionStorage is unavailable, the in-memory guard lasts until reload.
+- Copying into the composer keeps the original note. Attachment-copy errors
+  stay visible in the session shell after the drawer closes. Mobile scratchlist
+  controls have larger touch targets and move below the note text.
+
+Regression coverage: `e2e/exceptional-workflows.spec.ts` mounts production
+controls, the real message store and fork recovery helper with deterministic
+transport failures. It covers desktop/mobile cleanup, fork cancellation and
+navigation retry, steering without SSE, and steering network failure. These
+fixtures do not launch a real agent or use paid model credentials.
