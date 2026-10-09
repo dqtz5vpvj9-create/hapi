@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'bun:test'
 import { Hono } from 'hono'
 import { SignJWT } from 'jose'
@@ -175,7 +176,7 @@ describe('shared workspace user tasks', () => {
     })
 
     it('migrates a v28 database, retains native sessions, and persists layout plus acknowledgements across Hub restarts', async () => {
-        const directory = mkdtempSync(join('/mnt/cache/data-cache', 'hapi-workspace-migration-'))
+        const directory = mkdtempSync(join(tmpdir(), 'hapi-workspace-migration-'))
         dirs.push(directory)
         const path = join(directory, 'hub.db'), initial = fixture(path)
         initial.store.close()

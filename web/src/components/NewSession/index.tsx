@@ -54,6 +54,7 @@ import { DirectorySection } from './DirectorySection'
 import { CopilotAgentModeSelector } from './CopilotAgentModeSelector'
 import { FastModeSelector } from './FastModeSelector'
 import { MachineSelector } from './MachineSelector'
+import { RunnerSetupHint } from '@/components/RunnerSetupHint'
 import { ModelSelector } from './ModelSelector'
 import { OpencodeModelSelector } from './OpencodeModelSelector'
 import { EffortField } from './EffortField'
@@ -1853,6 +1854,8 @@ export function NewSession(props: {
                 isDisabled={isFormDisabled}
                 onChange={handleMachineChange}
             />
+            {!selectedMachine && !props.isLoading ? <RunnerSetupHint /> : null}
+            {selectedMachine ? <>
             {runnerSpawnError ? (
                 <div className="px-3 py-2 text-xs text-red-600">
                     Runner last spawn error: {runnerSpawnError}
@@ -1908,6 +1911,7 @@ export function NewSession(props: {
                     {t('newSession.noAvailableAgents')}
                 </div>
             ) : null}
+            {selectedAgentAvailable && !agentAvailability.isLoading && !agentAvailability.error ? <>
             {agent === 'codex' ? (
                 <CodexImportActions
                     selectedSession={selectedCodexImportSession}
@@ -2096,6 +2100,8 @@ export function NewSession(props: {
                 onChange={setServiceTier}
             />
 
+            </> : null}
+            </> : null}
             {(error ?? spawnError) ? (
                 <div className="px-3 py-2 text-sm text-red-600">
                     {error ?? spawnError}

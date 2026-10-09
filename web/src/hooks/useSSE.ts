@@ -793,6 +793,8 @@ export function useSSE(options: {
             }
 
             if (event.type === 'machine-updated') {
+                // The settings inventory keeps offline records, unlike the launch-picker cache.
+                void queryClient.invalidateQueries({ queryKey: [...queryKeys.machines, 'all'], exact: true })
                 if (isMachineRecord(event.data)) {
                     upsertMachine(event.data)
                 } else if (event.data === null) {

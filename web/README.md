@@ -279,9 +279,11 @@ focus, `o` cycles panes, `z` toggles maximize, `x` closes a view, `c` creates a
 window, and `n` / `p` or `1`–`9` switch windows. Press Ctrl-b twice to
 send the second one to a terminal.
 
-Workspace structure currently persists in this browser's localStorage,
-scoped to the Hub and authenticated identity. It stores references, not chat
-transcripts. Visible chats share the existing global event stream and retain
+Workspace structure is synchronized through the Hub, scoped to the authenticated
+namespace. The browser keeps a local snapshot and a serialized pending-operation
+outbox for offline use; reconnect reconciles revisions instead of overwriting
+another device's layout. Focus, active window and zoom remain device-local.
+Layouts store references, not chat transcripts. Visible chats share the existing global event stream and retain
 their presentation caches. The active workspace and up to four inactive pane
 views stay mounted, keeping five single-pane workspaces or three two-pane
 workspaces ready. The immediate previous workspace is always retained even if
@@ -300,8 +302,9 @@ the input. The status row keeps a separate `@` action for session references;
 the ordinary single-chat composer retains its existing Add menu.
 Closing a pane does not issue a stop request. Terminal panes reattach using
 stable IDs, but still inherit the existing session terminal's idle and process
-lifetime limits. Shared layouts and a durable machine-level terminal host are
-separate unfinished stages; see [implementation status](../docs/plans/tmux-workspace-stage-one.md).
+lifetime limits. Shared layouts use the Hub workspace API and SSE invalidation. A durable
+machine-level terminal host remains a separate stage; see
+[implementation status](../docs/plans/tmux-workspace-stage-one.md).
 
 `e2e/workspace.spec.ts` drives the production App and chat components through
 `web/e2e-fixtures/workspace-fixture.html`, using simulated Hub responses and
@@ -390,3 +393,17 @@ Clear the hub override in the same dialog to return to same-origin behavior.
 The mobile keyboard layout and configuration follow [Haven](src/components/Terminal/termbeam/HAVEN.md), including content-sized 32px keys, paired navigation columns, row placement, macros and JSON editing.
 
 Session-list recency is captured when the list opens. Live activity updates the row's status and timestamp without reordering existing rows; newly discovered sessions join by their initial activity time. Selecting a list view or explicitly refreshing updates the ordering snapshot. Search relevance and explicit pinned/state sections still apply. This prevents concurrent streaming sessions from repeatedly moving under the pointer. Regression coverage exercises repeated updates on the mounted `SessionList`, not only static status glyphs.
+
+### Loading budget and regression checks
+
+Settings, file, terminal and new-session screens use route-level lazy loading.
+`bun run check:bundle` checks the built JavaScript entry against a 2.6 MB raw /
+780 KB gzip ceiling. The check also runs as part of the Web production build.
+It measures the entry, not total cold-load transfer, execution time or all PWA
+precache assets. Preserve offline support when changing the precache strategy.
+
+Machines settings can include previously connected offline machines; launch
+pickers remain online-only. The no-machine state offers contextual runner setup
+without starting an agent. Login has a bounded timeout and localized errors;
+ordinary read requests are bounded, while mutations are never automatically
+replayed because of a timeout.

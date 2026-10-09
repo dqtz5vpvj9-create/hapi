@@ -14,7 +14,7 @@ import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 
 import { SessionList } from '@/components/SessionList'
 import { SessionQuickSwitcher } from '@/components/SessionQuickSwitcher'
-import { NewSession } from '@/components/NewSession'
+const NewSession = lazyRouteComponent(() => import('@/components/NewSession'), 'NewSession')
 import { WorkspaceBrowser } from '@/components/WorkspaceBrowser'
 import { LoadingState } from '@/components/LoadingState'
 import { useAppContext } from '@/lib/app-context'
@@ -38,22 +38,22 @@ import { useSessionBrowserTitle } from '@/hooks/useSessionBrowserTitle'
 
 import { getSupersedingSessionId, prepareFollowSupersedingSession, shouldFollowSupersedingSession } from '@/routes/sessions/followSupersedingSession'
 
-import FilesPage from '@/routes/sessions/files'
-import FilePage from '@/routes/sessions/file'
-import TerminalPage from '@/routes/sessions/terminal'
+const FilesPage = lazyRouteComponent(() => import('@/routes/sessions/files'))
+const FilePage = lazyRouteComponent(() => import('@/routes/sessions/file'))
+const TerminalPage = lazyRouteComponent(() => import('@/routes/sessions/terminal'))
 import SettingsLayout from '@/routes/settings/layout'
-import SettingsHubPage from '@/routes/settings'
-import SettingsGeneralPage from '@/routes/settings/general'
-import SettingsDisplayPage from '@/routes/settings/display'
-import SettingsChatPage from '@/routes/settings/chat'
-import SettingsVoicePage from '@/routes/settings/voice'
-import SettingsVoiceVoicesPage from '@/routes/settings/voice-voices'
-import SettingsVoiceAdvancedPage from '@/routes/settings/voice-advanced'
-import SettingsMachinesPage from '@/routes/settings/machines'
-import SettingsAboutPage from '@/routes/settings/about'
-import SettingsStoragePage from '@/routes/settings/storage'
-import SettingsUsagePage from '@/routes/settings/usage'
-import SharePage from '@/routes/share'
+const SettingsHubPage = lazyRouteComponent(() => import('@/routes/settings'))
+const SettingsGeneralPage = lazyRouteComponent(() => import('@/routes/settings/general'))
+const SettingsDisplayPage = lazyRouteComponent(() => import('@/routes/settings/display'))
+const SettingsChatPage = lazyRouteComponent(() => import('@/routes/settings/chat'))
+const SettingsVoicePage = lazyRouteComponent(() => import('@/routes/settings/voice'))
+const SettingsVoiceVoicesPage = lazyRouteComponent(() => import('@/routes/settings/voice-voices'))
+const SettingsVoiceAdvancedPage = lazyRouteComponent(() => import('@/routes/settings/voice-advanced'))
+const SettingsMachinesPage = lazyRouteComponent(() => import('@/routes/settings/machines'))
+const SettingsAboutPage = lazyRouteComponent(() => import('@/routes/settings/about'))
+const SettingsStoragePage = lazyRouteComponent(() => import('@/routes/settings/storage'))
+const SettingsUsagePage = lazyRouteComponent(() => import('@/routes/settings/usage'))
+const SharePage = lazyRouteComponent(() => import('@/routes/share'))
 import { setSharePendingTransfer } from '@/lib/sharePendingState'
 import { deleteShareTransfer, parseShareSearch } from '@/lib/shareTransfer'
 

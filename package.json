@@ -14,7 +14,7 @@
     "scripts": {
         "build:site": "bun run --cwd website build && bun run --cwd docs docs:build && cp -r docs/.vitepress/dist website/dist/public/docs",
         "dev": "bun run --parallel dev:hub dev:web",
-        "build": "bun run build:cli && bun run build:web && (cd hub && bun run generate:embedded-web-assets) && bun run build:hub",
+        "build": "bun run build:cli && bun run build:hub",
         "build:cli": "bun run typecheck:cli",
         "build:single-exe": "bun run download:tunwg && bun run build:web && (cd hub && bun run generate:embedded-web-assets) && (cd cli && bun run build:exe:allinone)",
         "build:single-exe:all": "bun run download:tunwg && bun run build:web && (cd hub && bun run generate:embedded-web-assets) && (cd cli && bun run build:exe:allinone:all)",
@@ -46,7 +46,8 @@
         "release-all": "cd cli && bun run release-all",
         "test:history-dependencies": "bun test tests/history-dependencies.integration.test.ts",
         "test:codex-lineage": "bun test tests/codex-lineage.integration.test.ts",
-        "test:codex-search": "bun test tests/codex-session-search.integration.test.ts"
+        "test:codex-search": "bun test tests/codex-session-search.integration.test.ts",
+        "check:bundle": "node scripts/testing/check-web-budget.mjs"
     },
     "devDependencies": {
         "@playwright/test": "^1.61.0",

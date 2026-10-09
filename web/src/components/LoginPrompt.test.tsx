@@ -49,3 +49,14 @@ describe('LoginPrompt', () => {
         expect(screen.queryByText('Hub URL required. Please set it before signing in.')).not.toBeInTheDocument()
     })
 })
+
+ it('shows a human-readable error without raw HTTP response bodies', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({error:'Invalid access token'}), {status:401, statusText:'Unauthorized'}))
+    try {
+        renderWithProviders(<LoginPrompt baseUrl="http://localhost:3006" serverUrl={null} setServerUrl={vi.fn()} clearServerUrl={vi.fn()} onLogin={vi.fn()} />)
+        fireEvent.change(screen.getByPlaceholderText('Access token'), {target:{value:'invalid-fixture'}})
+        fireEvent.click(screen.getByRole('button', {name:'Sign In'}))
+        expect(await screen.findByText('The access token is incorrect. Check that the token belongs to the selected Hub.')).toBeInTheDocument()
+        expect(screen.queryByText(/HTTP 401/)).not.toBeInTheDocument()
+    } finally {fetch.mockRestore()}
+})

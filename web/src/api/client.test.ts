@@ -394,3 +394,24 @@ describe('ApiClient Kimi session model discovery', () => {
         expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/sessions/session%2F1/kimi-models')
     })
 })
+
+describe('bounded authentication and reads', () => {
+    it('supplies a timeout signal for login without replaying the request', async () => {
+        const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ token: 'fixture', user: { id: 1 } })))
+        try {
+            await new ApiClient('').authenticate({ accessToken: 'fixture-only' })
+            expect(fetch).toHaveBeenCalledTimes(1)
+            expect(fetch.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal)
+        } finally { fetch.mockRestore() }
+    })
+    it('explicitly opts into offline devices while preserving the normal machine endpoint', async () => {
+        const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ machines: [] })))
+        try {
+            const api = new ApiClient('fixture-only')
+            await api.getMachines()
+            await api.getMachines(true)
+            expect(String(fetch.mock.calls[0][0])).toContain('/api/machines')
+            expect(String(fetch.mock.calls[1][0])).toContain('/api/machines?includeOffline=true')
+        } finally { fetch.mockRestore() }
+    })
+})

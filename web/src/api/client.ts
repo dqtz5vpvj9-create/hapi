@@ -199,7 +199,8 @@ export class ApiClient {
         init?: RequestInit,
         attempt: number = 0,
         overrideToken?: string | null,
-        onDownload?: (progress: MessageDownloadProgress) => void
+        onDownload?: (progress: MessageDownloadProgress) => void,
+        responseType: 'json' | 'blob' = 'json'
     ): Promise<T> {
         const headers = new Headers(init?.headers)
         const liveToken = this.getToken ? this.getToken() : null
@@ -215,7 +216,8 @@ export class ApiClient {
 
         const res = await fetch(this.buildUrl(path), {
             ...init,
-            headers
+            headers,
+            signal: init?.signal ?? (!init?.method || init.method === 'GET' ? AbortSignal.timeout(30_000) : undefined)
         })
 
         if (res.status === 401) {
@@ -223,7 +225,7 @@ export class ApiClient {
                 const refreshed = await this.onUnauthorized()
                 if (refreshed) {
                     this.token = refreshed
-                    return await this.request<T>(path, init, attempt + 1, refreshed, onDownload)
+                    return await this.request<T>(path, init, attempt + 1, refreshed, onDownload, responseType)
                 }
             }
             throw new ApiError('Session expired. Please sign in again.', 401)
@@ -240,6 +242,7 @@ export class ApiClient {
             )
         }
 
+        if (responseType === 'blob') return await res.blob() as T
         if (!onDownload || !res.body) return await res.json() as T
         // Fetch exposes decoded bytes. A compressed Content-Length cannot
         // serve as their denominator, so show a total only for plain bodies.
@@ -265,6 +268,7 @@ export class ApiClient {
 
     async authenticate(auth: { initData: string } | { accessToken: string }): Promise<AuthResponse> {
         const res = await fetch(this.buildUrl('/api/auth'), {
+            signal: AbortSignal.timeout(15_000),
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify(auth)
@@ -935,8 +939,8 @@ export class ApiClient {
         })
     }
 
-    async getMachines(): Promise<MachinesResponse> {
-        return await this.request<MachinesResponse>('/api/machines')
+    async getMachines(includeOffline = false): Promise<MachinesResponse> {
+        return await this.request<MachinesResponse>(includeOffline ? '/api/machines?includeOffline=true' : '/api/machines')
     }
 
     /** Pass an empty string to clear the custom name and fall back to the hostname. */
@@ -945,6 +949,10 @@ export class ApiClient {
             method: 'PATCH',
             body: JSON.stringify({ displayName })
         })
+    }
+
+    async downloadSqliteBackup(): Promise<Blob> {
+        return this.request<Blob>('/api/storage/sqlite/backup', { method: 'POST', signal: AbortSignal.timeout(120_000) }, 0, undefined, undefined, 'blob')
     }
 
     async getSqliteStorageUsage(): Promise<SqliteStorageUsageResponse> {

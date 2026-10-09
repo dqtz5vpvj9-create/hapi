@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { RunnerSetupHint } from '@/components/RunnerSetupHint'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { MACHINE_DISPLAY_NAME_MAX_LENGTH } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
@@ -105,6 +106,12 @@ function MachineRow(props: { api: ApiClient | null; machine: Machine }) {
                     ) : null}
                 </div>
             </div>
+            <div className="mt-1 text-xs text-[var(--app-hint)]">
+                {props.machine.active ? t('settings.machines.online') : t('settings.machines.offline')}
+                {props.machine.metadata?.happyCliVersion ? ` · CLI ${props.machine.metadata.happyCliVersion}` : ''}
+                {!props.machine.active && props.machine.activeAt > 0 ? ` · ${t('settings.machines.lastSeen')}: ${new Date(props.machine.activeAt).toLocaleString()}` : ''}
+            </div>
+            {!props.machine.active ? <p className="mt-1 text-xs text-[var(--app-hint)]">{t('settings.machines.offlineHint')}</p> : null}
             {error ? <div role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</div> : null}
         </div>
     )
@@ -113,13 +120,15 @@ function MachineRow(props: { api: ApiClient | null; machine: Machine }) {
 export default function SettingsMachinesPage() {
     const { t } = useTranslation()
     const { api } = useAppContext()
-    const { machines } = useMachines(api, true)
+    const { machines, isLoading, error: loadError, refetch } = useMachines(api, true, true)
 
     return (
         <SettingsPageContent description={t('settings.machines.description')}>
             <SettingsSection title={t('settings.machines.section')}>
-                {machines.length === 0 ? (
-                    <div className="px-3 py-3 text-sm text-[var(--app-hint)]">{t('settings.machines.empty')}</div>
+                {isLoading ? <p role="status" className="p-3 text-sm">{t('loading.machines')}</p> : null}
+                {loadError ? <div role="alert" className="p-3 text-sm"><p>{t('settings.machines.loadFailed')}</p><button type="button" className="underline" onClick={() => void refetch()}>{t('button.retry')}</button></div> : null}
+                {!isLoading && !loadError && machines.length === 0 ? (
+                    <RunnerSetupHint />
                 ) : (
                     machines.map((machine) => (
                         <MachineRow key={machine.id} api={api} machine={machine} />

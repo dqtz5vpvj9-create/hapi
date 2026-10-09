@@ -3,19 +3,19 @@ import type { ApiClient } from '@/api/client'
 import type { Machine } from '@/types/api'
 import { queryKeys } from '@/lib/query-keys'
 
-export function useMachines(api: ApiClient | null, enabled: boolean): {
+export function useMachines(api: ApiClient | null, enabled: boolean, includeOffline = false): {
     machines: Machine[]
     isLoading: boolean
     error: string | null
     refetch: () => Promise<unknown>
 } {
     const query = useQuery({
-        queryKey: queryKeys.machines,
+        queryKey: includeOffline ? [...queryKeys.machines, 'all'] : queryKeys.machines,
         queryFn: async () => {
             if (!api) {
                 throw new Error('API unavailable')
             }
-            return await api.getMachines()
+            return await api.getMachines(includeOffline)
         },
         enabled: Boolean(api && enabled),
     })

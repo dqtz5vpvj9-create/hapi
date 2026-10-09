@@ -67,6 +67,13 @@ describe('SettingsMachinesPage', () => {
         expect(screen.getByText('workstation.local · linux')).toBeTruthy()
     })
 
+    it('retains offline machines with their last-seen time and CLI version', () => {
+        machinesMock.mockReturnValue([makeMachine({ active: false, activeAt: 1700000000000 })])
+        renderPage()
+        expect(screen.getByText(/Offline.*CLI 1.0.0.*Last online/)).toBeTruthy()
+        expect(screen.getByRole('button', { name: 'Rename workstation.local' })).toBeTruthy()
+    })
+
     it('shows the custom name while keeping the hostname visible', () => {
         machinesMock.mockReturnValue([makeMachine({
             metadata: { host: 'workstation.local', platform: 'linux', happyCliVersion: '1.0.0', displayName: 'Workstation' },
@@ -178,6 +185,7 @@ describe('SettingsMachinesPage', () => {
         machinesMock.mockReturnValue([])
         renderPage()
 
-        expect(screen.getByText('No machines online.')).toBeTruthy()
+        expect(screen.getByText('Connect a runner to start a session')).toBeTruthy()
+        expect(screen.getByText('hapi runner start')).toBeTruthy()
     })
 })

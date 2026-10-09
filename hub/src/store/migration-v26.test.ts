@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -10,7 +11,7 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 
 describe('v26 history relationship index migration and persistent backfill', () => {
     it('creates only index schema at startup and resumes bounded backfill after reopening the database', () => {
-        const dir = mkdtempSync(join('/mnt/cache/data-cache', 'hapi-index-migration-'))
+        const dir = mkdtempSync(join(tmpdir(), 'hapi-index-migration-'))
         dirs.push(dir)
         const path = join(dir, 'hapi.db')
         let store = new Store(path)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ApiClient } from '@/api/client'
+import { ApiClient, ApiError } from '@/api/client'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
@@ -67,7 +67,13 @@ export function LoginPrompt(props: LoginPromptProps) {
             }
         } catch (e) {
             const fallbackMessage = isBindMode ? t('login.error.bindFailed') : t('login.error.authFailed')
-            setError(e instanceof Error ? e.message : fallbackMessage)
+            setError(e instanceof ApiError && e.status === 401
+                ? t('login.error.invalidToken')
+                : e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
+                    ? t('login.error.timeout')
+                    : e instanceof TypeError
+                        ? t('login.error.network')
+                        : fallbackMessage)
         } finally {
             setIsLoading(false)
         }

@@ -316,8 +316,7 @@ Transport security depends on HTTPS in front of the hub.
 From the repo root:
 
 ```bash
-bun run build:hub
-bun run build:web
+bun run build:hub   # builds Web, generates embedded assets, then builds Hub
 ```
 
 The hub build output is `hub/dist/index.js`, and the web assets are in `web/dist`.
@@ -336,3 +335,32 @@ The web UI can be hosted separately from the hub (for example on GitHub Pages or
 3. Open the static site, click the Hub button on the login screen, and enter the hapi hub origin.
 
 Leaving the hub override empty preserves the default same-origin behavior when the hub serves the web assets directly.
+
+## Backup and recovery
+
+The owner's **Settings → Storage → Download database backup** creates a verified
+SQLite snapshot using `VACUUM INTO`, including committed WAL data. The download
+contains private data from every namespace; do not share it publicly. It is a
+database backup, not a complete installation backup: preserve settings and
+external attachments separately in protected storage. A large snapshot may take
+time and disk space; only one download is prepared at a time.
+
+From a source checkout:
+
+```bash
+bun hub/scripts/backup-db.ts backup /path/to/hapi.db /protected/hapi-backup-2026-10-09T10-00-00-000Z.db
+bun hub/scripts/backup-db.ts verify /protected/hapi-backup-2026-10-09T10-00-00-000Z.db
+bun hub/scripts/backup-db.ts restore-copy /protected/hapi-backup-2026-10-09T10-00-00-000Z.db /protected/restored.db
+bun hub/scripts/backup-db.ts prune-preview /protected 7 30
+```
+
+`restore-copy` refuses to overwrite any existing destination. Stop the Hub before
+switching `DB_PATH` to the verified new file. Preserve the original database and
+its sidecars together until you have checked the restored Hub with the same
+HAPI version. Newer schema versions may require a matching newer Hub.
+
+Retention preview keeps at least the newest requested count (default 7) and
+marks only matching dated backups older than the requested age (default 30 days)
+for review. It never deletes anything, follows symlinks, or schedules a job.
+Test a restore before manually removing old backups. A failed export should not
+be considered a usable backup until `verify` succeeds.

@@ -1527,3 +1527,12 @@ describe('NewSession launch preferences', () => {
         }))
     })
 })
+
+ it('does not show model or directory configuration before a machine is selected', () => {
+    mocks.spawnSession.mockClear()
+    render(<NewSession api={api} machines={[]} initialTask="keep my draft" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+    expect(screen.getByText('setup.title')).toBeTruthy()
+    expect(screen.queryByText('newSession.noAvailableAgents')).toBeNull()
+    expect(screen.getByDisplayValue('keep my draft')).toBeTruthy()
+    expect(mocks.spawnSession).not.toHaveBeenCalled()
+})

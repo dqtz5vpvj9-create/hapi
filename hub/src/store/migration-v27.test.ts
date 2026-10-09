@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { afterEach, expect, it } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -9,7 +10,7 @@ const dirs: string[] = []
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 it('upgrades v27 without decoding history at startup and resumes bounded outline backfill after restart', () => {
-    const dir = mkdtempSync(join('/mnt/cache/data-cache', 'hapi-outline-migration-'))
+    const dir = mkdtempSync(join(tmpdir(), 'hapi-outline-migration-'))
     dirs.push(dir)
     const path = join(dir, 'hapi.db')
     let store = new Store(path)

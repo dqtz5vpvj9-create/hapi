@@ -812,3 +812,21 @@ describe('machines routes', () => {
         expect(calls).toEqual([{ refresh: false }, { refresh: true }])
     })
 })
+
+describe('offline machine discovery', () => {
+    it('keeps spawn lists online-only and scopes expanded settings lists to the authenticated namespace', async () => {
+        const online = createMachine()
+        const offline = createMachine({ id: 'offline-1', active: false })
+        const namespaces: string[] = []
+        const engine = {
+            getOnlineMachinesByNamespace: (ns: string) => { namespaces.push(ns); return [online] },
+            getMachinesByNamespace: (ns: string) => { namespaces.push(ns); return [online, offline] },
+        } as unknown as SyncEngine
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => { c.set('namespace', 'tenant-a'); await next() })
+        app.route('/api', createMachinesRoutes(() => engine))
+        expect((await (await app.request('/api/machines')).json() as { machines: Machine[] }).machines).toHaveLength(1)
+        expect((await (await app.request('/api/machines?includeOffline=true')).json() as { machines: Machine[] }).machines).toHaveLength(2)
+        expect(namespaces).toEqual(['tenant-a', 'tenant-a'])
+    })
+})
