@@ -494,6 +494,8 @@ export const MachineMetadataSchema = z.object({
     platform: z.string(),
     happyCliVersion: z.string(),
     displayName: z.string().optional(),
+    /** Hub-assigned, persistent visual identity; shared by every client. */
+    icon: z.string().optional(),
     homeDir: z.string().optional(),
     happyHomeDir: z.string().optional(),
     happyLibDir: z.string().optional(),
@@ -591,6 +593,10 @@ const MachineChangedSchema = SessionEventBaseSchema.extend({
 })
 
 export const SyncEventSchema = z.discriminatedUnion('type', [
+    SessionEventBaseSchema.extend({
+        type: z.literal('workspaces-updated'),
+        revision: z.number().int().nonnegative()
+    }),
     SessionChangedSchema.extend({
         type: z.literal('session-added'),
         data: z.unknown().optional()
@@ -606,6 +612,12 @@ export const SyncEventSchema = z.discriminatedUnion('type', [
     SessionChangedSchema.extend({
         type: z.literal('message-received'),
         message: DecryptedMessageSchema
+    }),
+    // Body-free notification for list/background subscribers. Unlike an
+    // invalidation this does not discard cached history or its reading position.
+    SessionChangedSchema.extend({
+        type: z.literal('message-updated'),
+        scheduled: z.boolean()
     }),
     SessionChangedSchema.extend({
         type: z.literal('messages-invalidated'),

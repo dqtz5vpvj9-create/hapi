@@ -7,6 +7,7 @@
     "types": "./src/index.ts",
     "exports": {
         ".": "./src/index.ts",
+        "./nativeExecution": "./src/nativeExecution.ts",
         "./artifacts": "./src/artifacts.ts",
         "./apiTypes": "./src/apiTypes.ts",
         "./messages": "./src/messages.ts",
@@ -28,7 +29,10 @@
         "./settingsFileLock": "./src/settingsFileLock.ts",
         "./agentCliSpawnLease": "./src/agentCliSpawnLease.ts",
         "./messageDependencies": "./src/messageDependencies.ts",
-        "./conversationOutline": "./src/conversationOutline.ts"
+        "./conversationOutline": "./src/conversationOutline.ts",
+        "./workspaces": "./src/workspaces.ts",
+        "./terminals": "./src/terminals.ts",
+        "./documents": "./src/documents.ts"
     },
     "sideEffects": false,
     "scripts": {

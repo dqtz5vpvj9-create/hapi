@@ -804,6 +804,10 @@ export type CommandResponse = {
 export type GitCommandResponse = CommandResponse
 
 export type FileReadResponse = {
+    /** Revision used by the existing WriteFile optimistic concurrency check. */
+    hash?: string
+    path?: string
+    writable?: boolean
     success: boolean
     content?: string
     size?: number

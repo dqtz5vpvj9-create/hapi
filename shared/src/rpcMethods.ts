@@ -8,6 +8,7 @@ export const RPC_METHODS = {
     SpawnHappySession: 'spawn-happy-session',
     StopSession: 'stop-session',
     StopRunner: 'stop-runner',
+    MachineTerminal: 'machine-terminal',
     ListMachineDirectory: 'list-directory',
     PathExists: 'path-exists',
     AgentAvailability: 'agent-availability',

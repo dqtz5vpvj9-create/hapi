@@ -55,6 +55,7 @@
         "vite-plugin-pwa": "^1.2.0"
     },
     "patchedDependencies": {
-        "@assistant-ui/react@0.15.21": "patches/@assistant-ui%2Freact@0.15.21.patch"
+        "@assistant-ui/react@0.15.21": "patches/@assistant-ui%2Freact@0.15.21.patch",
+        "@tanstack/router-core@1.171.6": "patches/@tanstack%2Frouter-core@1.171.6.patch"
     }
 }

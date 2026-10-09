@@ -1,0 +1,46 @@
+--- a/src/scroll-restoration.ts
++++ b/src/scroll-restoration.ts
+@@ -187,6 +187,15 @@
+     scrollX: number,
+     scrollY: number,
+   ) => {
++    // Panes can unmount without route navigation. Detached targets can never
++    // be restored; release them when another scroller enters the working set.
++    if (!trackedScrollEntries.has(target)) {
++      for (const tracked of trackedScrollEntries.keys()) {
++        if (tracked !== windowScrollTarget && !tracked.isConnected) {
++          trackedScrollEntries.delete(tracked)
++        }
++      }
++    }
+     const entry =
+       trackedScrollEntries.get(target) || ({} as ScrollRestorationEntry)
+     entry.scrollX = scrollX
+--- a/dist/esm/scroll-restoration.js
++++ b/dist/esm/scroll-restoration.js
+@@ -83,6 +83,11 @@
+ 	const getKey = router.options.getScrollRestorationKey || defaultGetScrollRestorationKey;
+ 	const trackedScrollEntries = /* @__PURE__ */ new Map();
+ 	const setTrackedScrollEntry = (target, scrollX, scrollY) => {
++		if (!trackedScrollEntries.has(target)) {
++			for (const tracked of trackedScrollEntries.keys()) {
++				if (tracked !== windowScrollTarget && !tracked.isConnected) trackedScrollEntries.delete(tracked);
++			}
++		}
+ 		const entry = trackedScrollEntries.get(target) || {};
+ 		entry.scrollX = scrollX;
+ 		entry.scrollY = scrollY;
+--- a/dist/cjs/scroll-restoration.cjs
++++ b/dist/cjs/scroll-restoration.cjs
+@@ -83,6 +83,11 @@
+ 	const getKey = router.options.getScrollRestorationKey || defaultGetScrollRestorationKey;
+ 	const trackedScrollEntries = /* @__PURE__ */ new Map();
+ 	const setTrackedScrollEntry = (target, scrollX, scrollY) => {
++		if (!trackedScrollEntries.has(target)) {
++			for (const tracked of trackedScrollEntries.keys()) {
++				if (tracked !== windowScrollTarget && !tracked.isConnected) trackedScrollEntries.delete(tracked);
++			}
++		}
+ 		const entry = trackedScrollEntries.get(target) || {};
+ 		entry.scrollX = scrollX;
+ 		entry.scrollY = scrollY;
