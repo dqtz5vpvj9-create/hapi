@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { constructorOptions, listModelsMock } = vi.hoisted(() => ({
+const { constructorOptions, listModelsMock, nativeModelsMock } = vi.hoisted(() => ({
     constructorOptions: [] as unknown[],
-    listModelsMock: vi.fn()
+    listModelsMock: vi.fn(),
+    nativeModelsMock: vi.fn()
 }));
+
+vi.mock('@/codex/shared/nativeConnection', () => ({ nativeCodexModels: nativeModelsMock }));
 
 vi.mock('node:os', async () => {
     const actual = await vi.importActual<typeof import('node:os')>('node:os');
@@ -31,7 +34,26 @@ describe('listCodexModels cwd', () => {
     beforeEach(() => {
         constructorOptions.length = 0;
         listModelsMock.mockReset();
+        nativeModelsMock.mockReset().mockResolvedValue(null);
         _resetCodexModelsCacheForTests();
+    });
+
+    it('uses the native account catalog without creating or stopping another app-server', async () => {
+        nativeModelsMock.mockResolvedValue({ data: [{ id: 'native-model', displayName: 'Native', supportedReasoningEfforts: [{ reasoningEffort: 'high' }] }] });
+        const models = await listCodexModels(true);
+        expect(models).toEqual([expect.objectContaining({ id: 'native-model', supportedReasoningEfforts: ['high'] })]);
+        expect(nativeModelsMock).toHaveBeenCalledExactlyOnceWith(true);
+        expect(constructorOptions).toHaveLength(0);
+        expect(listModelsMock).not.toHaveBeenCalled();
+        expect(await listCodexModels(true)).toBe(models);
+        expect(nativeModelsMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not start a temporary server when the configured native bridge fails', async () => {
+        nativeModelsMock.mockRejectedValue(new Error('Native bridge identity unavailable'));
+        await expect(listCodexModels()).rejects.toThrow('Native bridge identity unavailable');
+        expect(constructorOptions).toHaveLength(0);
+        expect(listModelsMock).not.toHaveBeenCalled();
     });
 
     it('starts discovery from the user home instead of the caller cwd', async () => {

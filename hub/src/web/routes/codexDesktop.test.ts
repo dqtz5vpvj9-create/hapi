@@ -375,6 +375,26 @@ function createRoutesApp(namespace: string): Hono<WebAppEnv> {
 }
 
 describe('Codex Desktop import routes', () => {
+    it('preserves native connection failures instead of replacing them with schema errors', async () => {
+        const store = new Store(':memory:')
+        const engine = {
+            ...createImportSyncEngine(store, [createMachine('windows', ['D:\\work'])]),
+            connectCodexSessionForMachine: async () => ({ error: 'Native Codex bridge is unavailable' }),
+        } as unknown as SyncEngine
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => { c.set('namespace', 'default'); await next() })
+        app.route('/api', createCodexDesktopRoutes({ store, getSyncEngine: () => engine }))
+        try {
+            const response = await app.request('/api/codex/connect-session', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ machineId: 'windows', threadId: '01a0e711-b68e-72e2-9f0a-0a6e9a74fda2' }),
+            })
+            expect(response.status).toBe(503)
+            expect(await response.json()).toEqual({ error: 'Native Codex bridge is unavailable' })
+        } finally { store.close() }
+    })
+
     afterEach(() => {
         if (originalCodexHome === undefined) {
             delete process.env.CODEX_HOME

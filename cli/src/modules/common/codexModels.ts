@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import type { CodexModelsResponse, CodexModelSummary } from '@hapi/protocol/apiTypes';
 import { CodexAppServerClient } from '@/codex/codexAppServerClient';
+import { nativeCodexModels } from '@/codex/shared/nativeConnection';
 import { getErrorMessage } from './rpcResponses';
 
 export interface ListCodexModelsRequest {
@@ -90,7 +91,9 @@ interface CacheEntry {
 // spawns a fresh `codex app-server` subprocess and validates the ChatGPT
 // session, which can take 2-30s when a token refresh or network round trip is
 // involved. Cache successful lists for 5 minutes (same shape as the opencode
-// model cache) and coalesce concurrent requests into a single spawn.
+// model cache) and coalesce concurrent requests. Native installations reuse
+// their authenticated bridge: temporary process cleanup on Windows otherwise
+// runs synchronous process-tree probes that block unrelated Runner requests.
 const CACHE_TTL_MS = 5 * 60_000;
 const cache = new Map<boolean, CacheEntry>();
 const inflight = new Map<boolean, Promise<CodexModelSummary[]>>();
@@ -125,6 +128,12 @@ export async function listCodexModels(includeHidden: boolean = false): Promise<C
 }
 
 async function fetchCodexModelsFromAppServer(includeHidden: boolean): Promise<CodexModelSummary[]> {
+    const nativeResponse = await nativeCodexModels(includeHidden);
+    if (nativeResponse !== null) {
+        return Array.isArray(nativeResponse.data)
+            ? nativeResponse.data.map(normalizeCodexModel).filter((model): model is CodexModelSummary => model !== null)
+            : [];
+    }
     // Model discovery is account-scoped. Never inherit a session/runner cwd:
     // project config or a deleted worktree must not alter or break the catalog.
     const client = new CodexAppServerClient({ cwd: homedir() });

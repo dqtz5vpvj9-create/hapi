@@ -31,6 +31,7 @@ vi.mock('node:os', async () => {
     };
 });
 
+const originalEnv = process.env;
 const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
 const homeDir = win32.join('home', 'junes');
 const nodeRoot = win32.join('toolchains', 'nodejs');
@@ -80,7 +81,10 @@ describe('resolveCodexCommand', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.resetModules();
+        process.env = { ...originalEnv };
         homedirMock.mockReturnValue(homeDir);
+        process.env.PATH = `${nodeRoot};${win32.join(homeDir, '.local', 'bin')}`;
+        process.env.PATHEXT = '.exe;.cmd';
         execFileSyncMock.mockImplementation(() => {
             throw new Error('not found');
         });
@@ -88,6 +92,7 @@ describe('resolveCodexCommand', () => {
     });
 
     afterAll(() => {
+        process.env = originalEnv;
         if (originalPlatformDescriptor) {
             Object.defineProperty(process, 'platform', originalPlatformDescriptor);
         }
@@ -99,17 +104,12 @@ describe('resolveCodexCommand', () => {
         const laterExe = userCodexExePath();
         const executable = nativeCodexPath();
         const script = codexScriptPath();
-        execFileSyncMock.mockImplementation((command: string, args: string[]) => {
-            if (command === 'where.exe' && args[0] === 'codex') {
-                return `${shim}\r\n${laterExe}\r\n`;
-            }
-            throw new Error('not found');
-        });
         existsSyncMock.mockImplementation((candidate: string) =>
             candidate === shim || candidate === laterExe || candidate === executable || candidate === script
         );
         const { resolveCodexCommand } = await import('./codexExecutable');
 
+        expect(execFileSyncMock).not.toHaveBeenCalled();
         expect(resolveCodexCommand()).toEqual({
             command: 'node',
             args: [script]
@@ -120,15 +120,10 @@ describe('resolveCodexCommand', () => {
         setPlatform('win32');
         const shim = codexShimPath();
         const executable = userCodexExePath();
-        execFileSyncMock.mockImplementation((command: string, args: string[]) => {
-            if (command === 'where.exe' && args[0] === 'codex') {
-                return `${shim}\r\n${executable}\r\n`;
-            }
-            throw new Error('not found');
-        });
         existsSyncMock.mockImplementation((candidate: string) => candidate === shim || candidate === executable);
         const { resolveCodexCommand } = await import('./codexExecutable');
 
+        expect(execFileSyncMock).not.toHaveBeenCalled();
         expect(resolveCodexCommand()).toEqual({
             command: executable,
             args: []
@@ -138,15 +133,10 @@ describe('resolveCodexCommand', () => {
     it('keeps a Windows codex.exe found first on PATH', async () => {
         setPlatform('win32');
         const executable = userCodexExePath();
-        execFileSyncMock.mockImplementation((command: string, args: string[]) => {
-            if (command === 'where.exe' && args[0] === 'codex') {
-                return `${executable}\r\n`;
-            }
-            throw new Error('not found');
-        });
         existsSyncMock.mockImplementation((candidate: string) => candidate === executable);
         const { resolveCodexCommand } = await import('./codexExecutable');
 
+        expect(execFileSyncMock).not.toHaveBeenCalled();
         expect(resolveCodexCommand()).toEqual({
             command: executable,
             args: []
@@ -157,15 +147,10 @@ describe('resolveCodexCommand', () => {
         setPlatform('win32');
         const shim = codexShimPath();
         const script = codexScriptPath();
-        execFileSyncMock.mockImplementation((command: string, args: string[]) => {
-            if (command === 'where.exe' && args[0] === 'codex') {
-                return `${shim}\r\n`;
-            }
-            throw new Error('not found');
-        });
         existsSyncMock.mockImplementation((candidate: string) => candidate === shim || candidate === script);
         const { resolveCodexCommand } = await import('./codexExecutable');
 
+        expect(execFileSyncMock).not.toHaveBeenCalled();
         expect(resolveCodexCommand()).toEqual({
             command: 'node',
             args: [script]
@@ -174,8 +159,10 @@ describe('resolveCodexCommand', () => {
 
     it('uses the plain codex command outside Windows', async () => {
         setPlatform('linux');
+        process.env.PATH = '';
         const { resolveCodexCommand } = await import('./codexExecutable');
 
+        expect(execFileSyncMock).not.toHaveBeenCalled();
         expect(resolveCodexCommand()).toEqual({
             command: 'codex',
             args: []
@@ -184,9 +171,11 @@ describe('resolveCodexCommand', () => {
 
     it('uses the fixed macOS Codex app executable when PATH has no CLI', async () => {
         setPlatform('darwin');
+        process.env.PATH = '';
         const { MACOS_CODEX_APP_COMMAND, resolveCodexCommand } = await import('./codexExecutable');
         existsSyncMock.mockImplementation((candidate: string) => candidate === MACOS_CODEX_APP_COMMAND);
 
+        expect(execFileSyncMock).not.toHaveBeenCalled();
         expect(resolveCodexCommand()).toEqual({
             command: MACOS_CODEX_APP_COMMAND,
             args: []

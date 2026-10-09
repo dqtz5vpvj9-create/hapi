@@ -25,6 +25,31 @@ const BASE_METADATA = {
     workspaceRoots: ['/home/user']
 }
 
+describe('persistent machine icons', () => {
+    it('assigns distinct icons to old machines and keeps them across rename, Runner updates and cache restart', async () => {
+        const { store, cache, publisher } = createCache()
+        seedMachine(store, BASE_METADATA)
+        store.machines.getOrCreateMachine('machine-2', BASE_METADATA, null, 'ns')
+        cache.reloadAll()
+        const first = cache.getMachine('machine-1')!.metadata!.icon!
+        const second = cache.getMachine('machine-2')!.metadata!.icon!
+        expect(first.length).toBeGreaterThan(0)
+        expect(first).not.toBe(second)
+        await cache.renameMachine('machine-1', 'Renamed')
+        cache.getOrCreateMachine('machine-1', BASE_METADATA, null, 'ns')
+        const row = store.machines.getMachine('machine-1')!
+        expect(store.machines.updateMachineMetadata('machine-1', BASE_METADATA, row.metadataVersion, 'ns').result).toBe('success')
+        const restarted = new MachineCache(store, publisher)
+        restarted.reloadAll()
+        expect(restarted.getMachine('machine-1')?.metadata?.icon).toBe(first)
+        expect(restarted.getMachine('machine-2')?.metadata?.icon).toBe(second)
+        const version = store.machines.getMachine('machine-1')!.metadataVersion
+        restarted.reloadAll()
+        expect(store.machines.getMachine('machine-1')!.metadataVersion).toBe(version)
+        store.close()
+    })
+})
+
 describe('MachineCache.renameMachine', () => {
     it('sets displayName without touching CLI-reported fields', async () => {
         const { store, cache } = createCache()
@@ -35,6 +60,7 @@ describe('MachineCache.renameMachine', () => {
 
         expect(store.machines.getMachine('machine-1')?.metadata).toEqual({
             ...BASE_METADATA,
+            icon: expect.any(String),
             displayName: 'Workstation'
         })
     })
@@ -57,7 +83,7 @@ describe('MachineCache.renameMachine', () => {
         await cache.renameMachine('machine-1', '')
 
         const metadata = store.machines.getMachine('machine-1')?.metadata as Record<string, unknown>
-        expect(metadata).toEqual(BASE_METADATA)
+        expect(metadata).toEqual({ ...BASE_METADATA, icon: expect.any(String) })
         expect('displayName' in metadata).toBe(false)
     })
 
@@ -107,6 +133,7 @@ describe('MachineCache.renameMachine', () => {
         expect(store.machines.getMachine('machine-1')?.metadata).toEqual({
             ...BASE_METADATA,
             futureField: 'keep me',
+            icon: expect.any(String),
             displayName: 'Workstation'
         })
     })
@@ -122,6 +149,7 @@ describe('MachineCache.renameMachine', () => {
 
         expect(store.machines.getMachine('machine-1')?.metadata).toEqual({
             host: 'workstation.local',
+            icon: expect.any(String),
             displayName: 'Workstation'
         })
     })
@@ -133,7 +161,7 @@ describe('MachineCache.renameMachine', () => {
 
         await cache.renameMachine('machine-1', 'Workstation')
 
-        expect(store.machines.getMachine('machine-1')?.metadata).toEqual({ displayName: 'Workstation' })
+        expect(store.machines.getMachine('machine-1')?.metadata).toEqual({ displayName: 'Workstation', icon: expect.any(String) })
     })
 
     it('writes against the stored version even when the cache is stale', async () => {

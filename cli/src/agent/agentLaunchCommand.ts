@@ -88,3 +88,11 @@ export function resolveExecutable(
 
     return executableCandidates(command, options).find(isExecutable) ?? null
 }
+
+/** Windows `where` lookup order, without launching a blocking subprocess. */
+export function windowsCommandCandidates(command: string, env: LaunchEnvironment, cwd: string): string[] {
+    const directories = [cwd, ...(env.PATH ?? '').split(';').filter(Boolean).map(path => path.replace(/^"|"$/g, ''))]
+    const extensions = win32.extname(command) ? ['']
+        : ['', ...(env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)]
+    return directories.flatMap(directory => extensions.map(extension => win32.join(directory, command + extension)))
+}

@@ -12,6 +12,6 @@ Set-Location -LiteralPath $env:USERPROFILE
 if($Role -eq 'runner'){
  & 'D:\hapi\bin\hapi-20261004.exe' runner start-sync --workspace-root 'C:\Users\lixinrui' --workspace-root 'D:\'
 }else{
- & 'D:\hapi\bin\hapi-20261004.exe' codex --native-daemon 'ws+unix://localhost/\./pipe/hapi-native-preview-20261004:/rpc'
+ & 'D:\hapi\bin\hapi-native-20261005.exe' codex --native-daemon 'ws+unix://localhost/\./pipe/hapi-native-preview-20261004:/rpc'
 }
 exit $LASTEXITCODE

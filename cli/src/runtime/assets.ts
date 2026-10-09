@@ -132,7 +132,8 @@ function unpackTools(runtimeRoot: string): void {
 }
 
 function runtimeAssetsReady(runtimeRoot: string): boolean {
-    return areToolsUnpacked(join(runtimeRoot, 'tools', 'unpacked')) && isTunwgReady(runtimeRoot);
+    return areToolsUnpacked(join(runtimeRoot, 'tools', 'unpacked')) && isTunwgReady(runtimeRoot)
+        && (platform() !== 'win32' || existsSync(join(runtimeRoot, 'tools', 'windows', 'process-markers-v5.exe')));
 }
 
 export async function ensureRuntimeAssets(): Promise<void> {

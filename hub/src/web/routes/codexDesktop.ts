@@ -2267,7 +2267,10 @@ export function createCodexDesktopRoutes(options: {
         const machineId = resolveCodexImportMachineId(null, c.get('namespace'), engine, parsed.data.machineId)
         if (!engine || !machineId) return c.json({ error: 'No online machine available for native Codex connection' }, 503)
         try {
-            const result = ConnectCodexSessionResponseSchema.parse(await engine.connectCodexSessionForMachine(machineId, parsed.data.threadId))
+            const reply = await engine.connectCodexSessionForMachine(machineId, parsed.data.threadId)
+            const failure = asRecord(reply)
+            if (typeof failure?.error === 'string') return c.json({ error: failure.error }, 503)
+            const result = ConnectCodexSessionResponseSchema.parse(reply)
             const session = engine.getSessionsByNamespace(c.get('namespace')).find(session => session.id === result.sessionId)
             if (result.threadId !== parsed.data.threadId || !session || session.metadata?.codexSessionId !== result.threadId
                 || session.metadata?.machineId !== machineId || !session.metadata?.codexNativeSession) {

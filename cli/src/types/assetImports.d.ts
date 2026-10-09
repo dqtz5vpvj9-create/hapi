@@ -42,3 +42,8 @@ declare module '*/tunwg/tunwg-x64-win32.exe' {
     const path: string;
     export default path;
 }
+
+declare module '*/windows/process-markers-v5.exe' {
+    const assetPath: string;
+    export default assetPath;
+}

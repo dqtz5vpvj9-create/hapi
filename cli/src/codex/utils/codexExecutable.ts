@@ -1,32 +1,13 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { resolveExecutable } from '@/agent/agentLaunchCommand';
+import { resolveExecutable, windowsCommandCandidates } from '@/agent/agentLaunchCommand';
 
 const windowsPath = path.win32;
 
 export interface CodexCommand {
     command: string;
     args: string[];
-}
-
-function findWhereResults(command: string): string[] {
-    try {
-        const result = execFileSync('where.exe', [command], {
-            encoding: 'utf8',
-            stdio: ['pipe', 'pipe', 'pipe'],
-            cwd: homedir(),
-            windowsHide: process.platform === 'win32'
-        });
-
-        return result
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .filter(Boolean);
-    } catch {
-        return [];
-    }
 }
 
 function resolveShimScript(shimPath: string): string | null {
@@ -57,8 +38,8 @@ function resolveWindowsCandidate(candidate: string): CodexCommand | null {
     return null;
 }
 
-function resolveWindowsCodexCommand(): CodexCommand {
-    for (const candidate of findWhereResults('codex')) {
+function resolveWindowsCodexCommand(env: Record<string, string | undefined>): CodexCommand {
+    for (const candidate of windowsCommandCandidates('codex', env, homedir())) {
         const resolved = resolveWindowsCandidate(candidate);
         if (resolved) {
             return resolved;
@@ -87,5 +68,5 @@ export function resolveCodexCommand(
         return { command: 'codex', args: [] };
     }
 
-    return resolveWindowsCodexCommand();
+    return resolveWindowsCodexCommand(env);
 }

@@ -103,17 +103,20 @@ async function selectEmbeddedAssets(): Promise<EmbeddedAsset[]> {
         const [
             { default: difftasticX64Win32 },
             { default: ripgrepX64Win32 },
-            { default: tunwgX64Win32 }
+            { default: tunwgX64Win32 },
+            { default: processMarkersWin32 }
         ] = await Promise.all([
             import('../../tools/archives/difftastic-x64-win32.tar.gz', { assert: { type: 'file' } }),
             import('../../tools/archives/ripgrep-x64-win32.tar.gz', { assert: { type: 'file' } }),
-            import('../../../shared/tools/tunwg/tunwg-x64-win32.exe', { assert: { type: 'file' } })
+            import('../../../shared/tools/tunwg/tunwg-x64-win32.exe', { assert: { type: 'file' } }),
+            import('../../tools/windows/process-markers-v5.exe', { assert: { type: 'file' } })
         ]);
         return [
             ...COMMON_ASSETS,
             asset('tools/archives/difftastic-x64-win32.tar.gz', difftasticX64Win32),
             asset('tools/archives/ripgrep-x64-win32.tar.gz', ripgrepX64Win32),
-            asset('tools/tunwg/tunwg.exe', tunwgX64Win32)
+            asset('tools/tunwg/tunwg.exe', tunwgX64Win32),
+            asset('tools/windows/process-markers-v5.exe', processMarkersWin32)
         ];
     }
 

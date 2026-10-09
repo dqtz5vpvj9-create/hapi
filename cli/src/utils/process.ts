@@ -1,5 +1,6 @@
-import type { ChildProcess } from 'node:child_process';
+import { type ChildProcess } from 'node:child_process';
 import spawn from 'cross-spawn';
+import { queryWindowsProcessGenerations } from './windowsProcessProbe';
 
 export const isWindows = (): boolean => process.platform === 'win32';
 
@@ -69,6 +70,13 @@ export function windowsProcessMarkerCimCommand(pid: number): string {
     `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}"; `
     + `if ($p -and $p.CreationDate) { ${expr} }`
   );
+}
+
+/** Query Windows handles directly; WMI process queries cost seconds even for one PID. */
+export async function getWindowsProcessStartMarkers(pids: readonly number[]): Promise<Map<number, string>> {
+  const unique = [...new Set(pids.filter(pid => Number.isSafeInteger(pid) && pid > 0 && pid <= 0xffffffff))];
+  if (!unique.length) return new Map();
+  return await queryWindowsProcessGenerations(unique);
 }
 
 /** Stable marker for one OS PID generation; null means the platform probe failed. */

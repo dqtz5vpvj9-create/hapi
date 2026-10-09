@@ -82,3 +82,17 @@ For the Node tests, set `HAPI_API_URL`, `CLI_API_TOKEN`, `HAPI_WINDOWS_MACHINE_I
 Inspect the two tasks, supervisor heartbeat, role logs and native RPC before declaring the device healthy. A running task alone is insufficient. To stop the backend intentionally, disable `HAPI-background` before stopping it, otherwise its recurring trigger brings it back. Wait for the owned process tree to exit before restarting or rolling back.
 
 Power loss/reboot terminates in-flight processes. The intended contract is automatic service recovery with preserved native identities/history and no supervisor-generated duplicate submissions, not uninterrupted computation while Windows is down. Full reboot/logoff acceptance remains pending.
+
+### Before a Hub restart
+
+Run `tests/hub-connectivity.ps1` in the Runner's account and session context. It checks fresh DNS resolution, HTTPS without a proxy, and a direct WebSocket handshake; its JSON records the caller identity and failing stage. Do not use a successful browser or proxy-enabled request as a substitute. After a restart, verify that the same machine ID registers and native history remains available. See the [reconnect incident and release checks](../../docs/operations/2026-10-05-hub-reconnect.md).
+
+### Native discovery repair, 2026-10-05
+
+The Windows native bridge now uses `bin\hapi-native-20261005.exe`; the Runner continues using `bin\hapi-20261004.exe`. Both come from the existing Windows build snapshot, with the native bridge receiving only the `nativeDiscovery.ts` / `runtime.ts` pre-resume check already applied to Linux. A loaded thread without a rollout must fail before publishing or reactivating a HAPI session. Otherwise every five-second discovery retry inserts an empty row and shifts the live list. Updating only the Linux bridge leaves Windows affected.
+
+The bridge wrapper alone was restarted by its supervisor; engine, pipe and Runner wrapper PIDs were preserved. The previous launcher is retained under `config\start-hapi-before-native-20261005.ps1`. Restore its native executable selection to roll back, without restarting the engine or Runner.
+
+Use the validated **Bun 1.4.0** toolchain for the Windows build. A 1.3.13 build of the same bridge source failed to open the named pipe despite a successful build and `--version`; that candidate was rolled back. The 1.4.0 transport smoke passed on the device. On this build host the validated toolchain is `/mnt/cache/build-cache/hapi-upstream-toolchain/bun`; put `TMPDIR` and `BUN_INSTALL_CACHE_DIR` on the cache disk.
+
+Before changing the running native launcher, compile `cli/scripts/windows-native-transport-smoke.ts` with the **same toolchain** as the candidate executable and run it against the existing local relay. It checks handshake, Codex initialization and reconnect without submitting a model turn. A successful Hub WebSocket check does not test this named-pipe transport. Keep the old binary and launcher available until an original Windows session's authenticated history read also passes through the new bridge.

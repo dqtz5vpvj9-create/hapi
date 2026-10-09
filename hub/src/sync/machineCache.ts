@@ -134,7 +134,11 @@ export class MachineCache {
     }
 
     refreshMachine(machineId: string): Machine | null {
-        const stored = this.store.machines.getMachine(machineId)
+        let stored = this.store.machines.getMachine(machineId)
+        if (stored && isPlainObject(stored.metadata) && !stored.metadata.icon) {
+            this.store.machines.ensureMachineIcon(machineId)
+            stored = this.store.machines.getMachine(machineId)
+        }
         if (!stored) {
             const existed = this.machines.delete(machineId)
             if (existed) {
@@ -198,6 +202,9 @@ export class MachineCache {
     handleMachineAlive(payload: MachineAlivePayload): void {
         const t = clampAliveTime(payload.time)
         if (!t) return
+        // Online expiry uses Hub receipt time. A slower Runner clock must not
+        // consume the heartbeat's 45-second lease before it arrives.
+        const now = Date.now()
 
         const machine = this.machines.get(payload.machineId) ?? this.refreshMachine(payload.machineId)
         if (!machine) return
@@ -205,13 +212,12 @@ export class MachineCache {
         const wasActive = machine.active
         const previousHealth = machine.health ?? null
         machine.active = true
-        machine.activeAt = Math.max(machine.activeAt, t)
+        machine.activeAt = Math.max(machine.activeAt, now)
 
         if (payload.health !== undefined) {
             machine.health = parseMachineHealth(payload.health)
         }
 
-        const now = Date.now()
         const lastBroadcastAt = this.lastBroadcastAtByMachineId.get(machine.id) ?? 0
         const healthChanged = payload.health !== undefined
             && healthDisplayChanged(previousHealth, machine.health)

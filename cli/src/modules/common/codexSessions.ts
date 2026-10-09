@@ -466,10 +466,26 @@ function listIndexedCodexSessions(limit: number): LocalCodexSessionSummary[] | n
     }
 }
 
-export type CodexSessionSearch = { search?: string; cwd?: string | null; cursor?: number; limit?: number }
+export type CodexSessionSearch = { search?: string; cwd?: string | null; cursor?: number; limit?: number; sessionId?: string }
+
+type CodexSessionSearchContext = {
+    db?: import('bun:sqlite').Database
+    columns?: Set<string>
+    titles?: Map<string, CodexSessionIndexTitle>
+}
+
+/** Reuse only this request's index connection and metadata across filtered pages. */
+export function createLocalCodexSessionSearch() {
+    const context: CodexSessionSearchContext = {}
+    return {
+        search: (options: CodexSessionSearch) => searchLocalCodexSessions(options, context),
+        close: () => context.db?.close(),
+    }
+}
 
 /** Search the full index before paging; never restrict a search to the newest sessions. */
-export function searchLocalCodexSessions(options: CodexSessionSearch = {}): { sessions: LocalCodexSessionSummary[]; nextCursor: number | null } {
+export function searchLocalCodexSessions(options: CodexSessionSearch = {}, context?: CodexSessionSearchContext): { sessions: LocalCodexSessionSummary[]; nextCursor: number | null } {
+    const sessionId = options.sessionId
     const cursor = options.cursor ?? 0
     const limit = options.limit ?? 50
     const search = options.search?.trim().toLowerCase() ?? ''
@@ -482,12 +498,13 @@ export function searchLocalCodexSessions(options: CodexSessionSearch = {}): { se
         for (const root of getCodexSessionRoots()) collectJsonlFiles(root, paths)
         const files = paths.map(file => ({ file, modifiedAt: statSync(file).mtimeMs }))
             .sort((a, b) => b.modifiedAt - a.modifiedAt || b.file.localeCompare(a.file))
-        const titles = readCodexSessionIndexTitles()
+        const titles = context?.titles ?? (sessionId ? new Map<string, CodexSessionIndexTitle>() : readCodexSessionIndexTitles())
+        if (context) context.titles = titles
         const sessions = new Map<string, LocalCodexSessionSummary>()
         let offset = cursor
         while (offset < files.length && sessions.size < limit) {
             const session = parseCodexLocalSession(files[offset++].file, false, titles)
-            if (!session || (cwd && session.cwd !== cwd)) continue
+            if (!session || (sessionId && session.id !== sessionId) || (cwd && session.cwd !== cwd)) continue
             if (search && ![session.title, session.lastUserMessage, session.cwd, session.originator, session.cliVersion, session.id]
                 .some(value => value?.toLowerCase().includes(search))) continue
             if (!sessions.has(session.id)) sessions.set(session.id, session)
@@ -495,13 +512,17 @@ export function searchLocalCodexSessions(options: CodexSessionSearch = {}): { se
         return { sessions: [...sessions.values()], nextCursor: offset < files.length ? offset : null }
     }
     const { Database } = require('bun:sqlite') as typeof import('bun:sqlite')
-    const db = new Database(join(home, databases[0]), { readonly: true })
+    const db = context?.db ?? new Database(join(home, databases[0]), { readonly: true })
+    if (context) context.db = db
     try {
-        const columns = new Set((db.query('PRAGMA table_info(threads)').all() as Array<{ name: string }>).map(column => column.name))
+        const columns = context?.columns ?? new Set((db.query('PRAGMA table_info(threads)').all() as Array<{ name: string }>).map(column => column.name))
+        if (context) context.columns = columns
         const searchable = ['name', 'title', 'preview', 'first_user_message', 'cwd', 'originator', 'cli_version', 'id'].filter(column => columns.has(column))
-        const titles = readCodexSessionIndexTitles()
+        const titles = context?.titles ?? (sessionId ? new Map<string, CodexSessionIndexTitle>() : readCodexSessionIndexTitles())
+        if (context) context.titles = titles
         const conditions = ['archived = 0']
         const bindings: Array<string | number> = []
+        if (sessionId) { conditions.push('id = ?'); bindings.push(sessionId) }
         if (cwd) { conditions.push('cwd = ?'); bindings.push(cwd) }
         if (search) {
             const matchingNames = [...titles].filter(([, title]) => title.threadName.toLowerCase().includes(search)).map(([id]) => id)
@@ -538,7 +559,12 @@ export function searchLocalCodexSessions(options: CodexSessionSearch = {}): { se
             hasMore = rows.length > consumed
         } while (hasMore && sessions.length < limit)
         return { sessions, nextCursor: hasMore ? offset : null }
-    } finally { db.close() }
+    } finally { if (!context) db.close() }
+}
+
+/** Exact primary-key lookup for connection authorization; never scan the catalog. */
+export function getLocalCodexSessionSummary(sessionId: string): LocalCodexSessionSummary | undefined {
+    return searchLocalCodexSessions({ sessionId, limit: 1 }).sessions[0]
 }
 
 export function listLocalCodexSessionSummaries(limit = DEFAULT_CODEX_SESSION_SCAN_LIMIT): LocalCodexSessionSummary[] {

@@ -4,11 +4,10 @@
  */
 
 import { existsSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { logger } from '@/ui/logger'
-import { getAgentLaunchCommand, resolveExecutable } from '@/agent/agentLaunchCommand'
+import { getAgentLaunchCommand, resolveExecutable, windowsCommandCandidates } from '@/agent/agentLaunchCommand'
 
 const windowsPath = path.win32
 
@@ -41,25 +40,7 @@ function resolveWindowsClaudePathCandidate(candidate: string): string | null {
     return resolveWindowsNpmShimExecutable(candidate)
 }
 
-function findWhereResults(command: string): string[] {
-    try {
-        const result = execFileSync('where.exe', [command], {
-            encoding: 'utf8',
-            stdio: ['pipe', 'pipe', 'pipe'],
-            cwd: homedir(),
-            windowsHide: process.platform === 'win32'
-        })
-
-        return result
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .filter(Boolean)
-    } catch {
-        return []
-    }
-}
-
-function findWindowsClaudePath(): string | null {
+function findWindowsClaudePath(env: Record<string, string | undefined>): string | null {
     const homeDir = homedir()
 
     // Known installation paths for Claude on Windows
@@ -80,7 +61,7 @@ function findWindowsClaudePath(): string | null {
     // Try PATH lookup. npm global installs usually expose claude.cmd/claude
     // shims, while HAPI spawns Claude with shell:false and needs the real exe.
     for (const command of ['claude.exe', 'claude.cmd', 'claude']) {
-        for (const result of findWhereResults(command)) {
+        for (const result of windowsCommandCandidates(command, env, homeDir)) {
             const resolved = resolveWindowsClaudePathCandidate(result)
             if (resolved) {
                 logger.debug(`[Claude SDK] Found Windows claude.exe via where ${command}: ${resolved}`)
@@ -103,7 +84,7 @@ function findGlobalClaudePath(env: Record<string, string | undefined>): string |
 
     // Windows: Always return absolute path for shell: false compatibility
     if (process.platform === 'win32') {
-        return findWindowsClaudePath()
+        return findWindowsClaudePath(env)
     }
 
     const resolved = resolveExecutable('claude', {

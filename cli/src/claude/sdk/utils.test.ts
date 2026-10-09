@@ -54,6 +54,8 @@ describe('getDefaultClaudeCodePath', () => {
         vi.resetModules()
         process.env = { ...originalEnv }
         delete process.env.HAPI_CLAUDE_PATH
+        process.env.PATH = 'C:\\nvm4w\\nodejs;C:\\tools'
+        process.env.PATHEXT = '.EXE;.CMD'
         homedirMock.mockReturnValue('C:\\Users\\junes')
         execFileSyncMock.mockImplementation(() => {
             throw new Error('not found')
@@ -89,71 +91,53 @@ describe('getDefaultClaudeCodePath', () => {
 
         expect(getDefaultClaudeCodePath()).toBe(executable)
         expect(execFileSyncMock).not.toHaveBeenCalled()
+        expect(execFileSyncMock).not.toHaveBeenCalled()
     })
 
     it('resolves Windows npm claude.cmd shim to the real Claude Code exe', async () => {
         setPlatform('win32')
         const shim = 'C:\\nvm4w\\nodejs\\claude.cmd'
         const executable = 'C:\\nvm4w\\nodejs\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe'
-        execFileSyncMock.mockImplementation((command: string, args: string[]) => {
-            if (command === 'where.exe' && args[0] === 'claude.cmd') {
-                return `${shim}\r\n`
-            }
-            throw new Error('not found')
-        })
         existsSyncMock.mockImplementation((candidate: string) => candidate === shim || candidate === executable)
         const { getDefaultClaudeCodePath } = await import('./utils')
 
         expect(getDefaultClaudeCodePath()).toBe(executable)
+        expect(execFileSyncMock).not.toHaveBeenCalled()
     })
 
-    it('continues through multiple Windows where results until it finds a resolvable shim', async () => {
+    it('continues through Windows PATH candidates until it finds a resolvable shim', async () => {
         setPlatform('win32')
+        process.env.PATH = 'C:\\old-node;C:\\nvm4w\\nodejs'
         const staleShim = 'C:\\old-node\\claude.cmd'
         const validShim = 'C:\\nvm4w\\nodejs\\claude.cmd'
         const executable = 'C:\\nvm4w\\nodejs\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe'
-        execFileSyncMock.mockImplementation((command: string, args: string[]) => {
-            if (command === 'where.exe' && args[0] === 'claude.cmd') {
-                return `${staleShim}\r\n${validShim}\r\n`
-            }
-            throw new Error('not found')
-        })
         existsSyncMock.mockImplementation((candidate: string) => (
             candidate === staleShim || candidate === validShim || candidate === executable
         ))
         const { getDefaultClaudeCodePath } = await import('./utils')
 
         expect(getDefaultClaudeCodePath()).toBe(executable)
+        expect(execFileSyncMock).not.toHaveBeenCalled()
     })
 
     it('resolves Windows npm extensionless claude shim to the real Claude Code exe', async () => {
         setPlatform('win32')
         const shim = 'C:\\nvm4w\\nodejs\\claude'
         const executable = 'C:\\nvm4w\\nodejs\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe'
-        execFileSyncMock.mockImplementation((command: string, args: string[]) => {
-            if (command === 'where.exe' && args[0] === 'claude') {
-                return `${shim}\r\n`
-            }
-            throw new Error('not found')
-        })
         existsSyncMock.mockImplementation((candidate: string) => candidate === shim || candidate === executable)
         const { getDefaultClaudeCodePath } = await import('./utils')
 
         expect(getDefaultClaudeCodePath()).toBe(executable)
+        expect(execFileSyncMock).not.toHaveBeenCalled()
     })
 
     it('keeps an actual Windows claude.exe result from PATH', async () => {
         setPlatform('win32')
         const executable = 'C:\\tools\\claude.exe'
-        execFileSyncMock.mockImplementation((command: string, args: string[]) => {
-            if (command === 'where.exe' && args[0] === 'claude.exe') {
-                return `${executable}\r\n`
-            }
-            throw new Error('not found')
-        })
         existsSyncMock.mockImplementation((candidate: string) => candidate === executable)
         const { getDefaultClaudeCodePath } = await import('./utils')
 
         expect(getDefaultClaudeCodePath()).toBe(executable)
+        expect(execFileSyncMock).not.toHaveBeenCalled()
     })
 })
