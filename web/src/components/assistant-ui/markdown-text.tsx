@@ -1,3 +1,4 @@
+import { useOpenDocument } from '@/documents/openDocument'
 import { ArtifactCard } from '@/components/Artifacts/ArtifactCard'
 import { fileArtifactMime, fileArtifactRef } from '@/components/Artifacts/fileArtifacts'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -31,6 +32,7 @@ import { CopyIcon, CheckIcon, WrapIcon } from '@/components/icons'
 import { useTranslation } from '@/lib/use-translation'
 import { useOptionalHappyChatContext } from '@/components/AssistantChat/context'
 import { decodeFilePathCandidateHref, decodeFilePathHref, remarkFilePathLinks } from '@/lib/remark-file-path-links'
+import { decodeCodexFileCitation, remarkCodexFileCitations } from '@/lib/remark-codex-file-citations'
 import { classifyNoSchemeHref } from '@/lib/markdown-href-policy'
 import { remarkSessionPathLinks } from '@/lib/remark-session-path-links'
 import { buildSessionReferencePath, parseSessionPathHref } from '@/lib/sessionReference'
@@ -57,6 +59,7 @@ import type { MarkdownTextPrimitiveProps } from '@assistant-ui/react-markdown'
 // shared TAIL so both MARKDOWN_PLUGINS (default) and MARKDOWN_PLUGINS_WITH_BREAKS
 // (user-prompt rendering with hard breaks) inherit the fix.
 const MARKDOWN_PLUGIN_TAIL_HEAD = [
+    remarkCodexFileCitations,
     remarkNonHttpsAutolink,
     remarkStripCjkAutolink,
     [remarkMath, { singleDollarTextMath: false }],
@@ -551,6 +554,7 @@ function FilePathAnchor(props: ComponentPropsWithoutRef<'a'> & { filePath: strin
     const { t } = useTranslation()
     const canPreview = fileArtifactMime(filePath) !== 'application/octet-stream'
     const navigate = useNavigate()
+    const openDocument = useOpenDocument(sessionId)
     const rel = anchorProps.target === '_blank' ? (anchorProps.rel ?? 'noreferrer') : anchorProps.rel
     const search = new URLSearchParams({ path: encodeBase64(filePath), origin: 'chat' }).toString()
     const href = `/sessions/${encodeURIComponent(sessionId)}/file?${search}`
@@ -561,6 +565,7 @@ function FilePathAnchor(props: ComponentPropsWithoutRef<'a'> & { filePath: strin
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
 
         event.preventDefault()
+        if (openDocument) { void openDocument({ kind: 'file', path: filePath }); return }
         void navigate({
             to: '/sessions/$sessionId/file',
             params: { sessionId },
@@ -581,7 +586,7 @@ function FilePathAnchor(props: ComponentPropsWithoutRef<'a'> & { filePath: strin
             onClick={handleClick}
             className={cn('aui-md-a font-medium text-[var(--app-link)] underline decoration-[color:var(--app-link-muted)] underline-offset-3', anchorProps.className)}
         />
-        {canPreview ? <button type="button" className="ml-2 text-xs text-[var(--app-link)]" onClick={() => setPreview(true)}>{t('artifact.preview')}</button> : null}
+        {canPreview ? <button type="button" className="ml-2 text-xs text-[var(--app-link)]" onClick={() => { if (openDocument) void openDocument({ kind: 'file', path: filePath }); else setPreview(true) }}>{t('artifact.preview')}</button> : null}
         <Dialog open={preview} onOpenChange={setPreview}><DialogContent className="max-h-[95dvh] max-w-4xl overflow-auto"><DialogHeader><DialogTitle>{filePath.split(/[\\/]/).at(-1)}</DialogTitle></DialogHeader>{preview ? <ArtifactCard artifact={fileArtifactRef(filePath)} /> : null}</DialogContent></Dialog>
         </span>
     )
@@ -667,6 +672,17 @@ function A(props: ComponentPropsWithoutRef<'a'>) {
         typeof props.href === 'string' ? decodeFilePathCandidateHref(props.href) : null
     const targetSessionId = typeof props.href === 'string' ? parseSessionPathHref(props.href) : null
     const rel = props.target === '_blank' ? (props.rel ?? 'noreferrer') : props.rel
+
+    if (props.href?.startsWith('hapi-codex-file:')) {
+        const path = decodeCodexFileCitation(props.href)
+        // The directive is a file reference, not permission to open arbitrary paths
+        // or navigate a URI. Preserve literal #, ? and % in filesystem names.
+        const decision = path ? classifyNoSchemeHref(path.replace(/[%?#]/g, encodeURIComponent), {
+            workspacePath: chat?.metadata?.path ?? null,
+        }) : null
+        if (!chat || decision?.action !== 'file') return <>{props.children}</>
+        return <FilePathAnchor {...props} filePath={decision.path} sessionId={chat.sessionId} />
+    }
 
     if (filePath) {
         if (!chat) {

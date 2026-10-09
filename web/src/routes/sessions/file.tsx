@@ -1,3 +1,5 @@
+import { DocumentSurface } from '@/documents/DocumentSurface'
+import { DocumentRefSchema } from '@hapi/protocol/documents'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useSearch } from '@tanstack/react-router'
@@ -7,7 +9,7 @@ import { CopyIcon, CheckIcon, WrapIcon } from '@/components/icons'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
-import { formatDiffError, formatReadFileError } from '@/lib/files-i18n'
+import { formatReadFileError } from '@/lib/files-i18n'
 import { queryKeys } from '@/lib/query-keys'
 import { langAlias, useShikiHighlighter } from '@/lib/shiki'
 import { useTranslation } from '@/lib/use-translation'
@@ -23,6 +25,9 @@ import {
 } from '@/lib/file-markdown-preview'
 import { downloadBase64File } from '@/lib/file-download'
 import { useCodeWrap } from '@/hooks/useCodeWrap'
+import { useSession } from '@/hooks/queries/useSession'
+import { resolveAbsoluteFilePath } from '@/lib/file-path'
+import { useDocumentLabels } from '@/documents/labels'
 
 const MAX_COPYABLE_FILE_BYTES = 1_000_000
 const FILE_SCROLL_KEY_PREFIX = 'hapi-file-scroll-'
@@ -233,15 +238,38 @@ function extractCommandError(result: GitCommandResponse | undefined): string | n
 }
 
 export default function FilePage() {
+    const { sessionId } = useParams({ from: '/sessions/$sessionId/file' })
+    const search = useSearch({ from: '/sessions/$sessionId/file' })
+    const goBack = useAppGoBack()
+    const { api } = useAppContext()
+    const { session, isLoading, error, refetch } = useSession(api, sessionId)
+    const labels = useDocumentLabels()
+    if (search.staged !== undefined) return <SessionFile sessionId={sessionId} search={search} onBack={goBack} />
+    if (isLoading) return <p role="status">{labels.loading}</p>
+    if (!session) return <p role="alert">{error} <button onClick={() => void refetch()}>{labels.reload}</button></p>
+    if (search.document) {
+        try {
+            const decoded = decodeBase64(search.document)
+            const parsed = decoded.ok ? DocumentRefSchema.safeParse(JSON.parse(decoded.text)) : null
+            if (parsed?.success) return <DocumentSurface key={JSON.stringify([sessionId, parsed.data])} resource={{ kind: 'document', sessionId, document: parsed.data }} onBack={goBack} />
+        } catch { /* Render the invalid reference rather than fetching an unrelated path. */ }
+        return <p role="alert">Invalid document reference</p>
+    }
+    return <DocumentSurface key={JSON.stringify([sessionId, search.path])} resource={{ kind: 'document', sessionId, document: { kind: 'file', path: resolveAbsoluteFilePath(session.metadata?.path, decodePath(search.path)), machineId: session.metadata?.machineId } }} onBack={goBack} />
+}
+
+export function SessionFile(props: { sessionId: string; search: { path?: string; staged?: boolean }; onBack: () => void }) {
     const { api } = useAppContext()
     const { t, locale } = useTranslation()
     const { copied: pathCopied, copy: copyPath } = useCopyToClipboard()
     const { copied: contentCopied, copy: copyContent } = useCopyToClipboard()
-    const goBack = useAppGoBack()
-    const { sessionId } = useParams({ from: '/sessions/$sessionId/file' })
-    const search = useSearch({ from: '/sessions/$sessionId/file' })
+    const goBack = props.onBack
+    const { sessionId, search } = props
     const encodedPath = typeof search.path === 'string' ? search.path : ''
     const staged = search.staged
+    // Project files omit staged; Code changes explicitly passes true or false.
+    // Reading a file must not depend on the directory being a Git repository.
+    const requestedDiff = staged !== undefined
 
     const filePath = useMemo(() => decodePath(encodedPath), [encodedPath])
     const fileName = filePath.split('/').pop() || filePath || t('file.page.fallbackName')
@@ -256,7 +284,7 @@ export default function FilePage() {
             }
             return await api.getGitDiffFile(sessionId, filePath, staged)
         },
-        enabled: Boolean(api && sessionId && filePath)
+        enabled: Boolean(requestedDiff && api && sessionId && filePath)
     })
 
     const fileQuery = useQuery({
@@ -270,10 +298,11 @@ export default function FilePage() {
         enabled: Boolean(api && sessionId && filePath)
     })
 
-    const diffContent = diffQuery.data?.success ? (diffQuery.data.stdout ?? '') : ''
-    const diffError = extractCommandError(diffQuery.data)
+    const diffContent = requestedDiff && diffQuery.data?.success ? (diffQuery.data.stdout ?? '') : ''
+    const diffError = requestedDiff
+        ? (extractCommandError(diffQuery.data) ?? (!diffQuery.data ? diffQuery.error?.message : null))
+        : null
     const diffSuccess = diffQuery.data?.success === true
-    const diffFailed = diffQuery.data?.success === false
 
     const fileContentResult = fileQuery.data
     const decodedContentResult = fileContentResult?.success && fileContentResult.content
@@ -305,7 +334,14 @@ export default function FilePage() {
 
     const canDownload = fileContentResult?.success === true && Boolean(fileContentResult.content)
 
-    const [displayMode, setDisplayMode] = useState<'diff' | 'file'>('diff')
+    const viewKey = JSON.stringify([sessionId, filePath, staged ?? null])
+    const [viewSelection, setViewSelection] = useState<{ key: string; mode: 'diff' | 'file' } | null>(null)
+    const canShowDiff = requestedDiff && !imageMimeType && !diffError && (!diffSuccess || Boolean(diffContent))
+    const displayMode = canShowDiff && (viewSelection?.key !== viewKey || viewSelection.mode === 'diff')
+        ? 'diff'
+        : 'file'
+    const setDisplayMode = (mode: 'diff' | 'file') => setViewSelection({ key: viewKey, mode })
+    const loading = displayMode === 'diff' ? diffQuery.isLoading : fileQuery.isLoading
     const { codeWrap, setCodeWrap } = useCodeWrap()
     const fileScrollRef = useRef<HTMLDivElement>(null)
     const restoredScrollKeyRef = useRef<string | null>(null)
@@ -347,37 +383,21 @@ export default function FilePage() {
     // saved position once content has been mounted, but do not overwrite
     // user scrolling when a query refreshes the same file.
     useEffect(() => {
-        if (diffQuery.isLoading || fileQuery.isLoading) return
+        if (loading) return
         if (restoredScrollKeyRef.current === fileScrollKey) return
         restoreFileScroll()
         restoredScrollKeyRef.current = fileScrollKey
-    }, [diffQuery.isLoading, fileQuery.isLoading, fileScrollKey, restoreFileScroll])
+    }, [loading, fileScrollKey, restoreFileScroll])
 
     const setMarkdownPreviewMode = (mode: MarkdownPreviewMode) => {
         setMarkdownMode(mode)
         persistMarkdownPreviewMode(mode)
     }
 
-    useEffect(() => {
-        if (imageMimeType) {
-            setDisplayMode('file')
-            return
-        }
-        if (diffSuccess && !diffContent) {
-            setDisplayMode('file')
-            return
-        }
-        if (diffFailed) {
-            setDisplayMode('file')
-        }
-    }, [diffSuccess, diffFailed, diffContent, imageMimeType])
-
-    const loading = diffQuery.isLoading || fileQuery.isLoading
     const fileError = fileContentResult && !fileContentResult.success
         ? (fileContentResult.error ?? 'Failed to read file')
-        : null
+        : !fileContentResult ? fileQuery.error?.message : null
     const missingPath = !filePath
-    const diffErrorMessage = diffError ? formatDiffError(diffError, t) : null
     const fileErrorMessage = fileError ? formatReadFileError(fileError, t) : null
     const fileMetadata = formatFileMetadata(fileContentResult?.size, fileContentResult?.modified, locale)
 
@@ -425,10 +445,10 @@ export default function FilePage() {
                 </div>
             </div>
 
-            {diffContent || (markdownFile && displayMode === 'file') ? (
+            {canShowDiff || (markdownFile && displayMode === 'file') ? (
                 <div className="bg-[var(--app-bg)]">
                     <div className="app-file-view-tabs mx-auto w-full max-w-content px-3 py-2 flex items-center gap-2 border-b border-[var(--app-divider)]">
-                        {diffContent ? (
+                        {canShowDiff ? (
                             <>
                                 <button
                                     type="button"
@@ -471,21 +491,20 @@ export default function FilePage() {
 
             <div ref={fileScrollRef} data-hapi-file-scroll="true" className="app-scroll-y flex-1 min-h-0">
                 <div className="mx-auto w-full max-w-content p-4">
-                    {diffErrorMessage ? (
-                        <div className="mb-3 rounded-md bg-amber-500/10 p-2 text-xs text-[var(--app-hint)]">
-                            {diffErrorMessage}
-                        </div>
+                    {diffError ? (
+                        <details className="mb-3 rounded-md bg-amber-500/10 p-2 text-xs text-[var(--app-hint)]">
+                            <summary className="cursor-pointer">{t('file.error.diffUnavailable')}</summary>
+                            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words">{diffError}</pre>
+                        </details>
                     ) : null}
                     {missingPath ? (
                         <div className="text-sm text-[var(--app-hint)]">{t('file.page.missingPath')}</div>
                     ) : loading ? (
                         <FileContentSkeleton label={t('loading.file')} />
-                    ) : fileErrorMessage ? (
-                        <div className="text-sm text-[var(--app-hint)]">{fileErrorMessage}</div>
                     ) : displayMode === 'diff' && diffContent ? (
                         <DiffDisplay diffContent={diffContent} />
-                    ) : displayMode === 'diff' && diffError ? (
-                        <div className="text-sm text-[var(--app-hint)]">{diffErrorMessage}</div>
+                    ) : fileErrorMessage ? (
+                        <div className="text-sm text-[var(--app-hint)]">{fileErrorMessage}</div>
                     ) : displayMode === 'file' ? (
                         imagePreviewUrl ? (
                             <ImagePreview

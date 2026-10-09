@@ -1,3 +1,4 @@
+import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
 import { CODEX_ARTIFACT_PREFIX, type ArtifactReadResponse } from '@hapi/protocol/artifacts'
 import type { CodexGoalRequest, CodexGoalResponse } from '@hapi/protocol/apiTypes'
 /**
@@ -4302,6 +4303,10 @@ export class SyncEngine {
 
     async readSessionFile(sessionId: string, path: string): Promise<RpcReadFileResponse> {
         return await this.rpcGateway.readSessionFile(sessionId, path)
+    }
+
+    async writeSessionFile(sessionId: string, data: FileWriteRequest): Promise<FileWriteResponse> {
+        return await this.rpcGateway.writeSessionFile(sessionId, data)
     }
 
     async readArtifact(sessionId: string, artifactId: string): Promise<ArtifactReadResponse> {

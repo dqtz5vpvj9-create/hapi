@@ -1,0 +1,38 @@
+import { useTranslation } from '@/lib/use-translation'
+const en = {
+    save: 'Save', saving: 'Saving…', saved: 'Saved', unsaved: 'Unsaved changes', preview: 'Preview', edit: 'Edit',
+    find: 'Find', download: 'Download', reload: 'Reload', pin: 'Keep open', pinned: 'Kept open', loading: 'Loading document…',
+    request: 'Reference selection', saveReference: 'Save and reference', clear: 'Clear selection', target: 'Send to conversation',
+    closeTitle: 'Keep your changes?', closeDescription: 'Save to the original file, keep a local draft, or discard your changes.',
+    keepDraft: 'Keep local draft', discard: 'Discard changes', cancel: 'Cancel', conflict: 'The file changed on disk. Your draft is preserved.',
+    compare: 'Compare with disk', useDisk: 'Use disk version', keepMine: 'Use my draft as the next revision',
+    readOnly: 'Read only', binary: 'This format cannot be edited as UTF-8 text. Download the original file.',
+    region: 'Select area', text: 'Select text', sheetNotice: 'Cell data view. Charts and Excel layout are not reproduced; formulas are not recalculated.',
+    draftAttached: 'Selection added to the conversation draft. Add your instructions before sending.',
+    openChat: 'Open conversation', quote: 'Selected content', pages: 'Page', source: 'Source', ready: 'Ready',
+    conversion: 'Preparing document preview…', conversionNotice: 'Static preview. Fonts and page layout may differ from the original.',
+    fit: 'Fit width', zoomIn: 'Zoom in', zoomOut: 'Zoom out', previous: 'Previous page', next: 'Next page',
+    back: 'Back', openPane: 'Open in pane', removeReference: 'Remove', original: 'Original loaded version', diskVersion: 'Current disk version', mixedEndings: 'Mixed line endings: read only to preserve the original file format.',
+    changedOnDisk: 'The original file changed or was removed. Reload to inspect the latest version; your current selection and draft are preserved.',
+    downloadDraft: 'Download draft',
+    unavailableResources: 'Some resources could not be loaded', unavailableLink: 'This link cannot be opened',
+    sourceTooLarge: 'HTML source larger than 4 MiB can be previewed and downloaded. Source editing is limited to 4 MiB.',
+}
+const zh: Record<keyof typeof en, string> = {
+    save: '保存', saving: '正在保存…', saved: '已保存', unsaved: '尚未保存', preview: '预览', edit: '编辑', find: '查找',
+    download: '下载', reload: '重新读取', pin: '固定文档', pinned: '已固定', loading: '正在读取文档…', request: '引用选区',
+    saveReference: '保存并引用', clear: '取消选区', target: '请求发送到', closeTitle: '如何处理未保存的修改？',
+    closeDescription: '可以保存到原文件、保留本机草稿，或放弃修改。', keepDraft: '保留本机草稿', discard: '放弃修改', cancel: '取消',
+    conflict: '原文件已被修改。你的草稿已保留。', compare: '对比磁盘版本', useDisk: '使用磁盘版本', keepMine: '将草稿作为下一版保存',
+    readOnly: '只读', binary: '此格式无法作为 UTF-8 文本编辑，请下载原文件。', region: '框选区域', text: '选择文字',
+    sheetNotice: '单元格数据视图，不还原图表和 Excel 排版，也不重新计算公式。',
+    draftAttached: '选区已加入原会话草稿，请补充修改要求后发送。', openChat: '打开会话', quote: '所选内容', pages: '页',
+    source: '源码', ready: '就绪', conversion: '正在生成文档预览…', conversionNotice: '静态预览，字体和分页可能与原文件不同。',
+    fit: '适合宽度', zoomIn: '放大', zoomOut: '缩小', previous: '上一页', next: '下一页',
+    back: '返回', openPane: '在窗格中打开', removeReference: '移除', original: '最初读取的版本', diskVersion: '磁盘最新版本', mixedEndings: '文件包含混合换行符，暂以只读方式打开，以保留原始格式。',
+    changedOnDisk: '原文件已变更或移除。当前选区和草稿已保留；重新读取可查看最新版本。',
+    downloadDraft: '下载草稿',
+    unavailableResources: '部分资源无法读取', unavailableLink: '无法打开此链接',
+    sourceTooLarge: '超过 4 MiB 的 HTML 支持预览和下载；源码编辑限于 4 MiB 以内。',
+}
+export function useDocumentLabels() { return useTranslation().locale.startsWith('zh') ? zh : en }

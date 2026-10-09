@@ -1,3 +1,4 @@
+import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
 import type {
     AttachmentMetadata,
     AuthResponse,
@@ -157,6 +158,19 @@ export class ApiError extends Error {
 }
 
 export class ApiClient {
+    async getWorkspaces(signal?: AbortSignal): Promise<import('@hapi/protocol/workspaces').WorkspaceSnapshot> {
+        return this.request('/api/workspaces', { signal })
+    }
+
+    async updateWorkspaces(request: import('@hapi/protocol/workspaces').WorkspaceUpdateRequest, signal?: AbortSignal): Promise<import('@hapi/protocol/workspaces').WorkspaceUpdateResult> {
+        try {
+            return await this.request('/api/workspaces/operations', { method: 'POST', body: JSON.stringify(request), signal })
+        } catch (error) {
+            if (error instanceof ApiError && error.status === 409 && error.body) return JSON.parse(error.body)
+            throw error
+        }
+    }
+
     private token: string
     private readonly baseUrl: string | null
     private readonly getToken: (() => string | null) | null
@@ -531,6 +545,51 @@ export class ApiClient {
         return await this.request<FileSearchResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/files${qs ? `?${qs}` : ''}`)
     }
 
+    async getDocumentPreview(sessionId: string, document: import('@hapi/protocol/documents').DocumentRef, version?: string, signal?: AbortSignal, attempt = 0): Promise<{ blob: Blob; version: string; modified?: number; size?: number }> {
+        const token = this.getToken?.() ?? this.token
+        const response = await fetch(this.buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/document-preview`), {
+            method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ document, version: version || undefined }), signal,
+        })
+        if (response.status === 401 && attempt === 0 && this.onUnauthorized) {
+            const refreshed = await this.onUnauthorized()
+            if (refreshed) { this.token = refreshed; return this.getDocumentPreview(sessionId, document, version, signal, 1) }
+        }
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({})) as { error?: string }
+            throw new ApiError(body.error ?? `HTTP ${response.status}`, response.status)
+        }
+        return { blob: await response.blob(), version: response.headers.get('X-Hapi-Document-Revision') ?? '',
+            modified: response.headers.has('X-Hapi-Source-Modified') ? Number(response.headers.get('X-Hapi-Source-Modified')) : undefined,
+            size: response.headers.has('X-Hapi-Source-Size') ? Number(response.headers.get('X-Hapi-Source-Size')) : undefined,
+        }
+    }
+
+    async prepareDocumentPreview(sessionId: string, document: import('@hapi/protocol/documents').DocumentRef): Promise<{ previewId: string; length: number; version: string; modified?: number; size?: number }> {
+        return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/document-preview?mode=range`, {
+            method: 'POST', body: JSON.stringify({ document }), signal: AbortSignal.timeout(90_000),
+        })
+    }
+
+    async readDocumentPreviewRange(sessionId: string, previewId: string, begin: number, end: number, signal: AbortSignal, attempt = 0): Promise<Uint8Array> {
+        const token = this.getToken?.() ?? this.token
+        const response = await fetch(this.buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/document-preview/${encodeURIComponent(previewId)}`), {
+            headers: { Range: `bytes=${begin}-${end - 1}`, ...(token ? { authorization: `Bearer ${token}` } : {}) },
+            signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+        })
+        if (response.status === 401 && attempt === 0 && this.onUnauthorized) {
+            const refreshed = await this.onUnauthorized()
+            if (refreshed) { this.token = refreshed; return this.readDocumentPreviewRange(sessionId, previewId, begin, end, signal, 1) }
+        }
+        if (response.status !== 206) {
+            const body = await response.json().catch(() => ({})) as { error?: string }
+            throw new ApiError(body.error ?? `Preview range failed: HTTP ${response.status}`, response.status)
+        }
+        const bytes = new Uint8Array(await response.arrayBuffer())
+        if (bytes.length !== end - begin) throw new Error('The preview range was incomplete. Reload to retry.')
+        return bytes
+    }
+
     async getArtifactBlob(sessionId: string, artifactId: string, signal?: AbortSignal, attempt = 0, overrideToken?: string): Promise<Blob> {
         const token = overrideToken ?? this.getToken?.() ?? this.token
         const response = await fetch(this.buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}`), {
@@ -576,10 +635,20 @@ export class ApiClient {
         return await res.blob()
     }
 
+    async writeSessionFile(sessionId: string, data: FileWriteRequest): Promise<FileWriteResponse> {
+        return this.request<FileWriteResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/file`, {
+            method: 'PUT', body: JSON.stringify(data),
+        })
+    }
+
     async readSessionFile(sessionId: string, path: string): Promise<FileReadResponse> {
         const params = new URLSearchParams()
         params.set('path', path)
         return await this.request<FileReadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/file?${params.toString()}`)
+    }
+
+    async getDocumentFileInfo(sessionId: string, path: string): Promise<import('@hapi/protocol/apiTypes').StatFilesResponse> {
+        return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/file-info?${new URLSearchParams({ path })}`)
     }
 
     async listSessionDirectory(sessionId: string, path?: string): Promise<ListDirectoryResponse> {

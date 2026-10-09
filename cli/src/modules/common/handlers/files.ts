@@ -1,7 +1,5 @@
 import { logger } from '@/ui/logger'
-import { readFile, stat, writeFile } from 'fs/promises'
-import { createHash } from 'crypto'
-import { resolve } from 'path'
+import { readDocumentFile, writeDocumentFile } from './documentFiles'
 import type { FileReadResponse, GeneratedImageResponse } from '@hapi/protocol/apiTypes'
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods'
 import type { RpcHandlerManager } from '@/api/rpc/RpcHandlerManager'
@@ -43,16 +41,7 @@ export function registerFileHandlers(rpcHandlerManager: RpcHandlerManager, worki
         }
 
         try {
-            const resolvedPath = resolve(workingDirectory, data.path)
-            const stats = await stat(resolvedPath)
-            const buffer = await readFile(resolvedPath)
-            const content = buffer.toString('base64')
-            return {
-                success: true,
-                content,
-                size: stats.size,
-                modified: stats.mtime.getTime()
-            }
+            return await readDocumentFile(data.path, workingDirectory)
         } catch (error) {
             logger.debug('Failed to read file:', error)
             return rpcError(getErrorMessage(error, 'Failed to read file'))
@@ -89,39 +78,7 @@ export function registerFileHandlers(rpcHandlerManager: RpcHandlerManager, worki
         }
 
         try {
-            if (data.expectedHash !== null && data.expectedHash !== undefined) {
-                try {
-                    const existingBuffer = await readFile(data.path)
-                    const existingHash = createHash('sha256').update(existingBuffer).digest('hex')
-
-                    if (existingHash !== data.expectedHash) {
-                        return rpcError(`File hash mismatch. Expected: ${data.expectedHash}, Actual: ${existingHash}`)
-                    }
-                } catch (error) {
-                    const nodeError = error as NodeJS.ErrnoException
-                    if (nodeError.code !== 'ENOENT') {
-                        throw error
-                    }
-                    return rpcError('File does not exist but hash was provided')
-                }
-            } else {
-                try {
-                    await stat(data.path)
-                    return rpcError('File already exists but was expected to be new')
-                } catch (error) {
-                    const nodeError = error as NodeJS.ErrnoException
-                    if (nodeError.code !== 'ENOENT') {
-                        throw error
-                    }
-                }
-            }
-
-            const buffer = Buffer.from(data.content, 'base64')
-            await writeFile(data.path, buffer)
-
-            const hash = createHash('sha256').update(buffer).digest('hex')
-
-            return { success: true, hash }
+            return await writeDocumentFile(data, workingDirectory)
         } catch (error) {
             logger.debug('Failed to write file:', error)
             return rpcError(getErrorMessage(error, 'Failed to write file'))

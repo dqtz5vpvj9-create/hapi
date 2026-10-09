@@ -21,7 +21,7 @@ describe('artifact cards', () => {
         const read = mount(<ArtifactCard artifact={{ id: 'html', fileName: 'report.html', mimeType: 'text/html' }} />)
         expect(read).not.toHaveBeenCalled()
         fireEvent.click(screen.getByText('Open preview / prepare download'))
-        const frame = await screen.findByTitle('report.html')
+        const frame = await screen.findByTitle((title, element) => title === 'report.html' && element?.tagName === 'IFRAME')
         expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
         expect(frame.getAttribute('srcdoc')).toContain("connect-src 'none'")
         expect(read).toHaveBeenCalledWith('session', 'html', expect.any(AbortSignal))

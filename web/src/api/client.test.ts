@@ -15,6 +15,23 @@ describe('ApiClient error mapping', () => {
         globalThis.fetch = originalFetch
     })
 
+    it('reads only requested PDF bytes and refreshes authentication for later pages', async () => {
+        fetchMock.mockResolvedValueOnce(new Response('{}', { status: 401 }))
+            .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { status: 206 }))
+        const api = new ApiClient('old-token', { onUnauthorized: async () => 'new-token' })
+        expect(await api.readDocumentPreviewRange('session', 'preview', 5, 8, new AbortController().signal)).toEqual(new Uint8Array([1, 2, 3]))
+        expect(fetchMock.mock.calls[0][1].headers).toMatchObject({ Range: 'bytes=5-7', authorization: 'Bearer old-token' })
+        expect(fetchMock.mock.calls[1][1].headers).toMatchObject({ Range: 'bytes=5-7', authorization: 'Bearer new-token' })
+    })
+
+    it('surfaces expired and truncated ranges instead of leaving PDF.js waiting indefinitely', async () => {
+        const api = new ApiClient('token')
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Preview expired' }), { status: 410 }))
+        await expect(api.readDocumentPreviewRange('session', 'preview', 0, 8, new AbortController().signal)).rejects.toThrow('Preview expired')
+        fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([1, 2]), { status: 206 }))
+        await expect(api.readDocumentPreviewRange('session', 'preview', 0, 8, new AbortController().signal)).rejects.toThrow('incomplete')
+    })
+
     it('reads multibyte streamed messages and reports decoded bytes without a compressed denominator', async () => {
         const value = { messages: [{ text: '消息 🚆' }] }
         const bytes = new TextEncoder().encode(JSON.stringify(value))

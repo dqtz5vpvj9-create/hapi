@@ -1,3 +1,4 @@
+import { artifactDocumentRef, useOpenDocument } from '@/documents/openDocument'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { ArtifactRef } from '@hapi/protocol/artifacts'
 import { useOptionalHappyChatContext } from '@/components/AssistantChat/context'
@@ -7,6 +8,7 @@ import { CodeBlock } from '@/components/CodeBlock'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useTranslation } from '@/lib/use-translation'
 import { isolatedHtml, parseCsvPreview } from './documentPreview'
+import { useDocumentLabels } from '@/documents/labels'
 
 const PdfPreview = lazy(() => import('./PdfArtifactPreview'))
 
@@ -15,6 +17,9 @@ export function ArtifactCard({ artifact, previewUrl, legacyImageId }: {
 }) {
     const ctx = useOptionalHappyChatContext()
     const { t } = useTranslation()
+    const documentLabels = useDocumentLabels()
+    const openDocument = useOpenDocument(ctx?.sessionId)
+    const documentCard = !!openDocument && !artifact.externalUrl && /\.(?:pdf|pptx?|docx?|xlsx?|xlsm|od[stp]|md|txt|csv|json|html?)$/i.test(artifact.fileName)
     const safePreviewUrl = previewUrl && /^(https?:\/\/|blob:|data:(image|audio|video)\/)/i.test(previewUrl) ? previewUrl : undefined
     const container = useRef<HTMLDivElement>(null)
     const [visible, setVisible] = useState(false)
@@ -26,6 +31,7 @@ export function ArtifactCard({ artifact, previewUrl, legacyImageId }: {
     const [error, setError] = useState<string | null>(null)
     const [expanded, setExpanded] = useState(false)
     const [source, setSource] = useState(false)
+    const [downloading, setDownloading] = useState(false)
     const mime = blob?.type && blob.type !== 'application/octet-stream' ? blob.type : artifact.mimeType
     const image = mime.startsWith('image/')
     const shouldLoad = load || (artifact.mimeType.startsWith('image/') && visible)
@@ -76,9 +82,20 @@ export function ArtifactCard({ artifact, previewUrl, legacyImageId }: {
         setTimeout(() => URL.revokeObjectURL(address), 0)
     }
     const displayUrl = artifact.externalUrl ?? url
+    const downloadDocument = async () => {
+        if (!ctx || downloading) return
+        setDownloading(true); setError(null)
+        try {
+            const value = await ctx.api.getArtifactBlob(ctx.sessionId, artifact.id)
+            const address = URL.createObjectURL(new Blob([value], { type: 'application/octet-stream' }))
+            const anchor = document.createElement('a'); anchor.href = address; anchor.download = artifact.fileName; anchor.click()
+            setTimeout(() => URL.revokeObjectURL(address), 1000)
+        } catch (reason) { setError(String(reason)) }
+        finally { setDownloading(false) }
+    }
     const preview = () => {
         if (!displayUrl) return null
-        if (image) return <ImagePreview src={displayUrl} fileName={artifact.fileName} label={artifact.fileName}
+        if (image) return <ImagePreview frame="artifact" src={displayUrl} fileName={artifact.fileName} label={artifact.fileName}
             buttonClassName="block max-w-full cursor-zoom-in" imageClassName="max-h-[60vh] max-w-full rounded-lg object-contain" />
         if (mime.startsWith('video/')) return <video src={displayUrl} controls playsInline preload="metadata" onError={() => setError(t('artifact.codecError'))} className="max-h-[60vh] w-full rounded-lg" />
         if (mime.startsWith('audio/')) return <audio src={displayUrl} controls preload="metadata" onError={() => setError(t('artifact.codecError'))} className="w-full" />
@@ -95,17 +112,32 @@ export function ArtifactCard({ artifact, previewUrl, legacyImageId }: {
         }
         return <p className="text-sm text-[var(--app-hint)]">{t('artifact.downloadOnly')}</p>
     }
+    if (documentCard) return <div className="my-2 flex min-w-0 flex-wrap items-center gap-3 rounded-lg border border-[var(--app-border)] px-3 py-2" data-document-card={artifact.id}>
+        <span aria-hidden="true">▤</span><button className="min-w-0 flex-1 truncate text-left text-sm font-medium" onClick={() => void openDocument!(artifactDocumentRef(artifact))}>{artifact.fileName}</button>
+        <button className="shrink-0 text-sm text-[var(--app-link)]" onClick={() => void openDocument!(artifactDocumentRef(artifact))}>{t('artifact.preview')}</button>
+        <button disabled={downloading} className="shrink-0 text-sm text-[var(--app-link)]" onClick={() => void downloadDocument()}>{downloading ? t('artifact.loading') : t('artifact.download')}</button>
+        {error ? <p role="alert" className="w-full text-xs text-[var(--app-hint)]">{error}</p> : null}
+    </div>
     return <div ref={container} data-hapi-share-media-state={error ? 'error' : displayUrl ? 'ready' : 'loading'} className="my-2 min-w-0 max-w-full space-y-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-tool-card-bg)] p-3">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="min-w-0 flex-1 break-words font-medium">{artifact.label ? `${artifact.label} · ` : ''}{artifact.fileName}</span>
+        <div className="flex items-center gap-2 text-sm">
+            <span title={artifact.fileName} className="min-w-0 flex-1 truncate font-medium">{artifact.label ? `${artifact.label} · ` : ''}{artifact.fileName}</span>
+            {!downloadUrl && !blob ? <button disabled className="text-[var(--app-hint)]">{t('artifact.download')}</button> : null}
             {blob ? <button onClick={download} className="text-[var(--app-link)]">{t('artifact.download')}</button> : downloadUrl ? <a href={downloadUrl} download={artifact.fileName} target="_blank" rel="noreferrer" className="text-[var(--app-link)]">{t('artifact.download')}</a> : null}
-            {displayUrl && (mime === 'text/html' || mime === 'application/pdf') ? <button onClick={() => setExpanded(true)}>{t('artifact.expand')}</button> : null}
-            {mime === 'text/html' && text !== null ? <button onClick={() => setSource(value => !value)}>{t(source ? 'artifact.preview' : 'artifact.source')}</button> : null}
+            {(mime === 'text/html' || mime === 'application/pdf') ? <button disabled={!displayUrl} onClick={() => setExpanded(true)}>{t('artifact.expand')}</button> : null}
+            {mime === 'text/html' ? <button disabled={text === null} onClick={() => setSource(value => !value)}>{t(source ? 'artifact.preview' : 'artifact.source')}</button> : null}
+            {image && openDocument && !artifact.externalUrl && !legacyImageId ? <button onClick={() => void openDocument(artifactDocumentRef(artifact))}>{documentLabels.openPane}</button> : null}
         </div>
-        {error ? <div role="alert" className="text-sm text-[var(--app-hint)]">{error} <button onClick={() => { setError(null); setLoad(true); setRetry(value => value + 1) }}>{t('artifact.retry')}</button></div> : null}
+
+        {image ? <div className="relative"><ImagePreview frame="artifact" src={displayUrl ?? ''} fileName={artifact.fileName} label={artifact.fileName}
+            loadingLabel={error ?? t('artifact.loading')} errorLabel={t('artifact.imageError')}
+            buttonClassName="block max-w-full cursor-zoom-in rounded-lg" />
+            {error ? <button className="absolute bottom-3 left-3 text-sm text-[var(--app-link)]" onClick={() => { setError(null); setRetry(value => value + 1) }}>{t('artifact.retry')}</button> : null}
+        </div> : <div className={shouldLoad || displayUrl ? (mime.startsWith('audio/') ? 'hapi-audio-preview' : 'hapi-document-preview') : undefined}>
+        {error && !image ? <div role="alert" className="text-sm text-[var(--app-hint)]">{error} <button onClick={() => { setError(null); setLoad(true); setRetry(value => value + 1) }}>{t('artifact.retry')}</button></div> : null}
         {displayUrl ? preview() : error ? null : shouldLoad ? <div className="flex min-h-32 items-center justify-center text-sm">{t('artifact.loading')}</div>
             : <button className="min-h-12 w-full rounded-lg bg-[var(--app-subtle-bg)] text-sm" onClick={() => setLoad(true)}>{t('artifact.load')}</button>}
-        {mime === 'text/html' && text !== null ? <p className="text-xs text-[var(--app-hint)]">{t('artifact.htmlIsolation')}</p> : null}
+        </div>}
+        {mime === 'text/html' ? <p className="text-xs text-[var(--app-hint)]">{t('artifact.htmlIsolation')}</p> : null}
         <Dialog open={expanded} onOpenChange={setExpanded}><DialogContent className="max-h-[95dvh] max-w-5xl overflow-auto"><DialogHeader><DialogTitle>{artifact.fileName}</DialogTitle></DialogHeader>{preview()}</DialogContent></Dialog>
     </div>
 }

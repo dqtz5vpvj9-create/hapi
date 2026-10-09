@@ -1,0 +1,48 @@
+.document-surface { display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; color:var(--app-fg); background:var(--app-bg); font-size:14px; }
+.document-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:8px 12px; border-bottom:1px solid var(--app-border); flex-shrink:0; }
+.document-toolbar strong { flex:1; min-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.document-surface button, .document-surface select { padding:5px 8px; border-radius:5px; font:inherit; }
+.document-surface button:hover { background:var(--app-subtle-bg); }
+.document-surface button:focus-visible { outline:2px solid var(--app-link); outline-offset:1px; }
+.document-surface button:disabled { opacity:.45; cursor:default; }
+.document-surface .document-primary { color:var(--app-link); font-weight:600; }
+.document-status { color:var(--app-hint); font-size:12px; }
+.document-body { flex:1; min-height:0; min-width:0; overflow:hidden; position:relative; }
+.document-body > p { padding:20px; }
+.document-editor { height:100%; }
+.document-html { display:flex; flex-direction:column; height:100%; min-height:0; }
+.document-html[hidden] { display:none; }
+.document-html > p { padding:20px; }
+.document-html-frame { display:block; flex:1; width:100%; min-height:0; border:0; background:white; }
+.document-html .document-notice { max-height:120px; overflow:auto; flex-shrink:0; overflow-wrap:anywhere; }
+.document-markdown { height:100%; overflow:auto; padding:20px 24px; overflow-wrap:anywhere; }
+.document-markdown img { max-width:100%; }
+.document-notice { padding:8px 12px; background:var(--app-subtle-bg); font-size:12px; }
+.document-notice[role=alert] { color:var(--app-danger, #a43622); }
+.document-notice button { text-decoration:underline; }
+.document-selection { display:flex; align-items:center; flex-wrap:wrap; gap:8px; border-top:1px solid var(--app-border); padding:10px 12px; background:var(--app-subtle-bg); }
+.document-selection > div { flex:1; min-width:140px; }
+.document-selection strong { font-size:12px; }
+.document-selection p { font-size:12px; color:var(--app-hint); margin-top:4px; white-space:pre-wrap; max-height:54px; overflow:auto; }
+.document-selection button:first-of-type { color:var(--app-link); }
+.document-conflict { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:12px; max-height:40%; overflow:auto; background:var(--app-subtle-bg); }
+.document-conflict pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
+.document-pages { display:flex; flex-direction:column; height:100%; }
+.document-page-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:6px 12px; border-bottom:1px solid var(--app-border); }
+.document-page-scroll { flex:1; min-height:0; overflow:auto; padding:16px; background:var(--app-subtle-bg); }
+.document-page { position:relative; margin:0 auto; background:white; color:black; }
+.document-page canvas { display:block; width:100%; }
+.document-page .textLayer { position:absolute; inset:0; overflow:hidden; opacity:1; line-height:1; text-align:initial; transform-origin:0 0; -webkit-text-size-adjust:none; text-size-adjust:none; forced-color-adjust:none; }
+.document-page .textLayer :is(span,br) { color:transparent; position:absolute; white-space:pre; cursor:text; transform-origin:0 0; }
+.document-page .textLayer ::selection { background:rgba(50,110,230,.3); }
+.document-region-layer { position:absolute; inset:0; touch-action:none; cursor:crosshair; }
+.document-region { position:absolute; border:2px solid #4387f7; background:#4387f726; pointer-events:none; }
+.document-image { position:relative; max-width:100%; margin:auto; }
+.document-image img { display:block; width:100%; height:auto; }
+@media (max-width:600px) { .document-toolbar { gap:3px; padding:6px 8px; } .document-toolbar strong { flex-basis:45%; } .document-markdown { padding:14px; } .document-status { font-size:11px; } }
+
+.document-markdown h1 { font-size:1.7em; font-weight:650; margin:0 0 1em; }
+.document-markdown h2 { font-size:1.3em; font-weight:600; margin:1.4em 0 .6em; }
+.document-markdown h3,.document-markdown h4 { font-weight:600; margin:1em 0 .5em; }
+.document-markdown p { margin:.8em 0; line-height:1.65; }
+.document-markdown li { line-height:1.65; }

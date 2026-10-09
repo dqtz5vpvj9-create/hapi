@@ -14,6 +14,7 @@ const TRAILING_PUNCTUATION = new Set(['.', ',', ';', ':', '!', '?'])
 // and common languages not already covered. TLD-lookalikes (org/com/io/dev/co)
 // are deliberately excluded so URLs like "example.org" don't autolink.
 export const COMMON_FILE_EXTENSIONS = new Set([
+    'pdf', 'ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx', 'xlsm', 'ods', 'odp', 'odt',
     'adoc', 'astro', 'avif', 'bat', 'bmp', 'c', 'cfg', 'cjs', 'conf', 'cpp', 'css', 'csv',
     'env', 'gif', 'go', 'gql', 'gradle', 'graphql', 'h', 'hpp', 'html', 'ico', 'ini', 'java',
     'jpeg', 'jpg', 'js', 'json', 'jsx', 'kt', 'lock', 'md', 'mdx', 'mjs', 'mmd', 'php', 'png',

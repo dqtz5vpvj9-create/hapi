@@ -1,3 +1,7 @@
+import { DocumentRefSchema } from '@hapi/protocol/documents'
+import { officePreview, readOfficePreview, registerOfficePreview } from '../../documents/officePreview'
+import { bodyLimit } from 'hono/body-limit'
+import { FileWriteRequestSchema, MAX_EDITABLE_FILE_BYTES } from '@hapi/protocol/documents'
 import { Hono } from 'hono'
 import { isWildcardSearch, matchesSearchQuery, toSearchGlob } from '@hapi/protocol'
 import { z } from 'zod'
@@ -155,6 +159,90 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
         }
 
         const result = await runRpc(() => engine.readSessionFile(sessionResult.sessionId, parsed.data.path))
+        return c.json(result)
+    })
+
+    app.get('/sessions/:id/file-info', async c => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const session = requireSessionFromParam(c, engine)
+        if (session instanceof Response) return session
+        const parsed = filePathSchema.safeParse(c.req.query())
+        if (!parsed.success) return c.json({ error: 'Invalid file path' }, 400)
+        return c.json(await runRpc(() => engine.statFiles(session.sessionId, [parsed.data.path])))
+    })
+
+    app.post('/sessions/:id/document-preview', bodyLimit({ maxSize: 16384 }), async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const session = requireSessionFromParam(c, engine)
+        if (session instanceof Response) return session
+        const parsed = z.object({ document: DocumentRefSchema, version: z.string().optional() }).strict().safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid document reference' }, 400)
+        const ref = parsed.data.document
+        try {
+            const result = ref.kind === 'file' ? await engine.readSessionFile(session.sessionId, ref.path)
+                : await engine.readArtifact(session.sessionId, ref.artifactId)
+            if (!result.success || result.content === undefined) return c.json({ error: result.error ?? 'Original file unavailable' }, 404)
+            const revision = 'hash' in result ? result.hash : undefined
+            if (parsed.data.version && revision !== parsed.data.version) return c.json({ error: 'The original file changed. Reload it before previewing.' }, 409)
+            // Artifact names come from the authorized reader, never the user-supplied label.
+            const filename = ref.kind === 'file' ? ref.path : ('fileName' in result ? result.fileName : '')
+            const extension = filename?.split('.').at(-1)?.toLowerCase() ?? ''
+            const source = ref.kind === 'file' ? { kind: 'file', path: 'path' in result ? result.path : ref.path } : { kind: 'artifact', artifactId: ref.artifactId }
+            const key = JSON.stringify([c.get('namespace'), session.sessionId, source, revision ?? crypto.randomUUID()])
+            const pdf = await officePreview(key, Buffer.from(result.content, 'base64'), extension)
+            if (c.req.query('mode') === 'range') {
+                return c.json({ previewId: registerOfficePreview(key, c.get('namespace'), session.sessionId), length: pdf.length,
+                    version: revision ?? '', ...('modified' in result ? { modified: result.modified, size: result.size } : {}) })
+            }
+            return c.body(new Uint8Array(pdf), 200, { 'Content-Type': 'application/pdf', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
+                // The Web client may use a configured Hub on a different origin.
+                // Fetch hides these source identity headers unless explicitly exposed.
+                'Access-Control-Expose-Headers': 'X-Hapi-Document-Revision, X-Hapi-Source-Modified, X-Hapi-Source-Size',
+                ...(revision ? { 'X-Hapi-Document-Revision': revision } : {}),
+                ...('modified' in result && result.modified !== undefined ? { 'X-Hapi-Source-Modified': String(result.modified), 'X-Hapi-Source-Size': String(result.size) } : {}),
+            })
+        } catch (error) {
+            console.warn('[document-preview]', error instanceof Error ? error.message : String(error))
+            return c.json({ error: 'Office preview failed. The Hub needs LibreOffice and the document must be readable. Download the original or retry.' }, 503)
+        }
+    })
+
+    app.get('/sessions/:id/document-preview/:previewId', c => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const session = requireSessionFromParam(c, engine)
+        if (session instanceof Response) return session
+        const bytes = readOfficePreview(c.req.param('previewId'), c.get('namespace'), session.sessionId)
+        if (!bytes) return c.json({ error: 'This preview expired. Reload the document to prepare it again.' }, 410)
+        c.header('Cache-Control', 'private, no-store')
+        c.header('Content-Type', 'application/pdf')
+        c.header('X-Content-Type-Options', 'nosniff')
+        c.header('Accept-Ranges', 'bytes')
+        c.header('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges')
+        const range = c.req.header('Range')
+        if (!range) return c.body(new Uint8Array(bytes))
+        const match = /^bytes=(\d+)-(\d*)$/.exec(range)
+        const start = match ? Number(match[1]) : NaN
+        const end = match?.[2] ? Math.min(Number(match[2]), bytes.length - 1) : bytes.length - 1
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start >= bytes.length || start > end) {
+            c.header('Content-Range', `bytes */${bytes.length}`)
+            return c.body(null, 416)
+        }
+        c.header('Content-Range', `bytes ${start}-${end}/${bytes.length}`)
+        return c.body(new Uint8Array(bytes.subarray(start, end + 1)), 206)
+    })
+
+    app.put('/sessions/:id/file', bodyLimit({ maxSize: MAX_EDITABLE_FILE_BYTES * 1.4 + 16384 }), async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const session = requireSessionFromParam(c, engine)
+        if (session instanceof Response) return session
+        const parsed = FileWriteRequestSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ success: false, error: 'Invalid file write' }, 400)
+        if (!session.session.metadata?.path) return c.json({ success: false, error: 'Session path not available' }, 409)
+        const result = await runRpc(() => engine.writeSessionFile(session.sessionId, parsed.data))
         return c.json(result)
     })
 

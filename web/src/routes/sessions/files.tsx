@@ -1,3 +1,4 @@
+import { usePaneNavigate } from '@/workspace/PaneContext'
 import { useWorkspacePanel } from '@/components/SessionWorkspace'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
@@ -347,14 +348,20 @@ function FileListSkeleton(props: { label: string; rows?: number }) {
 const SCROLL_KEY_PREFIX = 'hapi-dir-scroll-'
 
 export default function FilesPage() {
+    const { sessionId } = useParams({ from: '/sessions/$sessionId/files' })
+    const search = useSearch({ from: '/sessions/$sessionId/files' })
+    const goBack = useAppGoBack()
+    return <SessionFiles sessionId={sessionId} search={search} onBack={goBack} />
+}
+
+export function SessionFiles(props: { sessionId: string; search: { tab?: 'changes' | 'directories'; query?: string }; onBack: () => void }) {
     const workspacePanel = useWorkspacePanel()
     const { api, titleSuggestionAvailable = false } = useAppContext()
     const { t, locale } = useTranslation()
-    const navigate = useNavigate()
+    const navigate = usePaneNavigate()
     const queryClient = useQueryClient()
-    const goBack = useAppGoBack()
-    const { sessionId } = useParams({ from: '/sessions/$sessionId/files' })
-    const search = useSearch({ from: '/sessions/$sessionId/files' })
+    const goBack = props.onBack
+    const { sessionId, search } = props
     const { session } = useSession(api, sessionId)
     const scrollRef = useRef<HTMLDivElement>(null)
 
