@@ -67,17 +67,19 @@ function copyFile(file: File): File {
     return copy
 }
 
-function toStoredFile(attachment: AttachmentDraftInput): StoredAttachment {
+function toStoredFile(attachment: AttachmentDraftInput, sessionId: string): StoredAttachment {
     const file = attachment.file
+    const uploaded = restoredUploadMetadata.get(file)
+    const metadata = uploaded?.id === attachment.id && uploaded.uploadSessionId === sessionId ? uploaded : undefined
     return {
         id: attachment.id,
         name: file.name,
         type: file.type,
         lastModified: file.lastModified,
         blob: file,
-        path: attachment.path,
-        previewUrl: attachment.previewUrl,
-        uploadSessionId: attachment.uploadSessionId,
+        path: attachment.path ?? metadata?.path,
+        previewUrl: attachment.previewUrl ?? metadata?.previewUrl,
+        uploadSessionId: attachment.uploadSessionId ?? metadata?.uploadSessionId,
     }
 }
 
@@ -197,7 +199,7 @@ export function saveDraftAttachments(sessionId: string, attachments: AttachmentD
         return
     }
 
-    const storedFiles = attachments.map(toStoredFile)
+    const storedFiles = attachments.map(attachment => toStoredFile(attachment, sessionId))
     const copies = storedFiles.map(toFile)
     setCachedFiles(sessionId, copies)
     queueWrite({
@@ -228,7 +230,7 @@ export async function moveDraftAttachments(
 
     // Re-sample after the drain — cancellation during awaitPendingWrites must win.
     const attachments = resolveAttachments()
-    const storedFiles = attachments.map(toStoredFile)
+    const storedFiles = attachments.map(attachment => toStoredFile(attachment, targetSessionId))
     const copies = storedFiles.map(toFile)
 
     const previousSource = cache.has(sourceSessionId)
@@ -315,5 +317,26 @@ export function getRestoredUploadMetadata(file: File): RestoredUploadMetadata | 
 
 /** Seed an existing attachment identity before the upload adapter receives its File. */
 export function setRestoredUploadMetadata(file: File, metadata: RestoredUploadMetadata): void {
-    restoredUploadMetadata.set(file, metadata)
+    const current = restoredUploadMetadata.get(file)
+    if (current?.id === metadata.id) Object.assign(current, {
+        path: undefined, previewUrl: undefined, uploadSessionId: undefined, ...metadata,
+    })
+    else restoredUploadMetadata.set(file, metadata)
+}
+
+/** An upload belongs to its draft even while no composer is mounted. */
+export function completeDraftAttachmentUpload(sessionId: string, metadata: RestoredUploadMetadata): void {
+    const files = cache.get(sessionId)
+    if (!files) return
+    let found = false
+    for (const file of files) {
+        if (restoredUploadMetadata.get(file)?.id !== metadata.id) continue
+        // Copies already handed to a restoring composer share this object.
+        setRestoredUploadMetadata(file, metadata)
+        found = true
+    }
+    // Never recreate a draft that was sent, removed, or transferred away.
+    if (!found) return
+    const storedFiles = files.map(file => toStoredFile({ ...restoredUploadMetadata.get(file)!, file }, sessionId))
+    queueWrite({ sessionId, files: storedFiles, updatedAt: Date.now() }, sessionId)
 }

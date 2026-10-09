@@ -1,4 +1,6 @@
 import { retargetSharePendingTransfer } from '@/lib/sharePendingState'
+import { awaitComposerSessionResolution } from '@/lib/composer-session-resolution'
+import { composerDraftWasHandedOff, transferComposerDraftThenNavigate } from '@/lib/composer-draft-transfer'
 
 export function getSupersedingSessionId(
     currentSessionId: string,
@@ -26,9 +28,15 @@ export function shouldFollowSupersedingSession(
  * supersession. Keeps a share-target pending transfer bound to the live
  * session id so ShareSeedConsumer on B can still claim it.
  */
-export function prepareFollowSupersedingSession(
+export async function prepareFollowSupersedingSession(
     fromSessionId: string,
     toSessionId: string,
-): void {
+): Promise<void> {
+    await awaitComposerSessionResolution(fromSessionId)
     retargetSharePendingTransfer(fromSessionId, toSessionId)
+    // A local send already moved the submitted text/files. Do not copy its
+    // now-empty source over the hydrated target when the notification catches up.
+    if (!composerDraftWasHandedOff(fromSessionId)) {
+        await transferComposerDraftThenNavigate(fromSessionId, toSessionId, () => {})
+    }
 }

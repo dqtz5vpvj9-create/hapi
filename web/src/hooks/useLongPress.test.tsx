@@ -59,6 +59,39 @@ describe('useLongPress', () => {
         expect(onClick).toHaveBeenCalledTimes(1)
     })
 
+    for (const contextBeforeRelease of [true, false]) it(`opens a right-click menu without selecting when contextmenu comes ${contextBeforeRelease ? 'before' : 'after'} mouseup`, () => {
+        const onClick = vi.fn(), onLongPress = vi.fn()
+        const { getByTestId } = render(<Probe onClick={onClick} onLongPress={onLongPress} />)
+        const row = getByTestId('row')
+        fireEvent.mouseDown(row, { button: 2, clientX: 20, clientY: 30 })
+        if (contextBeforeRelease) fireEvent.contextMenu(row, { button: 2, clientX: 20, clientY: 30 })
+        fireEvent.mouseUp(row, { button: 2, clientX: 20, clientY: 30 })
+        if (!contextBeforeRelease) fireEvent.contextMenu(row, { button: 2, clientX: 20, clientY: 30 })
+        expect(onClick).not.toHaveBeenCalled()
+        expect(onLongPress).toHaveBeenCalledExactlyOnceWith({ x: 20, y: 30 })
+        // Dismissing a menu must not consume the next ordinary selection.
+        fireEvent.mouseDown(row, { button: 0 })
+        fireEvent.mouseUp(row, { button: 0 })
+        expect(onClick).toHaveBeenCalledOnce()
+    })
+
+    it('does not select with the middle mouse button', () => {
+        const onClick = vi.fn(), onLongPress = vi.fn()
+        const { getByTestId } = render(<Probe onClick={onClick} onLongPress={onLongPress} />)
+        fireEvent.mouseDown(getByTestId('row'), { button: 1 })
+        fireEvent.mouseUp(getByTestId('row'), { button: 1 })
+        expect(onClick).not.toHaveBeenCalled()
+        expect(onLongPress).not.toHaveBeenCalled()
+    })
+
+    it('opens the menu from the keyboard without selecting the row', () => {
+        const onClick = vi.fn(), onLongPress = vi.fn()
+        const { getByTestId } = render(<Probe onClick={onClick} onLongPress={onLongPress} />)
+        fireEvent.keyDown(getByTestId('row'), { key: 'F10', shiftKey: true })
+        expect(onLongPress).toHaveBeenCalledOnce()
+        expect(onClick).not.toHaveBeenCalled()
+    })
+
     it('fires onClick once for a touch tap (ignores the browser-synthesized mouse events that follow)', () => {
         // Real touch browsers (Android Chrome, etc.) emit a compatibility
         // mousedown/mouseup/click ~300ms after touchend for any touch the page

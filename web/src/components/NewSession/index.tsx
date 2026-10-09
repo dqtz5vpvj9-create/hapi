@@ -1,4 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import type { CodexDuplicateSessionGroup, CodexLocalSessionSummary, Machine, PiLocalSessionSummary } from '@/types/api'
 import type { CodexCollaborationMode, GrokPermissionMode, PermissionMode, CopilotAgentMode } from '@hapi/protocol'
@@ -277,7 +278,9 @@ export function NewSession(props: {
 
     useEffect(() => {
         if (props.machines.length === 0) return
-        if (machineId && props.machines.find((m) => m.id === machineId)) return
+        // Once chosen, a machine remains the target across disconnects. An
+        // online-list refresh must not move a pending native connection.
+        if (machineId) return
 
         const lastUsed = getLastUsedMachineId()
         const foundLast = lastUsed ? props.machines.find((m) => m.id === lastUsed) : null
@@ -1054,13 +1057,33 @@ export function NewSession(props: {
         setCodexImportError(null)
         setIsLoadingCodexImportSessions(false)
         setCodexImportSessions([])
-    }, [agent, machineId, trimmedDirectory])
+        setSelectedCodexImportSessionId(null)
+        setCodexImportMachineId(null)
+        setIsCodexImportDialogOpen(false)
+    }, [agent, machineId])
 
     useEffect(() => () => {
         codexLoadGenerationRef.current += 1
         codexConnectGenerationRef.current += 1
         if (codexSearchTimerRef.current) clearTimeout(codexSearchTimerRef.current)
     }, [])
+
+    const queryClient = useQueryClient()
+    const codexCatalogKey = useMemo(() => ['machine-codex-sessions', machineId] as const, [machineId])
+    const readInitialCodexCatalog = useCallback(async () => {
+        const result = await props.api.getCodexSessions(null, machineId, { search: '', cursor: undefined, limit: 50 })
+        if (!result.success) throw new Error(result.error)
+        return result
+    }, [props.api, machineId])
+    // Fetch while the user chooses a machine/agent, before opening its catalog.
+    // Connect still validates the native generation and workspace permissions.
+    useQuery({
+        queryKey: codexCatalogKey,
+        queryFn: readInitialCodexCatalog,
+        enabled: agent === 'codex' && Boolean(machineId && selectedMachine?.active),
+        staleTime: 5_000,
+        retry: false,
+    })
 
     const loadCodexImportSessions = useCallback(async (cursor?: number) => {
         if (agent !== 'codex' || !machineId) return
@@ -1069,14 +1092,18 @@ export function NewSession(props: {
         setCodexImportError(null)
         try {
             const query = codexSearchRef.current
-            const result = await props.api.getCodexSessions(query.cwd, machineId, { search: query.search, cursor, limit: 50 })
+            const result = cursor === undefined && !query.search && !query.cwd
+                ? await queryClient.fetchQuery({ queryKey: codexCatalogKey, queryFn: readInitialCodexCatalog, staleTime: 5_000 })
+                : await props.api.getCodexSessions(query.cwd, machineId, { search: query.search, cursor, limit: 50 })
             if (generation !== codexLoadGenerationRef.current) return
             if (!result.success) throw new Error(result.error)
             setCodexImportSessions(current => cursor === undefined ? result.sessions
                 : [...new Map([...current, ...result.sessions].map(session => [session.id, session])).values()])
             setCodexNextCursor(result.nextCursor ?? null)
             setCodexImportMachineId(result.machineId ?? machineId)
-            setSelectedCodexImportSessionId((current) => current && result.sessions.some((session) => session.id === current) ? current : null)
+            if (cursor === undefined) {
+                setSelectedCodexImportSessionId((current) => current && result.sessions.some((session) => session.id === current) ? current : null)
+            }
         } catch (e) {
             if (generation !== codexLoadGenerationRef.current) return
             if (cursor === undefined) setCodexImportSessions([])
@@ -1086,7 +1113,7 @@ export function NewSession(props: {
         } finally {
             if (generation === codexLoadGenerationRef.current) setIsLoadingCodexImportSessions(false)
         }
-    }, [agent, machineId, props.api, trimmedDirectory, t])
+    }, [agent, machineId, props.api, t, queryClient, codexCatalogKey, readInitialCodexCatalog])
 
     const searchCodexImportSessions = useCallback((search: string, cwd: string | null) => {
         codexSearchRef.current = { search, cwd }
@@ -1097,7 +1124,7 @@ export function NewSession(props: {
         setCodexNextCursor(null)
         setCodexImportError(null)
         setIsLoadingCodexImportSessions(true)
-        codexSearchTimerRef.current = setTimeout(() => void loadCodexImportSessions(), 250)
+        codexSearchTimerRef.current = setTimeout(() => void loadCodexImportSessions(), 25)
     }, [loadCodexImportSessions])
 
     useEffect(() => {
@@ -1797,7 +1824,7 @@ export function NewSession(props: {
         && serviceTier === 'fast'
         && codexModelsState.isLoading
     const canCreate = Boolean(
-        machineId
+        selectedMachine
         && trimmedDirectory
         && !isFormDisabled
         && !missingWorktreeDirectory
@@ -1885,7 +1912,7 @@ export function NewSession(props: {
                 <CodexImportActions
                     selectedSession={selectedCodexImportSession}
                     isLoading={isLoadingCodexImportSessions}
-                    isDisabled={isFormDisabled}
+                    isDisabled={isFormDisabled || !selectedMachine}
                     error={codexImportError}
                     onChooseHistory={() => {
                         codexSearchRef.current = { search: '', cwd: null }
@@ -2101,12 +2128,14 @@ export function NewSession(props: {
                 mode="connect"
                 selectionMode="single"
                 onConfirm={async (sessionIds) => {
-                    if (!sessionIds[0]) return
+                    const selected = codexImportSessions.find(session => session.id === sessionIds[0])
+                    if (!selected || selected.connectionState === 'unavailable' || !selectedMachine
+                        || isBulkImportingCodexSessions || isLoadingCodexImportSessions || codexImportMachineId !== machineId) return
                     const generation = ++codexConnectGenerationRef.current
                     setIsBulkImportingCodexSessions(true)
                     setCodexImportError(null)
                     try {
-                        const result = await props.api.connectCodexSession(sessionIds[0], codexImportMachineId ?? machineId)
+                        const result = await props.api.connectCodexSession(selected.id, machineId)
                         if (generation !== codexConnectGenerationRef.current) return
                         setIsCodexImportDialogOpen(false)
                         props.onSuccess(result.sessionId)
@@ -2119,8 +2148,8 @@ export function NewSession(props: {
                 isPending={isBulkImportingCodexSessions}
                 isRestartingCodexDesktop={isRestartingCodexDesktop}
                 isLoading={isLoadingCodexImportSessions}
-                error={codexImportError}
-                onRetry={() => void loadCodexImportSessions()}
+                error={codexImportError ?? (!selectedMachine && !props.isLoading ? t('newSession.machineDisconnected') : null)}
+                onRetry={selectedMachine ? () => void loadCodexImportSessions() : undefined}
             />
             <PiSessionImportDialog
                 isOpen={isPiImportDialogOpen}

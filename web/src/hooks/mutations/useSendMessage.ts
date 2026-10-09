@@ -13,6 +13,7 @@ import { usePlatform } from '@/hooks/usePlatform'
 import type { MessageDeliveryMode } from '@hapi/protocol'
 import { getRetryDeliveryMode } from '@/lib/messageDelivery'
 import type { AttachmentDraftInput } from '@/lib/composer-attachment-drafts'
+import { beginComposerSessionResolution } from '@/lib/composer-session-resolution'
 
 type SendMessageInput = {
     sessionId: string
@@ -92,6 +93,7 @@ export type SessionResolution = {
 export type SessionResolvedContext = {
     text: string
     attachments?: AttachmentMetadata[]
+    attachmentDrafts?: AttachmentDraftInput[]
 }
 
 type UseSendMessageOptions = {
@@ -103,6 +105,8 @@ type UseSendMessageOptions = {
     onBlocked?: (reason: BlockedReason) => void
     onSuccess?: (sessionId: string) => void
     onError?: (info: SendErrorInfo) => void
+    /** The callback writes to a session store that outlives its pane. */
+    retainFailureAfterUnmount?: boolean
     isSessionThinking?: boolean
 }
 
@@ -264,9 +268,9 @@ export function useSendMessage(
             const canRestoreAttachments = input.attachments?.every((attachment) =>
                 input.attachmentDrafts?.some((draft) => draft.id === attachment.id && draft.file),
             ) ?? true
-            // A route state callback cannot recover a draft after unmount.
-            // Retain the existing local failed bubble and its full payload.
-            if (!canRestoreAttachments || !mountedRef.current || !options?.onError) {
+            // Only a session-scoped error store can recover after unmount.
+            // Other consumers retain the failed bubble and its full payload.
+            if (!canRestoreAttachments || (!mountedRef.current && !options?.retainFailureAfterUnmount) || !options?.onError) {
                 updateMessageStatus(input.sessionId, input.localId, 'failed')
                 haptic.notification('error')
                 return
@@ -320,6 +324,7 @@ export function useSendMessage(
         if (options?.resolveSessionId) {
             resolveGuardRef.current = true
             setIsResolving(true)
+            const finishResolution = beginComposerSessionResolution(sessionId)
             try {
                 const resolved = await options.resolveSessionId(sessionId)
                 targetSessionId = resolved.sessionId
@@ -329,7 +334,7 @@ export function useSendMessage(
                     // (including same-id PTY/Pi/Cursor resumes).
                     const resolution = await options.onSessionResolved?.(
                         targetSessionId,
-                        { text, attachments },
+                        { text, attachments, attachmentDrafts },
                     )
                     if (resolution?.deferUntilDraftHydrated) {
                         // Target composer still needs to hydrate/re-upload files.
@@ -363,6 +368,7 @@ export function useSendMessage(
                 })
                 return false
             } finally {
+                finishResolution()
                 resolveGuardRef.current = false
                 setIsResolving(false)
             }

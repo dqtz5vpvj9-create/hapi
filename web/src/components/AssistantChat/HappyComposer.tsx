@@ -1,3 +1,6 @@
+import { DocumentReferenceDrafts } from '@/documents/DocumentReferenceDrafts'
+import { useSelectionDrafts } from '@/documents/useSelectionDrafts'
+import { usePane, usePaneEditing } from '@/workspace/PaneContext'
 import type { CodexGoalRequest } from '@hapi/protocol/apiTypes'
 import {
     getCodexCollaborationModeOptions,
@@ -52,7 +55,7 @@ import { useGlassLayout } from '@/themes/glass/GlassScene'
 import { Autocomplete } from '@/components/ChatInput/Autocomplete'
 import { StatusBar } from '@/components/AssistantChat/StatusBar'
 import { ComposerGoalControl, isGoalComposerText } from '@/components/AssistantChat/ComposerGoalControl'
-import { ComposerButtons, ComposerExpandButton } from '@/components/AssistantChat/ComposerButtons'
+import { ComposerAttachmentButton, ComposerButtons, ComposerExpandButton } from '@/components/AssistantChat/ComposerButtons'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import { SortableComposerAttachments } from '@/components/AssistantChat/SortableComposerAttachments'
 import { ComposerParkingContext } from '@/components/AssistantChat/composerParkingContext'
@@ -290,6 +293,8 @@ export function HappyComposer(props: {
     onGoalAction?: (request: CodexGoalRequest) => Promise<ThreadGoal | null>
     goal?: ThreadGoal | null
     statusDetails?: ReactNode
+    workspaceStatus?: ReactNode
+    workingDirectory?: string
     sessionId?: string
     focusInputRef?: MutableRefObject<(() => void) | null>
     onUploadDraftSnapshot?: (text: string, attachments: AttachmentDraftInput[]) => void
@@ -403,6 +408,8 @@ export function HappyComposer(props: {
     /** Chip hover / aria-label resolver (SessionChat → useSessions). */
     resolveSessionMentionTooltip?: (id: string, title: string) => SessionMentionResolveResult
 }) {
+    const pane = usePane()
+    const [primaryActionTarget, setPrimaryActionTarget] = useState<HTMLDivElement | null>(null)
     const { t } = useTranslation()
     const {
         sessionId,
@@ -479,6 +486,8 @@ export function HappyComposer(props: {
     const composerText = useAuiState((s) => s.composer.text)
     const goalMode = agentFlavor === 'codex' && isGoalComposerText(composerText)
     const attachments = useAuiState((s) => s.composer.attachments)
+    const selectionDrafts = useSelectionDrafts(sessionId)
+    usePaneEditing(Boolean(composerText.trim()) || attachments.length > 0 || selectionDrafts.references.length > 0)
     const localAttachmentOrderRef = useRef<string[]>([])
     const attachmentOrderRef = externalAttachmentOrderRef ?? localAttachmentOrderRef
     const attachmentIds = useMemo(
@@ -700,7 +709,7 @@ export function HappyComposer(props: {
     const hasAnyAttachments = hasAttachments || hasHiddenAttachments
     const blocksScheduling =
         hasAttachments || hasHiddenAttachments || hiddenAttachmentStatePending
-    const canSend = (hasText || hasAnyAttachments) && attachmentsReady && !controlsDisabled
+    const canSend = (hasText || hasAnyAttachments || selectionDrafts.references.length > 0) && attachmentsReady && !controlsDisabled
 
     useEffect(() => {
         if (!sessionId) return
@@ -1225,6 +1234,9 @@ export function HappyComposer(props: {
             richInputRef.current.flushSerializedText()
         }
 
+        if (selectionDrafts.references.length && (!draftHydration.complete || draftHydration.sessionId !== sessionId)) return
+        selectionDrafts.flush(() => api.composer().getState().text, text => api.composer().setText(text))
+
         // Scratchlist parks must not go through assistant-ui's send(): it
         // empties text/chips before onNew, so a rejected add cannot restore
         // retryable composer state (#1226 Major).
@@ -1301,7 +1313,7 @@ export function HappyComposer(props: {
         // the route-level state (`onSuccess`/`onError` in router.tsx) replaces
         // or clears it based on the actual mutation result, so the user keeps
         // the error context while the new attempt is in flight.
-    }, [
+    }, [selectionDrafts,
         api,
         attachments,
         canSend,
@@ -1465,6 +1477,7 @@ export function HappyComposer(props: {
 
     useEffect(() => {
         const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
+            if (e.defaultPrevented || (pane && !pane.focused)) return
             // Pi needs { provider, modelId } to disambiguate duplicate model IDs,
             // but this generic cycler only emits a bare modelId (or null), which
             // would lose the provider and can pick the wrong cached match or clear
@@ -1480,7 +1493,7 @@ export function HappyComposer(props: {
 
         window.addEventListener('keydown', handleGlobalKeyDown)
         return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-    }, [model, onModelChange, haptic, agentFlavor, availableModelOptions])
+    }, [model, onModelChange, haptic, agentFlavor, availableModelOptions, pane?.focused])
 
     const handleChange = useCallback((e: ReactChangeEvent<HTMLTextAreaElement>) => {
         const selection = {
@@ -1765,7 +1778,7 @@ export function HappyComposer(props: {
     // the button caption; clicking opens the settings sheet. Hidden on narrow
     // viewports where only the settings button remains.
     const isNarrowViewport = useNarrowViewport()
-    const glassLayout = useGlassLayout()
+    const glassLayout = useGlassLayout() || Boolean(pane)
     // Pi turns run for minutes with thread.isDisabled set the whole time, so
     // Pi keeps its model/effort controls live mid-turn (#1442) — the generic
     // disable rule (controlsDisabled) would lock them for the entire turn.
@@ -2340,7 +2353,7 @@ export function HappyComposer(props: {
 
     return (
         <ComposerParkingContext.Provider value={isParkingScratchlist}>
-        <div className={`app-composer-shell ${shellClassName}`} data-testid="composer-shell" data-expanded={isExpanded || undefined}>
+        <div className={`app-composer-shell ${shellClassName}`} data-workspace-composer={Boolean(pane) || undefined} data-testid="composer-shell" data-expanded={isExpanded || undefined}>
             <div className={innerClassName}>
                 {isExpanded && glassLayout ? <div className="mb-2 flex shrink-0 items-center justify-between gap-3 px-1">
                     <span className="text-sm font-medium text-[var(--app-hint)]">{t('composer.editorTitle')}</span>
@@ -2405,6 +2418,7 @@ export function HappyComposer(props: {
                             sendError ? 'ring-1 ring-red-500' : ''
                         }`}
                     >
+                        <DocumentReferenceDrafts references={selectionDrafts.references} onRemove={selectionDrafts.remove} />
                         {attachments.length > 0 ? (
                             <div className={`flex flex-wrap gap-2 px-4 pt-3 ${
                                 isExpanded ? 'max-h-[35%] shrink-0 overflow-y-auto' : ''
@@ -2418,9 +2432,13 @@ export function HappyComposer(props: {
                             </div>
                         ) : null}
 
-                        <div className={`flex min-w-0 px-4 py-3 max-sm:pb-1 ${
+                        <div className={`workspace-composer-inputline flex min-w-0 px-4 py-3 max-sm:pb-1 ${
                             isExpanded ? 'min-h-0 flex-1 items-stretch' : 'items-center'
                         }`}>
+                            {pane ? <ComposerAttachmentButton
+                                className="workspace-input-attachment"
+                                disabled={controlsDisabled || Boolean(pendingSchedule) || goalMode}
+                            /> : null}
                             {richMentionsEnabled ? (
                                 <div
                                     ref={richComposerFueAnchorRef}
@@ -2430,7 +2448,7 @@ export function HappyComposer(props: {
                                     <RichComposerInput
                                         ref={richInputRef}
                                         value={composerText}
-                                        autoFocus={!controlsDisabled && !isTouch}
+                                        autoFocus={!pane && !controlsDisabled && !isTouch}
                                         placeholder={t(resolveComposerPlaceholderKey({
                                             richMentionsEnabled: true,
                                             showContinueHint,
@@ -2456,7 +2474,7 @@ export function HappyComposer(props: {
                                 <ComposerPrimitive.Input
                                     asChild
                                     ref={textareaRef}
-                                    autoFocus={!controlsDisabled && !isTouch}
+                                    autoFocus={!pane && !controlsDisabled && !isTouch}
                                     submitOnEnter={false}
                                     cancelOnEscape={false}
                                     onChange={handleChange}
@@ -2476,7 +2494,7 @@ export function HappyComposer(props: {
                             ) : (
                                 <ComposerPrimitive.Input
                                     ref={textareaRef}
-                                    autoFocus={!controlsDisabled && !isTouch}
+                                    autoFocus={!pane && !controlsDisabled && !isTouch}
                                     placeholder={t(resolveComposerPlaceholderKey({
                                         richMentionsEnabled: false,
                                         showContinueHint,
@@ -2492,11 +2510,12 @@ export function HappyComposer(props: {
                                     className="flex-1 resize-none bg-transparent text-base leading-snug text-[var(--app-fg)] placeholder-[var(--app-hint)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                                 />
                             )}
-                            {glassLayout && !isExpanded ? <div className="composer-refinement-editor-expand">
+                            {glassLayout && !pane && !isExpanded ? <div className="composer-refinement-editor-expand">
                                 <ComposerExpandButton expanded={false} onToggle={handleExpandedToggle} />
                             </div> : null}
+                            {pane ? <div ref={setPrimaryActionTarget} className="workspace-primary-actions" /> : null}
                         </div>
-                        {richMentionsEnabled && richComposerFueStatus === 'engaging' ? (
+                        {(!pane || pane.focused) && richMentionsEnabled && richComposerFueStatus === 'engaging' ? (
                             <FueCallout
                                 title={t('richComposer.fueTitle')}
                                 body={t('richComposer.fueBody')}
@@ -2509,6 +2528,10 @@ export function HappyComposer(props: {
                         ) : null}
 
                         <ComposerButtons
+                            workspace={Boolean(pane)}
+                            primaryActionTarget={pane ? primaryActionTarget : undefined}
+                            workingDirectory={props.workingDirectory}
+                            statusControl={props.workspaceStatus}
                             onReferenceSession={richMentionsEnabled && autocompletePrefixes.includes('@') ? handleReferenceSession : undefined}
                             onCaptureInputSelection={captureGoalInputSelection}
                             compactControls={glassLayout ? <>

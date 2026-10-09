@@ -55,7 +55,7 @@ describe('shouldFollowSupersedingSession', () => {
 })
 
 describe('prepareFollowSupersedingSession', () => {
-    it('retargets a pending share transfer before the automatic A→B navigation', () => {
+    it('retargets a pending share transfer before the automatic A→B navigation', async () => {
         setSharePendingTransfer('xfer-share', 'source')
         const shouldFollow = shouldFollowSupersedingSession({
             sessionId: 'source',
@@ -65,7 +65,7 @@ describe('prepareFollowSupersedingSession', () => {
         })
         expect(shouldFollow).toBe(true)
 
-        prepareFollowSupersedingSession('source', 'fresh')
+        await prepareFollowSupersedingSession('source', 'fresh')
 
         expect(consumeSharePendingTransfer('source')).toBeNull()
         expect(consumeSharePendingTransfer('fresh')).toBe('xfer-share')

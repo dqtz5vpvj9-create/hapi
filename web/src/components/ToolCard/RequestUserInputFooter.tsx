@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
+import { usePaneEditing } from '@/workspace/PaneContext'
+import { useQuestionDraft } from './questionDraft'
 import type { ApiClient } from '@/api/client'
 import type { ChatToolCall } from '@/chat/types'
 import { Badge } from '@/components/ui/badge'
@@ -63,11 +65,6 @@ function OptionRow(props: {
     )
 }
 
-type QuestionState = {
-    selected: string[]
-    userNote: string
-}
-
 export function RequestUserInputFooter(props: {
     api: ApiClient
     sessionId: string
@@ -81,37 +78,26 @@ export function RequestUserInputFooter(props: {
     const parsed = useMemo(() => parseRequestUserInputInput(props.tool.input), [props.tool.input])
     const questions = parsed.questions
 
-    const [step, setStep] = useState(0)
-    const [stateByQuestion, setStateByQuestion] = useState<Record<string, QuestionState>>({})
-
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState<string | null>(null)
+    const { step, setStep, answers: stateByQuestion, setStateByQuestion, loading, error, setError, submitted, begin, finish } = useQuestionDraft(props.api, props.sessionId, props.tool.id, questions)
     const noteRef = useRef<HTMLTextAreaElement>(null)
+    usePaneEditing(!submitted && (loading || Object.values(stateByQuestion).some(answer => answer.selected.length > 0 || Boolean(answer.userNote.trim()))))
 
-    useEffect(() => {
-        setStep(0)
-        const initial: Record<string, QuestionState> = {}
-        for (const q of questions) {
-            initial[q.id] = { selected: [], userNote: q.prefill ?? '' }
-        }
-        setStateByQuestion(initial)
-        setLoading(false)
-        setError(null)
-    }, [props.tool.id])
-
-    if (!permission || permission.status !== 'pending') return null
+    if (!permission || permission.status !== 'pending' || submitted) return null
     if (!isRequestUserInputToolName(props.tool.name)) return null
 
     const run = async (action: () => Promise<void>, hapticType: 'success' | 'error') => {
-        if (props.disabled) return
-        setError(null)
+        if (props.disabled || !begin()) return
+        let success = false
         try {
             await action()
+            success = true
             haptic.notification(hapticType)
             props.onDone()
         } catch (e) {
             haptic.notification('error')
             setError(e instanceof Error ? e.message : t('dialog.error.default'))
+        } finally {
+            finish(success)
         }
     }
 
@@ -151,9 +137,12 @@ export function RequestUserInputFooter(props: {
             }
         }
 
-        setLoading(true)
         await run(() => props.api.approvePermission(props.sessionId, permission.id, formattedAnswers), 'success')
-        setLoading(false)
+    }
+
+    const skip = async () => {
+        if (loading) return
+        await run(() => props.api.denyPermission(props.sessionId, permission.id), 'success')
     }
 
     const next = () => {
@@ -276,6 +265,17 @@ export function RequestUserInputFooter(props: {
 
             <div className="mt-3 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
+                    {parsed.canSkip ? (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={props.disabled || loading}
+                            onClick={skip}
+                        >
+                            {t('tool.requestUserInput.skip')}
+                        </Button>
+                    ) : null}
                     {questions.length > 1 ? (
                         <Button
                             type="button"

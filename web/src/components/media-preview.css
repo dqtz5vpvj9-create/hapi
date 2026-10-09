@@ -1,0 +1,27 @@
+/* Missing source dimensions must not turn a download/decode into chat layout. */
+[data-media-frame] {
+    position: relative;
+    display: block;
+    width: min(100%, 32rem);
+    aspect-ratio: 4 / 3;
+    max-height: 60svh;
+    padding: 0;
+    overflow: hidden;
+    background: var(--app-subtle-bg);
+}
+[data-media-frame="attachment"] { width: 16rem; max-width: 100%; max-height: 12rem; }
+[data-media-frame] > img {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%; max-width: 100%; max-height: 100%;
+    object-fit: contain;
+}
+[data-media-frame]:not([data-media-state="ready"]) > img { opacity: 0; }
+.hapi-media-placeholder {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    padding: 1rem; overflow: auto; font-size: .875rem; color: var(--app-hint);
+}
+.hapi-document-preview { height: min(28rem, 60svh); overflow: auto; overscroll-behavior: contain; }
+.hapi-document-preview video { width: 100%; height: 100%; object-fit: contain; }
+
+.hapi-audio-preview { height: 3.5rem; overflow: auto; }

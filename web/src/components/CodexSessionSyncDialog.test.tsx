@@ -76,7 +76,7 @@ describe('CodexSessionSyncDialog', () => {
             onConfirm: vi.fn(), onRestartCodexDesktop: vi.fn(), isPending: false,
             isRestartingCodexDesktop: false, isLoading: false, hasMore: true, onLoadMore: more }
         const view = render(<I18nProvider><CodexSessionSyncDialog {...props} /></I18nProvider>)
-        const list = screen.getByTestId('codex-session-list')
+        const list = screen.getByTestId('codex-session-scroll')
         Object.defineProperties(list, { scrollHeight: { value: 1000 }, clientHeight: { value: 400 } })
         fireEvent.scroll(list, { target: { scrollTop: 100 } })
         expect(more).not.toHaveBeenCalled()
@@ -100,6 +100,41 @@ describe('CodexSessionSyncDialog', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
         expect(retry).toHaveBeenCalledOnce()
         expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled()
+    })
+
+    it('drops a selection removed from the current list and prevents connecting it', () => {
+        const onConfirm = vi.fn(async () => {})
+        const session = { id: 'native-1', title: 'Windows thread', file: 'thread.jsonl', modifiedAt: 1, connectionState: 'attached' as const }
+        const props = { isOpen: true, onClose: vi.fn(), mode: 'connect' as const, selectionMode: 'single' as const,
+            currentCodexSessionId: null, onConfirm, onRestartCodexDesktop: vi.fn(), isPending: false,
+            isRestartingCodexDesktop: false, isLoading: false }
+        const view = render(<I18nProvider><CodexSessionSyncDialog {...props} sessions={[session]} /></I18nProvider>)
+        fireEvent.click(screen.getByRole('radio', { name: session.title }))
+        expect(screen.getByRole('button', { name: 'Connect and open' })).toBeEnabled()
+        view.rerender(<I18nProvider><CodexSessionSyncDialog {...props} sessions={[]} /></I18nProvider>)
+        expect(screen.getByText('0 sessions selected')).toBeInTheDocument()
+        const confirm = screen.getByRole('button', { name: 'Connect and open' })
+        expect(confirm).toBeDisabled()
+        fireEvent.click(confirm)
+        expect(onConfirm).not.toHaveBeenCalled()
+        view.rerender(<I18nProvider><CodexSessionSyncDialog {...props} sessions={[session]} /></I18nProvider>)
+        expect(screen.getByRole('radio', { name: session.title })).not.toBeChecked()
+    })
+
+    it('keeps a selected earlier page while loading more and rejects a thread that becomes unavailable', () => {
+        const session = { id: 'native-1', title: 'Windows thread', file: 'thread.jsonl', modifiedAt: 1, connectionState: 'attached' as const }
+        const props = { isOpen: true, onClose: vi.fn(), mode: 'connect' as const, selectionMode: 'single' as const,
+            currentCodexSessionId: null, onConfirm: vi.fn(), onRestartCodexDesktop: vi.fn(), isPending: false,
+            isRestartingCodexDesktop: false }
+        const view = render(<I18nProvider><CodexSessionSyncDialog {...props} sessions={[session]} isLoading={false} /></I18nProvider>)
+        fireEvent.click(screen.getByRole('radio', { name: session.title }))
+        view.rerender(<I18nProvider><CodexSessionSyncDialog {...props} sessions={[session]} isLoading /></I18nProvider>)
+        expect(screen.getByRole('radio', { name: session.title })).toBeChecked()
+        view.rerender(<I18nProvider><CodexSessionSyncDialog {...props} sessions={[session, { ...session, id: 'native-2', title: 'Older thread' }]} isLoading={false} /></I18nProvider>)
+        expect(screen.getByRole('button', { name: 'Connect and open' })).toBeEnabled()
+        view.rerender(<I18nProvider><CodexSessionSyncDialog {...props} sessions={[{ ...session, connectionState: 'unavailable' }]} isLoading={false} /></I18nProvider>)
+        expect(screen.getByText('0 sessions selected')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Connect and open' })).toBeDisabled()
     })
 
     it('shows the working directory for local Codex sessions', () => {

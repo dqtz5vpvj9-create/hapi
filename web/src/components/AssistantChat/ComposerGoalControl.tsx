@@ -1,4 +1,5 @@
 import * as Popover from '@radix-ui/react-popover'
+import { usePaneEditing } from '@/workspace/PaneContext'
 import { useEffect, useRef, useState } from 'react'
 import type { CodexGoalRequest } from '@hapi/protocol/apiTypes'
 import type { ThreadGoal } from '@/types/api'
@@ -26,6 +27,7 @@ export function ComposerGoalControl(props: {
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState(false)
     const [confirmClear, setConfirmClear] = useState(false)
+    usePaneEditing(editing || busy)
     const inFlight = useRef(false)
     const triggerRef = useRef<HTMLButtonElement>(null)
     const editorRef = useRef<HTMLTextAreaElement>(null)

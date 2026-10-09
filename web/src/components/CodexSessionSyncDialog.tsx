@@ -101,9 +101,16 @@ export function CodexSessionSyncDialog(props: {
         () => new Set(sessions.map((session) => session.id)),
         [sessions]
     )
+    const selectableSessionIds = useMemo(() => new Set(sessions
+        .filter(session => mode === 'connect' ? session.connectionState !== 'unavailable' : !importedSessions[session.id])
+        .map(session => session.id)), [sessions, mode, importedSessions])
+    const availableSelectedSessionIds = useMemo(
+        () => selectedSessionIds.filter(id => selectableSessionIds.has(id)),
+        [selectedSessionIds, selectableSessionIds]
+    )
     const selectedSessionIdSet = useMemo(
-        () => new Set(selectedSessionIds),
-        [selectedSessionIds]
+        () => new Set(availableSelectedSessionIds),
+        [availableSelectedSessionIds]
     )
     const knownWorkdirsRef = useRef(new Set<string>())
     const workdirOptions = useMemo(() => {
@@ -182,6 +189,11 @@ export function CodexSessionSyncDialog(props: {
         setHasInitializedSelection(true)
     }, [currentCodexSessionId, hasInitializedSelection, importedSessions, isLoading, isOpen, sessionIdSet])
 
+    useEffect(() => {
+        if (isLoading) return
+        setSelectedSessionIds(current => current.every(id => selectableSessionIds.has(id))
+            ? current : current.filter(id => selectableSessionIds.has(id)))
+    }, [isLoading, selectableSessionIds])
 
     const clearLongPressTimer = () => {
         if (longPressTimerRef.current) {
@@ -224,7 +236,7 @@ export function CodexSessionSyncDialog(props: {
     }
 
     const selectAll = () => {
-        setSelectedSessionIds(filteredSessions.map((session) => session.id))
+        setSelectedSessionIds(filteredSessions.filter(session => selectableSessionIds.has(session.id)).map((session) => session.id))
     }
 
     const clearAll = () => {
@@ -233,22 +245,22 @@ export function CodexSessionSyncDialog(props: {
     }
 
     const handleConfirm = async () => {
-        if (selectedSessionIds.length === 0 || isPending || isLoading) return
+        if (availableSelectedSessionIds.length === 0 || isPending || isLoading || error) return
 
         if (mode !== 'connect' && selectionMode === 'single' && onSelectOnly) {
-            const selected = sessions.find((session) => session.id === selectedSessionIds[0])
+            const selected = sessions.find((session) => session.id === availableSelectedSessionIds[0])
             if (selected) onSelectOnly(selected)
             return
         }
 
         // 中文注释：确认按钮只提交用户在弹窗中勾选的 Codex thread，实际导入逻辑由父组件统一处理并给出 toast 提示。
-        await onConfirm(selectedSessionIds)
+        await onConfirm(availableSelectedSessionIds)
     }
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-w-xl max-h-[calc(100dvh-24px)] overflow-y-auto">
-                <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between" data-testid="codex-import-dialog-header">
+            <DialogContent className="app-codex-session-dialog flex max-w-xl flex-col">
+                <div className="flex shrink-0 flex-col items-start gap-3 sm:flex-row sm:justify-between" data-testid="codex-import-dialog-header">
                     <DialogHeader className="min-w-0 w-full flex-1 pr-10 text-left">
                         <DialogTitle>{t(mode === 'connect' ? 'codexConnect.title' : 'codexSync.confirm.title')}</DialogTitle>
                         <DialogDescription className="mt-2">
@@ -272,7 +284,17 @@ export function CodexSessionSyncDialog(props: {
                     ) : null}
                 </div>
 
-                <div className="mt-4 space-y-3">
+                <div
+                    className="mt-4 -mx-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 p-1"
+                    data-testid="codex-session-scroll"
+                    onScroll={(event) => {
+                        const list = event.currentTarget
+                        if (hasMore && !isLoading && !isPending && !error
+                            && list.scrollHeight - list.scrollTop - list.clientHeight <= 80) {
+                            onLoadMore?.()
+                        }
+                    }}
+                >
                     {archiveError ? (
                         <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600">
                             {archiveError}
@@ -280,7 +302,7 @@ export function CodexSessionSyncDialog(props: {
                     ) : null}
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-xs text-[var(--app-hint)]">
-                            {t('codexSync.confirm.selectedCount', { n: selectedSessionIds.length })}
+                            {t('codexSync.confirm.selectedCount', { n: availableSelectedSessionIds.length })}
                         </div>
                         <div className="flex items-center gap-2">
                             <Button
@@ -351,15 +373,8 @@ export function CodexSessionSyncDialog(props: {
                     ) : null}
 
                     <div
-                        className="max-h-[50vh] overflow-y-auto rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)]"
+                        className="rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)]"
                         data-testid="codex-session-list"
-                        onScroll={(event) => {
-                            const list = event.currentTarget
-                            if (hasMore && !isLoading && !isPending && !error
-                                && list.scrollHeight - list.scrollTop - list.clientHeight <= 80) {
-                                onLoadMore?.()
-                            }
-                        }}
                     >
                         {isLoading && sessions.length === 0 ? (
                             <div className="px-4 py-8 text-center text-sm text-[var(--app-hint)]">
@@ -492,7 +507,7 @@ export function CodexSessionSyncDialog(props: {
                     </Button> : null}
                 </div>
 
-                <div className="mt-4 flex justify-end gap-2">
+                <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2">
                     <Button
                         type="button"
                         variant="secondary"
@@ -505,9 +520,9 @@ export function CodexSessionSyncDialog(props: {
                         type="button"
                         variant="secondary"
                         onClick={() => void handleConfirm()}
-                        disabled={isPending || isLoading || Boolean(error) || selectedSessionIds.length === 0}
+                        disabled={isPending || isLoading || Boolean(error) || availableSelectedSessionIds.length === 0}
                     >
-                        {mode === 'connect' ? t(isPending ? 'codexConnect.connecting' : sessions.find(s => s.id === selectedSessionIds[0])?.connectionState === 'history' ? 'codexConnect.resume' : 'codexConnect.connect') : selectionMode === 'single' ? t('codexSync.confirm.useSelected') : (isPending ? t('codexSync.confirm.confirming') : t('codexSync.confirm.confirm'))}
+                        {mode === 'connect' ? t(isPending ? 'codexConnect.connecting' : sessions.find(s => s.id === availableSelectedSessionIds[0])?.connectionState === 'history' ? 'codexConnect.resume' : 'codexConnect.connect') : selectionMode === 'single' ? t('codexSync.confirm.useSelected') : (isPending ? t('codexSync.confirm.confirming') : t('codexSync.confirm.confirm'))}
                     </Button>
                 </div>
             </DialogContent>

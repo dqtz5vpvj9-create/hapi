@@ -46,6 +46,28 @@ describe('composer-attachment-drafts', () => {
         expect(await mod.getDraftAttachments('session-1')).toEqual([])
     })
 
+    it('retains a hidden upload completion across stale pending snapshots without crossing session boundaries', async () => {
+        const mod = await import('./composer-attachment-drafts')
+        const file = new File(['notes'], 'notes.txt')
+        mod.saveDraftAttachments('source', [{ id: 'upload-1', file }])
+        const [restoring] = await mod.getDraftAttachments('source')
+        mod.completeDraftAttachmentUpload('source', { id: 'upload-1', path: '/source/notes.txt', uploadSessionId: 'source' })
+
+        // A composer which started hydrating before completion still knows the path.
+        mod.saveDraftAttachments('source', [{ id: 'upload-1', file: restoring! }])
+        const [saved] = await mod.getDraftAttachments('source')
+        expect(mod.getRestoredUploadMetadata(saved!)?.path).toBe('/source/notes.txt')
+        await mod.moveDraftAttachments('source', 'target', () => [{ id: 'upload-1', file: restoring! }])
+        const [moved] = await mod.getDraftAttachments('target')
+        expect(mod.getRestoredUploadMetadata(moved!)?.path).toBeUndefined()
+
+        mod.completeDraftAttachmentUpload('source', { id: 'upload-1', path: '/source/late.txt', uploadSessionId: 'source' })
+        expect(await mod.getDraftAttachments('source')).toEqual([])
+        mod.clearDraftAttachments('target')
+        mod.completeDraftAttachmentUpload('target', { id: 'upload-1', path: '/target/late.txt', uploadSessionId: 'target' })
+        expect(await mod.getDraftAttachments('target')).toEqual([])
+    })
+
     it('does not read stale IndexedDB data while a clear is being persisted', async () => {
         const mod = await import('./composer-attachment-drafts')
         mod.saveDraftAttachments('session-1', [{ id: 'x', file: new File(['x'], 'x.txt') }])

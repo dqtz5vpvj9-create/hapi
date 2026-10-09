@@ -64,6 +64,7 @@ vi.mock('@/hooks/usePWAInstall', () => ({
 }))
 vi.mock('@/lib/use-translation', () => ({
     useTranslation: () => ({
+        locale: 'en',
         t: (key: string) => key === 'misc.typeAMessage' ? 'Type a message' : key,
     }),
 }))

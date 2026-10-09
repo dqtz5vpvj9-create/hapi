@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode, type SyntheticEvent, type WheelEvent } from 'react'
+import './media-preview.css'
 import { CloseIcon } from '@/components/icons'
 
 const MIN_IMAGE_SCALE = 0.25
@@ -36,12 +37,21 @@ export function ImagePreview(props: {
     buttonClassName?: string
     imageClassName?: string
     imageStyle?: CSSProperties
+    /** Reserve geometry before the image URL and decoded pixels are available. */
+    frame?: 'attachment' | 'artifact'
+    loadingLabel?: string
+    errorLabel?: string
     caption?: ReactNode
     galleryId?: string
     onTriggerPointerDown?: (event: PointerEvent<HTMLButtonElement>) => void
     onTriggerContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void
     onTriggerClick?: (event: MouseEvent<HTMLButtonElement>) => void
 }) {
+    const [retry, setRetry] = useState(0)
+    const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
+    const [failedSrc, setFailedSrc] = useState<string | null>(null)
+    const imageReady = Boolean(props.src) && loadedSrc === props.src
+    const imageFailed = Boolean(props.src) && failedSrc === props.src
     const [viewerOpen, setViewerOpen] = useState(false)
     const [previewImages, setPreviewImages] = useState<PreviewImage[]>([])
     const [previewIndex, setPreviewIndex] = useState(0)
@@ -63,10 +73,10 @@ export function ImagePreview(props: {
         event.stopPropagation()
         const galleryId = props.galleryId ?? ''
         const triggers = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-image-preview-trigger]'))
-            .filter((trigger) => (trigger.dataset.imagePreviewGallery ?? '') === galleryId)
+            .filter((trigger) => (trigger.dataset.imagePreviewGallery ?? '') === galleryId && trigger.querySelector('img')?.getAttribute('src'))
         const images = triggers.flatMap((trigger): PreviewImage[] => {
             const image = trigger.querySelector('img')
-            if (!image) return []
+            if (!image?.getAttribute('src')) return []
             return [{
                 src: image.getAttribute('src') ?? image.src,
                 fileName: trigger.dataset.imagePreviewFileName ?? image.alt,
@@ -87,8 +97,13 @@ export function ImagePreview(props: {
     const handleTriggerClick = useCallback((event: MouseEvent<HTMLButtonElement>) => {
         props.onTriggerClick?.(event)
         if (event.defaultPrevented) return
+        if (props.frame && imageFailed) {
+            setFailedSrc(null)
+            setRetry(value => value + 1)
+            return
+        }
         openViewer(event)
-    }, [openViewer, props.onTriggerClick])
+    }, [openViewer, props.onTriggerClick, props.frame, imageFailed])
 
     const updateScale = useCallback((next: number | ((current: number) => number)) => {
         setScale((current) => {
@@ -279,6 +294,9 @@ export function ImagePreview(props: {
                 onContextMenu={props.onTriggerContextMenu}
                 onClick={handleTriggerClick}
                 data-image-preview-trigger=""
+                data-media-frame={props.frame}
+                data-media-state={imageFailed ? 'error' : imageReady ? 'ready' : 'loading'}
+                disabled={props.frame ? !imageReady && !imageFailed : undefined}
                 data-image-preview-file-name={props.fileName}
                 data-image-preview-label={props.label}
                 data-image-preview-gallery={props.galleryId ?? ''}
@@ -286,14 +304,19 @@ export function ImagePreview(props: {
                 title="Click to zoom"
             >
                 <img
-                    src={props.src}
+                    key={`${props.src}:${retry}`}
+                    src={props.src || undefined}
                     alt={props.label}
                     className={props.imageClassName ?? 'max-h-[calc(100vh-14rem)] max-w-full object-contain transition-transform group-hover:scale-[1.01]'}
                     style={props.imageStyle}
+                    decoding="async"
+                    onLoad={() => { setLoadedSrc(props.src); setFailedSrc(null) }}
+                    onError={() => setFailedSrc(props.src)}
                     draggable={false}
                 />
+                {props.frame && !imageReady ? <span className="hapi-media-placeholder" role="status">{imageFailed ? (props.errorLabel ?? 'Image unavailable') : (props.loadingLabel ?? 'Loading image…')}</span> : null}
                 {props.caption}
-                <span className="sr-only">{props.fileName}</span>
+                {!props.frame ? <span className="sr-only">{props.fileName}</span> : null}
             </button>
 
             {viewerOpen ? (

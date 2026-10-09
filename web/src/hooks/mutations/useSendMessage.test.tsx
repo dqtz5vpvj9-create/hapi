@@ -715,6 +715,7 @@ describe('useSendMessage', () => {
         expect(onSessionResolved).toHaveBeenCalledWith('session-same', {
             text: 'same-id with hidden file',
             attachments: undefined,
+            attachmentDrafts: undefined,
         })
         expect(accepted).toBe(false)
         expect(sendMessage).not.toHaveBeenCalled()

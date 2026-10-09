@@ -1,4 +1,5 @@
 import type { Machine } from '@/types/api'
+import { useEffect, useId, useState } from 'react'
 import { isMachineCapabilitySkewed } from '@hapi/protocol/runnerCapabilities'
 import { useTranslation } from '@/lib/use-translation'
 import { SelectControl } from '@/components/ui/select-control'
@@ -29,13 +30,22 @@ export function MachineSelector(props: {
     onChange: (machineId: string) => void
 }) {
     const { t } = useTranslation()
+    const controlId = useId()
+    const selectedMachine = props.machines.find(machine => machine.id === props.machineId)
+    const [lastSelectedMachine, setLastSelectedMachine] = useState(selectedMachine)
+    useEffect(() => {
+        if (selectedMachine) setLastSelectedMachine(selectedMachine)
+    }, [selectedMachine])
+    const offlineTitle = lastSelectedMachine?.id === props.machineId
+        ? getMachineTitle(lastSelectedMachine) : props.machineId?.slice(0, 8)
 
     return (
         <div className="flex flex-col gap-1.5 px-3 py-3">
-            <label className="text-xs font-medium text-[var(--app-hint)]">
+            <label htmlFor={controlId} className="text-xs font-medium text-[var(--app-hint)]">
                 {t('newSession.machine')}
             </label>
             <SelectControl
+                id={controlId}
                 value={props.machineId ?? ''}
                 onChange={(e) => props.onChange(e.target.value)}
                 disabled={props.isDisabled}
@@ -47,6 +57,11 @@ export function MachineSelector(props: {
                 {!props.isLoading && props.machines.length === 0 && (
                     <option value="">{t('misc.noMachines')}</option>
                 )}
+                {props.machineId && !selectedMachine ? (
+                    <option value={props.machineId}>
+                        {offlineTitle} · {t('newSession.machineOffline')}
+                    </option>
+                ) : null}
                 {props.machines.map((m) => (
                     <option key={m.id} value={m.id}>
                         {getMachineOptionLabel(m, t('runner.skew.updateRequired'))}

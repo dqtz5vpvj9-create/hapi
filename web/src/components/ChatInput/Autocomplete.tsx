@@ -43,9 +43,9 @@ export const Autocomplete = memo(function Autocomplete(props: AutocompleteProps)
                     onClick={() => onSelect(index)}
                     onMouseDown={(e) => e.preventDefault()} // Prevent blur on textarea
                 >
-                    <span className="w-full font-medium">{suggestion.label}</span>
+                    <span className="w-full truncate font-medium" title={suggestion.label}>{suggestion.label}</span>
                     {suggestion.description && (
-                        <span className={`w-full min-h-[2.25rem] text-xs leading-snug line-clamp-2 ${
+                        <span className={`w-full text-xs leading-snug line-clamp-2 ${
                             index === selectedIndex
                                 ? 'opacity-80'
                                 : 'text-[var(--app-hint)]'

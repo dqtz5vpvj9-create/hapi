@@ -22,11 +22,12 @@ const choice = { id: 'choice', question: 'Choose', isOther: true, options: [{ la
 
 function renderFooter(input: unknown = { questions: [choice] }) {
     const approvePermission = vi.fn().mockResolvedValue(undefined)
+    const denyPermission = vi.fn().mockResolvedValue(undefined)
     const props = {
-        api: { approvePermission } as unknown as ApiClient,
+        api: { approvePermission, denyPermission } as unknown as ApiClient,
         sessionId: 'session-1', tool: makeTool(input), disabled: false, onDone: vi.fn()
     }
-    return { ...render(<RequestUserInputFooter {...props} />), props, approvePermission }
+    return { ...render(<RequestUserInputFooter {...props} />), props, approvePermission, denyPermission }
 }
 
 function makeTool(input: unknown): ChatToolCall {
@@ -49,6 +50,51 @@ function makeTool(input: unknown): ChatToolCall {
 }
 
 describe('RequestUserInputFooter', () => {
+    it('keeps the answer and pending submission across a hidden pane and reports its later failure', async () => {
+        const { props, unmount, approvePermission } = renderFooter()
+        let fail!: (reason: Error) => void
+        approvePermission.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+        fireEvent.click(screen.getByRole('button', { name: /以上都不是/ }))
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'keep across workspace switch' } })
+        fireEvent.click(screen.getByRole('button', { name: 'tool.submit' }))
+        expect(approvePermission).toHaveBeenCalledTimes(1)
+        unmount()
+        render(<RequestUserInputFooter {...props} />)
+        expect(screen.getByRole('textbox')).toHaveValue('keep across workspace switch')
+        expect(screen.getByRole('button', { name: 'tool.submitting' })).toBeDisabled()
+        fail(new Error('Network interrupted'))
+        await screen.findByText('Network interrupted')
+        expect(screen.getByRole('textbox')).toHaveValue('keep across workspace switch')
+        fireEvent.click(screen.getByRole('button', { name: 'tool.submit' }))
+        await waitFor(() => expect(props.onDone).toHaveBeenCalledTimes(1))
+        expect(approvePermission).toHaveBeenCalledTimes(2)
+    })
+    it('skips an async question without requiring or sending an answer', async () => {
+        const { props, approvePermission, denyPermission } = renderFooter({ canSkip: true, questions: [choice] })
+        fireEvent.click(screen.getByRole('button', { name: 'tool.requestUserInput.skip' }))
+        await waitFor(() => expect(props.onDone).toHaveBeenCalledTimes(1))
+        expect(denyPermission).toHaveBeenCalledWith('session-1', 'permission-1')
+        expect(approvePermission).not.toHaveBeenCalled()
+        expect(screen.queryByText('tool.selectOption')).not.toBeInTheDocument()
+    })
+
+    it('does not offer skip for blocking questions', () => {
+        renderFooter()
+        expect(screen.queryByRole('button', { name: 'tool.requestUserInput.skip' })).not.toBeInTheDocument()
+    })
+
+    it('keeps the draft and allows retry when skipping fails', async () => {
+        const { props, denyPermission } = renderFooter({ canSkip: true, questions: [choice] })
+        denyPermission.mockRejectedValueOnce(new Error('skip failed'))
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'keep draft' } })
+        fireEvent.click(screen.getByRole('button', { name: 'tool.requestUserInput.skip' }))
+        await screen.findByText('skip failed')
+        expect(props.onDone).not.toHaveBeenCalled()
+        expect(screen.getByRole('textbox')).toHaveValue('keep draft')
+        fireEvent.click(screen.getByRole('button', { name: 'tool.requestUserInput.skip' }))
+        await waitFor(() => expect(props.onDone).toHaveBeenCalledTimes(1))
+    })
+
     it.each(['', ' \n ', '  自定义\n说明  '])('focuses notes without submitting and posts canonical values (%j)', async (note) => {
         const { approvePermission } = renderFooter()
         fireEvent.click(screen.getByRole('button', { name: /Alpha/ }))

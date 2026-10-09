@@ -3,7 +3,11 @@ import type { ApiClient } from '@/api/client'
 import type { AttachmentMetadata } from '@/types/api'
 import { isImageMimeType } from '@/lib/fileAttachments'
 import { randomId } from '@/lib/randomId'
-import { getRestoredUploadMetadata } from '@/lib/composer-attachment-drafts'
+import {
+    completeDraftAttachmentUpload,
+    getRestoredUploadMetadata,
+    setRestoredUploadMetadata,
+} from '@/lib/composer-attachment-drafts'
 import type { AttachmentDraftHandoff } from '@/lib/composer-draft-transfer'
 
 /** Composer / share upload ceiling — keep deep-link fetch in sync. */
@@ -16,6 +20,57 @@ type PendingUploadAttachment = PendingAttachment & {
     uploadSessionId?: string
 }
 
+type UploadTask = {
+    cancelled: boolean
+    result: Promise<Awaited<ReturnType<ApiClient['uploadFile']>>>
+    cancel: () => Promise<void>
+}
+
+// Only in-flight requests live here. Completed paths belong to the existing
+// composer draft store, so unmounting a pane does not restart its upload.
+const pendingUploads = new WeakMap<ApiClient, Map<string, UploadTask>>()
+
+function uploadAttachment(api: ApiClient, sessionId: string, id: string, file: File, previewUrl?: string): UploadTask {
+    let uploads = pendingUploads.get(api)
+    if (!uploads) pendingUploads.set(api, uploads = new Map())
+    const key = JSON.stringify([sessionId, id])
+    const existing = uploads.get(key)
+    if (existing && !existing.cancelled) return existing
+
+    let uploadedPath: string | undefined
+    let cleanup: Promise<void> | undefined
+    const deleteUploadedFile = () => {
+        if (!uploadedPath) return Promise.resolve()
+        return cleanup ??= api.deleteUploadFile(sessionId, uploadedPath).then(() => {}, () => {})
+    }
+    const task: UploadTask = {
+        cancelled: false,
+        cancel() {
+            task.cancelled = true
+            return deleteUploadedFile()
+        },
+        result: Promise.resolve().then(async () => {
+            const content = previewUrl ? base64FromDataUrl(previewUrl) : await fileToBase64(file)
+            if (task.cancelled) return { success: false }
+            const result = await api.uploadFile(sessionId, file.name, content, file.type || 'application/octet-stream')
+            if (result.success && result.path) {
+                uploadedPath = result.path
+                if (task.cancelled) await deleteUploadedFile()
+                else {
+                    const metadata = { id, path: result.path, previewUrl, uploadSessionId: sessionId }
+                    setRestoredUploadMetadata(file, metadata)
+                    completeDraftAttachmentUpload(sessionId, metadata)
+                }
+            }
+            return result
+        }).finally(() => {
+            if (uploads.get(key) === task) uploads.delete(key)
+        }),
+    }
+    uploads.set(key, task)
+    return task
+}
+
 export function createAttachmentAdapter(
     api: ApiClient,
     sessionId: string,
@@ -25,7 +80,7 @@ export function createAttachmentAdapter(
     // Cancellation is re-checked at transfer save time via isCancelled().
     onSessionResolved?: (sessionId: string, pending: AttachmentDraftHandoff) => Promise<void>,
 ): AttachmentAdapter {
-    const uploadAttempts = new Map<string, { cancelled: boolean }>()
+    const uploadAttempts = new Map<string, { cancelled: boolean; task?: UploadTask }>()
 
     const deleteUpload = async (path?: string, uploadSessionId = sessionId) => {
         if (!path) return
@@ -54,8 +109,8 @@ export function createAttachmentAdapter(
             // Cancellation belongs to an add attempt, not the stable identity:
             // a removed Scratchlist image can later be copied again. Older
             // in-flight uploads retain their own cancelled state.
-            const attempt = { cancelled: false }
-            uploadAttempts.set(id, attempt)
+            const attempt: { cancelled: boolean; task?: UploadTask } = { cancelled: false }
+            if (!restored) setRestoredUploadMetadata(file, { id })
             if (!resolveSessionId && restored?.path) {
                 yield {
                     id: restored.id,
@@ -71,6 +126,7 @@ export function createAttachmentAdapter(
                 return
             }
 
+            uploadAttempts.set(id, attempt)
             const contentType = file.type || 'application/octet-stream'
 
             try {
@@ -126,14 +182,6 @@ export function createAttachmentAdapter(
                     return
                 }
 
-                const content = previewUrl
-                    ? base64FromDataUrl(previewUrl)
-                    : await fileToBase64(file)
-
-                if (attempt.cancelled) {
-                    return
-                }
-
                 yield {
                     id,
                     type: 'file',
@@ -144,13 +192,14 @@ export function createAttachmentAdapter(
                     previewUrl
                 } as PendingUploadAttachment
 
-                const result = await api.uploadFile(uploadSessionId, file.name, content, contentType)
-                if (attempt.cancelled) {
-                    if (result.success && result.path) {
-                        await deleteUpload(result.path, uploadSessionId)
-                    }
-                    return
-                }
+                if (attempt.cancelled) return
+                // An earlier mount may have finished while this one was
+                // preparing its preview. Re-read before starting a request.
+                const completed = !resolveSessionId ? getRestoredUploadMetadata(file) : undefined
+                const result = completed?.path
+                    ? { success: true, path: completed.path }
+                    : await (attempt.task = uploadAttachment(api, uploadSessionId, id, file, previewUrl)).result
+                if (attempt.cancelled || attempt.task?.cancelled) return
 
                 if (!result.success || !result.path) {
                     yield {
@@ -164,6 +213,7 @@ export function createAttachmentAdapter(
                     return
                 }
 
+                setRestoredUploadMetadata(file, { id, path: result.path, previewUrl, uploadSessionId })
                 yield {
                     id,
                     type: 'file',
@@ -177,6 +227,7 @@ export function createAttachmentAdapter(
                 } as PendingUploadAttachment
 
             } catch {
+                if (attempt.cancelled || attempt.task?.cancelled) return
                 yield {
                     id,
                     type: 'file',
@@ -185,14 +236,27 @@ export function createAttachmentAdapter(
                     file,
                     status: { type: 'incomplete', reason: 'error' }
                 }
+            } finally {
+                if (uploadAttempts.get(id) === attempt) uploadAttempts.delete(id)
             }
         },
 
         async remove(attachment: Attachment): Promise<void> {
             const attempt = uploadAttempts.get(attachment.id)
             if (attempt) attempt.cancelled = true
-            const path = (attachment as PendingUploadAttachment).path
-            const uploadSessionId = (attachment as PendingUploadAttachment).uploadSessionId
+            // The runtime can replace its adapter while retaining attachments.
+            // Removal must still reach the request owned by the prior adapter.
+            const task = attempt?.task ?? pendingUploads.get(api)?.get(JSON.stringify([sessionId, attachment.id]))
+            const metadata = attachment.file ? getRestoredUploadMetadata(attachment.file) : undefined
+            const path = (attachment as PendingUploadAttachment).path ?? metadata?.path
+            const uploadSessionId = (attachment as PendingUploadAttachment).uploadSessionId ?? metadata?.uploadSessionId
+            if (attachment.file) setRestoredUploadMetadata(attachment.file, {
+                id: attachment.id, path: undefined, previewUrl: undefined, uploadSessionId: undefined,
+            })
+            if (task) {
+                await task.cancel()
+                return
+            }
             await deleteUpload(path, uploadSessionId)
         },
 

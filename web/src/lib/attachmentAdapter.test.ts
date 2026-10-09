@@ -253,6 +253,26 @@ describe('attachmentAdapter image previews', () => {
 })
 
 describe('stable restored identity cancellation', () => {
+    it('cancels an upload from a replacement adapter and deletes its late result once', async () => {
+        const { createAttachmentAdapter } = await import('./attachmentAdapter')
+        let finish!: (result: { success: boolean; path: string }) => void
+        const uploadFile = vi.fn(() => new Promise<{ success: boolean; path: string }>(resolve => { finish = resolve }))
+        const deleteUploadFile = vi.fn(async () => ({}))
+        const api = { uploadFile, deleteUploadFile } as never
+        const original = createAttachmentAdapter(api, 'session-cancel')
+        const additions = original.add({ file: new File(['notes'], 'notes.txt') })
+        if (!('next' in additions)) throw new Error('Expected upload progress')
+        const first = await additions.next()
+        await additions.next()
+        const pending = additions.next()
+        await vi.waitFor(() => expect(uploadFile).toHaveBeenCalledOnce())
+        const replacement = createAttachmentAdapter(api, 'session-cancel')
+        await replacement.remove(first.value!)
+        finish({ success: true, path: '/uploads/cancelled.txt' })
+        expect((await pending).done).toBe(true)
+        expect(deleteUploadFile).toHaveBeenCalledExactlyOnceWith('session-cancel', '/uploads/cancelled.txt')
+    })
+
     it('can re-add a removed identity while its older upload remains cancelled', async () => {
         const { createAttachmentAdapter } = await import('./attachmentAdapter')
         const { setRestoredUploadMetadata } = await import('./composer-attachment-drafts')

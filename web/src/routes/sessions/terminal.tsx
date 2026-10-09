@@ -259,28 +259,29 @@ function QuickKeyButton(props: {
 }
 
 export default function TerminalPage() {
+    const { sessionId } = useParams({ from: '/sessions/$sessionId/terminal' })
+    const goBack = useAppGoBack()
+    return <SessionTerminal sessionId={sessionId} onBack={goBack} />
+}
+
+export function SessionTerminal(props: { sessionId: string; terminalId?: string; onBack: () => void }) {
     const workspacePanel = useWorkspacePanel()
     const { t } = useTranslation()
     const compactControls = useCompactTerminalControls()
-    const { sessionId } = useParams({ from: '/sessions/$sessionId/terminal' })
+    const { sessionId } = props
     const { api, token, baseUrl } = useAppContext()
-    const goBack = useAppGoBack()
+    const goBack = props.onBack
     const { session } = useSession(api, sessionId)
     const terminalSupported = isRemoteTerminalSupported(session?.metadata)
-    // A per-viewer-unique terminal id. Two browsers/tabs/devices viewing the
-    // same session must each drive their own shell: the hub registry evicts a
-    // reused id arriving from a different socket as a stale reconnect
-    // (terminalRegistry.ts), which would otherwise let a second viewer hijack
-    // the first viewer's PTY. The id is intentionally NOT derived from sessionId
-    // alone — scrollback survives navigation via the sessionId-keyed buffer
-    // (userTerminalBuffer.ts), not via a stable id. Held in a ref so it stays
-    // constant across re-renders and transient socket reconnects, and
-    // regenerates only when the route switches to a different session.
+    // Ordinary routes own a fresh terminal; workspace panes supply a stable ID
+    // for reattachment. The Hub rejects a second attached controller of that
+    // ID and permits reattachment after the first viewer detaches. Scrollback
+    // is keyed by both sessionId and terminalId in userTerminalBuffer.
     const terminalIdRef = useRef<{ sessionId: string; id: string } | null>(null)
     if (terminalIdRef.current?.sessionId !== sessionId) {
         terminalIdRef.current = { sessionId, id: `term-${sessionId}-${randomId()}` }
     }
-    const terminalId = terminalIdRef.current.id
+    const terminalId = props.terminalId ?? terminalIdRef.current.id
     const terminalRef = useRef<Terminal | null>(null)
     const commandInputRef = useRef<HTMLTextAreaElement | null>(null)
     const inputDisposableRef = useRef<{ dispose: () => void } | null>(null)
@@ -330,12 +331,13 @@ export default function TerminalPage() {
             if (exitNavTimerRef.current) {
                 clearTimeout(exitNavTimerRef.current)
             }
+            if (props.terminalId) return
             exitNavTimerRef.current = setTimeout(() => {
                 exitNavTimerRef.current = null
                 goBack()
             }, EXIT_NAVIGATION_DELAY_MS)
         })
-    }, [onExit, goBack])
+    }, [onExit, goBack, props.terminalId])
 
     // Raw terminal input AND the quick-key buttons share one sticky-modifier
     // state via the dispatcher, so toggling Ctrl then typing sends the control
@@ -349,11 +351,11 @@ export default function TerminalPage() {
             inputDisposableRef.current = terminal.onData((data) => {
                 dispatch(data)
             })
-            if (!compactControls || inputMode === 'direct') {
+            if (!props.terminalId && (!compactControls || inputMode === 'direct')) {
                 terminal.focus()
             }
         },
-        [compactControls, inputMode, dispatch]
+        [compactControls, inputMode, dispatch, props.terminalId]
     )
 
     const handleResize = useCallback(

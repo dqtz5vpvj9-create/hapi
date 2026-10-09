@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useGlassLayout } from '@/themes/glass/GlassScene'
 import * as Popover from '@radix-ui/react-popover'
 import { ComposerPrimitive } from '@assistant-ui/react'
@@ -226,6 +227,15 @@ function AttachmentIcon() {
             <path d="M21.44 11.05l-8.49 8.49a5.5 5.5 0 0 1-7.78-7.78l8.49-8.49a3.5 3.5 0 0 1 4.95 4.95l-8.49 8.49a1.5 1.5 0 0 1-2.12-2.12l7.78-7.78" />
         </svg>
     )
+}
+
+export function ComposerAttachmentButton(props: { disabled?: boolean; className?: string }) {
+    const { t } = useTranslation()
+    return <ComposerPrimitive.AddAttachment
+        aria-label={t('composer.attach')} title={t('composer.attach')}
+        disabled={props.disabled} className={props.className}>
+        <AttachmentIcon />
+    </ComposerPrimitive.AddAttachment>
 }
 
 function ComposerExpandIcon(props: { expanded: boolean }) {
@@ -640,6 +650,9 @@ export function DictationButton(props: {
 }
 
 export type ComposerButtonsProps = {
+    workspace?: boolean
+    primaryActionTarget?: HTMLElement | null
+    workingDirectory?: string
     canSend: boolean
     controlsDisabled: boolean
     showSettingsButton: boolean
@@ -732,6 +745,18 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
         })
         : scratchlistActive ? t('composer.refinement.scratchlistActive') : null
 
+    const primaryActions = <>
+                {props.voiceStatus === 'connected' && props.onVoiceMicToggle ? <button type="button" className="composer-refinement-icon"
+                    aria-label={props.voiceMicMuted ? t('voice.unmute') : t('voice.mute')} onClick={props.onVoiceMicToggle}><SpeakerIcon muted={props.voiceMicMuted} /></button> : null}
+                <DictationButton enabled={props.dictationEnabled ?? false} canSend={props.canSend}
+                    voiceEnabled={props.voiceEnabled} voiceStatus={props.voiceStatus} controlsDisabled={props.controlsDisabled} onVoiceToggle={props.onVoiceToggle} />
+                {running ? <button type="button" aria-label={t('composer.abort')} title={t('composer.abort')}
+                    disabled={props.abortDisabled} onClick={props.onAbort} className="app-composer-primary composer-refinement-icon"><AbortIcon spinning={props.isAborting} /></button> : null}
+                {showSend ? <UnifiedButton canSend={props.canSend} voiceStatus={props.voiceStatus} voiceEnabled={props.voiceEnabled}
+                    controlsDisabled={props.controlsDisabled} onSend={props.onSend} onVoiceToggle={props.onVoiceToggle}
+                    voiceLabel={props.dictationEnabled ? t('composer.dictate') : undefined} routesToScratchlist={scratchlistActive} /> : null}
+    </>
+
     return <>
         {modeLabel ? <div className="composer-refinement-mode" role="status">
             <span>{modeLabel}</span>
@@ -739,7 +764,17 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
         </div> : null}
         <div className="app-composer-toolbar composer-refinement-toolbar" data-dual-action={running && showSend}>
             <div data-testid="composer-toolbar-items" className="composer-refinement-controls">
-                <Popover.Root open={addOpen} onOpenChange={setAddOpen}>
+                {props.workspace ? (props.onReferenceSession ? <button type="button"
+                    className="composer-refinement-icon workspace-reference-session"
+                    aria-label={t('composer.refinement.referenceSession')} title={t('composer.refinement.referenceSession')}
+                    disabled={props.controlsDisabled}
+                    onPointerDown={() => { restoreSelectionRef.current = props.onCaptureInputSelection?.() ?? null }}
+                    onKeyDown={event => {
+                        if (event.key === 'Enter' || event.key === ' ') restoreSelectionRef.current = props.onCaptureInputSelection?.() ?? null
+                    }}
+                    onClick={() => { restoreSelectionRef.current?.(); props.onReferenceSession?.() }}>
+                    <span className="composer-refinement-at" aria-hidden="true">@</span>
+                </button> : null) : <Popover.Root open={addOpen} onOpenChange={setAddOpen}>
                     <Popover.Trigger asChild>
                         <button type="button" className="app-composer-add-menu composer-refinement-icon"
                             aria-label={t('composer.refinement.addContent')} title={t('composer.refinement.addContent')}
@@ -777,8 +812,8 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
                             </button>
                         </Popover.Content>
                     </Popover.Portal>
-                </Popover.Root>
-                {props.compactControls}
+                </Popover.Root>}
+                {props.workspace ? <span className="composer-goal-slot">{props.compactControls}</span> : props.compactControls}
                 {props.modelValueLabel ? <button ref={props.modelValueButtonRef} type="button"
                     className="app-composer-model composer-refinement-model"
                     aria-label={props.modelValueLabel} title={props.modelValueLabel} aria-expanded={props.modelValueOpen}
@@ -790,11 +825,13 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
                 </button> : props.showSettingsButton ? <button ref={props.settingsButtonRef} type="button"
                     className="composer-refinement-icon" aria-label={t('composer.settings')}
                     disabled={props.settingsDisabled ?? props.controlsDisabled} onClick={props.onSettingsToggle}><SettingsIcon /></button> : null}
+                {props.workspace ? <><span className="workspace-cwd" title={props.workingDirectory}>{props.workingDirectory}</span>{props.statusControl}</> : null}
                 {props.permissionControl}
                 {props.showSwitchButton ? <button type="button" className="composer-refinement-icon"
                     aria-label={t('composer.switchRemote')} disabled={props.switchDisabled} onClick={props.onSwitch}><SwitchToRemoteIcon /></button> : null}
             </div>
             <div className="composer-refinement-send-controls">
+                {props.workspace ? <ComposerExpandButton expanded={props.expanded} onToggle={props.onExpandedToggle} /> : null}
                 {props.onSchedule || props.onScratchlistToggle ? <Popover.Root open={sendOptionsOpen} onOpenChange={open => { setSendOptionsOpen(open); if (open) setShowSchedulePicker(false) }}>
                     <Popover.Trigger asChild>
                         <button ref={sendOptionsRef} type="button" className="composer-refinement-icon"
@@ -830,15 +867,7 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
                         </Popover.Content>
                     </Popover.Portal>
                 </Popover.Root> : null}
-                {props.voiceStatus === 'connected' && props.onVoiceMicToggle ? <button type="button" className="composer-refinement-icon"
-                    aria-label={props.voiceMicMuted ? t('voice.unmute') : t('voice.mute')} onClick={props.onVoiceMicToggle}><SpeakerIcon muted={props.voiceMicMuted} /></button> : null}
-                <DictationButton enabled={props.dictationEnabled ?? false} canSend={props.canSend}
-                    voiceEnabled={props.voiceEnabled} voiceStatus={props.voiceStatus} controlsDisabled={props.controlsDisabled} onVoiceToggle={props.onVoiceToggle} />
-                {running ? <button type="button" aria-label={t('composer.abort')} title={t('composer.abort')}
-                    disabled={props.abortDisabled} onClick={props.onAbort} className="app-composer-primary composer-refinement-icon"><AbortIcon spinning={props.isAborting} /></button> : null}
-                {showSend ? <UnifiedButton canSend={props.canSend} voiceStatus={props.voiceStatus} voiceEnabled={props.voiceEnabled}
-                    controlsDisabled={props.controlsDisabled} onSend={props.onSend} onVoiceToggle={props.onVoiceToggle}
-                    voiceLabel={props.dictationEnabled ? t('composer.dictate') : undefined} routesToScratchlist={scratchlistActive} /> : null}
+                {props.workspace ? (props.primaryActionTarget ? createPortal(primaryActions, props.primaryActionTarget) : null) : primaryActions}
             </div>
         </div>
         {showSchedulePicker ? <ScheduleTimePicker anchorRef={sendOptionsRef} pendingSchedule={props.pendingSchedule}
@@ -875,7 +904,7 @@ export function ComposerButtons(props: ComposerButtonsProps) {
     const hasAttachments = Boolean(props.hasAttachments || props.goalMode)
     const toolbarJustifyContent = getComposerToolbarJustifyContent(layout.mode)
 
-    if (glassLayout) return <RefinedComposerToolbar {...props} />
+    if (glassLayout || props.workspace) return <RefinedComposerToolbar {...props} />
 
     return (
         <div className="app-composer-toolbar flex shrink-0 items-center gap-1 px-2 pb-2">

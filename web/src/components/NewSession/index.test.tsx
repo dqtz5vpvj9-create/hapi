@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render as renderBase, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactElement } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { Machine, PiModelSummary } from '@/types/api'
 import { saveNewSessionFormDraft } from './newSessionFormDraft'
@@ -9,6 +11,11 @@ import {
     savePreferredLaunchSettings,
     savePreferredYoloMode
 } from './preferences'
+
+function render(ui: ReactElement) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return renderBase(ui, { wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider> })
+}
 
 const mocks = vi.hoisted(() => ({
     spawnSession: vi.fn(),
@@ -398,6 +405,73 @@ describe('NewSession launch preferences', () => {
         await act(async () => resolve({ sessionId: 'late-binding', threadId: 'native-1', connectionState: 'attached' }));
         expect(mocks.onSuccess).not.toHaveBeenCalled();
     });
+
+    it('keeps the selected machine and shows the connection failure when it temporarily goes offline', async () => {
+        let rejectConnection!: (error: Error) => void
+        const codexApi = {
+            getCodexSessions: vi.fn().mockResolvedValue({ success: true, machineId: 'machine-1', sessions: [{ id: 'native-1' }] }),
+            connectCodexSession: vi.fn().mockImplementation(() => new Promise((_, reject) => { rejectConnection = reject })),
+        } as unknown as ApiClient
+        const props = { api: codexApi, initialMachineId: 'machine-1', initialDirectory: '/project', onSuccess: mocks.onSuccess, onCancel: vi.fn() }
+        const otherMachine = { ...machine, id: 'machine-2' }
+        const view = render(<NewSession {...props} machines={[machine, otherMachine]} />)
+        fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
+        await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
+        fireEvent.click(screen.getByTestId('import-codex'))
+        view.rerender(<NewSession {...props} machines={[otherMachine]} />)
+        await act(async () => rejectConnection(new Error('Selected Runner disconnected')))
+        expect(screen.getByTestId('codex-search-results')).toHaveTextContent('native-1')
+        expect(screen.getByTestId('codex-list-error')).toHaveTextContent('Selected Runner disconnected')
+        expect(mocks.onSuccess).not.toHaveBeenCalled()
+        view.rerender(<NewSession {...props} machines={[machine, otherMachine]} />)
+        expect(screen.getByRole('combobox', { name: 'machine-selector' })).toHaveValue('machine-1')
+    })
+
+    it('opens the confirmed binding when a directory update arrives during connection', async () => {
+        let resolveConnection!: (value: unknown) => void
+        const codexApi = {
+            getCodexSessions: vi.fn().mockResolvedValue({ success: true, machineId: 'machine-1', sessions: [{ id: 'native-1' }] }),
+            connectCodexSession: vi.fn().mockImplementation(() => new Promise(resolve => { resolveConnection = resolve })),
+        } as unknown as ApiClient
+        const props = { api: codexApi, machines: [machine], initialMachineId: 'machine-1', onSuccess: mocks.onSuccess, onCancel: vi.fn() }
+        const view = render(<NewSession {...props} initialDirectory="/project" />)
+        fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
+        await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
+        fireEvent.click(screen.getByTestId('import-codex'))
+        view.rerender(<NewSession {...props} initialDirectory="/another-directory" />)
+        await act(async () => resolveConnection({ sessionId: 'confirmed-binding', threadId: 'native-1', connectionState: 'attached' }))
+        expect(mocks.onSuccess).toHaveBeenCalledWith('confirmed-binding')
+    })
+
+    it('opens a confirmed connection despite a transient online-list removal', async () => {
+        let resolveConnection!: (value: unknown) => void
+        const codexApi = {
+            getCodexSessions: vi.fn().mockResolvedValue({ success: true, machineId: 'machine-1', sessions: [{ id: 'native-1' }] }),
+            connectCodexSession: vi.fn().mockImplementation(() => new Promise(resolve => { resolveConnection = resolve })),
+        } as unknown as ApiClient
+        const props = { api: codexApi, initialMachineId: 'machine-1', onSuccess: mocks.onSuccess, onCancel: vi.fn() }
+        const otherMachine = { ...machine, id: 'machine-2' }
+        const view = render(<NewSession {...props} machines={[machine, otherMachine]} />)
+        fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
+        await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
+        fireEvent.click(screen.getByTestId('import-codex'))
+        view.rerender(<NewSession {...props} machines={[otherMachine]} />)
+        await act(async () => resolveConnection({ sessionId: 'confirmed-binding', threadId: 'native-1', connectionState: 'attached' }))
+        expect(mocks.onSuccess).toHaveBeenCalledWith('confirmed-binding')
+    })
+
+    it('warms the catalog before opening and reuses the same in-flight request', async () => {
+        savePreferredAgent('codex')
+        let finish!: (value: unknown) => void
+        const codexApi = { getCodexSessions: vi.fn().mockImplementation(() => new Promise(resolve => { finish = resolve })) } as unknown as ApiClient
+        render(<NewSession api={codexApi} machines={[{ ...machine, active: true }]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(codexApi.getCodexSessions).toHaveBeenCalledTimes(1))
+        expect(screen.queryByTestId('codex-search-results')).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
+        await act(async () => finish({ success: true, sessions: [{ id: 'warm' }], nextCursor: null }))
+        expect(screen.getByTestId('codex-search-results')).toHaveTextContent('warm')
+        expect(codexApi.getCodexSessions).toHaveBeenCalledTimes(1)
+    })
 
     it('debounces incremental searches, resets the cursor, and rejects an older page arriving during debounce', async () => {
         let finishOldPage!: (value: unknown) => void

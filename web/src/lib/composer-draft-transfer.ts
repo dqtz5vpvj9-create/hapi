@@ -1,3 +1,4 @@
+import { moveSelectionDrafts } from '@/documents/selectionDrafts'
 import { clearDraft, getDraft, saveDraft } from '@/lib/composer-drafts'
 import {
     getDraftAttachments,
@@ -452,6 +453,7 @@ export async function transferComposerDraft(
                 saveDraft(targetSessionId, transferredText)
                 clearDraft(sourceSessionId)
                 completedHandoffs.set(sourceSessionId, targetSessionId)
+                moveSelectionDrafts(sourceSessionId, targetSessionId)
                 liveSnapshots.delete(sourceSessionId)
                 inactiveVisibleIds.delete(sourceSessionId)
             } catch (error) {
