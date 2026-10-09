@@ -1,8 +1,10 @@
 import type { ChatContentPart } from '@hapi/protocol/artifacts'
+import type { NativeExecution } from '@hapi/protocol/nativeExecution'
+import { executionOf } from '@/chat/nativeProjection'
 import { useCallback, useMemo, useRef } from 'react'
 import type React from 'react'
 import type { AppendMessage, AttachmentAdapter, ThreadMessage, ThreadMessageLike } from '@assistant-ui/react'
-import { useExternalMessageConverter, useExternalStoreRuntime } from '@assistant-ui/react'
+import { bindExternalStoreMessage, fromThreadMessageLike, useExternalMessageConverter, useExternalStoreRuntime } from '@assistant-ui/react'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import { resolvePendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import {
@@ -55,6 +57,7 @@ export type HappyChatMessageMetadata = {
      * per-message footer is rendered unchanged.
      */
     turnCount?: number
+    nativeNode?: { execution?: NativeExecution; kind: ChatBlock['kind'] }
 }
 
 export type HappyRuntimeExtras = Readonly<{
@@ -409,9 +412,12 @@ export function assignThreadMessageIds(
 export function findLatestCompletedBoundaryId(
     blocks: readonly VisibleChatBlock[],
     isRunning: boolean,
-    activeTurnStartedAt: number | null
+    activeTurnStartedAt: number | null,
+    nativeItems = false,
 ): string | null {
-    const assigned = assignThreadMessageIds(blocks)
+    const assigned = nativeItems
+        ? blocks.map(block => ({ block, threadMessageId: `${block.kind}:${block.id}` }))
+        : assignThreadMessageIds(blocks)
     let limit = assigned.length
 
     if (isRunning) {
@@ -444,7 +450,9 @@ export function findLatestCompletedBoundaryId(
         const role = visibleBlockRole(block)
         if (
             (role === 'user' && block.invokedAt != null)
-            || (role === 'assistant' && previousRole !== 'assistant')
+            || (role === 'assistant' && (nativeItems
+                ? block.kind === 'agent-text' && executionOf(block)?.phase !== 'commentary'
+                : previousRole !== 'assistant'))
         ) {
             candidate = threadMessageId
         }
@@ -757,9 +765,14 @@ function extractMessageContent(message: AppendMessage): { text: string; attachme
     return { text, attachments }
 }
 
+const EMPTY_NATIVE_BLOCKS: BlockWithThreadMessageId[] = []
+
 export function useHappyRuntime(props: {
     session: Session
     blocks: readonly VisibleChatBlock[]
+    nativeNodes?: boolean
+    nativePresentationBlocks?: readonly VisibleChatBlock[]
+    nativeTurnStates?: ReadonlyMap<string, NativeExecution['turn']>
     messagesVersion: number
     historyVersion: number
     viewMode?: 'tail' | 'history'
@@ -938,11 +951,33 @@ export function useHappyRuntime(props: {
 
     // Use cached message converter for performance optimization
     // This prevents re-converting all messages on every render
-    const convertedMessages = useExternalMessageConverter<BlockWithThreadMessageId>({
+    const joinedMessages = useExternalMessageConverter<BlockWithThreadMessageId>({
         callback: convertBlock,
-        messages: blocksWithThreadIds,
+        messages: props.nativeNodes ? EMPTY_NATIVE_BLOCKS : blocksWithThreadIds,
         isRunning: isRunningForMessages,
     })
+    // Native Codex items already have execution identity. Never join adjacent
+    // assistant items: a commentary item and a final answer are separate seats.
+    const nativeMessageCache = useRef(new WeakMap<VisibleChatBlock, { message: ThreadMessage; running: boolean }>())
+    const convertedMessages = useMemo(() => props.nativeNodes ? (props.nativePresentationBlocks ?? props.blocks).map(block => {
+        const execution = executionOf(block)
+        const turn = execution && props.nativeTurnStates?.get(`${execution.threadId}:${execution.turnId}`)
+        const running = turn?.status === 'inProgress' && block.kind === 'agent-text' && block === props.blocks.at(-1)
+        let cached = nativeMessageCache.current.get(block)
+        if (!cached || cached.running !== running) {
+            const id = `${block.kind}:${block.id}`
+            const value = toThreadMessageLike(block, id, getBlockPresentationTimestamp(block))
+            const custom = value.metadata?.custom as HappyChatMessageMetadata
+            const nativeNode = { execution, kind: block.kind as ChatBlock['kind'] }
+            const message = fromThreadMessageLike({ ...value, metadata: { ...value.metadata, custom: { ...custom, nativeNode } } }, id,
+                running ? { type: 'running' } : { type: 'complete', reason: 'unknown' })
+            bindExternalStoreMessage(message, [block])
+            for (const part of message.content) bindExternalStoreMessage(part, [value])
+            cached = { message, running }
+            nativeMessageCache.current.set(block, cached)
+        }
+        return cached.message
+    }) : joinedMessages, [props.nativeNodes, props.nativeTurnStates, props.blocks, props.nativePresentationBlocks, joinedMessages])
     // This is the complete reading window. The array adapter retains absent
     // messages as branches, so use the repository snapshot API to release rows
     // when pagination moves them out of the window.

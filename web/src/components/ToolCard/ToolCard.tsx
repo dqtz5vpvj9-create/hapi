@@ -1,3 +1,4 @@
+import { useChatDisclosure } from '@/components/AssistantChat/context'
 import { ContentParts, richToolParts } from '@/components/Artifacts/ContentParts'
 import { useOptionalHappyChatContext } from '@/components/AssistantChat/context'
 import type { ChatBlock, ChatToolCall, ToolCallBlock } from '@/chat/types'
@@ -411,7 +412,7 @@ export function ToolDetailDialogContent(input: {
 function ToolCardInner(props: ToolCardProps) {
     const executionActive = useOptionalHappyChatContext()?.activeExecutionToolId === props.block.id
     const { t } = useTranslation()
-    const [detailsOpen, setDetailsOpen] = useState(false)
+    const [detailsOpen, setDetailsOpen] = useChatDisclosure(props.block.id, false)
     const presentation = useMemo(() => getToolPresentation({
         toolName: props.block.tool.name,
         input: props.block.tool.input,

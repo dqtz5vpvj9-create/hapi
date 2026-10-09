@@ -72,6 +72,9 @@ function geometry(top: number, bottom: number) {
 let viewport: HTMLElement
 let row: HTMLElement
 beforeEach(() => {
+    // This geometry fixture publishes layout explicitly. jsdom has no native
+    // observer; opening visibility is observed separately by the real thread.
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
     measured.unmounted = false
     measured.requests = []; measured.views = []; measured.positions = []
     viewport = document.createElement('div')
@@ -90,6 +93,7 @@ beforeEach(() => {
 })
 afterEach(() => {
     viewport.remove(); vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     delete (document as any).caretPositionFromPoint
     delete (Range.prototype as any).getClientRects
 })
@@ -183,6 +187,26 @@ it('restores both the bounded code viewport and its position in the outer chat',
     expect(view.scrollDOM.scrollTop).toBe(0)
     expect(viewport.scrollTop).toBe(70000)
     expect(onRestored).toHaveBeenCalledWith(true)
+})
+
+it('refines an offscreen source when a cold editor updates its estimated line height', () => {
+    render(<LargeCodeView code={source} wrap />, { container: row })
+    const anchor = captureReadingAnchor(viewport)!
+    const view = measured.views[0]
+    let mounted = false
+    vi.spyOn(view, 'coordsAtPos').mockImplementation(() => mounted
+        ? { top: measured.tokenTop - viewport.scrollTop } as any : null)
+    measured.tokenTop -= 336
+    const onRestored = vi.fn()
+    restoreReadingAnchor(viewport, anchor, { isCurrent: () => true, onScroll: () => {}, onRestored })
+    const first = measured.requests.shift()!; first.write(first.read())
+    measured.tokenTop -= 10
+    const refined = measured.requests.shift()!; refined.write(refined.read())
+    expect(onRestored).not.toHaveBeenCalled()
+    mounted = true
+    expect(flushMeasurements()).toBe(2)
+    expect(measured.tokenTop - viewport.scrollTop).toBe(116)
+    expect(onRestored).toHaveBeenCalledExactlyOnceWith(true)
 })
 
 it('rejects a changed document instead of finding a repeated short token elsewhere', () => {

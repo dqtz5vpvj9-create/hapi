@@ -2,31 +2,23 @@ import { expect, test } from '@playwright/test'
 
 async function openHistory(page: import('@playwright/test').Page, query = '') {
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.goto(`/e2e-fixtures/history-load-fixture.html?${query}`)
+    await page.goto(`/e2e-fixtures/history-load-fixture.html?nativeChat=1&${query}`)
     await expect(page.getByText('Fixture message 1200', { exact: true })).toBeInViewport()
     await page.waitForTimeout(2000)
     const box = (await page.locator('.chat-scroll-y').boundingBox())!
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
 }
 
-test('approaching the older boundary warms one page without publishing it and reuses it at the edge', async ({ page }) => {
+test('the initial window warms one adjacent page without publishing it and reuses it at the edge', async ({ page }) => {
     await openHistory(page)
-    await page.evaluate(() => window.__probe.holdBefore())
-    // Follow the measured viewport toward the boundary; a fixed total delta
-    // can stop outside the warm-up zone when virtual row estimates settle.
-    for (let input = 0; input < 24; input++) {
-        await page.mouse.wheel(0, -700)
-        await page.waitForTimeout(80)
-        if (await page.evaluate(() => window.__probe.requests.some(r => r.direction === 'before'))) break
-    }
     await expect.poll(() => page.evaluate(() => window.__probe.requests.filter(r => r.direction === 'before').length)).toBe(1)
     expect(await page.evaluate(() => window.__probe.windowState())).toMatchObject({ messageCount: 200, oldestSeq: 1001, isLoadingMore: false })
-    const before = await page.evaluate(() => window.__probe.finishedRequests)
-    await page.evaluate(() => window.__probe.releaseBefore())
-    await expect.poll(() => page.evaluate(() => window.__probe.finishedRequests)).toBeGreaterThan(before)
-    expect(await page.evaluate(() => window.__probe.windowState().oldestSeq)).toBe(1001)
-    const remaining = await page.locator('.chat-scroll-y').evaluate(e => e.scrollTop)
-    await page.mouse.wheel(0, -remaining - 20)
+    // Warming a page must not walk into another page while the reader is idle.
+    await page.waitForTimeout(1200)
+    expect(await page.evaluate(() => window.__probe.requests.filter(r => r.direction === 'before').length)).toBe(1)
+    await page.locator('.chat-scroll-y').evaluate(e => { e.scrollTop = 1200 })
+    await page.waitForTimeout(500)
+    await page.mouse.wheel(0, -500)
     await expect.poll(() => page.evaluate(() => window.__probe.windowState().oldestSeq)).toBe(801)
     expect(await page.evaluate(() => window.__probe.requests.filter(r => r.direction === 'before' && r.beforeSeq === 1001).length)).toBe(1)
     expect(await page.locator('[data-hapi-virtual-message]').count()).toBeLessThanOrEqual(40)
@@ -92,11 +84,11 @@ test('a native touch gesture can approach a warm boundary without changing the r
     await openHistory(page)
     const client = await page.context().newCDPSession(page)
     await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 })
-    // Establish a reading position without issuing an input-driven warm-up;
-    // the following touch movement must be what starts the page request.
+    // The adjacent page is already warm. Touching the preload area must
+    // neither publish it prematurely nor request it again.
     await page.locator('.chat-scroll-y').evaluate(e => { e.scrollTop = 4000 })
     await page.waitForTimeout(400)
-    expect(await page.evaluate(() => window.__probe.requests.filter(r => r.direction === 'before').length)).toBe(0)
+    expect(await page.evaluate(() => window.__probe.requests.filter(r => r.direction === 'before').length)).toBe(1)
     for (let gesture = 0; gesture < 6; gesture++) {
         await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 180, y: 100, id: 1 }] })
         for (let y = 150; y <= 700; y += 50) {
@@ -114,4 +106,14 @@ test('a native touch gesture can approach a warm boundary without changing the r
     await page.waitForTimeout(1000)
     expect(await page.evaluate(() => window.__probe.requests.length)).toBe(count)
     await client.detach()
+})
+
+
+test('a short native first window has its next page ready before the first upward gesture', async ({ page }) => {
+    await openHistory(page, 'coldInitial=1&slowBefore=1')
+    await expect.poll(() => page.evaluate(() => window.__probe.finishedRequests)).toBe(2)
+    expect(await page.evaluate(() => window.__probe.windowState())).toMatchObject({ oldestSeq: 1181, messageCount: 20, isLoadingMore: false })
+    await page.mouse.wheel(0, -300)
+    await expect.poll(() => page.evaluate(() => window.__probe.windowState().oldestSeq)).toBe(981)
+    expect(await page.evaluate(() => window.__probe.requests.filter(r => r.direction === 'before' && r.beforeSeq === 1181).length)).toBe(1)
 })

@@ -255,8 +255,14 @@ export class HistoryPageRepository {
         }
         const sorted = [...candidates.values()].sort((a, b) => compare(position(a), position(b)))
         const selected = request.direction === 'before' ? sorted.slice(-200) : sorted.slice(0, 200)
-        if (!selected.length) return null
-        const first = position(selected[0]), last = position(selected[selected.length - 1])
+        // Native cursors include non-rendered records after the last message.
+        // A cached latest page proves that suffix was consumed. Carry its
+        // covered cursor forward instead of repeatedly fetching an empty tail.
+        const reachesHead = request.direction === 'after' && selected.length === sorted.length
+            && this.readCachedRange(sessionId, request.epoch, request.cursor, request.until) !== null
+        if (!selected.length && !reachesHead) return null
+        const first = selected.length ? position(selected[0]) : request.cursor
+        const last = reachesHead && request.direction === 'after' ? request.until : position(selected[selected.length - 1])
         const covered = this.readCachedRange(sessionId, request.epoch,
             request.direction === 'before' ? first : request.cursor,
             request.direction === 'before' ? request.cursor : last)
@@ -293,14 +299,15 @@ export class HistoryPageRepository {
         }
     }
 
-    async read(sessionId: string, request: HistoryPageRequest, options: { refresh?: boolean } = {}): Promise<MessagesResponse> {
+    async read(sessionId: string, request: HistoryPageRequest, options: { refresh?: boolean; load?: () => Promise<MessagesResponse> } = {}): Promise<MessagesResponse> {
         const key = this.key(sessionId, request)
         if (!options.refresh) {
             const cached = this.getCached(sessionId, request)
             if (cached) return cached
         }
         const inFlight = this.pending.get(key)
-        if (inFlight) return inFlight
+        // A caller-owned load has its own cancellation lifetime (activation/retry).
+        if (inFlight && !options.load) return inFlight
         const generation = this.generation
         const sessionGeneration = this.sessionGenerations.get(sessionId) ?? 0
         const revision = ++this.revision
@@ -310,12 +317,13 @@ export class HistoryPageRepository {
         reads.pending++
         this.reads.set(sessionId, reads)
         const epochAtStart = this.epochs.get(sessionId)
-        const promise = this.api.getMessages(sessionId, request.direction === 'latest'
+        const load = options.load ?? (() => this.api.getMessages(sessionId, request.direction === 'latest'
             ? { limit: 200, bounded: true }
             : request.direction === 'before'
                 ? { beforeAt: request.cursor.at, beforeSeq: request.cursor.seq, epoch: request.epoch, limit: 200, bounded: true }
                 : { afterAt: request.cursor.at, afterSeq: request.cursor.seq, untilAt: request.until.at, untilSeq: request.until.seq, epoch: request.epoch, limit: 200, bounded: true }
-        ).then(response => {
+        ))
+        const promise = load().then(response => {
             if (generation !== this.generation || sessionGeneration !== (this.sessionGenerations.get(sessionId) ?? 0)) throw new HistoryReadInvalidated()
             if (revision < reads.acceptedRevision) throw new HistoryReadInvalidated()
             response = { ...response, messages: response.messages.map(message => {
@@ -340,32 +348,7 @@ export class HistoryPageRepository {
             })) {
                 throw new HistoryReadInvalidated()
             }
-            this.remove(storedKey)
-            const incoming = new Map(response.messages.map(message => [message.id, message]))
-            const ids = [...incoming.keys()]
-            for (const message of incoming.values()) {
-                const messageKey = this.messageKey(sessionId, message.id)
-                const existing = this.messages.get(messageKey)
-                const size = bytes(message)
-                if (existing) {
-                    this.account(sessionId, size - existing.bytes)
-                    existing.message = message
-                    existing.bytes = size
-                    existing.references++
-                    existing.revision = Math.max(existing.revision, revision)
-                } else {
-                    this.messages.set(messageKey, { message, bytes: size, references: 1, revision })
-                    this.account(sessionId, size)
-                }
-            }
-            const pageBytes = new TextEncoder().encode(JSON.stringify({ sessionId, ids, request: storedRequest, page: response.page })).byteLength
-            this.account(sessionId, pageBytes)
-            this.sessionPages.set(sessionId, (this.sessionPages.get(sessionId) ?? 0) + 1)
-            this.pages.set(storedKey, Object.assign(previousPage ?? { pins: 0 }, {
-                sessionId, epoch: response.page.epoch, ids, request: storedRequest, revision, bytes: pageBytes,
-                page: response.page, coverage: coverageFor(storedRequest, response.page),
-            }))
-            this.trim()
+            this.storePage(sessionId, storedRequest, response, revision)
             reads.acceptedRevision = revision
             return response
         }).catch(error => {
@@ -380,6 +363,65 @@ export class HistoryPageRepository {
         })
         this.pending.set(key, promise)
         return promise
+    }
+
+    private storePage(sessionId: string, storedRequest: HistoryPageRequest, response: MessagesResponse, revision: number,
+        coverage = coverageFor(storedRequest, response.page), storedKey = this.key(sessionId, storedRequest)): void {
+        const previousPage = this.pages.get(storedKey)
+        this.remove(storedKey)
+        const incoming = new Map(response.messages.map(message => [message.id, message]))
+        const ids = [...incoming.keys()]
+        for (const message of incoming.values()) {
+            const messageKey = this.messageKey(sessionId, message.id)
+            const existing = this.messages.get(messageKey)
+            const size = bytes(message)
+            if (existing) {
+                this.account(sessionId, size - existing.bytes)
+                existing.message = message
+                existing.bytes = size
+                existing.references++
+                existing.revision = Math.max(existing.revision, revision)
+            } else {
+                this.messages.set(messageKey, { message, bytes: size, references: 1, revision })
+                this.account(sessionId, size)
+            }
+        }
+        const pageBytes = new TextEncoder().encode(JSON.stringify({ sessionId, ids, request: storedRequest, page: response.page })).byteLength
+        this.account(sessionId, pageBytes)
+        this.sessionPages.set(sessionId, (this.sessionPages.get(sessionId) ?? 0) + 1)
+        this.pages.set(storedKey, Object.assign(previousPage ?? { pins: 0 }, {
+            sessionId, epoch: response.page.epoch, ids, request: storedRequest, revision, bytes: pageBytes,
+            page: response.page, coverage,
+        }))
+        this.trim()
+    }
+
+    /** Cache an authoritative page accepted by the window's request generation.
+     * This also admits incremental tail reads, which retain their own download
+     * progress and cancellation outside the history loader. */
+    rememberPage(sessionId: string, request: HistoryPageRequest, response: MessagesResponse): void {
+        this.observeEpoch(sessionId, response.page.epoch)
+        this.storePage(sessionId, response.page.reset || response.page.direction === 'latest' ? { direction: 'latest' } : request,
+            response, ++this.revision)
+    }
+
+    /** Admit a context only after the window owner accepts its navigation generation
+     * and merges concurrent updates. Its coverage ends at the context boundary,
+     * not at the remote snapshot head. */
+    rememberContext(sessionId: string, context: Pick<MessageContextResponse, 'messages' | 'page'>): void {
+        const page = context.page
+        this.observeEpoch(sessionId, page.epoch)
+        const response: MessagesResponse = { messages: context.messages, page: {
+            direction: 'before', epoch: page.epoch, reset: false, limit: context.messages.length,
+            hasMore: page.hasMoreBefore, nextBeforeAt: page.beforeCursor.at, nextBeforeSeq: page.beforeCursor.seq,
+            nextAfterAt: page.afterCursor.at, nextAfterSeq: page.afterCursor.seq,
+            snapshotHeadAt: page.snapshotHead.at, snapshotHeadSeq: page.snapshotHead.seq,
+        } }
+        const key = JSON.stringify([sessionId, 'context', page.epoch, page.beforeCursor, page.afterCursor])
+        this.storePage(sessionId, { direction: 'before', cursor: page.afterCursor, epoch: page.epoch }, response, ++this.revision, {
+            start: page.hasMoreBefore ? page.beforeCursor : null, startIncluded: true,
+            end: page.afterCursor, endIncluded: true,
+        }, key)
     }
 
     /** A directory page can become the reader window without another request. */

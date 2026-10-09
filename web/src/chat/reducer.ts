@@ -83,7 +83,8 @@ function isRedundantGoalStatusMessage(event: AgentEvent): boolean {
 function isSilentGoalEventBlock(block: ChatBlock): boolean {
     return block.kind === 'agent-event'
         && (
-            block.event.type === 'thread-goal-updated'
+            block.event.type === 'native-turn'
+            || block.event.type === 'thread-goal-updated'
             || block.event.type === 'thread-goal-cleared'
             || isRedundantGoalStatusMessage(block.event)
         )

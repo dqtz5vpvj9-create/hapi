@@ -151,7 +151,9 @@ function LegacyGeneratedImageCard(props: { block: GeneratedImageBlock }) {
             <div className="mb-2 min-w-0 truncate text-xs font-medium text-[var(--app-hint)]">
                 {mediaHeader}
             </div>
-            {objectUrl ? (
+            {isImage ? <ImagePreview frame="artifact" src={objectUrl ?? ''} fileName={props.block.fileName} label={props.block.fileName}
+                loadingLabel={error ?? t('artifact.loading')} errorLabel={t('artifact.imageError')}
+                buttonClassName="block max-w-full cursor-zoom-in rounded-xl" /> : objectUrl ? (
                 isVideo ? (
                     <div className="flex min-h-32 min-w-[12rem] items-center justify-center rounded-xl bg-[var(--app-subtle-bg)]">
                         <video
@@ -399,7 +401,7 @@ export function HappyToolMessage(props: ToolCallMessagePartProps) {
     const taskChildren = isTask ? splitTaskChildren(block) : null
 
     return (
-        <div data-hapi-share-exclude={richToolParts(block.tool.result) ? undefined : 'true'} className="py-1 min-w-0 max-w-full overflow-x-hidden">
+        <div data-hapi-tool-message data-hapi-share-exclude={richToolParts(block.tool.result) ? undefined : 'true'} className="py-1 min-w-0 max-w-full overflow-x-hidden">
             <ToolCard
                 api={ctx.api}
                 sessionId={ctx.sessionId}

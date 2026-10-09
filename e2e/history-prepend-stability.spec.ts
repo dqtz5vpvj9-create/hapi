@@ -19,6 +19,9 @@ for (const gesture of ['wheel', 'touch', 'keyboard'] as const) {
         for (let load = 1; load <= 6; load++) {
             await page.evaluate(() => { window.__probe.evictHistoryPayloads(); window.__probe.holdBefore() })
             if (cdp) {
+                // Explicit reader positioning releases any retained pagination
+                // anchor before this test sets up the next native gesture.
+                await viewport.dispatchEvent('pointerdown')
                 // Start near the page boundary, then cross it with native finger input.
                 await viewport.evaluate(element => { element.scrollTop = 1200 })
                 await page.waitForTimeout(200)
@@ -36,6 +39,7 @@ for (const gesture of ['wheel', 'touch', 'keyboard'] as const) {
                     if (await viewport.evaluate(element => element.scrollTop === 0)) break
                 }
             } else if (gesture === 'keyboard') {
+                await viewport.dispatchEvent('pointerdown')
                 await viewport.evaluate(element => { element.scrollTop = 1200; element.tabIndex = 0; element.focus() })
                 await page.waitForTimeout(200)
                 for (let press = 0; press < 4; press++) {

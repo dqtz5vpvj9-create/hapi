@@ -1,4 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
+import { NativeChatProjection } from '../src/chat/nativeProjection'
+import { NativeCodexThread } from '../src/components/AssistantChat/NativeCodexThread'
+import { nativeReplayRows, nativeReplayQuestion, type NativeReplayStatus } from './native-chat-replay'
+import { useMemo, useRef, useState, useLayoutEffect } from 'react'
 import ReactDOM from 'react-dom/client'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -13,6 +16,7 @@ import { reconcileChatBlocks } from '../src/chat/reconcile'
 import { buildVisibleChatBlocks } from '../src/chat/toolGroups'
 import { isQueuedForInvocation } from '../src/lib/messages'
 import { useHappyRuntime } from '../src/lib/assistant-runtime'
+import { useViewportHeight } from '../src/hooks/useViewportHeight'
 import { HappyThread } from '../src/components/AssistantChat/HappyThread'
 import type { ChatBlock } from '../src/chat/types'
 import { getMessageWindowState, ingestIncomingMessages } from '../src/lib/message-window-store'
@@ -46,7 +50,8 @@ type Probe = {
     finishedRequests: number
     remoteRewindTo: (seq: number) => Promise<void>
     remoteEditMessage: (seq: number, text: string) => void
-    requests: { direction: string; beforeSeq: number | null; limit: number | undefined; at: number }[]
+    requests: { direction: string; afterSeq?: number | null; beforeSeq: number | null; limit: number | undefined; at: number }[]
+    answers: unknown[]
     loadMore: () => Promise<unknown>
     refetch: () => Promise<void>
     releaseLatest: () => void
@@ -114,6 +119,7 @@ window.__probe = {
     remoteRewindTo: async () => {},
     remoteEditMessage: () => {},
     requests: [],
+    answers: [],
     loadMore: async () => {},
     refetch: async () => {},
     releaseLatest: () => { latestResponseGate = null; releaseLatestResponse() },
@@ -205,6 +211,30 @@ const allMessages: DecryptedMessage[] = Array.from({ length: TOTAL_MESSAGES }, (
         invokedAt: BASE_AT + seq
     } as DecryptedMessage
 })
+// A tool-heavy raw page can collapse to one visible row. A genuinely short
+// session must remain top-aligned, while a partial long session needs coverage.
+if (fixtureParams.has('compactInitial')) {
+    const visibleCount = Number(fixtureParams.get('compactInitial')) || 1
+    for (const message of allMessages.slice(-20, -visibleCount)) {
+        message.content = { role: 'agent', content: { type: 'output', data: { isMeta: true } } }
+    }
+}
+if (fixtureParams.has('shortSession')) allMessages.splice(0, allMessages.length - 3)
+if (fixtureParams.has('emptySession')) allMessages.length = 0
+if (fixtureParams.has('holdBefore')) window.__probe.holdBefore()
+
+if (fixtureParams.has('nativeReplay')) {
+    allMessages.splice(-20, 20, ...nativeReplayRows(TOTAL_MESSAGES - 19, fixtureParams.get('nativeReplay') as NativeReplayStatus, undefined, fixtureParams.has('question')))
+    if (fixtureParams.has('longProcess')) {
+        const commentary = allMessages[TOTAL_MESSAGES - 19].content as { content: { data: { message: string } } }
+        commentary.content.data.message += '\n\n' + Array.from({ length: 35 }, (_, index) => `Inspection passage ${index}: native source identities remain stable across history and live updates.`).join('\n\n')
+    }
+    if (fixtureParams.has('largeCode')) {
+        const answer = allMessages[TOTAL_MESSAGES - 13].content as { content: { data: { message: string } } }
+        answer.content.data.message = '```typescript\n' + Array.from({ length: 1200 }, (_, index) =>
+            `const nativeLine${String(index + 1).padStart(4, '0')} = "source identity retained across the history window";`).join('\n') + '\n```'
+    }
+}
 
 // A page may begin in the middle of an assistant response. Loading its earlier
 // blocks changes the first block of the joined assistant-ui message.
@@ -348,6 +378,9 @@ function pageFrom(messages: DecryptedMessage[], overrides: Partial<MessagesRespo
 let outlineReads = 0
 let outlineFailures = Number(fixtureParams.get('failOutline') ?? '0')
 const fakeApi = {
+    approvePermission: async (session: string, request: string, answers: unknown) => {
+        window.__probe.answers.push({ session, request, answers })
+    },
     getMessageOutline: async (_sessionId: string, options: { limit?: number; before?: { at: number; seq: number }; epoch?: number } = {}) => {
         window.__probe.requests.push({ direction: 'outline', beforeSeq: options.before?.seq ?? null, limit: options.limit, at: Date.now() })
         outlineReads++
@@ -421,6 +454,7 @@ const fakeApi = {
         window.__probe.requests.push({
             direction,
             beforeSeq: query.beforeSeq ?? null,
+            afterSeq: query.afterSeq ?? null,
             limit: query.limit,
             at: Date.now()
         })
@@ -527,7 +561,9 @@ const fakeSession = {
     id: SESSION_ID,
     active: true,
     thinking: false,
-    agentState: null,
+    agentState: fixtureParams.has('question') ? { requests: { 'native-question': {
+        tool: 'request_user_input', toolCallId: 'native-tool-a', arguments: nativeReplayQuestion, createdAt: BASE_AT,
+    } } } : null,
     metadata: { path: '/tmp/fixture', host: 'fixture' }
 } as unknown as Session
 
@@ -535,10 +571,16 @@ const noopSend = () => {}
 const noopAbort = async () => {}
 
 function FixtureThread() {
+    useViewportHeight()
     const [sessionId, setSessionId] = useState(SESSION_ID)
     activeSessionId = sessionId
     const session = useMemo(() => ({ ...fakeSession, id: sessionId }), [sessionId])
     const [outlineOpen, setOutlineOpen] = useState(false)
+    window.__nativeReplay = { apply(status, text) {
+        const rows = nativeReplayRows(TOTAL_MESSAGES - 19, status, text, fixtureParams.has('question'))
+        allMessages.splice(-20, 20, ...rows)
+        ingestIncomingMessages(sessionId, rows)
+    } }
     const {
         messages,
         epoch,
@@ -579,7 +621,7 @@ function FixtureThread() {
         return normalized
     }, [messages])
 
-    const reduced = useMemo(() => reduceChatBlocks(normalizedMessages, null, {}), [normalizedMessages])
+    const reduced = useMemo(() => reduceChatBlocks(normalizedMessages, session.agentState, {}), [normalizedMessages, session.agentState])
     const reconciled = useMemo(
         () => reconcileChatBlocks(reduced.blocks, blocksByIdRef.current),
         [reduced.blocks]
@@ -599,9 +641,16 @@ function FixtureThread() {
         return items
     }, [reconciled.blocks])
 
+    const nativePresentation = fixtureParams.has('nativeChat') || localStorage.getItem('hapi:native-chat-presentation') === 'dsh'
+    const projection = useMemo(() => new NativeChatProjection(), [sessionId])
+    useMemo(() => { if (nativePresentation) projection.update(reconciled.blocks, normalizedMessages) }, [nativePresentation, projection, reconciled.blocks, normalizedMessages])
+    useLayoutEffect(() => { if (nativePresentation) projection.publish() })
+    const Thread = nativePresentation ? NativeCodexThread : HappyThread
     const runtime = useHappyRuntime({
         session,
-        blocks: visibleBlocks,
+        blocks: nativePresentation ? projection.blocks : visibleBlocks,
+        nativeNodes: nativePresentation,
+        nativeTurnStates: nativePresentation ? projection.turnStates : undefined,
         messagesVersion,
         historyVersion,
         isSending: false,
@@ -611,7 +660,7 @@ function FixtureThread() {
 
     return (
         <AssistantRuntimeProvider runtime={runtime}>
-            <div className="flex h-screen min-h-0 flex-col">
+            <div className="flex min-h-0 flex-col" style={{ height: 'var(--app-viewport-height, 100dvh)' }}>
                 {threadHeader ? <div className="h-14 shrink-0">Session header fixture</div> : null}
                 {readingAnchorTasks ? <button type="button" className="fixed left-0 top-0 z-50"
                     onClick={() => setSessionId(current => current === SESSION_ID ? `${SESSION_ID}-b` : SESSION_ID)}>
@@ -619,7 +668,7 @@ function FixtureThread() {
                 </button> : null}
                 {readingAnchorTasks || fixtureParams.has('outlineVirtual') ? <button type="button" className="fixed right-0 top-0 z-50"
                     onClick={() => setOutlineOpen(true)}>Open conversation outline</button> : null}
-                <HappyThread
+                <Thread key={sessionId} nativeProjection={nativePresentation ? projection : undefined}
                     api={fakeApi}
                     session={session}
                     sessionId={sessionId}

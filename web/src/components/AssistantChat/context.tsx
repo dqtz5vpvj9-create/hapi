@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { TerminalToolDisplayMode } from '@/hooks/useTerminalToolDisplayMode'
 import type { SessionMetadataSummary } from '@/types/api'
@@ -13,6 +13,7 @@ export type HappyChatContextValue = {
     terminalToolDisplayMode: TerminalToolDisplayMode
     /** Hub-wide AGENT_NOTIFY_SUMMARY chat display; polled once at chat shell. */
     showSessionSummaryInChat: boolean
+    disclosureState?: Map<string, boolean>
     activeExecutionToolId?: string | null
     disabled: boolean
     onRefresh: () => void
@@ -45,7 +46,7 @@ export function HappyChatProvider(props: { value: HappyChatContextValue; childre
         sessionId: props.value.sessionId, ids: new Set()
     })
     const ids = continued.sessionId === props.value.sessionId ? continued.ids : new Set<string>()
-    const value: HappyChatContextValue = {
+    const value = useMemo<HappyChatContextValue>(() => ({
         ...props.value,
         continuedPlanIds: ids,
         onContinuePlan: props.value.onContinuePlan ? (planId) => {
@@ -53,7 +54,7 @@ export function HappyChatProvider(props: { value: HappyChatContextValue; childre
             setContinued({ sessionId: props.value.sessionId, ids: new Set([...ids, planId]) })
             props.value.onContinuePlan?.(planId)
         } : undefined
-    }
+    }), [props.value, ids])
     return (
         <HappyChatContext.Provider value={value}>
             {props.children}
@@ -71,4 +72,15 @@ export function useHappyChatContext(): HappyChatContextValue {
         throw new Error('HappyChatContext is missing')
     }
     return ctx
+}
+
+/** Native view state survives virtual unmounts, bounded by the current window. */
+export function useChatDisclosure(key: string, initial: boolean): [boolean, Dispatch<SetStateAction<boolean>>] {
+    const map = useOptionalHappyChatContext()?.disclosureState
+    const [open, setOpen] = useState(() => map?.get(key) ?? initial)
+    return [open, value => setOpen(previous => {
+        const next = typeof value === 'function' ? value(previous) : value
+        map?.set(key, next)
+        return next
+    })]
 }

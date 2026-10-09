@@ -46,6 +46,10 @@ export function HappyAssistantMessage() {
         const parts = s.message.content
         return parts.length > 0 && parts.every((part) => part.type === 'tool-call')
     })
+    const nativeProcess = useAuiState(({ message }) => {
+        const node = (message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined)?.nativeNode
+        return node?.kind === 'tool-call' || node?.kind === 'agent-reasoning' || node?.execution?.phase === 'commentary'
+    })
     const copyText = useAuiState((s) => {
         if (s.message.role !== 'assistant') return ''
         return getAssistantCopyText(s.message.content, {
@@ -84,7 +88,7 @@ export function HappyAssistantMessage() {
                 : codexReview
                     ? <CodexReviewCard review={codexReview} />
                     : <MessagePrimitive.Content components={MESSAGE_PART_COMPONENTS} />}
-            <MessageActions
+            {!nativeProcess ? <MessageActions
                 align="start"
                 copyText={copyText || undefined}
                 metadata={metadata}
@@ -92,7 +96,7 @@ export function HappyAssistantMessage() {
                 showFork={showForkCurrent}
                 historyActionPending={ctx.historyActionPending}
                 onFork={showForkCurrent ? () => ctx.onForkConversation!() : undefined}
-            />
+            /> : null}
         </MessagePrimitive.Root>
     )
 }

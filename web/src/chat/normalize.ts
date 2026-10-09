@@ -1,3 +1,5 @@
+import { NativeExecutionSchema } from '@hapi/protocol/nativeExecution'
+import { isObject } from '@hapi/protocol'
 import { unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import { safeStringify } from '@hapi/protocol'
 import type { DecryptedMessage } from '@/types/api'
@@ -6,7 +8,7 @@ import { isCodexContent, isSkippableAgentContent, normalizeAgentRecord } from '@
 import { normalizeUserRecord } from '@/chat/normalizeUser'
 
 export function normalizeDecryptedMessage(message: DecryptedMessage): NormalizedMessage | null {
-    const record = unwrapRoleWrappedRecordEnvelope(message.content)
+    let record = unwrapRoleWrappedRecordEnvelope(message.content)
     if (!record) {
         return {
             id: message.id,
@@ -18,6 +20,15 @@ export function normalizeDecryptedMessage(message: DecryptedMessage): Normalized
             status: message.status,
             originalText: message.originalText
         }
+    }
+
+    const body = isObject(record.content) && isObject(record.content.data) ? record.content.data : null
+    const meta = isObject(record.meta) ? record.meta : {}
+    const execution = NativeExecutionSchema.safeParse(meta.nativeExecution ?? body?.nativeExecution)
+    if (execution.success) record = { ...record, meta: { ...meta, nativeExecution: execution.data, nativeSourceId: message.id, nativeSourceSeq: message.seq } }
+    if (body?.type === 'native-turn' && execution.success) {
+        return { id: message.id, localId: message.localId, createdAt: message.createdAt,
+            role: 'event', content: { type: 'native-turn' }, isSidechain: false, meta: record.meta }
     }
 
     if (record.role === 'user') {

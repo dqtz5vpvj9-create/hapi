@@ -123,6 +123,7 @@ export function useConversationOutlineHistory(api: ApiClient, sessionId: string,
             return (first?.at ?? a.createdAt) - (second?.at ?? b.createdAt)
                 || (first && second ? first.seq - second.seq : 0)
         }),
+        positions,
         readingNotice: windowState.readingNotice,
         readerMode: windowState.viewMode,
         readerHasMoreAfter: windowState.hasMoreAfter,

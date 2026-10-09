@@ -1161,13 +1161,9 @@ describe('history view and older pagination', () => {
         }))
         await fetchOlderMessages(api, id)
 
-        expect(getMessages).toHaveBeenCalledWith(id, {
-            beforeAt: 3,
-            beforeSeq: 3,
-            epoch: 0,
-            bounded: true,
-            limit: 200
-        })
+        // Compacted initial rows are already cached, not another HTTP page.
+        expect(getMessages).toHaveBeenCalledTimes(1)
+        expect(getMessageWindowState(id).messages.slice(0, 2).map(row => row.id)).toEqual(['initial-1', 'initial-2'])
         expect(getMessageWindowState(id).messages).toHaveLength(VISIBLE_WINDOW_SIZE + 2)
     })
 

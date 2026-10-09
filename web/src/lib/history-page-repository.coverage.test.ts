@@ -36,6 +36,22 @@ it('reads forward from cached before ranges with the correct continuation and no
     expect(calls()).toBe(2)
 })
 
+it('reuses the consumed native tail even when its cursor extends beyond the last visible message', async () => {
+    const api = { getMessages: async () => { throw new Error('already consumed tail was requested again') } } as Pick<ApiClient, 'getMessages'>
+    const repository = new HistoryPageRepository(api)
+    repository.rememberPage('s', { direction: 'latest' }, {
+        messages: [{ id: 'last-visible', seq: 100, createdAt: 1, localId: null,
+            content: { role: 'user', content: { type: 'text', text: 'Last visible input' } } }],
+        page: { direction: 'latest', epoch: 1, reset: false, limit: 20, hasMore: true,
+            nextBeforeAt: 1, nextBeforeSeq: 100, nextAfterAt: 1, nextAfterSeq: 100,
+            snapshotHeadAt: 1, snapshotHeadSeq: 999 },
+    })
+    const tail = await repository.read('s', { direction: 'after', cursor: { at: 1, seq: 100 }, until: { at: 1, seq: 999 }, epoch: 1 })
+    expect(tail.messages).toEqual([])
+    expect(tail.page).toMatchObject({ nextAfterAt: 1, nextAfterSeq: 999, hasMore: false })
+    expect(repository.getCached('s', { direction: 'after', cursor: { at: 1, seq: 100 }, until: { at: 1, seq: 1000 }, epoch: 1 })).toBeNull()
+})
+
 it('does not synthesize a reader page across an uncovered cache hole', async () => {
     const { repository, calls } = fixture()
     await repository.read('s', { direction: 'before', cursor: { at: 201, seq: 201 }, epoch: 1 })
@@ -64,3 +80,25 @@ for (const sameAt of [false, true]) {
         expect(calls()).toBe(2)
     })
 }
+
+it('context admission preserves its exact coverage and remains bounded across jumps', () => {
+    const api = { getMessages: async () => { throw new Error('unexpected network read') } } as Pick<ApiClient, 'getMessages'>
+    const repository = new HistoryPageRepository(api, { totalBytes: 6000, sessionBytes: 3000, sessions: 2 })
+    for (let i = 1; i <= 10; i++) {
+        const seq = i * 100
+        repository.rememberContext('s', {
+            messages: [{ id: `r${seq}`, seq, createdAt: seq, localId: null,
+                content: { role: 'user', content: { type: 'text', text: 'Context passage '.repeat(20) } } }],
+            page: { epoch: 1, reset: false, beforeCursor: { at: seq, seq }, afterCursor: { at: seq, seq },
+                hasMoreBefore: true, hasMoreAfter: true, snapshotHead: { at: 2000, seq: 2000 } }
+        })
+        expect(repository.stats().totalBytes).toBeLessThanOrEqual(3000)
+    }
+    expect(repository.findCachedMessagePage('s', 1, 'r100')).toBeNull()
+    expect(repository.findCachedMessagePage('s', 1, 'r1000')?.messages[0].id).toBe('r1000')
+    // A context around 1000 is not proof that 1001..2000 have been read.
+    expect(repository.readCachedRange('s', 1, { at: 1000, seq: 1000 }, { at: 2000, seq: 2000 })).toBeNull()
+    repository.observeEpoch('s', 2)
+    expect(repository.findCachedMessagePage('s', 1, 'r1000')).toBeNull()
+    expect(repository.stats().totalBytes).toBe(0)
+})

@@ -1,3 +1,4 @@
+import { useChatDisclosure } from '@/components/AssistantChat/context'
 import { toolArtifactCount } from '@/components/Artifacts/ContentParts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ToolGroupBlock } from '@/chat/toolGroups'
@@ -195,7 +196,7 @@ export function ToolGroupCard(props: {
 }) {
     const { t } = useTranslation()
     const ctx = useHappyChatContext()
-    const [open, setOpen] = useState(props.block.defaultOpen)
+    const [open, setOpen] = useChatDisclosure(props.block.id, props.block.defaultOpen)
     const [selectedToolId, setSelectedToolId] = useState<string | null>(null)
     const [isHydratingHistory, setIsHydratingHistory] = useState(false)
     const [historyExhausted, setHistoryExhausted] = useState(false)

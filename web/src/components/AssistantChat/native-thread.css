@@ -1,0 +1,11 @@
+.hapi-native-thread [data-conversation-scroll] { overflow-anchor: auto; }
+.hapi-native-thread[data-following-tail="true"] [data-conversation-scroll] { overflow-anchor: none; }
+.hapi-native-thread .happy-thread-messages > * { overflow-anchor: auto; }
+.hapi-native-thread [data-virtual-spacer] { overflow-anchor: none; }
+.hapi-native-process { display: flex; align-items: center; gap: .5rem; padding: .4rem .25rem; font-size: .8rem; color: var(--app-hint); }
+
+/* Each native tool is a separate stable seat, not a full chat bubble. Avoid
+   adding bubble padding around the compact ToolCard's own header padding. */
+.hapi-native-thread [data-native-tool-row="true"] .happy-message,
+.hapi-native-thread [data-native-tool-row="true"] [data-hapi-tool-message] { padding-block: 0; }
+.hapi-native-thread [data-native-tool-row="false"] { padding-block: 4px; }

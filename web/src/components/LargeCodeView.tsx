@@ -23,7 +23,7 @@ function codeReadingSource(view: EditorView, alive: () => boolean): CodeReadingS
                 options.onRestored(false)
                 return
             }
-            let projected = false
+            let projectionError = Infinity
             let innerError = Infinity
             let outerError = Infinity
             const measure = () => view.requestMeasure({
@@ -43,12 +43,14 @@ function codeReadingSource(view: EditorView, alive: () => boolean): CodeReadingS
                     let scroller: HTMLElement
                     let delta: number
                     if (!placement.measured) {
-                        // A single sparse height-map placement mounts the source
-                        // line; wrapped character coordinates then take over.
-                        if (projected) { options.onRestored(false); return }
-                        projected = true
+                        // A cold editor can refine its estimated line height
+                        // after the first placement. Keep converging on the
+                        // source line until real character coordinates exist.
                         scroller = placement.inner ? view.scrollDOM : viewport
                         delta = placement.inner ? placement.innerDelta : placement.outerDelta
+                        const error = Math.abs(delta)
+                        if (error > projectionError - 0.5) { options.onRestored(false); return }
+                        projectionError = error
                     } else if (placement.inner && Math.abs(placement.innerDelta) > 0.5) {
                         const error = Math.abs(placement.innerDelta)
                         if (error > innerError - 0.5) { options.onRestored(false); return }

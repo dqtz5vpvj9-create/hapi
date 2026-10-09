@@ -13,11 +13,16 @@ for (const mode of ['held', 'held-moved', 'cached'] as const) {
         const viewport = page.locator('.chat-scroll-y')
         const box = (await viewport.boundingBox())!
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-        for (const oldest of [981, 781, 581, 381, 181, 1]) {
+        // Warm pages can let a single large gesture cross multiple boundaries.
+        // Establish the history window without assuming one page per gesture.
+        for (let input = 0; input < 8; input++) {
+            const oldest = await page.evaluate(() => window.__probe.windowState().oldestSeq)
+            if (oldest === 1) break
             await page.mouse.wheel(0, -1_000_000)
-            await expect.poll(() => page.evaluate(() => window.__probe.windowState().oldestSeq)).toBe(oldest)
+            await expect.poll(() => page.evaluate(() => window.__probe.windowState().oldestSeq)).toBeLessThan(oldest!)
             await page.waitForTimeout(250)
         }
+        expect(await page.evaluate(() => window.__probe.windowState().oldestSeq)).toBe(1)
         expect(await page.evaluate(() => window.__probe.windowState().newestSeq)).toBe(800)
         if (mode === 'cached') {
             await viewport.evaluate(element => { element.scrollTop = element.scrollHeight - element.clientHeight - 3000 })
@@ -45,7 +50,9 @@ for (const mode of ['held', 'held-moved', 'cached'] as const) {
         await page.keyboard.press('End')
         if (mode === 'cached') {
             await expect.poll(() => page.evaluate(() => window.__probe.windowState().newestSeq)).toBeGreaterThan(800)
-            const boundary = page.getByText(/^History passage 797.0:/)
+            // End lands on the last paragraph of the old window. Its identity
+            // is independent of row density or how many paragraphs fit above it.
+            const boundary = page.getByText(/^History passage 800.2:/)
             await expect(boundary).toBeInViewport()
             await expect(viewport).toHaveAttribute('data-end-finished', 'true')
             const points = await boundary.evaluate(async element => {
@@ -61,6 +68,20 @@ for (const mode of ['held', 'held-moved', 'cached'] as const) {
             await info.attach('cached-forward-reading-trajectory', { body: JSON.stringify({ points }), contentType: 'application/json' })
             expect(await page.evaluate(() => window.__probe.windowState())).toMatchObject({ messageCount: 800, viewMode: 'history' })
             expect(await page.evaluate(() => window.__probe.requests.length)).toBe(requestsBeforeEnd)
+            // Include the initial tail: testing only the first forward page
+            // misses the uncached-first-response regression.
+            for (let attempt = 0; attempt < 4; attempt++) {
+                if ((await page.evaluate(() => window.__probe.windowState().newestSeq)) === 1200) break
+                await page.mouse.wheel(0, 1_000_000)
+                await page.waitForTimeout(350)
+            }
+            await expect.poll(() => page.evaluate(() => window.__probe.windowState().newestSeq)).toBe(1200)
+            await page.mouse.wheel(0, 1_000_000)
+            await expect(page.getByText(/^History passage 1200.2:/)).toBeInViewport()
+            // Returning to live mode may check for new rows *after* 1200;
+            // no request may download the already traversed history again.
+            const repeated = await page.evaluate(start => window.__probe.requests.slice(start), requestsBeforeEnd)
+            expect(repeated.every(request => request.direction === 'after' && request.afterSeq === 1200)).toBe(true)
             expect(errors).toEqual([])
             return
         }

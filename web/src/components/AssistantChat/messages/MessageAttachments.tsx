@@ -1,12 +1,16 @@
 import { ArtifactCard } from '@/components/Artifacts/ArtifactCard'
 import type { AttachmentMetadata } from '@/types/api'
 import { isImageMimeType } from '@/lib/fileAttachments'
+import { useTranslation } from '@/lib/use-translation'
 import { ImagePreview } from '@/components/ImagePreview'
 
 function ImageAttachment(props: { attachment: AttachmentMetadata }) {
     const { attachment } = props
+    const { t } = useTranslation()
     return (
         <ImagePreview
+            frame="attachment"
+            loadingLabel={t('artifact.loading')} errorLabel={t('artifact.imageError')}
             src={attachment.previewUrl ?? ''}
             fileName={attachment.filename}
             label={attachment.filename}

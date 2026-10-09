@@ -5,7 +5,6 @@ import { I18nProvider } from '@/lib/i18n-context'
 import {
     ConversationOutlinePanel,
     captureScrollAnchor,
-    getHistoryCoverageRetryDelay,
     getPullToLoadState,
     getScrollIntent,
     getScrollToBottomButtonVisibility,
@@ -474,11 +473,6 @@ describe('top-triggered history loading', () => {
             sentinelTop: -200,
             sentinelBottom: -199
         })).toBe(false)
-    })
-
-    it('defers an intersection signal until the initial scroll-settling deadline', () => {
-        expect(getHistoryCoverageRetryDelay(2_800, 1_000)).toBe(1_816)
-        expect(getHistoryCoverageRetryDelay(900, 1_000)).toBe(16)
     })
 
     it('shows pull feedback at 16px and arms release loading at 64px', () => {

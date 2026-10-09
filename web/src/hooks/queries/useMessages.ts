@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useSyncExternalStore } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { DecryptedMessage } from '@/types/api'
+import { getRecentSessionWarmup } from '@/lib/recent-session-warmup'
 import {
     activateMessageWindow,
     cancelOlderMessageLoad,
@@ -59,11 +60,12 @@ export function useMessages(api: ApiClient | null, sessionId: string | null): {
 
     useLayoutEffect(() => {
         if (sessionId) {
-            activateMessageWindow(sessionId)
+            const switching = api ? getRecentSessionWarmup(api).consumeSwitch(sessionId) : false
+            activateMessageWindow(sessionId, { preferLatest: !switching })
             return () => cancelOlderMessageLoad(sessionId)
         }
         return undefined
-    }, [sessionId])
+    }, [api, sessionId])
 
     useEffect(() => {
         if (api && sessionId) {

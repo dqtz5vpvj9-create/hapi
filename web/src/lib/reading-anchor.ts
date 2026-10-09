@@ -1,6 +1,8 @@
 export type ReadingAnchor = {
     id: string
     topOffset: number
+    /** Native process header, located through a member without opening it. */
+    disclosure?: true
     text?: {
         path: number[]
         offset: number
@@ -36,7 +38,9 @@ export function registerCodeReadingSource(element: HTMLElement, source: CodeRead
 }
 
 const MESSAGE_SELECTOR = '.happy-thread-messages > [id], .happy-thread-messages [id^="hapi-message-"], [data-hapi-reading-part][id]'
-const capturedTextNodes = new WeakMap<NonNullable<ReadingAnchor['text']>, { node: Text; offset: number; quoteStart: number }>()
+// Bookmarks outlive their mounted pane. A same-node shortcut must not keep the
+// old chat DOM alive; the semantic quote remains available after collection.
+const capturedTextNodes = new WeakMap<NonNullable<ReadingAnchor['text']>, { node: WeakRef<Text>; offset: number; quoteStart: number }>()
 const MAX_LOOKUP_NODES = 512
 const MAX_LOOKUP_CHARACTERS = 64 * 1024
 
@@ -104,7 +108,7 @@ export function captureReadingAnchor(viewport: HTMLElement): ReadingAnchor | nul
             }
             const quoteStart = Math.max(0, offset - 16)
             const text = { path, offset, quoteStart, quote: point.node.data.slice(quoteStart, offset + 48), topOffset: rect.top - bounds.top }
-            capturedTextNodes.set(text, { node: point.node, offset, quoteStart })
+            capturedTextNodes.set(text, { node: new WeakRef(point.node), offset, quoteStart })
             return { id: row.id, topOffset: row.getBoundingClientRect().top - bounds.top, text,
                 ...(codePosition ? { code: { ...codePosition,
                     source: Array.from(row.querySelectorAll('[data-hapi-large-code]')).indexOf(codeElement!),
@@ -118,9 +122,10 @@ function resolveText(row: HTMLElement, anchor: NonNullable<ReadingAnchor['text']
     // Preserve the actual live node across layout changes. A DOM path alone
     // cannot distinguish an inserted token from the token previously read.
     const original = capturedTextNodes.get(anchor)
-    if (original && row.contains(original.node)
-        && original.node.data.slice(original.quoteStart, original.quoteStart + anchor.quote.length) === anchor.quote) {
-        return { node: original.node, offset: original.offset }
+    const node = original?.node.deref()
+    if (original && node && row.contains(node)
+        && node.data.slice(original.quoteStart, original.quoteStart + anchor.quote.length) === anchor.quote) {
+        return { node, offset: original.offset }
     }
     // Replaced Markdown nodes need a unique passage, with bounded work. Short
     // repeated code tokens are unsuitable for finding a replacement node.
@@ -138,7 +143,7 @@ function resolveText(row: HTMLElement, anchor: NonNullable<ReadingAnchor['text']
         if (match || text.data.indexOf(anchor.quote, start + 1) >= 0) return null
         match = { node: text, offset: start + anchor.offset - anchor.quoteStart }
     }
-    if (match) capturedTextNodes.set(anchor, { ...match, quoteStart: match.offset - anchor.offset + anchor.quoteStart })
+    if (match) capturedTextNodes.set(anchor, { node: new WeakRef(match.node), offset: match.offset, quoteStart: match.offset - anchor.offset + anchor.quoteStart })
     return match
 }
 
