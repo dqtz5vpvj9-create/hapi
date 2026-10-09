@@ -5,21 +5,23 @@ const MIN_WIDTH = 280
 const MAX_WIDTH = 600
 const DEFAULT_WIDTH = 320
 
-function clamp(value: number): number {
-    return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, value))
+function clamp(value: number, workspace = false): number {
+    return Math.min(MAX_WIDTH, Math.max(workspace ? 190 : MIN_WIDTH, value))
 }
 
-function loadWidth(): number {
-    const stored = localStorage.getItem(STORAGE_KEY)
+function loadWidth(workspace = false): number {
+    const stored = localStorage.getItem(workspace ? `${STORAGE_KEY}:workspace` : STORAGE_KEY)
     if (stored) {
         const parsed = Number(stored)
-        if (Number.isFinite(parsed)) return clamp(parsed)
+        if (Number.isFinite(parsed)) return clamp(parsed, workspace)
     }
-    return DEFAULT_WIDTH
+    return workspace ? 226 : DEFAULT_WIDTH
 }
 
-export function useSidebarResize() {
-    const [width, setWidth] = useState(loadWidth)
+export function useSidebarResize(workspace = false) {
+    const [widths, setWidths] = useState(() => ({ single: loadWidth(), workspace: loadWidth(true) }))
+    const key = workspace ? 'workspace' : 'single'
+    const width = widths[key]
     const [isDragging, setIsDragging] = useState(false)
     const startXRef = useRef(0)
     const startWidthRef = useRef(0)
@@ -47,7 +49,7 @@ export function useSidebarResize() {
         const onMove = (e: PointerEvent) => {
             if (e.pointerId !== activePointerIdRef.current) return
             const delta = e.clientX - startXRef.current
-            setWidth(clamp(startWidthRef.current + delta))
+            setWidths(current => ({ ...current, [key]: clamp(startWidthRef.current + delta, workspace) }))
         }
 
         const onUp = (e: PointerEvent) => {
@@ -65,14 +67,14 @@ export function useSidebarResize() {
             document.removeEventListener('pointerup', onUp)
             document.removeEventListener('pointercancel', onUp)
         }
-    }, [isDragging])
+    }, [isDragging, key, workspace])
 
     // Persist width to localStorage when drag ends
     useEffect(() => {
         if (!isDragging) {
-            localStorage.setItem(STORAGE_KEY, String(width))
+            localStorage.setItem(workspace ? `${STORAGE_KEY}:workspace` : STORAGE_KEY, String(width))
         }
-    }, [isDragging, width])
+    }, [isDragging, width, workspace])
 
     // Prevent text selection while dragging
     useEffect(() => {

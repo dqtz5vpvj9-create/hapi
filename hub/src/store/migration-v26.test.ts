@@ -33,7 +33,7 @@ describe('v26 history relationship index migration and persistent backfill', () 
         store = new Store(path)
         try {
             let db = (store as unknown as { db: Database }).db
-            expect((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(28)
+            expect((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(29)
             expect((db.prepare('SELECT COUNT(*) AS n FROM message_dependency_state').get() as { n: number }).n).toBe(0)
             const first = store.messages.backfillMessageDependencies(session.id)
             expect(first.complete).toBe(false)

@@ -1,3 +1,4 @@
+import { MachineIdentityIcon } from './MachineIdentityIcon'
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { MachineHealthPresentation } from '@/lib/machineHealth'
@@ -57,6 +58,7 @@ function MachineFilterChip(props: {
             title={machine.label}
             className="flex h-7 min-w-0 items-center gap-1.5 rounded-full px-2.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
         >
+            <MachineIdentityIcon machineId={machine.id} className="shrink-0" />
             <span className="max-w-32 truncate">{machine.label}</span>
             <span className="tabular-nums opacity-70">({machine.sessionCount})</span>
         </button>
@@ -71,7 +73,8 @@ function MachineFilterChip(props: {
                 title={machine.label}
                 className={cn(chipBaseClass, selected ? chipSelectedClass : chipIdleClass)}
             >
-                <span className="max-w-32 truncate">{machine.label}</span>
+                <MachineIdentityIcon machineId={machine.id} className="shrink-0" />
+            <span className="max-w-32 truncate">{machine.label}</span>
                 <span className="tabular-nums opacity-70">({machine.sessionCount})</span>
             </button>
         )
@@ -129,6 +132,7 @@ export function MachineFilterBar(props: {
 }
 
 function MachineFilterMenuRow(props: {
+    machineId?: string
     label: string
     count: number
     selected: boolean
@@ -149,6 +153,7 @@ function MachineFilterMenuRow(props: {
             </span>
             <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-1.5">
+                    {props.machineId ? <MachineIdentityIcon machineId={props.machineId} className="shrink-0" /> : null}
                     <span className="truncate text-[var(--app-fg)]">{props.label}</span>
                     <span className="shrink-0 tabular-nums text-xs text-[var(--app-hint)]">({props.count})</span>
                 </span>
@@ -306,6 +311,7 @@ export function MachineFilterMenu(props: {
                         {props.machines.map((machine) => (
                             <MachineFilterMenuRow
                                 key={machine.id}
+                                machineId={machine.id}
                                 label={machine.label}
                                 count={machine.sessionCount}
                                 selected={props.value === machine.id}

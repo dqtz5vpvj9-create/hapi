@@ -1,7 +1,12 @@
+import { useOptionalAppContext } from '@/lib/app-context'
+import { panes } from '@/workspace/workspaceStore'
+import { getRecentSessionWarmup } from '@/lib/recent-session-warmup'
+import { MachineIdentityProvider, MachineIdentityIcon } from './MachineIdentityIcon'
 import { GlassScene, GlassSource } from '@/themes/glass/GlassScene'
 import { NewTaskInput } from './NewTaskInput'
 import { useNarrowViewport } from '@/hooks/useNarrowViewport'
-import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { useSessionListOrder } from '@/hooks/useSessionListOrder'
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react'
 import { buildSessionHierarchy, hierarchyRootId, hierarchyContains, type SessionHierarchy } from '@/lib/sessionHierarchy'
 import { SessionListScrollAnchor } from './SessionListScrollAnchor'
 import { CodexSubagentDialog } from './CodexSubagentDialog'
@@ -336,7 +341,10 @@ export function getPreviousSessionVisibleCount(current: number, step: number): n
     return Math.max(normalizedStep, current - normalizedStep)
 }
 
-function groupSessionsByDirectory(sessions: SessionSummary[]): SessionGroup[] {
+function groupSessionsByDirectory(
+    sessions: SessionSummary[],
+    timeFor: (session: SessionSummary) => number = session => session.updatedAt
+): SessionGroup[] {
     const groups = new Map<string, { directory: string; machineId: string | null; sessions: SessionSummary[] }>()
 
     sessions.forEach(session => {
@@ -360,10 +368,10 @@ function groupSessionsByDirectory(sessions: SessionSummary[]): SessionGroup[] {
                 const rankA = a.active ? (a.pendingRequestsCount > 0 ? 0 : 1) : 2
                 const rankB = b.active ? (b.pendingRequestsCount > 0 ? 0 : 1) : 2
                 if (rankA !== rankB) return rankA - rankB
-                return b.updatedAt - a.updatedAt
+                return timeFor(b) - timeFor(a) || a.id.localeCompare(b.id)
             })
             const latestUpdatedAt = group.sessions.reduce(
-                (max, s) => (s.updatedAt > max ? s.updatedAt : max),
+                (max, s) => Math.max(timeFor(s), max),
                 -Infinity
             )
             const hasActiveSession = group.sessions.some(s => s.active)
@@ -936,9 +944,13 @@ export function SessionListSearch(props: {
     )
 }
 
+const subscribeWithoutWorkspace = () => () => {}
+const noWorkspaceState = () => undefined
+
 function SessionItem(props: {
     session: SessionSummary
     onSelect: (sessionId: string) => void
+    onOpenPane?: (sessionId: string, axis: 'horizontal' | 'vertical') => void
     showPath?: boolean
     api: ApiClient | null
     titleSuggestionAvailable?: boolean
@@ -949,6 +961,17 @@ function SessionItem(props: {
     machineLabel?: string
     lastSeenVersion: number
 }) {
+    const workspaceContext = useOptionalAppContext()
+    const workspace = workspaceContext?.workspace
+    const workspaceState = useSyncExternalStore(workspace?.subscribe ?? subscribeWithoutWorkspace, workspace?.get ?? noWorkspaceState)
+    const workspaceLocation = useMemo(() => {
+        if (workspaceState?.mode !== 'workspace') return undefined
+        for (const document of workspaceState.workspaces) {
+            const index = panes(document.root).findIndex(pane => pane.resource.kind === 'chat' && pane.resource.sessionId === props.session.id)
+            if (index >= 0) return { name: document.name, pane: index + 1 }
+        }
+        return undefined
+    }, [workspaceState?.workspaces, workspaceState?.mode, props.session.id])
     const { t } = useTranslation()
     const { addToast } = useToast()
     const {
@@ -1071,6 +1094,15 @@ function SessionItem(props: {
                 type="button"
                 {...longPressHandlers}
                 data-session-scroll-anchor
+                draggable={Boolean(workspaceContext?.workspaceActive)}
+                onDragStart={event => {
+                    if (!workspace) return
+                    workspace.draggingSessionId = s.id
+                    event.dataTransfer.setData('application/x-hapi-session', s.id)
+                    event.dataTransfer.effectAllowed = 'copyMove'
+                }}
+                onDragEnd={() => { if (workspace) workspace.draggingSessionId = null }}
+                title={[getSessionTitle(s), machineLabel, s.metadata?.path].filter(Boolean).join('\n')}
                 className={`session-list-item group/session-row flex w-full flex-col gap-1 py-2 pl-2.5 pr-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none rounded-lg ${selected ? 'bg-[var(--app-secondary-bg)]' : ''}`}
                 style={{ WebkitTouchCallout: 'none' }}
                 aria-current={selected ? 'page' : undefined}
@@ -1089,6 +1121,7 @@ function SessionItem(props: {
                     inRunningSection={inRunningSection}
                     projectLabel={projectLabel}
                     machineLabel={machineLabel}
+                    workspaceLocation={workspaceLocation}
                 />
             </button>
 
@@ -1096,6 +1129,13 @@ function SessionItem(props: {
                 isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 sessionId={s.id}
+                onOpenCurrent={() => onSelect(s.id)}
+                onOpenBelow={props.onOpenPane ? () => props.onOpenPane?.(s.id, 'vertical') : workspace && workspaceContext?.workspaceActive ? () => {
+                    if (workspace.openSession(s.id, 'vertical') && workspaceContext?.api) getRecentSessionWarmup(workspaceContext.api).switchTo(s.id)
+                } : undefined}
+                onOpenBeside={props.onOpenPane ? () => props.onOpenPane?.(s.id, 'horizontal') : workspace && workspaceContext?.workspaceActive ? () => {
+                    if (workspace.openSession(s.id, 'horizontal') && workspaceContext?.api) getRecentSessionWarmup(workspaceContext.api).switchTo(s.id)
+                } : undefined}
                 originalSessionId={s.metadata?.agentSessionId}
                 sessionActive={s.active}
                 sessionPinned={Boolean(s.pinned)}
@@ -1224,6 +1264,7 @@ function NativeSubagentItem(props: {
     agent: NativeSubagent
     agents: NativeSubagent[]
     parentSessionId: string
+    machineId?: string
     onOpen: OpenNativeSubagent
     revealChildren: boolean
 }) {
@@ -1232,26 +1273,30 @@ function NativeSubagentItem(props: {
     const children = props.agents.filter(agent => agent.parentThreadId === props.agent.threadId)
     const open = expanded || props.revealChildren
     return (
-        <div data-native-subagent-id={props.agent.threadId}>
+        <div className="app-native-subagent-tree" data-native-subagent-id={props.agent.threadId} data-has-subagents={children.length > 0 || undefined}>
             <button type="button"
-                className="flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left hover:bg-[var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                className="app-native-subagent-row flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left hover:bg-[var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                title={[nativeSubagentTitle(props.agent), props.agent.role].filter(Boolean).join('\n')}
                 onClick={() => props.onOpen(props.parentSessionId, props.agent)}>
                 <span className="flex items-center gap-1.5 text-sm text-[var(--app-fg)]">
                     <span aria-hidden="true" className="text-[var(--app-hint)]">↳</span>
-                    {nativeSubagentTitle(props.agent)}
+                    <MachineIdentityIcon machineId={props.machineId} />
+                    <span className="truncate">{nativeSubagentTitle(props.agent)}</span>
                 </span>
-                <span className="text-[11px] text-[var(--app-hint)]">
+                <span className="app-session-subagent-meta text-[11px] text-[var(--app-hint)]">
                     {t('sessions.subagent')}{props.agent.role && props.agent.role !== props.agent.nickname ? ` · ${props.agent.role}` : ''}
                 </span>
             </button>
             {children.length > 0 ? <>
                 <button type="button" aria-expanded={open}
+                    aria-label={t('sessions.subagents', { n: children.length })}
+                    title={t('sessions.subagents', { n: children.length })}
                     className="app-session-subagent-toggle ml-2.5 flex items-center gap-1 rounded px-1 py-1 text-[11px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
                     onClick={() => setExpanded(value => !value)}>
                     <ChevronIcon className="h-3 w-3" collapsed={!open} />
-                    {t('sessions.subagents', { n: children.length })}
+                    <span className="app-session-subagent-label">{t('sessions.subagents', { n: children.length })}</span>
                 </button>
-                {open ? <div className="ml-3 border-l border-[var(--app-border)] pl-2">
+                {open ? <div className="app-session-children ml-3 border-l border-[var(--app-border)] pl-2">
                     {children.map(agent => <NativeSubagentItem {...props} key={agent.threadId} agent={agent} />)}
                 </div> : null}
             </> : null}
@@ -1282,7 +1327,7 @@ function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
     return (
         <div className="app-session-tree-item" data-session-tree-id={props.session.id} data-has-subagents={children.length + nativeChildren.length > 0 || undefined}>
             {props.session.metadata?.codexParentThreadId ? (
-                <div className="px-2.5 pt-1 text-[10px] text-[var(--app-hint)]">
+                <div className="app-session-subagent-meta px-2.5 pt-1 text-[10px] text-[var(--app-hint)]">
                     {t('sessions.subagent')}
                     {props.session.metadata.codexAgentNickname ? ` · ${props.session.metadata.codexAgentNickname}` : ''}
                     {props.session.metadata.codexAgentRole ? ` · ${props.session.metadata.codexAgentRole}` : ''}
@@ -1292,14 +1337,16 @@ function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
             {children.length + nativeChildren.length > 0 ? (
                 <>
                     <button type="button" aria-expanded={open}
+                        aria-label={[t('sessions.subagents', { n: children.length + nativeChildren.length }), pending > 0 ? t('sessions.subagentsPending', { n: pending }) : null].filter(Boolean).join(' ')}
+                        title={t('sessions.subagents', { n: children.length + nativeChildren.length })}
                         className="app-session-subagent-toggle ml-2.5 flex items-center gap-1 rounded px-1 py-1 text-[11px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
                         onClick={() => setExpanded(value => !value)}>
                         <ChevronIcon className="h-3 w-3" collapsed={!open} />
-                        {t('sessions.subagents', { n: children.length + nativeChildren.length })}
-                        {pending > 0 ? <span className="text-[var(--app-badge-warning-text)]">{t('sessions.subagentsPending', { n: pending })}</span> : null}
+                        <span className="app-session-subagent-label">{t('sessions.subagents', { n: children.length + nativeChildren.length })}</span>
+                        {pending > 0 ? <span className="app-session-subagent-pending text-[var(--app-badge-warning-text)]">{t('sessions.subagentsPending', { n: pending })}</span> : null}
                     </button>
                     {open ? (
-                        <div className="ml-3 border-l border-[var(--app-border)] pl-2" data-subagent-parent={props.session.id}>
+                        <div className="app-session-children ml-3 border-l border-[var(--app-border)] pl-2" data-subagent-parent={props.session.id}>
                             {children.map(child => (
                                 <SessionTreeItem {...rowProps} key={child.id} session={child}
                                     selected={child.id === selectedSessionId} tree={tree}
@@ -1308,7 +1355,7 @@ function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
                                     onOpenNativeSubagent={onOpenNativeSubagent} />
                             ))}
                             {nativeChildren.map(agent => <NativeSubagentItem key={agent.threadId} agent={agent} agents={agents}
-                                parentSessionId={props.session.id} onOpen={onOpenNativeSubagent} revealChildren={revealChildren} />)}
+                                parentSessionId={props.session.id} machineId={props.session.metadata?.machineId} onOpen={onOpenNativeSubagent} revealChildren={revealChildren} />)}
                         </div>
                     ) : null}
                 </>
@@ -1320,6 +1367,7 @@ function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
 export function SessionList(props: {
     sessions: SessionSummary[]
     onSelect: (sessionId: string) => void
+    onOpenPane?: (sessionId: string, axis: 'horizontal' | 'vertical') => void
     onNewSession: () => void
     onStartTask?: (machineId?: string) => void
     hub?: string | null
@@ -1353,18 +1401,20 @@ export function SessionList(props: {
     const [showUnreadOnly, setShowUnreadOnly] = useState(false)
     const [showRunningOnly, setShowRunningOnly] = useState(false)
     const narrowViewport = useNarrowViewport()
+    const { timeFor: listTimeFor, compare: compareListOrder, refreshOrder } = useSessionListOrder(props.sessions, props.hub)
     const [listView, setListView] = useState<'recent' | 'directory'>(() => {
         try { return localStorage.getItem('hapi.sessionListView') === 'recent' ? 'recent' : 'directory' }
         catch { return 'directory' }
     })
     const changeListView = (view: 'recent' | 'directory') => {
+        refreshOrder()
         setListView(view)
         try { localStorage.setItem('hapi.sessionListView', view) } catch { /* Private browsing may disable storage. */ }
     }
 
     const { pinInProgressSessions } = usePinInProgressSessions()
     const { machineFilter, setMachineFilter } = useSessionListMachineFilter()
-    const showDetailedStatus = sessionListStatusMode === 'detailed'
+    const showDetailedStatus = !narrowViewport || sessionListStatusMode === 'detailed'
     const [searchQuery, setSearchQuery] = useState('')
     const [searchExpanded, setSearchExpanded] = useState(false)
     const [customStart, setCustomStart] = useState('')
@@ -1450,8 +1500,8 @@ export function SessionList(props: {
     )
     const allHierarchy = useMemo(() => buildSessionHierarchy(allSessions, sidebarSessions), [allSessions, sidebarSessions])
     const allGroups = useMemo(
-        () => groupSessionsByDirectory(allHierarchy.roots),
-        [allHierarchy]
+        () => groupSessionsByDirectory(allHierarchy.roots, listTimeFor),
+        [allHierarchy, listTimeFor]
     )
     const machineFilters = useMemo(
         () => groupByMachine(allGroups, resolveMachineLabel),
@@ -1508,17 +1558,17 @@ export function SessionList(props: {
         if (searchScoreIndex && hasTextQuery) {
             return sortSessionsBySearchRelevance(pinned, searchScoreIndex)
         }
-        return [...pinned].sort((a, b) => b.updatedAt - a.updatedAt)
-    }, [machineFilteredSessions, searchScoreIndex, hasTextQuery])
+        return [...pinned].sort(compareListOrder)
+    }, [machineFilteredSessions, searchScoreIndex, hasTextQuery, compareListOrder])
     const runningSessions = useMemo(() => {
         const byRelevanceOrRecent = (a: SessionSummary, b: SessionSummary) => {
             if (searchScoreIndex && hasTextQuery) {
                 return compareSessionsBySearchRelevance(a, b, searchScoreIndex)
             }
-            return b.updatedAt - a.updatedAt
+            return compareListOrder(a, b)
         }
         return bucketRunningSessions(machineFilteredSessions, pinInProgressSessions, byRelevanceOrRecent)
-    }, [machineFilteredSessions, pinInProgressSessions, searchScoreIndex, hasTextQuery])
+    }, [machineFilteredSessions, pinInProgressSessions, searchScoreIndex, hasTextQuery, compareListOrder])
     const runningSessionTotal = runningSessions.working.length
         + runningSessions.pending.length
     const activeSessionTotal = runningSessions.active.length + runningSessions.idle.length
@@ -1529,14 +1579,15 @@ export function SessionList(props: {
                     if (session.globalPinned) return false
                     if (pinInProgressSessions && !session.pinned && isPinnedInProgressSession(session)) return false
                     return true
-                })
+                }),
+                listTimeFor
             )
             if (searchScoreIndex && hasTextQuery) {
                 return rankSessionGroupsBySearchRelevance(grouped, searchScoreIndex)
             }
             return grouped
         },
-        [machineFilteredSessions, pinInProgressSessions, searchScoreIndex, hasTextQuery]
+        [machineFilteredSessions, pinInProgressSessions, searchScoreIndex, hasTextQuery, listTimeFor]
     )
     // Directory groups whose rows all floated to the pinned sections still
     // render an action-only header so copy-path / new-session-in-directory
@@ -1545,9 +1596,10 @@ export function SessionList(props: {
     // unread filters stay consistent.
     const allDirectoryGroups = useMemo(
         () => groupSessionsByDirectory(
-            machineFilteredSessions.filter((session) => !session.globalPinned)
+            machineFilteredSessions.filter((session) => !session.globalPinned),
+            listTimeFor
         ),
-        [machineFilteredSessions]
+        [machineFilteredSessions, listTimeFor]
     )
     const actionOnlyGroups = useMemo(() => {
         if (!pinInProgressSessions) {
@@ -1704,7 +1756,7 @@ export function SessionList(props: {
                                         <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly}
                                             key={s.id}
                                             session={s}
-                                            onSelect={props.onSelect}
+                                            onSelect={props.onSelect} onOpenPane={props.onOpenPane}
                                             showPath={false}
                                             api={api}
                                             titleSuggestionAvailable={titleSuggestionAvailable}
@@ -1835,7 +1887,7 @@ export function SessionList(props: {
                                 ) : null}
                                 <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly}
                                     session={s}
-                                    onSelect={props.onSelect}
+                                    onSelect={props.onSelect} onOpenPane={props.onOpenPane}
                                     showPath={false}
                                     api={api}
                                     titleSuggestionAvailable={titleSuggestionAvailable}
@@ -1967,6 +2019,8 @@ export function SessionList(props: {
     const [isRefreshing, setIsRefreshing] = useState(false)
     const isRefreshingRef = useRef(false)
     const onRefreshRef = useRef(props.onRefresh)
+    const refreshOrderRef = useRef(refreshOrder)
+    useEffect(() => { refreshOrderRef.current = refreshOrder }, [refreshOrder])
     useEffect(() => {
         onRefreshRef.current = props.onRefresh
     }, [props.onRefresh])
@@ -1991,7 +2045,9 @@ export function SessionList(props: {
             }
             isRefreshingRef.current = true
             setIsRefreshing(true)
-            void Promise.resolve(onRefreshRef.current()).finally(() => {
+            void Promise.resolve(onRefreshRef.current()).then(() => {
+                refreshOrderRef.current()
+            }).finally(() => {
                 isRefreshingRef.current = false
                 setIsRefreshing(false)
             })
@@ -2048,6 +2104,7 @@ export function SessionList(props: {
     }, [])
 
     return (
+        <MachineIdentityProvider machines={machinesById} labels={machineLabelsById}>
         <GlassScene active={narrowViewport} className="app-session-list app-session-list-refined relative flex min-h-0 w-full flex-1 flex-col">
             <div className="app-session-list-header session-list-scrollbar-offset mx-auto w-full max-w-content shrink-0">
             {showHeaderRow ? (
@@ -2201,9 +2258,11 @@ export function SessionList(props: {
 
                 {listView === 'recent' ? (
                     <div data-testid="recent-session-list" className="flex flex-col gap-0.5">
-                        {[...machineFilteredSessions].sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)).map((s, index, sorted) => {
-                            const date = new Date(s.updatedAt)
-                            const previousDate = index > 0 ? new Date(sorted[index - 1].updatedAt) : null
+                        {[...machineFilteredSessions].sort(searchScoreIndex && hasTextQuery
+                            ? (a, b) => compareSessionsBySearchRelevance(a, b, searchScoreIndex)
+                            : compareListOrder).map((s, index, sorted) => {
+                            const date = new Date(listTimeFor(s))
+                            const previousDate = index > 0 ? new Date(listTimeFor(sorted[index - 1])) : null
                             const newDay = !previousDate || previousDate.toDateString() !== date.toDateString()
                             const today = new Date()
                             const yesterday = new Date(today)
@@ -2213,7 +2272,7 @@ export function SessionList(props: {
                                 : date.toLocaleDateString(document.documentElement.lang || undefined, { month: 'short', day: 'numeric' })
                             return <Fragment key={s.id}>
                                 {narrowViewport && newDay ? <div className="app-session-date-heading">{dateLabel}</div> : null}
-                                <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly} session={s} onSelect={props.onSelect} api={api}
+                                <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly} session={s} onSelect={props.onSelect} onOpenPane={props.onOpenPane} api={api}
                                     titleSuggestionAvailable={titleSuggestionAvailable} selected={s.id === selectedSessionId}
                                     showDetailedStatus={showDetailedStatus} lastSeenVersion={lastSeenVersion}
                                     machineLabel={showMachineFilterBar && activeMachineFilter === null ? resolveMachineLabel(s.metadata?.machineId ?? null) : undefined} />
@@ -2256,7 +2315,7 @@ export function SessionList(props: {
                                         <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly}
                                             key={s.id}
                                             session={s}
-                                            onSelect={props.onSelect}
+                                            onSelect={props.onSelect} onOpenPane={props.onOpenPane}
                                             showPath={false}
                                             api={api}
                                             titleSuggestionAvailable={titleSuggestionAvailable}
@@ -2318,5 +2377,6 @@ export function SessionList(props: {
                 destructive
             />
         </GlassScene>
+        </MachineIdentityProvider>
     )
 }

@@ -1,0 +1,107 @@
+/* Unread completions use a blue dot independent of the theme's link color. */
+[data-session-status="unread"] > span[aria-hidden="true"] {
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #3b82f6;
+    font-size: 0;
+    line-height: 0;
+}
+
+.app-session-machine-icon { display: none; }
+/* Desktop navigation is a single-line list in every theme. Touch layouts keep
+   their larger targets. Disclosure and selection remain separate buttons. */
+@media (min-width: 920px) {
+    .app-session-list-refined .app-session-list-content > .max-w-content { gap: 0; }
+    .app-session-list-refined :is(.app-session-tree-item, .app-native-subagent-tree) {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        position: relative;
+    }
+    .app-session-list-refined .session-list-item,
+    .app-session-list-refined .app-native-subagent-row {
+        grid-column: 1;
+        grid-row: 1;
+        min-width: 0;
+        min-height: 34px;
+        padding: 7px 8px;
+        gap: 0;
+        border-radius: 7px;
+    }
+    .app-session-list-refined .app-session-row-main {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        opacity: 1;
+        gap: 8px;
+    }
+    .app-session-list-refined .app-session-row-status {
+        width: 16px;
+        height: 20px;
+        flex: 0 0 16px;
+        justify-content: center;
+    }
+    .app-session-list-refined .app-session-machine-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 18px;
+        height: 20px;
+        font-size: 14px;
+    }
+    .app-session-list-refined .app-session-status-label,
+    .app-session-list-refined .app-session-pending-count { display: none; }
+    .app-session-list-refined .app-session-row-main .app-session-row-title { font-size: 14px; line-height: 20px; }
+    .app-session-list-refined .app-session-row-time { font-size: 11px; line-height: 20px; }
+    .app-session-list-refined .app-session-row-desktop-meta,
+    .app-session-list-refined .app-session-row-agent,
+    .app-session-list-refined .app-session-subagent-meta,
+    .app-session-list-refined .app-session-subagent-label { display: none; }
+    .app-session-list-refined .app-session-subagent-toggle {
+        grid-column: 2;
+        grid-row: 1;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 34px;
+        margin: 0;
+        padding: 0;
+    }
+    .app-session-list-refined .app-session-subagent-toggle:focus-visible {
+        outline: 2px solid var(--app-link);
+        outline-offset: -2px;
+    }
+    .app-session-list-refined .app-session-subagent-pending {
+        position: absolute;
+        top: 5px;
+        right: 0;
+        width: 5px;
+        height: 5px;
+        overflow: hidden;
+        font-size: 0;
+        border-radius: 50%;
+        background: var(--app-badge-warning-text);
+    }
+    .app-session-list-refined .app-session-children {
+        grid-column: 1 / -1;
+        min-width: 0;
+        margin-left: 10px;
+        padding-left: 4px;
+    }
+    .app-session-list-refined .app-native-subagent-row > span:first-child {
+        display: flex;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        line-height: 20px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-session-row-status .animate-spin-slow,
+    .app-session-row-status .animate-pulse { animation: none; }
+}

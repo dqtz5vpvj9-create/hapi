@@ -135,7 +135,8 @@ export function useLongPress(options: UseLongPressOptions): UseLongPressHandlers
         startTimer(e.clientX, e.clientY)
     }, [startTimer, isGhostMouseEvent])
 
-    const onMouseUp = useCallback<React.MouseEventHandler>(() => {
+    const onMouseUp = useCallback<React.MouseEventHandler>((e) => {
+        if (e.button !== 0) return
         if (isGhostMouseEvent()) return
         handleEnd(!isLongPressRef.current)
     }, [handleEnd, isGhostMouseEvent])
@@ -175,11 +176,16 @@ export function useLongPress(options: UseLongPressOptions): UseLongPressHandlers
 
     const onKeyDown = useCallback<React.KeyboardEventHandler>((e) => {
         if (disabled) return
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+            e.preventDefault()
+            clearTimer()
+            const bounds = e.currentTarget.getBoundingClientRect()
+            onLongPress({ x: bounds.left + bounds.width / 2, y: bounds.bottom })
+        } else if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
             onClick?.()
         }
-    }, [disabled, onClick])
+    }, [disabled, clearTimer, onLongPress, onClick])
 
     const onTouchCancel = useCallback<React.TouchEventHandler>(() => {
         clearTimer()

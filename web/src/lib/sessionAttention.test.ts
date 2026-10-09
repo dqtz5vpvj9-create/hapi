@@ -29,12 +29,12 @@ function makeSummary(overrides: Partial<SessionSummary> & { id: string }): Sessi
 }
 
 describe('classifySessionAttention', () => {
-    it('returns null for the selected session', () => {
+    it('keeps permission requests visible for the selected session', () => {
         const attention = classifySessionAttention(
             makeSummary({ id: 'a', pendingRequestKinds: ['permission'] }),
             { selected: true, lastSeenAt: 0 }
         )
-        expect(attention).toBeNull()
+        expect(attention).toEqual({ kind: 'permission' })
     })
 
     it('shows an explicitly marked unread dot for the selected session', () => {

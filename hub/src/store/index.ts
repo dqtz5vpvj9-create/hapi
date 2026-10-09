@@ -15,6 +15,7 @@ import { UsageStore } from './usageStore'
 import { createMessageDependencySchema } from './messageDependencies'
 import { createMessageOutlineSchema } from './messageOutline'
 import { WorkGraphStore } from './workGraphStore'
+import { WorkspaceStore, createWorkspaceSchema } from './workspaceStore'
 
 export type {
     NativeDevicePlatform,
@@ -44,7 +45,7 @@ export {
     WorkGraphValidationError
 } from './workGraph'
 
-const SCHEMA_VERSION: number = 28
+const SCHEMA_VERSION: number = 29
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -58,6 +59,8 @@ const REQUIRED_TABLES = [
     'usage_scan_state',
     'events',
     'event_links',
+    'workspace_collections',
+    'workspace_operations',
     'message_dependency_state',
     'message_dependency_keys',
     'message_dependency_scan'
@@ -77,6 +80,7 @@ export class Store {
     readonly scratchlist: ScratchlistStore
     readonly usage: UsageStore
     readonly workGraph: WorkGraphStore
+    readonly workspaces: WorkspaceStore
 
     /**
      * Filesystem path of the underlying SQLite database, or ':memory:' for
@@ -131,6 +135,7 @@ export class Store {
         this.scratchlist = new ScratchlistStore(this.db)
         this.usage = new UsageStore(this.db)
         this.workGraph = new WorkGraphStore(this.db)
+        this.workspaces = new WorkspaceStore(this.db)
     }
 
     /**
@@ -355,6 +360,7 @@ export class Store {
             25: () => this.migrateFromV25ToV26(),
             26: () => createMessageDependencySchema(this.db),
             27: () => createMessageOutlineSchema(this.db),
+            28: () => createWorkspaceSchema(this.db),
         })
 
         if (currentVersion === 0) {
@@ -608,6 +614,7 @@ export class Store {
         `)
         createMessageDependencySchema(this.db)
         createMessageOutlineSchema(this.db)
+        createWorkspaceSchema(this.db)
     }
 
     private migrateLegacySchemaIfNeeded(): void {

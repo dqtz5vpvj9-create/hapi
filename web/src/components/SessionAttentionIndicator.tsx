@@ -4,11 +4,16 @@ import { getSessionAttentionLabelKey } from '@/lib/sessionAttention'
 import { useTranslation } from '@/lib/use-translation'
 import { HoverTooltip, SESSION_ROW_TOOLTIP_FOCUS_CLASS } from '@/components/HoverTooltip'
 
-const ATTENTION_DOT_CLASS: Record<SessionAttention['kind'], string> = {
-    permission: 'bg-amber-500 animate-pulse',
-    input: 'bg-blue-500',
-    background: 'bg-blue-400',
-    unread: 'bg-[var(--app-link)]'
+export function SessionAttentionGlyph(props: { kind: SessionAttention['kind']; label?: string }) {
+    const waiting = props.kind === 'permission' || props.kind === 'input'
+    return <span
+        data-session-status={props.kind}
+        title={props.label}
+        aria-label={props.label}
+        className={`inline-flex h-4 w-4 shrink-0 items-center justify-center text-xs font-semibold ${waiting ? 'text-[var(--app-badge-warning-text)]' : props.kind === 'background' ? 'text-[var(--app-badge-success-text)]' : 'text-[var(--app-link)]'}`}
+    >
+        <span aria-hidden="true">{props.kind === 'permission' ? '!' : props.kind === 'input' ? '?' : props.kind === 'background' ? '◌' : '•'}</span>
+    </span>
 }
 
 /**
@@ -25,11 +30,7 @@ export function SessionAttentionIndicator(props: {
     tooltipId: string
 }) {
     const { t } = useTranslation()
-    const dot = (
-        <span
-            className={`inline-flex h-2 w-2 shrink-0 rounded-full ${ATTENTION_DOT_CLASS[props.attention.kind]}`}
-        />
-    )
+    const dot = <SessionAttentionGlyph kind={props.attention.kind} label={props.label} />
 
     return (
         <HoverTooltip

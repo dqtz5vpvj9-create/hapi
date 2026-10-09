@@ -4,6 +4,7 @@ import { createElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@/types/api'
 import type { Session } from '@/types/api'
+import { appendOptimisticMessage, clearMessageWindow, getMessageWindowState } from '@/lib/message-window-store'
 import {
     applySessionDetailPatch,
     canApplyVersionedSummaryPatch,
@@ -58,6 +59,62 @@ function renderUseSSE(options?: { onDisconnect?: (reason: string) => void }) {
         onDisconnect: options?.onDisconnect
     }), { wrapper })
 }
+
+describe('workspace SSE subscriptions and hidden queue controls', () => {
+    beforeEach(() => {
+        vi.useFakeTimers()
+        FakeEventSource.instances = []
+        vi.stubGlobal('EventSource', FakeEventSource)
+    })
+    afterEach(() => {
+        clearMessageWindow('hidden-sse')
+        vi.unstubAllGlobals(); vi.useRealTimers()
+    })
+
+    it('keeps an equivalent pane set connected and discards its replay cursor when the set changes', () => {
+        const queryClient = new QueryClient()
+        const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: queryClient }, children)
+        const hook = renderHook(({ ids }: { ids: string[] }) => useSSE({
+            enabled: true, token: 'fixture', baseUrl: 'http://hub.test', subscription: { sessionIds: ids }, onEvent: () => {}
+        }), { wrapper, initialProps: { ids: ['a', 'b'] } })
+        const first = FakeEventSource.instances[0]
+        act(() => {
+            first.simulateOpen()
+            first.onmessage?.({ data: JSON.stringify({ type: 'heartbeat' }), lastEventId: 'prior-cursor' } as MessageEvent<string>)
+        })
+        hook.rerender({ ids: ['b', 'a'] })
+        expect(FakeEventSource.instances).toHaveLength(1)
+        hook.rerender({ ids: ['a', 'c'] })
+        expect(first.readyState).toBe(FakeEventSource.CLOSED)
+        const query = new URL(FakeEventSource.instances[1].url).searchParams
+        expect(JSON.parse(query.get('sessionIds')!)).toEqual(['a', 'c'])
+        expect(query.has('lastEventId')).toBe(false)
+        hook.unmount(); queryClient.clear()
+    })
+
+    it('handles a hidden send through dispatch, consumption and cancellation without its server body', () => {
+        const queryClient = new QueryClient()
+        const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: queryClient }, children)
+        const onEvent = vi.fn()
+        const hook = renderHook(() => useSSE({ enabled: true, token: 'fixture', baseUrl: 'http://hub.test',
+            subscription: { all: true, messageMode: 'notify' }, scope: 'global', onEvent }), { wrapper })
+        const source = FakeEventSource.instances[0]
+        expect(new URL(source.url).searchParams.get('messageMode')).toBe('notify')
+        for (const localId of ['consume-me', 'cancel-me']) appendOptimisticMessage('hidden-sse', {
+            id: localId, localId, seq: null, createdAt: 1, invokedAt: null, status: 'queued',
+            content: { role: 'user', content: { type: 'text', text: localId } }
+        })
+        act(() => source.simulateMessage({ type: 'message-updated', sessionId: 'hidden-sse', scheduled: false }))
+        expect(getMessageWindowState('hidden-sse').messages).toHaveLength(2)
+        act(() => source.simulateMessage({ type: 'messages-dispatching', sessionId: 'hidden-sse', localIds: ['consume-me'] }))
+        expect(getMessageWindowState('hidden-sse').messages.find(row => row.localId === 'consume-me')!.deliveryState).toBe('dispatching')
+        act(() => source.simulateMessage({ type: 'messages-consumed', sessionId: 'hidden-sse', localIds: ['consume-me'], invokedAt: 2 }))
+        expect(getMessageWindowState('hidden-sse').messages.find(row => row.localId === 'consume-me')).toMatchObject({ invokedAt: 2, status: 'sent' })
+        act(() => source.simulateMessage({ type: 'message-cancelled', sessionId: 'hidden-sse', messageId: 'server-id-not-yet-received', localId: 'cancel-me' }))
+        expect(getMessageWindowState('hidden-sse').messages.map(row => row.localId)).toEqual(['consume-me'])
+        hook.unmount(); queryClient.clear()
+    })
+})
 
 describe('useSSE connection liveness (mobile suspend/resume)', () => {
     beforeEach(() => {

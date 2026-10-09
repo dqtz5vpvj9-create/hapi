@@ -4,6 +4,7 @@ import { SSEManager } from '../../sse/sseManager'
 import { VisibilityTracker } from '../../visibility/visibilityTracker'
 import type { WebAppEnv } from '../middleware/auth'
 import { createEventsRoutes } from './events'
+import type { SyncEngine } from '../../sync/syncEngine'
 
 type Frame = { id: string | null; data: Record<string, unknown> }
 
@@ -58,20 +59,66 @@ async function collectFrames(response: Response, count: number): Promise<Frame[]
     return frames
 }
 
-function buildApp(manager: SSEManager): Hono<WebAppEnv> {
+function buildApp(manager: SSEManager, engine: SyncEngine | null = null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
     app.use('*', async (c, next) => {
         c.set('namespace', 'ns-test')
         c.set('userId', 1)
         await next()
     })
-    app.route('/api', createEventsRoutes(() => manager, () => null, () => null))
+    app.route('/api', createEventsRoutes(() => manager, () => engine, () => null))
     return app
 }
 
 async function openStream(app: Hono<WebAppEnv>, query: string): Promise<Response> {
     return await app.request(`/api/events?all=true${query}`)
 }
+
+describe('GET /api/events workspace subscriptions', () => {
+    const engine = {
+        resolveSessionAccess(id: string) {
+            if (id === 'foreign') return { ok: false, reason: 'access-denied' }
+            if (id === 'deleted') return { ok: false, reason: 'not-found' }
+            return { ok: true, sessionId: id === 'old-a' ? 'a' : id }
+        }
+    } as unknown as SyncEngine
+
+    it('binds all visible canonical sessions and keeps valid panes when another was deleted', async () => {
+        const manager = new SSEManager(0, new VisibilityTracker())
+        const app = buildApp(manager, engine)
+        const response = await app.request(`/api/events?sessionIds=${encodeURIComponent(JSON.stringify(['old-a', 'b', 'deleted']))}`)
+        expect(response.status).toBe(200)
+        await new Promise(resolve => setTimeout(resolve, 20))
+        for (const sessionId of ['hidden', 'a', 'b']) manager.broadcast({ type: 'session-updated', sessionId, namespace: 'ns-test' })
+        const frames = await collectFrames(response, 3)
+        expect(frames.slice(1).map(f => f.data.sessionId)).toEqual(['a', 'b'])
+        manager.stop()
+    })
+
+    it('rejects foreign sessions and malformed selector values before opening a stream', async () => {
+        const manager = new SSEManager(0, new VisibilityTracker())
+        const app = buildApp(manager, engine)
+        expect((await app.request('/api/events?sessionIds=%5B%22a%22,%22foreign%22%5D')).status).toBe(403)
+        for (const query of ['sessionIds=not-json', 'sessionIds=%7B%7D', 'sessionIds=%5B1%5D', 'messageMode=unknown']) {
+            expect((await app.request(`/api/events?${query}`)).status).toBe(400)
+        }
+        manager.stop()
+    })
+
+    it('sends body-free global notifications on the HTTP stream', async () => {
+        const manager = new SSEManager(0, new VisibilityTracker())
+        const response = await openStream(buildApp(manager), '&messageMode=notify')
+        await new Promise(resolve => setTimeout(resolve, 20))
+        manager.broadcast({ type: 'message-received', sessionId: 'a', namespace: 'ns-test',
+            message: { id: 'm1', seq: 1, localId: 'queue-1', createdAt: 1, invokedAt: null, scheduledAt: 10,
+                content: { role: 'user', content: { type: 'text', text: 'No body on the global stream' } } } })
+        manager.broadcast({ type: 'messages-consumed', sessionId: 'a', namespace: 'ns-test', localIds: ['queue-1'], invokedAt: 20 })
+        const frames = await collectFrames(response, 3)
+        expect(frames[1].data).toEqual({ type: 'message-updated', sessionId: 'a', namespace: 'ns-test', scheduled: true })
+        expect(frames[2].data).toMatchObject({ type: 'messages-consumed', localIds: ['queue-1'], invokedAt: 20 })
+        manager.stop()
+    })
+})
 
 describe('GET /api/events replay', () => {
     it('first connect gets a gap verdict and id-tagged live events', async () => {

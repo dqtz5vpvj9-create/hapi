@@ -113,8 +113,8 @@
         box-shadow: none;
     }
     [data-color-theme="codex"] .app-session-row-main { grid-template-columns: minmax(0, 1fr) auto; opacity: 1; }
-    [data-color-theme="codex"] .app-session-row-main [title] { color: var(--app-fg); font-size: 15px; font-weight: 500; }
-    [data-color-theme="codex"] .session-list-item[aria-current="page"] .app-session-row-main [title] { font-weight: 600; }
+    [data-color-theme="codex"] .app-session-row-main .app-session-row-title { color: var(--app-fg); font-size: 15px; font-weight: 500; }
+    [data-color-theme="codex"] .session-list-item[aria-current="page"] .app-session-row-main .app-session-row-title { font-weight: 600; }
     [data-color-theme="codex"] .app-session-row-time { font-size: 11px; }
     [data-color-theme="codex"] .app-session-row-desktop-meta { padding-left: 24px; font-size: 12px; }
     [data-color-theme="codex"] .app-session-subagent-toggle { margin-left: 26px; font-size: 11px; }

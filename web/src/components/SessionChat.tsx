@@ -1,7 +1,14 @@
+import { WorkspaceActivity } from '@/workspace/WorkspaceActivity'
+import { computePendingRequestKinds } from '@hapi/protocol'
+import { useLayoutEffect, useSyncExternalStore } from 'react'
+import { nativeChatEnabled } from '@/chat/nativeProjection'
+import { getSessionPresentation, retainSessionPresentation, SessionPresentation } from '@/chat/sessionPresentation'
+export { buildGoalStateMessages } from '@/chat/sessionPresentation'
+import { NativeCodexThread } from '@/components/AssistantChat/NativeCodexThread'
 import { useOptionalAppContext } from '@/lib/app-context'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
-import { useNavigate } from '@tanstack/react-router'
+import { createPortal, flushSync } from 'react-dom'
+import { usePane, usePaneNavigate } from '@/workspace/PaneContext'
 import { useQueryClient } from '@tanstack/react-query'
 import { PRESERVE_SESSION_SIDEBAR_SCROLL } from '@/lib/sessionNavigation'
 import { AssistantRuntimeProvider, useAui, useAuiState } from '@assistant-ui/react'
@@ -21,14 +28,10 @@ import type {
 } from '@/types/api'
 import type { ChatBlock, NormalizedMessage } from '@/chat/types'
 import type { Suggestion } from '@/hooks/useActiveSuggestions'
-import { normalizeDecryptedMessage } from '@/chat/normalize'
-import { reduceChatBlocks } from '@/chat/reducer'
-import { reconcileChatBlocks } from '@/chat/reconcile'
 import { buildConversationOutline } from '@/chat/outline'
 import { buildVisibleChatBlocks, isToolGroupBlock, type ToolGroupBlock } from '@/chat/toolGroups'
 import { useUnseenBlockCount } from '@/hooks/useUnseenBlockCount'
 import { useCodexExplorationCollapse } from '@/hooks/useCodexExplorationCollapse'
-import { isQueuedForInvocation } from '@/lib/messages'
 import { inactiveSessionCanResume } from '@/lib/sessionResume'
 import {
     getCodexModelReasoningEfforts,
@@ -343,14 +346,14 @@ export function isSelectAllTargetBlocked(target: EventTarget | null): boolean {
  * Returns true when the keystroke was handled (preventDefault + range
  * selection). Pure / exported for unit tests and the Playwright fixture.
  */
-export function applyGlobalSelectAll(e: KeyboardEvent): boolean {
+export function applyGlobalSelectAll(e: KeyboardEvent, root: ParentNode = document): boolean {
     if (e.defaultPrevented || e.repeat) return false
     if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return false
     if (e.key !== 'a' && e.key !== 'A') return false
     if (isSelectAllTargetBlocked(e.target)) return false
     // The thread container is rendered by HappyThread; its class is the
     // stable handle between the page-level shortcut and the message DOM.
-    const thread = document.querySelector<HTMLElement>('.happy-thread-messages')
+    const thread = root.querySelector<HTMLElement>('.happy-thread-messages')
     if (!thread || !thread.textContent) return false
     e.preventDefault()
     const range = document.createRange()
@@ -392,10 +395,6 @@ export function mergeStagedAttachmentsInOrder(
 ): AttachmentMetadata[] {
     const stagedById = new Map(staged.map((attachment) => [attachment.id, attachment]))
     return attachments.map((attachment) => stagedById.get(attachment.id) ?? attachment)
-}
-
-function isUninvokedScheduledMessage(message: DecryptedMessage): boolean {
-    return message.invokedAt == null && message.scheduledAt != null
 }
 
 /**
@@ -530,12 +529,6 @@ export function ScratchlistDrawerHost(props: {
     )
 }
 
-export function buildGoalStateMessages(
-    messages: DecryptedMessage[]
-): DecryptedMessage[] {
-    return messages.filter((message) => !isUninvokedScheduledMessage(message))
-}
-
 /**
  * Keep the latest completed fork boundary available while reading history.
  * The history window can no longer contain the tail after older pages are
@@ -655,7 +648,8 @@ function SessionChatInner(props: SessionChatProps) {
     const { haptic } = usePlatform()
     const { t } = useTranslation()
     const { codexExplorationCollapsed } = useCodexExplorationCollapse()
-    const navigate = useNavigate()
+    const navigate = usePaneNavigate()
+    const pane = usePane()
     const [historyActionPending, setHistoryActionPending] = useState(false)
     const [rewindForkFallback, setRewindForkFallback] = useState<string | null>(null)
 
@@ -715,9 +709,13 @@ function SessionChatInner(props: SessionChatProps) {
     // is likewise gated on `session.active`.
     const canViewAgentTerminal =
         props.session.metadata?.startingMode === 'pty' && props.session.active
-    const normalizedCacheRef = useRef<Map<string, { source: DecryptedMessage; normalized: NormalizedMessage | null }>>(new Map())
+    const useNativeChat = nativeChatEnabled(props.session.metadata?.codexNativeSession)
+    const presentation = useMemo(() => useNativeChat
+        ? getSessionPresentation(props.api, props.session.id)
+        : new SessionPresentation(), [props.api, props.session.id, useNativeChat])
+    useEffect(() => useNativeChat ? retainSessionPresentation(props.api, props.session.id, presentation) : undefined, [props.api, props.session.id, presentation, useNativeChat])
     const focusComposerRef = useRef<(() => void) | null>(null)
-    const blocksByIdRef = useRef<Map<string, ChatBlock>>(new Map())
+    const focusComposer = useCallback(() => focusComposerRef.current?.(), [])
     const visibleGroupsRef = useRef<ToolGroupBlock[]>([])
     const [rememberedTailBoundary, setRememberedTailBoundary] = useState<{
         id: string | null
@@ -788,9 +786,10 @@ function SessionChatInner(props: SessionChatProps) {
     // initializes to false again. (Previous effect-based reset was
     // racy on first paint - see public-export comment for context.)
     const handleScratchlistToggle = useCallback(() => {
-        if (isScratchlistParking) return
+        if (pane && !pane.focused) return
+            if (isScratchlistParking) return
         setScratchlistMode((m) => !m)
-    }, [isScratchlistParking])
+    }, [isScratchlistParking, pane?.focused])
     const dictateHotkeyRef = useRef<(() => void) | null>(null)
     /**
      * Global keyboard shortcut: Ctrl/Cmd + Shift + S toggles scratchlist
@@ -816,6 +815,7 @@ function SessionChatInner(props: SessionChatProps) {
      */
     useEffect(() => {
         const onKeyDown = (e: globalThis.KeyboardEvent) => {
+            if (pane && !pane.focused) return
             if (isScratchlistParking) return
             if (!isScratchlistToggleHotkey(e)) return
             if (isScratchlistHotkeyBlockedTarget(e.target)) return
@@ -824,7 +824,7 @@ function SessionChatInner(props: SessionChatProps) {
         }
         window.addEventListener('keydown', onKeyDown)
         return () => window.removeEventListener('keydown', onKeyDown)
-    }, [isScratchlistParking])
+    }, [isScratchlistParking, pane?.focused])
     /**
      * Global keyboard shortcut: Ctrl/Cmd + Shift + D toggles composer
      * dictation (Settings → Voice mode: dictation) or voice assistant,
@@ -835,6 +835,7 @@ function SessionChatInner(props: SessionChatProps) {
     useEffect(() => {
         const onKeyDown = (e: globalThis.KeyboardEvent) => {
             if (e.repeat) return
+            if (pane && !pane.focused) return
             if (!isDictateToggleHotkey(e)) return
             if (isDictateHotkeyBlockedTarget(e.target)) return
             const invoke = dictateHotkeyRef.current
@@ -844,7 +845,7 @@ function SessionChatInner(props: SessionChatProps) {
         }
         window.addEventListener('keydown', onKeyDown)
         return () => window.removeEventListener('keydown', onKeyDown)
-    }, [])
+    }, [pane?.focused])
     /**
      * Global select-all takeover: see applyGlobalSelectAll. Bound at
      * window scope because the broken case is focus on the page body /
@@ -852,9 +853,13 @@ function SessionChatInner(props: SessionChatProps) {
      * the thread viewport.
      */
     useEffect(() => {
-        window.addEventListener('keydown', applyGlobalSelectAll)
-        return () => window.removeEventListener('keydown', applyGlobalSelectAll)
-    }, [])
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (pane && !pane.focused) return
+            applyGlobalSelectAll(event, pane?.root.current ?? document)
+        }
+        window.addEventListener('keydown', onKeyDown)
+        return () => window.removeEventListener('keydown', onKeyDown)
+    }, [pane?.focused, pane?.root])
     /**
      * onSend wrapper: when scratchlist mode is on AND the submission is
      * not scheduled, route to scratchlist (text and/or hub attachments).
@@ -1400,82 +1405,9 @@ function SessionChatInner(props: SessionChatProps) {
         voice.toggleMic()
     }, [voice])
 
-    // Track session id to clear caches when it changes
-    const prevSessionIdRef = useRef<string | null>(null)
-
-    useEffect(() => {
-        normalizedCacheRef.current.clear()
-        blocksByIdRef.current.clear()
-        visibleGroupsRef.current = []
-        setOutlineOpen(false)
-    }, [props.session.id])
-
-    // Exclude user messages that haven't been invoked yet — those appear in the
-    // QueuedMessagesBar above the composer, not in the thread timeline. The
-    // `isQueuedForInvocation` predicate is shared with the window store and the
-    // floating bar so the three views never disagree about queued state.
-    const visibleMessages = useMemo(
-        () => props.messages.filter((m) => !isQueuedForInvocation(m)),
-        [props.messages]
-    )
-
-    const normalizedMessages: NormalizedMessage[] = useMemo(() => {
-        // Clear caches immediately when session changes (before useEffect runs)
-        if (prevSessionIdRef.current !== null && prevSessionIdRef.current !== props.session.id) {
-            normalizedCacheRef.current.clear()
-            blocksByIdRef.current.clear()
-            visibleGroupsRef.current = []
-        }
-        prevSessionIdRef.current = props.session.id
-
-        const cache = normalizedCacheRef.current
-        const normalized: NormalizedMessage[] = []
-        const seen = new Set<string>()
-        for (const message of visibleMessages) {
-            if (seen.has(message.id)) {
-                continue
-            }
-            seen.add(message.id)
-            const cached = cache.get(message.id)
-            if (cached && cached.source === message) {
-                if (cached.normalized) normalized.push(cached.normalized)
-                continue
-            }
-            const next = normalizeDecryptedMessage(message)
-            cache.set(message.id, { source: message, normalized: next })
-            if (next) normalized.push(next)
-        }
-        for (const id of cache.keys()) {
-            if (!seen.has(id)) {
-                cache.delete(id)
-            }
-        }
-        return normalized
-    }, [visibleMessages])
-
-    const goalStateSourceMessages = useMemo(
-        () => buildGoalStateMessages(props.messages),
-        [props.messages]
-    )
-
-    const normalizedGoalStateMessages: NormalizedMessage[] = useMemo(() => {
-        const normalized: NormalizedMessage[] = []
-        for (const message of goalStateSourceMessages) {
-            const next = normalizeDecryptedMessage(message)
-            if (next) normalized.push(next)
-        }
-        return normalized
-    }, [goalStateSourceMessages])
-
-    const reduced = useMemo(
-        () => reduceChatBlocks(normalizedMessages, props.session.agentState, {
-            goalStateMessages: normalizedGoalStateMessages
-        }),
-        [normalizedMessages, normalizedGoalStateMessages, props.session.agentState]
-    )
-    const reconciled = useMemo(
-        () => reconcileChatBlocks(reduced.blocks, blocksByIdRef.current),
-        [reduced.blocks]
+    const { visibleMessages, normalizedMessages, reduced, reconciled } = useMemo(
+        () => presentation.read(props.messages, props.session.agentState, props.messagesEpoch),
+        [presentation, props.messages, props.session.agentState, props.messagesEpoch]
     )
     const sessionStatus = useMemo(
         () => buildSessionStatusData({
@@ -1499,9 +1431,13 @@ function SessionChatInner(props: SessionChatProps) {
         [reduced.blocks]
     )
 
-    useEffect(() => {
-        blocksByIdRef.current = reconciled.byId
-    }, [reconciled.byId])
+    const nativeProjection = presentation.nativeProjection
+    useMemo(() => {
+        if (useNativeChat) nativeProjection.update(reconciled.blocks, normalizedMessages)
+    }, [useNativeChat, nativeProjection, reconciled.blocks, normalizedMessages])
+    useLayoutEffect(() => { if (useNativeChat) nativeProjection.publish() })
+    const nativePresentationBlocks = useSyncExternalStore(nativeProjection.subscribeRuntime, nativeProjection.getRuntimeBlocks)
+    const ThreadView = useNativeChat ? NativeCodexThread : HappyThread
 
     const visibleBlocks = useMemo(
         () => buildVisibleChatBlocks(reconciled.blocks, {
@@ -1523,11 +1459,12 @@ function SessionChatInner(props: SessionChatProps) {
     const currentTailBoundaryId = useMemo(() => {
         if (props.viewMode !== 'tail') return null
         return findLatestCompletedBoundaryId(
-            visibleBlocks,
+            useNativeChat ? nativeProjection.blocks : visibleBlocks,
             props.session.thinking,
-            props.session.activeTurnStartedAt ?? null
+            props.session.activeTurnStartedAt ?? null,
+            useNativeChat,
         )
-    }, [props.viewMode, props.session.activeTurnStartedAt, props.session.thinking, visibleBlocks])
+    }, [props.viewMode, props.session.activeTurnStartedAt, props.session.thinking, visibleBlocks, useNativeChat, nativeProjection.blocks])
 
     useEffect(() => {
         if (props.viewMode !== 'tail') return
@@ -1903,7 +1840,10 @@ function SessionChatInner(props: SessionChatProps) {
 
     const runtime = useHappyRuntime({
         session: props.session,
-        blocks: visibleBlocks,
+        blocks: useNativeChat ? nativeProjection.blocks : visibleBlocks,
+        nativeTurnStates: useNativeChat ? nativeProjection.turnStates : undefined,
+        nativeNodes: useNativeChat,
+        nativePresentationBlocks: useNativeChat ? nativePresentationBlocks : undefined,
         messagesVersion: props.messagesVersion,
         historyVersion: props.historyVersion,
         viewMode: props.viewMode,
@@ -1920,10 +1860,7 @@ function SessionChatInner(props: SessionChatProps) {
         pendingSendIntentRef,
     })
 
-    return (
-        <GlassScene className="app-chat relative flex h-full min-h-0 flex-col" active={!terminalVisible}>
-            <GlassChrome role="header" className="app-chat-header">
-            <SessionHeader
+    const header = <SessionHeader workspaceMenu={pane?.menuItems}
                 session={props.session}
                 serviceTier={effectiveCodexServiceTier}
                 onBack={props.onBack}
@@ -1957,7 +1894,10 @@ function SessionChatInner(props: SessionChatProps) {
                 }}
             />
 
-            </GlassChrome>
+    return (
+        <GlassScene className="app-chat relative flex h-full min-h-0 flex-col" active={!terminalVisible}>
+            {pane ? (pane.headerTarget ? createPortal(<div className="workspace-chat-actions">{header}</div>, pane.headerTarget) : null)
+                : <GlassChrome role="header" className="app-chat-header">{header}</GlassChrome>}
 
 
             <div className="app-chat-content flex flex-col min-h-0 flex-1">
@@ -1995,7 +1935,8 @@ function SessionChatInner(props: SessionChatProps) {
                         <div className={(terminalVisible && canViewAgentTerminal) ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
 
                     <NativeDependencyProvider api={props.api} sessionId={props.session.id} epoch={props.messagesEpoch} enabled={props.session.metadata?.codexNativeSession === true} messages={props.messages}>
-                    <HappyThread
+                    <ThreadView
+                        nativeProjection={nativeProjection}
                         executionConnected={executionConnected}
                         executionBlocks={visibleBlocks}
                         executionAtTail={props.viewMode === 'tail'}
@@ -2013,7 +1954,7 @@ function SessionChatInner(props: SessionChatProps) {
                         onRefresh={props.onRefresh}
                         onRetryMessage={props.onRetryMessage}
                         onDiscardFailedMessage={props.onDiscardFailedMessage}
-                        onContinuePlan={() => focusComposerRef.current?.()}
+                        onContinuePlan={focusComposer}
                         historyActionPending={historyActionPending}
                         onForkConversation={controlledByUser ? undefined : onForkConversation}
                         onRewindConversation={controlledByUser ? undefined : onRewindConversation}
@@ -2099,6 +2040,9 @@ function SessionChatInner(props: SessionChatProps) {
                         </div>
 
                         <HappyComposer
+                        workingDirectory={props.session.metadata?.path}
+                        workspaceStatus={<WorkspaceActivity label session={{ active: props.session.active, thinking: props.session.thinking,
+                            pendingRequestKinds: computePendingRequestKinds(props.session.agentState), backgroundTaskCount: props.session.backgroundTaskCount ?? 0 }} />}
                         statusDetails={sessionStatus ? <SessionStatusPanel data={sessionStatus} /> : undefined}
                         onGoalAction={props.session.metadata?.capabilities?.concurrentClients ? async request => {
                             const result = await props.api.codexGoal(props.session.id, request)

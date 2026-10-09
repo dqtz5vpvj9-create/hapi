@@ -1,7 +1,12 @@
+import { WorkspaceStore, workspaceStorageKey, panes } from '@/workspace/workspaceStore'
+import { WorkspaceSync } from '@/workspace/workspaceSync'
+import { useNarrowViewport } from '@/hooks/useNarrowViewport'
 import { useSessionReconnectingState } from '@/hooks/useSessionReconnectingState'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { invalidateHistoryPages } from '@/lib/history-page-repository'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { clearSessionPresentations } from '@/chat/sessionPresentation'
+import { useRecentSessionWarmup } from '@/hooks/useRecentSessionWarmup'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Outlet, useLocation, useMatchRoute, useRouter } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { getTelegramWebApp, isTelegramApp } from '@/hooks/useTelegram'
@@ -21,7 +26,7 @@ import { useVisibilityReporter } from '@/hooks/useVisibilityReporter'
 import { queryKeys } from '@/lib/query-keys'
 import { refreshAllAgyCatalogs } from '@/lib/agyCatalogAnnouncement'
 import { AppContextProvider } from '@/lib/app-context'
-import { invalidateMessageWindow, rewindMessageWindow, syncTailMessages } from '@/lib/message-window-store'
+import { ingestIncomingMessages, invalidateMessageWindow, rewindMessageWindow, syncTailMessages } from '@/lib/message-window-store'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { useTranslation } from '@/lib/use-translation'
 import { incomingToastKind, translateInputRequestTitle } from '@/lib/input-request-toast'
@@ -74,7 +79,9 @@ function AppInner() {
     const { authSource, isLoading: isAuthSourceLoading, setAccessToken } = useAuthSource(baseUrl)
     const { token, api, isLoading: isAuthLoading, error: authError, needsBinding, bind } = useAuth(authSource, baseUrl)
     useEffect(() => {
-        return () => { if (api) invalidateHistoryPages(api) }
+        return () => {
+            if (api) { invalidateHistoryPages(api); clearSessionPresentations(api) }
+        }
     }, [api])
     const [titleSuggestionAvailable, setTitleSuggestionAvailable] = useState(false)
     const goBack = useAppGoBack()
@@ -171,8 +178,40 @@ function AppInner() {
     }, [goBack, pathname])
     const queryClient = useQueryClient()
     const sessionMatch = matchRoute({ to: '/sessions/$sessionId' })
-    const selectedSessionId = sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
-    const sessionConnection = useSessionReconnectingState(selectedSessionId)
+    const storageKey = workspaceStorageKey(baseUrl, token)
+    const workspace = useMemo(() => new WorkspaceStore(storageKey, undefined, true), [storageKey])
+    const workspaceSync = useRef<WorkspaceSync | null>(null)
+    useEffect(() => {
+        if (!api) return
+        const sync = new WorkspaceSync(workspace, api)
+        workspaceSync.current = sync
+        const wake = () => { if (document.visibilityState === 'visible' && navigator.onLine) sync.retry() }
+        window.addEventListener('online', wake)
+        document.addEventListener('visibilitychange', wake)
+        return () => {
+            sync.dispose()
+            if (workspaceSync.current === sync) workspaceSync.current = null
+            window.removeEventListener('online', wake)
+            document.removeEventListener('visibilitychange', wake)
+        }
+    }, [workspace, api])
+    const workspaceState = useSyncExternalStore(workspace.subscribe, workspace.get)
+    const workspaceActive = pathname === '/sessions/workspace'
+    const narrowWorkspace = useNarrowViewport()
+    const visibleSessionIds = useMemo(() => {
+        const active = workspaceState.workspaces.find(w => w.id === workspaceState.activeId)
+        if (!workspaceActive || !active) return []
+        return panes(active.root).filter(p => (!narrowWorkspace && !workspaceState.zoomed[active.id]) || p.id === workspaceState.focused[active.id])
+            .flatMap(p => p.resource.kind === 'chat' ? [p.resource.sessionId] : [])
+    }, [workspaceState, workspaceActive, narrowWorkspace])
+    const focusedResource = workspace.focusedPane()?.resource
+    const selectedSessionId = workspaceActive ? (focusedResource?.kind === 'chat' ? focusedResource.sessionId : null)
+        : sessionMatch && !['new', 'workspace'].includes(sessionMatch.sessionId) ? sessionMatch.sessionId : null
+    const activeSessionIds = useMemo(() => workspaceActive ? visibleSessionIds : selectedSessionId ? [selectedSessionId] : [], [workspaceActive, visibleSessionIds, selectedSessionId])
+    const recentSessions = useRecentSessionWarmup(api, selectedSessionId, activeSessionIds)
+    const sessionConnection = useSessionReconnectingState(
+        activeSessionIds.length ? JSON.stringify([...new Set(activeSessionIds)].sort()) : null
+    )
     const { isSyncing, startSync, endSync } = useSyncingState()
     const {
         isReconnecting: sseDisconnected,
@@ -258,6 +297,7 @@ function AppInner() {
     const handleSseConnect = useCallback((info: { resumed: boolean }) => {
         // Clear disconnected state on successful connection
         reportSseConnect()
+        recentSessions?.refresh()
 
         // The hub replayed every event missed during the gap, so the caches
         // are already consistent - the full refetch below would only re-download
@@ -289,9 +329,7 @@ function AppInner() {
             queryClient.invalidateQueries({ queryKey: ['session'] }),
             refreshAllAgyCatalogs(queryClient)
         ]
-        const refreshMessages = (selectedSessionId && api)
-            ? syncTailMessages(api, selectedSessionId)
-            : Promise.resolve()
+        const refreshMessages = api ? Promise.all(activeSessionIds.map(id => syncTailMessages(api, id))) : Promise.resolve()
         Promise.all([...invalidations, refreshMessages])
             .catch((error) => {
                 console.error('Failed to invalidate queries on SSE connect:', error)
@@ -302,7 +340,7 @@ function AppInner() {
                     endSync()
                 }
             })
-    }, [api, queryClient, selectedSessionId, startSync, endSync, reportSseConnect])
+    }, [api, queryClient, activeSessionIds, startSync, endSync, reportSseConnect, recentSessions])
 
     const handleSseDisconnect = useCallback((reason: string) => {
         // Only show reconnecting banner if we've already connected once
@@ -315,7 +353,7 @@ function AppInner() {
         if (event.type !== 'messages-invalidated') {
             return
         }
-        if (!api || event.sessionId !== selectedSessionId) {
+        if (!api || !activeSessionIds.includes(event.sessionId)) {
             return
         }
         if (event.reason === 'native-history') {
@@ -328,22 +366,25 @@ function AppInner() {
             invalidateMessageWindow(event.sessionId)
         }
         void syncTailMessages(api, event.sessionId)
-    }, [api, selectedSessionId])
+    }, [api, activeSessionIds])
 
     const handleSessionSseConnect = useCallback((info: { resumed: boolean }) => {
         sessionConnection.reportConnect()
-        if (!api || !selectedSessionId) {
+        if (!api) {
             return
         }
-        // A resumed connection replayed messages-consumed/message events for
-        // this session, so the queued-state snapshot cannot have drifted.
+        // A resumed connection replayed message/queue events for this same
+        // visible set. A new pane set starts without the previous set's cursor.
         if (info.resumed) {
             return
         }
-        void reconcileQueuedStateAfterConnect(api, selectedSessionId).catch((error) => {
-            console.error('Failed to reconcile queued state after SSE connect:', error)
-        })
-    }, [api, selectedSessionId, sessionConnection.reportConnect])
+        for (const id of activeSessionIds) {
+            void syncTailMessages(api, id, { ensureAfterCurrent: true })
+            void reconcileQueuedStateAfterConnect(api, id).catch((error) => {
+                console.error('Failed to reconcile queued state after SSE connect:', error)
+            })
+        }
+    }, [api, activeSessionIds, sessionConnection.reportConnect])
 
     const translateIncomingToast = useCallback((title: string, body: string): { title: string; body: string } => {
         const normalizedTitle = title.trim()
@@ -406,8 +447,8 @@ function AppInner() {
 
     const globalEventSubscription = useMemo(() => getAppGlobalSseSubscription(), [])
     const sessionEventSubscription = useMemo(
-        () => getAppSessionSseSubscription(selectedSessionId),
-        [selectedSessionId]
+        () => workspaceActive ? null : getAppSessionSseSubscription(selectedSessionId),
+        [workspaceActive, activeSessionIds, selectedSessionId]
     )
     const executionOnline = useOnlineStatus()
     const sseEnabled = Boolean(api && token)
@@ -419,9 +460,21 @@ function AppInner() {
         baseUrl,
         subscription: globalEventSubscription,
         scope: 'global',
-        onConnect: handleSseConnect,
+        onConnect: info => {
+            handleSseConnect(info)
+            workspaceSync.current?.invalidate()
+            if (workspaceActive) handleSessionSseConnect(info)
+        },
         onDisconnect: handleSseDisconnect,
-        onEvent: () => {},
+        onEvent: event => {
+            if (event.type === 'workspaces-updated') workspaceSync.current?.invalidate(event.revision)
+            recentSessions.event(event)
+            if (!workspaceActive) return
+            if (event.type === 'message-received' && activeSessionIds.includes(event.sessionId)) {
+                ingestIncomingMessages(event.sessionId, [event.message])
+            }
+            handleSseEvent(event)
+        },
         onToast: handleToast
     })
 
@@ -433,7 +486,9 @@ function AppInner() {
         scope: 'full',
         onConnect: handleSessionSseConnect,
         onDisconnect: sessionConnection.reportDisconnect,
-        onEvent: handleSseEvent
+        // Workspace invalidations belong to the stable global connection, so
+        // one structural change cannot clear the window twice across streams.
+        onEvent: event => { if (!workspaceActive) handleSseEvent(event) }
     })
 
     useVisibilityReporter({
@@ -527,7 +582,7 @@ function AppInner() {
     }
 
     return (
-        <AppContextProvider value={{ api, token, baseUrl, titleSuggestionAvailable, executionConnected: executionOnline && Boolean(sessionSubscriptionId) }}>
+        <AppContextProvider value={{ api, token, baseUrl, workspace, workspaceActive, titleSuggestionAvailable, executionConnected: executionOnline && Boolean(workspaceActive ? globalSubscriptionId : sessionSubscriptionId) }}>
             <VoiceProvider>
                 <PwaUpdateBannerWithStatusOffset
                     isSyncing={isSyncing}

@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 
 import type { StoredMachine, VersionedUpdateResult } from './types'
 import {
+    ensureMachineIcon,
     getMachine,
     getMachineByNamespace,
     getMachines,
@@ -16,6 +17,10 @@ export class MachineStore {
 
     constructor(db: Database) {
         this.db = db
+    }
+
+    ensureMachineIcon(id: string): void {
+        ensureMachineIcon(this.db, id)
     }
 
     getOrCreateMachine(id: string, metadata: unknown, runnerState: unknown, namespace: string): StoredMachine {

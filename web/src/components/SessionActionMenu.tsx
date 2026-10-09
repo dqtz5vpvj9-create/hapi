@@ -1,4 +1,4 @@
-import { useCallback, useId } from 'react'
+import { type ReactNode, useCallback, useId } from 'react'
 import { useGlassSurface } from '@/themes/glass/GlassScene'
 import { useTranslation } from '@/lib/use-translation'
 import { HoverTooltip } from '@/components/HoverTooltip'
@@ -8,6 +8,11 @@ import { useAnchoredMenu } from '@/hooks/useAnchoredMenu'
 import { CopyIcon } from '@/components/icons'
 
 type SessionActionMenuProps = {
+    extraItems?: ReactNode
+    onToggleOutline?: () => void
+    onOpenCurrent?: () => void
+    onOpenBelow?: () => void
+    onOpenBeside?: () => void
     onOpenFiles?: () => void
     onOpenChanges?: () => void
     onOpenTerminal?: () => void
@@ -305,6 +310,26 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                 aria-labelledby={headingId}
                 className="flex flex-col gap-1"
             >
+                {props.extraItems}
+                {props.onToggleOutline ? <button type="button" role="menuitem" className={baseItemClassName} onClick={() => { onClose(); props.onToggleOutline?.() }}>{t('session.outline.open')}</button> : null}
+                {props.onOpenCurrent || props.onOpenBeside || props.onOpenBelow ? <>
+                    {props.onOpenCurrent ? <button type="button" role="menuitem" className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={() => { onClose(); props.onOpenCurrent?.() }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m9 9 3 3-3 3m3-3H7" /></svg>
+                        {t(props.onOpenBeside || props.onOpenBelow ? 'workspace.openCurrent' : 'session.action.open')}
+                    </button> : null}
+                    {props.onOpenBeside ? <button type="button" role="menuitem" className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={() => { onClose(); props.onOpenBeside?.() }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 4v16" /></svg>
+                        {t('workspace.openBeside')}
+                    </button> : null}
+                    {props.onOpenBelow ? <button type="button" role="menuitem" className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={() => { onClose(); props.onOpenBelow?.() }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 12h18" /></svg>
+                        {t('workspace.openBelow')}
+                    </button> : null}
+                    <div role="separator" className="my-1 h-px bg-[var(--app-divider)]" />
+                </> : null}
                 {props.onOpenFiles || props.onOpenTerminal ? <div role="group" aria-label={t('session.workspace.title')}>
                     {props.onOpenTerminal ? <button type="button" role="menuitem"
                         aria-disabled={!!props.terminalDisabledReason}

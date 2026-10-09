@@ -38,6 +38,28 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+const MACHINE_ICONS = ['🍊', '🌲', '🐳', '🦊', '🌻', '🚀', '🍇', '🐙', '🌵', '🍋', '🦉', '🐢', '🍎', '🦋', '🏔️', '🎯', '🌴', '🍒', '🐬', '🪁', '🍄', '🦁', '🌙', '🎸', '🥝', '🐧', '🌷', '⛵', '🍉', '🐝', '🪐', '🎨']
+
+/** Assign once, including to machines registered before icons were introduced.
+ * The transaction keeps concurrent Hub processes from selecting the same icon. */
+export function ensureMachineIcon(db: Database, id: string): void {
+    db.transaction(() => {
+        const machine = getMachine(db, id)
+        if (!machine || !isPlainObject(machine.metadata) || machine.metadata.icon) return
+        const used = new Set(getMachinesByNamespace(db, machine.namespace).flatMap(row =>
+            isPlainObject(row.metadata) && typeof row.metadata.icon === 'string' ? [row.metadata.icon] : []
+        ))
+        const available = MACHINE_ICONS.filter(icon => !used.has(icon))
+        let icon = available[Math.floor(Math.random() * available.length)]
+        if (!icon) {
+            let suffix = 1
+            while (used.has(`🖥️${suffix}`)) suffix++
+            icon = `🖥️${suffix}`
+        }
+        updateMachineMetadata(db, id, { ...machine.metadata, icon }, machine.metadataVersion, machine.namespace)
+    }).immediate()
+}
+
 // Rows created before the CLI reported full metadata (or by older versions)
 // would keep missing fields like `host` forever — get-or-create returns the
 // existing row untouched and every client hits it on startup. Merge incoming
@@ -64,6 +86,7 @@ export function mergeMachineMetadata(
     if (!isPlainObject(incoming)) return undefined
     const base = isPlainObject(stored) ? stored : {}
     const merged: Record<string, unknown> = { ...base, ...incoming }
+    if (base.icon) merged.icon = base.icon
     if (options?.clearOmittedRunnerAds) {
         for (const key of RUNNER_ADVERTISED_METADATA_KEYS) {
             if (!(key in incoming)) {
@@ -193,6 +216,11 @@ export function updateMachineMetadata(
     namespace: string
 ): VersionedUpdateResult<unknown | null> {
     const now = Date.now()
+    // A Runner sends full metadata snapshots; those must not reset Hub-owned identity.
+    const current = getMachineByNamespace(db, id, namespace)?.metadata
+    if (isPlainObject(current) && current.icon && isPlainObject(metadata)) {
+        metadata = { ...metadata, icon: current.icon }
+    }
 
     return updateVersionedField({
         db,

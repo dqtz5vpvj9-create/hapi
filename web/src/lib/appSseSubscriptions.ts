@@ -10,6 +10,10 @@ export function getAppGlobalSseSubscription(): AppGlobalSseSubscription {
     return { all: true }
 }
 
+export function getAppWorkspaceSseSubscription(sessionIds: readonly string[]): { sessionIds: readonly string[] } | null {
+    return sessionIds.length ? { sessionIds: [...new Set(sessionIds)].sort() } : null
+}
+
 export function getAppSessionSseSubscription(
     selectedSessionId: string | null | undefined
 ): AppSessionSseSubscription | null {

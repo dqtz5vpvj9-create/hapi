@@ -1,10 +1,12 @@
 import * as Popover from '@radix-ui/react-popover'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useNarrowViewport } from '@/hooks/useNarrowViewport'
 import { useGlassSurface } from '@/themes/glass/GlassScene'
 import { useTranslation } from '@/lib/use-translation'
 
 export function SessionListHeaderActions(props: {
+    compact?: boolean
+    viewModeControl?: ReactNode
     onSwitch: () => void
     onBrowse?: () => void
     onSettings: () => void
@@ -19,7 +21,8 @@ export function SessionListHeaderActions(props: {
         ...(props.onBrowse ? [{ label: t('browse.nav'), title: t('browse.nav'), action: props.onBrowse }] : []),
         { label: t('settings.title'), title: t('settings.title'), action: props.onSettings },
     ]
-    if (!narrow) return <div className="app-session-router-actions flex items-center gap-2">
+    if (!narrow && !props.compact) return <div className="app-session-router-actions flex items-center gap-2">
+        {props.viewModeControl}
         <button type="button" onClick={props.onSwitch} aria-label={t('sessions.quickSwitch.title')} title={`${t('sessions.quickSwitch.title')} (Ctrl/Cmd+K)`} className="app-session-switch min-h-9 rounded-md px-2 text-sm text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]">
             <svg className="app-session-switch-icon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 7h14l-3-3M19 17H5l3 3M19 7l-3 3M5 17l3-3" /></svg>
             <span>{t('sessions.quickSwitch.button')}</span>
@@ -34,7 +37,7 @@ export function SessionListHeaderActions(props: {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
         </button>
     </div>
-    return <Popover.Root open={open} onOpenChange={setOpen}>
+    return <div className="flex items-center gap-1">{props.viewModeControl}<Popover.Root open={open} onOpenChange={setOpen}>
         <Popover.Trigger asChild><button type="button" aria-label={t('session.more')} title={t('session.more')}
             className="app-session-header-more flex h-11 w-11 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] text-[var(--app-fg)]">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
@@ -45,5 +48,5 @@ export function SessionListHeaderActions(props: {
                 className="flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]">{item.label}</button>)}
             <button type="button" onClick={() => { setOpen(false); props.onNew() }} className="app-session-mobile-new flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]">{t('sessions.new')}</button>
         </Popover.Content></Popover.Portal>
-    </Popover.Root>
+    </Popover.Root></div>
 }

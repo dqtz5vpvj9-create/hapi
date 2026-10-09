@@ -32,7 +32,7 @@ it('upgrades v27 without decoding history at startup and resumes bounded outline
     store = new Store(path)
     try {
         const db = (store as unknown as { db: Database }).db
-        expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 28 })
+        expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 29 })
         expect(db.prepare('SELECT COUNT(*) AS count FROM messages').get()).toEqual({ count: 513 })
         expect(store.messages.getOutline(session.id).entries).toEqual([])
         const first = store.messages.backfillOutline(session.id)

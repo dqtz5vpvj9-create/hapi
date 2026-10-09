@@ -33,14 +33,18 @@ export { applySessionDetailPatch, isNewerVersionedPatch, isRenderIrrelevantSessi
 type SSESubscription = {
     all?: boolean
     sessionId?: string
+    sessionIds?: readonly string[]
     machineId?: string
+    messageMode?: 'full' | 'notify'
 }
 
 export type SSEScope = 'global' | 'full'
 
 const MESSAGE_STREAM_EVENT_TYPES = new Set<SyncEvent['type']>([
     'message-received',
+    'message-updated',
     'messages-consumed',
+    'messages-dispatching',
     'messages-indeterminate',
     'messages-requeued',
     'message-cancelled',
@@ -233,6 +237,8 @@ function buildEventsUrl(
     if (subscription.sessionId) {
         params.set('sessionId', subscription.sessionId)
     }
+    if (subscription.sessionIds) params.set('sessionIds', JSON.stringify(subscription.sessionIds))
+    if (subscription.messageMode) params.set('messageMode', subscription.messageMode)
     if (subscription.machineId) {
         params.set('machineId', subscription.machineId)
     }
@@ -316,10 +322,11 @@ export function useSSE(options: {
 
     const subscription = options.subscription ?? {}
     const scope = options.scope ?? 'full'
+    const sessionIdsKey = JSON.stringify([...new Set(subscription.sessionIds ?? [])].sort())
 
     const subscriptionKey = useMemo(() => {
-        return `${scope}|${subscription.all ? '1' : '0'}|${subscription.sessionId ?? ''}|${subscription.machineId ?? ''}`
-    }, [scope, subscription.all, subscription.sessionId, subscription.machineId])
+        return JSON.stringify([scope, Boolean(subscription.all), subscription.sessionId, sessionIdsKey, subscription.machineId, subscription.messageMode ?? 'full'])
+    }, [scope, subscription.all, subscription.sessionId, sessionIdsKey, subscription.machineId, subscription.messageMode])
 
     useEffect(() => {
         if (!options.enabled) {
@@ -691,6 +698,7 @@ export function useSSE(options: {
                 if (event.type === 'message-received' && event.message.scheduledAt != null) {
                     queueSessionListInvalidation()
                 }
+                if (event.type === 'message-updated' && event.scheduled) queueSessionListInvalidation()
                 if (
                     event.type === 'message-cancelled'
                     || event.type === 'messages-consumed'
@@ -716,7 +724,7 @@ export function useSSE(options: {
                     markMessagesRequeued(event.sessionId, event.localIds)
                 }
                 if (event.type === 'message-cancelled') {
-                    removeOptimisticMessage(event.sessionId, event.messageId)
+                    removeOptimisticMessage(event.sessionId, event.localId ?? event.messageId)
                 }
                 onEventRef.current(event)
                 return
@@ -739,7 +747,7 @@ export function useSSE(options: {
             if (event.type === 'message-cancelled') {
                 // Remove the cancelled message from the store. If the local
                 // optimistic removal already cleared it, this is a no-op.
-                removeOptimisticMessage(event.sessionId, event.messageId)
+                removeOptimisticMessage(event.sessionId, event.localId ?? event.messageId)
             }
 
             if (event.type === 'message-received') {

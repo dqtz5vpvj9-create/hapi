@@ -15,6 +15,14 @@
     height: 44px;
 }
 
+/* Only the catalog body scrolls. Reserve its actions within the visible
+   viewport, including when the mobile keyboard reduces that viewport. */
+.app-dialog.app-codex-session-dialog {
+    top: calc(var(--dialog-visible-top, 0px) + var(--dialog-top-margin, 12px) + var(--dialog-available-height, calc(var(--dialog-visible-height, 100dvh) - 24px)) / 2);
+    max-height: var(--dialog-available-height, calc(var(--dialog-visible-height, 100dvh) - 24px));
+    overflow: hidden;
+}
+
 [data-color-theme="codex"] .app-goal-editor {
     overflow: hidden;
 }

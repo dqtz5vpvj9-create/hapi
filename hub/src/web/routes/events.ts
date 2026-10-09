@@ -33,6 +33,8 @@ const visibilitySchema = z.object({
     visibility: z.enum(['visible', 'hidden'])
 })
 
+const sessionIdsSchema = z.array(z.string().min(1))
+
 export function createEventsRoutes(
     getSseManager: () => SSEManager | null,
     getSyncEngine: () => SyncEngine | null,
@@ -49,6 +51,18 @@ export function createEventsRoutes(
         const query = c.req.query()
         const all = parseBoolean(query.all)
         const sessionId = parseOptionalId(query.sessionId)
+        let sessionIds: string[] = []
+        if (query.sessionIds !== undefined) {
+            try {
+                sessionIds = sessionIdsSchema.parse(JSON.parse(query.sessionIds))
+            } catch {
+                return c.json({ error: 'sessionIds must be an array of session IDs' }, 400)
+            }
+        }
+        const messageMode = query.messageMode ?? 'full'
+        if (messageMode !== 'full' && messageMode !== 'notify') {
+            return c.json({ error: 'messageMode must be full or notify' }, 400)
+        }
         const machineId = parseOptionalId(query.machineId)
         const subscriptionId = randomUUID()
         const visibility = parseVisibility(query.visibility)
@@ -60,8 +74,9 @@ export function createEventsRoutes(
             ?? parseOptionalId(query.lastEventId)
         const namespace = c.get('namespace')
         let resolvedSessionId = sessionId
+        const resolvedSessionIds = new Set<string>()
 
-        if (sessionId || machineId) {
+        if (sessionId || sessionIds.length || machineId) {
             const engine = getSyncEngine()
             if (!engine) {
                 return c.json({ error: 'Not connected' }, 503)
@@ -72,6 +87,13 @@ export function createEventsRoutes(
                     return sessionResult
                 }
                 resolvedSessionId = sessionResult.sessionId
+            }
+            for (const id of sessionIds) {
+                const access = engine.resolveSessionAccess(id, namespace)
+                if (access.ok) resolvedSessionIds.add(access.sessionId)
+                else if (access.reason === 'access-denied') return c.json({ error: 'Session access denied' }, 403)
+                // A deleted pane must not prevent the remaining panes from
+                // receiving events. Its detail route still reports the 404.
             }
             if (machineId) {
                 const machine = engine.getMachine(machineId)
@@ -93,7 +115,9 @@ export function createEventsRoutes(
                 namespace,
                 all,
                 sessionId: resolvedSessionId,
+                sessionIds: [...resolvedSessionIds],
                 machineId,
+                messageMode,
                 visibility,
                 resumeFrom,
                 send: (event, eventId) => stream.writeSSE({ data: JSON.stringify(event), id: eventId }),

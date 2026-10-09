@@ -18,16 +18,6 @@ export function classifySessionAttention(
     summary: SessionSummary,
     options: { selected: boolean; lastSeenAt: number; manualUnreadAt?: number | null }
 ): SessionAttention | null {
-    if (options.selected) {
-        return options.manualUnreadAt === summary.updatedAt
-            ? { kind: 'unread' }
-            : null
-    }
-
-    if (summary.thinking) {
-        return null
-    }
-
     const pendingRequestKinds = Array.isArray(summary.pendingRequestKinds)
         ? summary.pendingRequestKinds
         : []
@@ -38,6 +28,16 @@ export function classifySessionAttention(
 
     if (pendingRequestKinds.includes('input')) {
         return { kind: 'input' }
+    }
+
+    if (options.selected) {
+        return options.manualUnreadAt === summary.updatedAt
+            ? { kind: 'unread' }
+            : null
+    }
+
+    if (summary.thinking) {
+        return null
     }
 
     if (summary.active && (summary.backgroundTaskCount ?? 0) > 0) {

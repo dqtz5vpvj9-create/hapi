@@ -8,7 +8,9 @@ export type SSESubscription = {
     namespace: string
     all: boolean
     sessionId: string | null
+    sessionIds: readonly string[]
     machineId: string | null
+    messageMode: 'full' | 'notify'
 }
 
 type SSEConnection = SSESubscription & {
@@ -67,7 +69,9 @@ export class SSEManager {
         namespace: string
         all?: boolean
         sessionId?: string | null
+        sessionIds?: readonly string[]
         machineId?: string | null
+        messageMode?: 'full' | 'notify'
         visibility?: VisibilityState
         /** Last event id the client saw; enables replay instead of resync. */
         resumeFrom?: string | null
@@ -79,7 +83,9 @@ export class SSEManager {
             namespace: options.namespace,
             all: Boolean(options.all),
             sessionId: options.sessionId ?? null,
+            sessionIds: options.sessionIds ?? [],
             machineId: options.machineId ?? null,
+            messageMode: options.messageMode ?? 'full',
             send: options.send,
             sendHeartbeat: options.sendHeartbeat,
             pending: null
@@ -104,7 +110,9 @@ export class SSEManager {
             namespace: subscription.namespace,
             all: subscription.all,
             sessionId: subscription.sessionId,
+            sessionIds: subscription.sessionIds,
             machineId: subscription.machineId,
+            messageMode: subscription.messageMode,
             resume,
             replay
         }
@@ -179,7 +187,7 @@ export class SSEManager {
         const replay: Array<{ event: SyncEvent; eventId: string }> = []
         for (const entry of this.eventBuffer) {
             if (entry.seq > seq && this.shouldSend(connection, entry.event)) {
-                replay.push({ event: entry.event, eventId: this.eventIdFor(entry.seq, connection.namespace) })
+                replay.push({ event: this.projectEvent(connection, entry.event), eventId: this.eventIdFor(entry.seq, connection.namespace) })
             }
         }
         return { resume: 'ok', replay }
@@ -258,12 +266,13 @@ export class SSEManager {
             // The id is per-connection: same epoch and seq, but tagged with
             // the receiving namespace so the cursor stays bound to it.
             const eventId = this.eventIdFor(seq, connection.namespace)
+            const deliveredEvent = this.projectEvent(connection, event)
             if (connection.pending) {
-                connection.pending.push({ event, eventId })
+                connection.pending.push({ event: deliveredEvent, eventId })
                 continue
             }
 
-            void Promise.resolve(connection.send(event, eventId)).catch(() => {
+            void Promise.resolve(connection.send(deliveredEvent, eventId)).catch(() => {
                 this.unsubscribe(connection.id)
             })
         }
@@ -300,6 +309,12 @@ export class SSEManager {
         this.heartbeatTimer = null
     }
 
+    private projectEvent(connection: SSEConnection, event: SyncEvent): SyncEvent {
+        return connection.messageMode === 'notify' && event.type === 'message-received'
+            ? { type: 'message-updated', sessionId: event.sessionId, namespace: event.namespace, scheduled: event.message.scheduledAt != null }
+            : event
+    }
+
     private shouldSend(connection: SSEConnection, event: SyncEvent): boolean {
         if (event.type !== 'connection-changed') {
             const eventNamespace = event.namespace
@@ -309,7 +324,7 @@ export class SSEManager {
         }
 
         if (event.type === 'message-received' || event.type === 'scheduled-matured') {
-            return connection.all || connection.sessionId === event.sessionId
+            return connection.all || connection.sessionId === event.sessionId || connection.sessionIds.includes(event.sessionId)
         }
 
         if (event.type === 'connection-changed') {
@@ -320,7 +335,7 @@ export class SSEManager {
             return true
         }
 
-        if ('sessionId' in event && connection.sessionId === event.sessionId) {
+        if ('sessionId' in event && (connection.sessionId === event.sessionId || connection.sessionIds.includes(event.sessionId))) {
             return true
         }
 

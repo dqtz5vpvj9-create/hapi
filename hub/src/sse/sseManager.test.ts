@@ -3,6 +3,59 @@ import { SSEManager } from './sseManager'
 import type { SyncEvent } from '../sync/syncEngine'
 import { VisibilityTracker } from '../visibility/visibilityTracker'
 
+describe('workspace message delivery', () => {
+    const message = (sessionId: string, namespace = 'alpha'): SyncEvent => ({
+        type: 'message-received', sessionId, namespace,
+        message: { id: 'm1', seq: 1, localId: null, createdAt: 1, invokedAt: 1, scheduledAt: 20,
+            content: { role: 'user', content: { type: 'text', text: 'Private message body' } } }
+    })
+
+    it('delivers bodies only to visible chats while keeping global state and queue identity', () => {
+        const manager = new SSEManager(0, new VisibilityTracker())
+        const global: SyncEvent[] = [], visible: SyncEvent[] = [], legacy: SyncEvent[] = []
+        manager.subscribe({ id: 'global', namespace: 'alpha', all: true, messageMode: 'notify', send: e => { global.push(e) }, sendHeartbeat: () => {} })
+        manager.subscribe({ id: 'visible', namespace: 'alpha', sessionIds: ['a', 'b'], send: e => { visible.push(e) }, sendHeartbeat: () => {} })
+        manager.subscribe({ id: 'legacy', namespace: 'alpha', all: true, send: e => { legacy.push(e) }, sendHeartbeat: () => {} })
+        const controls = [
+            { type: 'session-updated', sessionId: 'hidden', namespace: 'alpha', data: { thinking: true } },
+            { type: 'messages-dispatching', sessionId: 'hidden', namespace: 'alpha', localIds: ['queue-1'] },
+            { type: 'messages-consumed', sessionId: 'hidden', namespace: 'alpha', localIds: ['queue-1'], invokedAt: 30 },
+            { type: 'message-cancelled', sessionId: 'hidden', namespace: 'alpha', messageId: 'm2', localId: 'queue-2' },
+            { type: 'scheduled-matured', sessionId: 'hidden', namespace: 'alpha' },
+        ] satisfies SyncEvent[]
+        for (const e of [message('a'), message('b'), message('hidden'), message('a', 'foreign'), ...controls]) manager.broadcast(e)
+        expect(visible).toEqual([message('a'), message('b')])
+        expect(global.filter(e => e.type === 'message-updated').map(e => e.sessionId)).toEqual(['a', 'b', 'hidden'])
+        expect(global.filter(e => e.type !== 'message-updated')).toEqual(controls)
+        expect(JSON.stringify(global)).not.toContain('Private message body')
+        expect(legacy).toEqual([message('a'), message('b'), message('hidden'), ...controls])
+        manager.stop()
+    })
+
+    it('projects replay and queued live frames under the same subscription and original event IDs', async () => {
+        const manager = new SSEManager(0, new VisibilityTracker())
+        let cursor: string | undefined
+        manager.subscribe({ id: 'first', namespace: 'alpha', all: true, messageMode: 'notify', send: (_e, id) => { cursor = id }, sendHeartbeat: () => {} })
+        manager.broadcast(message('a')); manager.unsubscribe('first')
+        manager.broadcast(message('hidden'))
+        manager.broadcast(message('a', 'foreign'))
+        const delivered: SyncEvent[] = []
+        const resumed = manager.subscribe({ id: 'next', namespace: 'alpha', all: true, messageMode: 'notify', resumeFrom: cursor,
+            send: e => { delivered.push(e) }, sendHeartbeat: () => {} })
+        expect(resumed.resume).toBe('ok')
+        expect(resumed.replay).toHaveLength(1)
+        expect(resumed.replay[0].event).toMatchObject({ type: 'message-updated', sessionId: 'hidden', scheduled: true })
+        expect(resumed.replay[0].eventId.split(':')[1]).toBe('2')
+        manager.broadcast(message('b'))
+        expect(delivered).toHaveLength(0)
+        await manager.drainPending('next')
+        expect(delivered).toEqual([{ type: 'message-updated', sessionId: 'b', namespace: 'alpha', scheduled: true }])
+        const bodies = manager.subscribe({ id: 'body', namespace: 'alpha', sessionIds: ['a', 'b'], resumeFrom: cursor, send: () => {}, sendHeartbeat: () => {} })
+        expect(bodies.replay.map(item => item.event)).toEqual([message('b')])
+        manager.stop()
+    })
+})
+
 describe('SSEManager namespace filtering', () => {
     it('routes events to matching namespace', () => {
         const manager = new SSEManager(0, new VisibilityTracker())

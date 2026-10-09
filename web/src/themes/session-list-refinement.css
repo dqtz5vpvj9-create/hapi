@@ -57,6 +57,10 @@
     :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-mobile-meta { display: flex; align-items: center; min-width: 0; gap: 6px; font-size: 13px; line-height: 21px; color: var(--app-hint); }
     .app-session-row-execution { display: inline-flex; align-items: center; flex-shrink: 0; gap: 5px; }
     .app-session-row-execution::after { content: '·'; color: var(--app-hint); }
+    .app-session-workspace-location {
+        display: inline-flex; align-items: baseline; min-width: 0; gap: 4px;
+        color: var(--app-link); font-size: 12px; font-weight: 500;
+    }
     :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-tree-item { position: relative; }
     :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-tree-item[data-has-subagents] > .session-list-item .app-session-row-mobile-meta { padding-right: 110px; }
     :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-subagent-toggle {

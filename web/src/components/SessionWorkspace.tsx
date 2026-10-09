@@ -3,7 +3,7 @@ import { useTranslation } from '@/lib/use-translation'
 import './session-workspace.css'
 
 export type WorkspaceView = 'terminal' | 'directories' | 'changes' | 'file'
-const WorkspacePanelContext = createContext(false)
+export const WorkspacePanelContext = createContext(false)
 export function useWorkspacePanel() { return useContext(WorkspacePanelContext) }
 
 /** Keep the conversation mounted and measured while visiting its workspace. */

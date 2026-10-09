@@ -46,6 +46,19 @@ describe('SessionRowSummary background status', () => {
         localStorage.clear()
     })
 
+    it('keeps a selected waiting request visible through thinking updates, then shows running when resolved', () => {
+        const session = makeSummary({ thinking: true, pendingRequestKinds: ['permission'], pendingRequestsCount: 1 })
+        const row = (summary: SessionSummary) => <I18nProvider><SessionRowSummary session={summary} selected showDetailedStatus /></I18nProvider>
+        const view = render(row(session))
+        expect(view.container.querySelector('[data-session-status="permission"]')).toBeInTheDocument()
+        expect(view.container.querySelector('[data-session-status="running"]')).toBeNull()
+        view.rerender(row({ ...session, pendingRequestKinds: ['input'] }))
+        expect(view.container.querySelector('[data-session-status="input"]')).toBeInTheDocument()
+        view.rerender(row({ ...session, pendingRequestsCount: 0, pendingRequestKinds: [] }))
+        expect(view.container.querySelector('[data-session-status="running"]')).toBeInTheDocument()
+        expect(view.container.querySelector('[data-session-status="input"]')).toBeNull()
+    })
+
     it('shows the basic running label in Basic mode', () => {
         renderSummary(false)
 

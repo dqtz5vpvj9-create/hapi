@@ -1,7 +1,11 @@
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import type { ApiClient } from '@/api/client'
 
+import type { WorkspaceStore } from '@/workspace/workspaceStore'
+
 type AppContextValue = {
+    workspace?: WorkspaceStore
+    workspaceActive?: boolean
     api: ApiClient
     token: string
     baseUrl: string
@@ -15,8 +19,11 @@ export function AppContextProvider(props: {
     value: AppContextValue
     children: ReactNode
 }) {
+    const { api, token, baseUrl, workspace, workspaceActive, executionConnected, titleSuggestionAvailable } = props.value
+    const value = useMemo(() => ({ api, token, baseUrl, workspace, workspaceActive, executionConnected, titleSuggestionAvailable }),
+        [api, token, baseUrl, workspace, workspaceActive, executionConnected, titleSuggestionAvailable])
     return (
-        <AppContext.Provider value={props.value}>
+        <AppContext.Provider value={value}>
             {props.children}
         </AppContext.Provider>
     )

@@ -4,6 +4,7 @@
 @import "./themes/codex-layout.css";
 @import "./themes/session-list-refinement.css";
 @import "./themes/codex-desktop.css";
+@import "./themes/desktop-session-density.css";
 @import "./execution-state.css";
 @config "../tailwind.config.ts";
 

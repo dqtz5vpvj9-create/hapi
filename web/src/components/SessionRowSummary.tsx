@@ -1,10 +1,11 @@
 import { useNarrowViewport } from '@/hooks/useNarrowViewport'
 import { useMemo } from 'react'
 import type { SessionSummary } from '@/types/api'
+import { MachineIdentityIcon } from './MachineIdentityIcon'
 import { AgentFlavorIcon } from '@/components/AgentFlavorIcon'
 import { ScheduleIcon } from '@/components/icons'
 import { HoverTooltip, SESSION_ROW_TOOLTIP_FOCUS_CLASS, useSessionRowTooltipIds } from '@/components/HoverTooltip'
-import { getAttentionLabel, SessionAttentionIndicator } from '@/components/SessionAttentionIndicator'
+import { getAttentionLabel, SessionAttentionIndicator, SessionAttentionGlyph } from '@/components/SessionAttentionIndicator'
 import { classifySessionAttention } from '@/lib/sessionAttention'
 import { getSessionLastSeenAt, getSessionManualUnreadAt } from '@/lib/sessionLastSeen'
 import { formatRelativeTime } from '@/lib/relativeTime'
@@ -49,13 +50,6 @@ function BulbIcon(props: { className?: string }) {
         </svg>
     )
 }
-
-const ATTENTION_DOT_CLASS = {
-    permission: 'bg-amber-500 animate-pulse',
-    input: 'bg-blue-500',
-    background: 'bg-blue-400',
-    unread: 'bg-[var(--app-link)]',
-} as const
 
 function getTodoProgress(session: SessionSummary): { completed: number; total: number } | null {
     if (!session.todoProgress) return null
@@ -120,6 +114,8 @@ export function SessionRowSummary(props: {
     projectLabel?: string
     /** Machine label shown next to the project name (pinned "in progress" rows). */
     machineLabel?: string
+    /** Existing workspace destination when the row is used to select a chat. */
+    workspaceLocation?: { name: string; pane: number }
 }) {
     const {
         session: s,
@@ -134,6 +130,7 @@ export function SessionRowSummary(props: {
         inRunningSection = false,
         projectLabel,
         machineLabel,
+        workspaceLocation,
     } = props
     const { t } = useTranslation()
     const narrowViewport = useNarrowViewport()
@@ -170,87 +167,39 @@ export function SessionRowSummary(props: {
             <div className={`app-session-row-main grid grid-cols-[minmax(9rem,1fr)_minmax(0,max-content)] items-center gap-2 ${!s.active ? 'opacity-50' : ''}`}>
                 <div className="flex min-w-0 items-center gap-2">
                     <AgentFlavorIcon flavor={s.metadata?.flavor} className="app-session-row-agent h-4 w-4 shrink-0 -translate-y-px" />
+                    <span className="app-session-row-status inline-flex shrink-0 items-center">
+                        {attention ? (
+                            nestedTooltips && attentionId ? <SessionAttentionIndicator
+                                attention={attention}
+                                summary={s}
+                                label={attentionLabel ?? ''}
+                                tooltipId={attentionId}
+                            /> : <SessionAttentionGlyph kind={attention.kind} label={attentionLabel ?? undefined} />
+                        ) : s.pendingRequestsCount > 0 ? (
+                            <span title={t('session.item.pending')} aria-label={t('session.item.pending')} data-session-status="pending"
+                                className="inline-flex shrink-0 items-center gap-1 text-[var(--app-badge-warning-text)]">
+                                <span aria-hidden="true">!</span>
+                                {!inRunningSection ? <span className="app-session-status-label text-[11px] font-medium leading-none">{t('session.item.pending')}</span> : null}
+                            </span>
+                        ) : s.active && s.thinking ? (
+                            <span title={t('session.item.running')} aria-label={t('session.item.running')} data-session-status="running">
+                                <LoaderIcon className="app-session-row-spinner h-3.5 w-3.5 shrink-0 animate-spin-slow text-[var(--app-badge-success-text)]" />
+                            </span>
+                        ) : s.active && (s.backgroundTaskCount ?? 0) > 0 ? (
+                            <span title={t('session.item.running')} aria-label={t('session.item.running')} data-session-status="background"
+                                className="inline-flex shrink-0 items-center gap-1 text-[var(--app-badge-success-text)]">
+                                <span aria-hidden="true">◌</span>
+                                {!inRunningSection ? <span className="app-session-status-label text-[11px] font-medium leading-none">{t('session.item.running')}</span> : null}
+                            </span>
+                        ) : null}
+                    </span>
+                    <MachineIdentityIcon machineId={s.metadata?.machineId} />
                     <div
-                        className={`min-w-0 flex-1 truncate text-sm font-medium ${s.active ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
+                        className={`app-session-row-title min-w-0 flex-1 truncate text-sm font-medium ${s.active ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
                         title={sessionName}
                     >
                         {sessionName}
                     </div>
-                    {attention?.kind === 'unread' && nestedTooltips && attentionId ? (
-                        <SessionAttentionIndicator
-                            attention={attention}
-                            summary={s}
-                            label={attentionLabel ?? ''}
-                            tooltipId={attentionId}
-                        />
-                    ) : attention?.kind === 'unread' ? (
-                        <span
-                            className={`inline-flex h-2 w-2 shrink-0 rounded-full ${ATTENTION_DOT_CLASS.unread}`}
-                            title={attentionLabel ?? undefined}
-                            aria-label={attentionLabel ?? undefined}
-                        />
-                    ) : s.active && s.thinking ? (
-                        <LoaderIcon className="app-session-row-spinner h-3.5 w-3.5 shrink-0 animate-spin-slow text-[var(--app-badge-success-text)]" />
-                    ) : urgentAttention && nestedTooltips && attentionId ? (
-                        <SessionAttentionIndicator
-                            attention={attention}
-                            summary={s}
-                            label={attentionLabel ?? ''}
-                            tooltipId={attentionId}
-                        />
-                    ) : urgentAttention ? (
-                        <span
-                            className={`inline-flex h-2 w-2 shrink-0 rounded-full ${ATTENTION_DOT_CLASS[attention.kind]}`}
-                            title={attentionLabel ?? undefined}
-                            aria-label={attentionLabel ?? undefined}
-                        />
-                    ) : showDetailedStatus && attention?.kind === 'background' && nestedTooltips && attentionId ? (
-                        <SessionAttentionIndicator
-                            attention={attention}
-                            summary={s}
-                            label={attentionLabel ?? ''}
-                            tooltipId={attentionId}
-                        />
-                    ) : showDetailedStatus && attention?.kind === 'background' ? (
-                        <span
-                            className={`inline-flex h-2 w-2 shrink-0 rounded-full ${ATTENTION_DOT_CLASS.background}`}
-                            title={attentionLabel ?? undefined}
-                            aria-label={attentionLabel ?? undefined}
-                        />
-                    ) : s.active && (s.backgroundTaskCount ?? 0) > 0 ? (
-                        <span
-                            className="inline-flex shrink-0 items-center gap-1 text-[var(--app-badge-success-text)]"
-                            title={t('session.item.running')}
-                        >
-                            <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" aria-hidden="true" />
-                            {!inRunningSection ? (
-                                <span className="text-[11px] font-medium leading-none">{t('session.item.running')}</span>
-                            ) : null}
-                        </span>
-                    ) : s.active && (s.pendingRequestsCount ?? 0) > 0 ? (
-                        <span
-                            className="inline-flex shrink-0 items-center gap-1 text-[var(--app-badge-warning-text)]"
-                            title={t('session.item.pending')}
-                        >
-                            <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" aria-hidden="true" />
-                            {!inRunningSection ? (
-                                <span className="text-[11px] font-medium leading-none">{t('session.item.pending')}</span>
-                            ) : null}
-                        </span>
-                    ) : attention && nestedTooltips && attentionId ? (
-                        <SessionAttentionIndicator
-                            attention={attention}
-                            summary={s}
-                            label={attentionLabel ?? ''}
-                            tooltipId={attentionId}
-                        />
-                    ) : attention ? (
-                        <span
-                            className={`inline-flex h-2 w-2 shrink-0 rounded-full ${ATTENTION_DOT_CLASS[attention.kind]}`}
-                            title={attentionLabel ?? undefined}
-                            aria-label={attentionLabel ?? undefined}
-                        />
-                    ) : null}
                     {hasScheduleTooltip && nestedTooltips && scheduleId ? (
                         <HoverTooltip
                             id={scheduleId}
@@ -281,19 +230,22 @@ export function SessionRowSummary(props: {
                         </span>
                     ) : null}
                     {!attention && s.pendingRequestsCount > 0 ? (
-                        <span className="shrink-0 text-[var(--app-badge-warning-text)]">
+                        <span className="app-session-pending-count shrink-0 text-[var(--app-badge-warning-text)]">
                             {t('session.item.pending')} {s.pendingRequestsCount}
                         </span>
                     ) : null}
                     {timeLabel ? (
-                        <span className="min-w-0 truncate whitespace-nowrap tabular-nums text-[var(--app-hint)]">{timeLabel}</span>
+                        <span className="app-session-timestamp min-w-0 truncate whitespace-nowrap tabular-nums text-[var(--app-hint)]">{timeLabel}</span>
                     ) : null}
                 </div>
             </div>
             {narrowViewport ? <div className="app-session-row-mobile-meta">
                 {urgentAttention || s.pendingRequestsCount > 0 ? <span className="app-session-row-execution text-[var(--app-badge-warning-text)]">{attentionLabel ?? t('session.item.pending')}</span>
                     : s.active && (s.thinking || (s.backgroundTaskCount ?? 0) > 0) ? <span className="app-session-row-execution"><LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow" />{t('session.item.running')}</span> : null}
-                <span className="truncate">{[s.metadata?.flavor === 'codex' ? 'Codex' : s.metadata?.flavor, projectLabel ?? (s.metadata?.worktree?.basePath ?? s.metadata?.path ?? '').split(/[\\/]/).filter(Boolean).at(-1), machineLabel].filter(Boolean).join(' · ')}</span>
+                {workspaceLocation ? <span className="app-session-workspace-location" title={`${workspaceLocation.name} · P${workspaceLocation.pane}`}>
+                    <span className="truncate">{workspaceLocation.name}</span>
+                    <span className="shrink-0">· P{workspaceLocation.pane}</span>
+                </span> : <span className="truncate">{[s.metadata?.flavor === 'codex' ? 'Codex' : s.metadata?.flavor, projectLabel ?? (s.metadata?.worktree?.basePath ?? s.metadata?.path ?? '').split(/[\\/]/).filter(Boolean).at(-1), machineLabel].filter(Boolean).join(' · ')}</span>}
             </div> : null}
             {projectLabel || machineLabel ? (
                 <div className="app-session-row-desktop-meta truncate text-xs text-[var(--app-hint)]" title={[projectLabel, machineLabel].filter(Boolean).join(' · ')}>

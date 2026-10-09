@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useIsMutating, useQueryClient } from '@tanstack/react-query'
 import type { Session } from '@/types/api'
 import type { ApiClient } from '@/api/client'
@@ -140,6 +140,7 @@ function ModelChangingStatus() {
 
 export function SessionHeader(props: {
     session: Session
+    workspaceMenu?: (close: () => void) => ReactNode
     serviceTier?: string | null
     onBack: () => void
     onToggleFiles?: () => void
@@ -520,7 +521,8 @@ export function SessionHeader(props: {
                             aria-expanded={menuOpen}
                             aria-controls={menuOpen ? menuId : undefined}
                             className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-secondary-bg)] hover:text-[var(--app-fg)]"
-                            title={t('session.more')}
+                            title={t(props.workspaceMenu ? 'workspace.paneActions' : 'session.more')}
+                            aria-label={t(props.workspaceMenu ? 'workspace.paneActions' : 'session.more')}
                         >
                             <MoreVerticalIcon />
                         </button>
@@ -529,6 +531,8 @@ export function SessionHeader(props: {
             </div>
 
             <SessionActionMenu
+                extraItems={props.workspaceMenu?.(() => setMenuOpen(false))}
+                onToggleOutline={props.workspaceMenu ? props.onToggleOutline : undefined}
                 onOpenFiles={props.onOpenFiles}
                 onOpenChanges={props.onOpenChanges}
                 onOpenTerminal={props.onOpenTerminal}

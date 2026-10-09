@@ -19,10 +19,12 @@ function session(id: string, name: string, overrides: Partial<SessionSummary> = 
 function mount(sessions: SessionSummary[], onStartTask = vi.fn()) {
     const onSelect = vi.fn()
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-    return { onSelect, onStartTask, ...render(<QueryClientProvider client={client}><ToastProvider><I18nProvider>
-        <SessionList sessions={sessions} onSelect={onSelect} onNewSession={vi.fn()} onStartTask={onStartTask} hub="list-test-hub"
+    const view = (items: SessionSummary[]) => <QueryClientProvider client={client}><ToastProvider><I18nProvider>
+        <SessionList sessions={items} onSelect={onSelect} onNewSession={vi.fn()} onStartTask={onStartTask} hub="list-test-hub"
             onRefresh={vi.fn()} isLoading={false} api={null} machineLabelsById={{ m1: 'Mint', m2: 'Teemo' }} />
-    </I18nProvider></ToastProvider></QueryClientProvider>) }
+    </I18nProvider></ToastProvider></QueryClientProvider>
+    const rendered = render(view(sessions))
+    return { onSelect, onStartTask, ...rendered, updateSessions: (items: SessionSummary[]) => rendered.rerender(view(items)) }
 }
 function tabs(container: HTMLElement) { return within(container.querySelector('.app-session-mobile-tabs') as HTMLElement) }
 describe('Refined phone list', () => {
@@ -36,6 +38,43 @@ describe('Refined phone list', () => {
         fireEvent.click(tabs(container).getByRole('button', { name: 'Recent' }))
         expect(screen.getByText('Quiet active')).toBeTruthy()
         expect(screen.getByText('Old task')).toBeTruthy()
+    })
+    it('keeps concurrent live rows in place while showing state updates, then refreshes recency explicitly', () => {
+        localStorage.setItem('hapi-session-list-status-mode', 'detailed')
+        const main = session('main', 'HAPI Main', { active: true, thinking: true, updatedAt: 200 })
+        const tmux = session('tmux', 'HAPI Tmux', { active: true, thinking: true, updatedAt: 100 })
+        const { container, updateSessions } = mount([main, tmux])
+        const names = () => Array.from(container.querySelectorAll('[data-testid="recent-session-list"] .app-session-row-title')).map(el => el.textContent)
+        expect(names()).toEqual(['HAPI Main', 'HAPI Tmux'])
+        const originalMain = screen.getByText('HAPI Main').closest('.session-list-item')
+        for (let i = 1; i <= 8; i++) {
+            updateSessions([{ ...tmux, updatedAt: 200 + i * 2 }, { ...main, updatedAt: 199 + i * 2 }])
+            expect(names()).toEqual(['HAPI Main', 'HAPI Tmux'])
+            expect(screen.getByText('HAPI Main').closest('.session-list-item')).toBe(originalMain)
+        }
+        const waiting = { ...tmux, updatedAt: 400, pendingRequestsCount: 1, pendingRequestKinds: ['permission' as const] }
+        updateSessions([waiting, { ...main, updatedAt: 350, thinking: false }])
+        expect(names()).toEqual(['HAPI Main', 'HAPI Tmux'])
+        expect(screen.getByText('HAPI Tmux').closest('.session-list-item')?.querySelector('[data-session-status="permission"]')).toBeTruthy()
+        expect(originalMain?.querySelector('[data-session-status="running"]')).toBeNull()
+        fireEvent.click(tabs(container).getByRole('button', { name: 'Recent' }))
+        expect(names()).toEqual(['HAPI Tmux', 'HAPI Main'])
+        const fresh = session('new', 'New task', { updatedAt: 500 })
+        updateSessions([fresh, { ...main, updatedAt: 600 }, waiting])
+        expect(names()).toEqual(['New task', 'HAPI Tmux', 'HAPI Main'])
+        updateSessions([waiting, fresh])
+        expect(names()).toEqual(['New task', 'HAPI Tmux'])
+    })
+    it('keeps two working rows ordered inside the directory running section', () => {
+        localStorage.setItem('hapi.sessionListView', 'directory')
+        localStorage.setItem('hapi-pin-in-progress-sessions', 'true')
+        const main = session('main', 'HAPI Main', { active: true, thinking: true, updatedAt: 200 })
+        const tmux = session('tmux', 'HAPI Tmux', { active: true, thinking: true, updatedAt: 100 })
+        const { container, updateSessions } = mount([main, tmux])
+        const names = () => Array.from(container.querySelectorAll('.session-list-item .app-session-row-title')).map(el => el.textContent)
+        expect(names()).toEqual(['HAPI Main', 'HAPI Tmux'])
+        updateSessions([{ ...tmux, updatedAt: 400 }, { ...main, updatedAt: 300 }])
+        expect(names()).toEqual(['HAPI Main', 'HAPI Tmux'])
     })
     it('retains the hierarchy and expands the inline child count without selecting the parent', () => {
         const parent = session('parent', 'Parent task')
