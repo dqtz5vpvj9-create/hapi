@@ -75,13 +75,13 @@ export async function saveRuntime(record: CodexRuntimeRecord): Promise<void> {
 }
 
 /** The store-wide lock spans cold resume, not merely registry writes. */
-export async function withThreadOwnership<T>(home: string, threadId: string, ownId: string, work: () => Promise<T>): Promise<T> {
+export async function withThreadOwnership<T>(home: string, threadId: string, ownId: string, work: () => Promise<T>, operation: 'resume' | 'created' = 'resume'): Promise<T> {
     const directory = join(home, 'hapi-runtime-owners');
     await mkdir(directory, { recursive: true, mode: 0o700 });
     return withSettingsFileLock(join(directory, 'ownership'), async () => {
         for (const owner of await readRecords(directory, true)) {
             if (owner.id === ownId || owner.codexHome !== home) continue;
-            if (owner.pendingCreations?.length && runtimeMayBeAlive(owner)) {
+            if (operation === 'resume' && owner.pendingCreations?.length && runtimeMayBeAlive(owner)) {
                 throw new Error(`Codex runtime ${owner.id} has an unconfirmed creation. Inspect/stop that runtime before cold resume; its thread ID may be unknown.`);
             }
             const match = Object.entries(owner.sessions).find(([, session]) => session.threadId === threadId && session.active);

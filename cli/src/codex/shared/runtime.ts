@@ -14,7 +14,7 @@ import { codexHome, saveRuntime, runtimeDirectory, runtimeAuthHash, findColdBind
 import { startCodexGateway, record, string, type Envelope } from './gateway';
 import { resolveSharedCodex, sharedLaunchConfig, initializeSharedClient, checkSharedCapabilities, takeReservedSessionId, type SharedLaunchOptions } from './launch';
 import { SharedCodexRoot } from './root';
-import { listLoadedNativeThreads, requireLoadedNativeThread } from './nativeDiscovery';
+import { listLoadedNativeThreads, requireLoadedNativeThread, readResumableNativeRoot } from './nativeDiscovery';
 
 export type RuntimeReady = { sessionId: string; runtime: CodexRuntimeRecord };
 type Reservation = { root: SharedCodexRoot; resumeId?: string };
@@ -206,7 +206,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         runtime.sessions[root.session.sessionId] = { threadId, namespace: root.bootstrap.sessionInfo.namespace, active: true };
         runtime.pendingCreations = runtime.pendingCreations?.filter(sid => sid !== root.session.sessionId); await persist();
     };
-    const reserve = async (root: SharedCodexRoot, threadId: string) => withThreadOwnership(home, threadId, id, () => reserveRecord(root, threadId));
+    const reserve = async (root: SharedCodexRoot, threadId: string) => withThreadOwnership(home, threadId, id, () => reserveRecord(root, threadId), 'created');
     const bind = async (root: SharedCodexRoot, response: Record<string, unknown>, subscribe: boolean, initialOptions?: SharedLaunchOptions) => {
         assertRunning();
         const threadId = string(record(response.thread).id);
@@ -253,9 +253,8 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             await existingRoot.setNativeConnection(true);
             return { sessionId: existingRoot.session.sessionId, threadId, connectionState: 'attached' };
         }
-        const thread = record(record(await control.request('thread/read', { threadId, includeTurns: false })).thread);
-        if (thread.parentThreadId) throw new Error('Connect the root Codex thread instead of a subagent');
         const root = await withThreadOwnership(home, threadId, id, async () => {
+            const thread = await readResumableNativeRoot(control, threadId);
             const existing = await findColdBinding(home, threadId);
             const root = await prepare(string(thread.cwd) ?? launch.cwd, existing, undefined, thread);
             await reserveRecord(root, threadId);
@@ -402,13 +401,13 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                 scanning = true;
                 try {
                     const loaded = await listLoadedNativeThreads(control);
-                    await Promise.all([...loaded].map(async threadId => {
+                    for (const threadId of loaded) {
                         if (stopping) return;
-                        if (roots.get(threadId)?.session.getMetadata()?.codexNativeConnection === 'attached' || [...ending].some(root => root.threadId === threadId)) return;
+                        if (roots.get(threadId)?.session.getMetadata()?.codexNativeConnection === 'attached' || [...ending].some(root => root.threadId === threadId)) continue;
                         try {
                             await connectNativeThread(threadId);
                         } catch (error) { logger.debug('[Codex native] attach failed', { threadId, error: error instanceof Error ? error.message : String(error) }); }
-                    }));
+                    }
                 } catch (error) { logger.debug('[Codex native] discovery unavailable', String(error)); }
                 finally { scanning = false; }
             };

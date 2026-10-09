@@ -140,13 +140,13 @@ export class NativeCodexHistory {
             if (label && !parent) this.labels.set(id, { messageId: id, label, at: origin.at, seq: message.seq!, createdAt: origin.at });
         };
         const sink = { getMetadata: () => null, updateMetadata: () => {},
-            sendUserMessage: (text: string, _meta: unknown, id: string, parts?: ChatContentPart[]) => append({ role: 'user', content: userContentWithParts(text, parts), meta: { sentFrom: 'cli' } }, id),
+            sendUserMessage: (text: string, meta: unknown, id: string, parts?: ChatContentPart[]) => append({ role: 'user', content: userContentWithParts(text, parts), meta: { sentFrom: 'cli', ...record(meta) } }, id),
             sendAgentMessage: (body: unknown) => append({ role: 'agent', content: { type: AGENT_MESSAGE_PAYLOAD_TYPE, data: body }, meta: { sentFrom: 'cli' } }, string(record(body).id)!),
             sendSessionEvent: (event: unknown, id: string) => append({ role: 'agent', content: { type: 'event', data: event, id } }, id)
         } as unknown as ApiSessionClient;
         await new SharedCodexProjection(sink, origin.threadId, async () => {}, parent, true).history({ turns: [{
             id: origin.turnId, status: entry.item.status === 'inProgress' ? 'inProgress' : 'completed', items: [entry.item]
-        }] });
+        }] }, false);
         // A native item is a mutable snapshot. The epoch makes Web replace its
         // previous rows when an answer changes or an item loses projected events.
         if (existing.size && (existing.size !== emitted.size || [...existing].some(([id, previous]) =>

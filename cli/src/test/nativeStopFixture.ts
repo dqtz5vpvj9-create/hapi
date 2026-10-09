@@ -25,7 +25,7 @@ export class NativeStopFixture {
         this.database.exec(`
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS thread_turns (thread_id TEXT, turn_id TEXT, rollout_ordinal INTEGER, status TEXT,
-                started_at INTEGER, completed_at INTEGER, rollout_end_ordinal INTEGER, PRIMARY KEY(thread_id,turn_id));
+                started_at INTEGER, completed_at INTEGER, rollout_end_ordinal INTEGER, error_json TEXT, PRIMARY KEY(thread_id,turn_id));
             CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_turns_page ON thread_turns(thread_id,rollout_ordinal);
             CREATE INDEX IF NOT EXISTS idx_thread_turns_end_page ON thread_turns(thread_id,rollout_end_ordinal,turn_id);
             CREATE TABLE IF NOT EXISTS thread_items (thread_id TEXT, turn_id TEXT, item_id TEXT, rollout_ordinal INTEGER,
@@ -53,8 +53,8 @@ export class NativeStopFixture {
             'DO NOT READ: SQLITE BODY IS NOT THE RPC BODY');
     }
     persist(turn: any) {
-        this.database.query('INSERT OR REPLACE INTO thread_turns VALUES(?,?,?,?,?,?,?)').run(this.threadId,
-            turn.id, turn.ordinal, turn.status, turn.startedAt, turn.completedAt, turn.endOrdinal);
+        this.database.query('INSERT OR REPLACE INTO thread_turns VALUES(?,?,?,?,?,?,?,?)').run(this.threadId,
+            turn.id, turn.ordinal, turn.status, turn.startedAt, turn.completedAt, turn.endOrdinal, turn.error == null ? null : JSON.stringify(turn.error));
     }
     complete(turn: any, status: string, persist = true) {
         turn.status = status; turn.completedAt = turn.startedAt + 1; turn.endOrdinal = turn.ordinal + 3;

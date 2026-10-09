@@ -17,6 +17,22 @@ const stopped = (page: { messages: MessagesResponse['messages'] }) => page.messa
 const read = async (history: NativeCodexHistory, args = {}) => await history.read({ limit: 50, ...args }) as MessagesResponse;
 
 describe('native sparse terminal-status history', () => {
+    it('keeps an itemless failed turn and its real diagnostic available through bounded history and context reads', async () => {
+        const { source, home, history } = await fixture();
+        const turn = source.addTurn('failed', 'failed', true) as any;
+        turn.error = { message: 'Upstream request rejected' }; source.persist(turn);
+        const page = await read(history);
+        expect(page.messages).toHaveLength(1);
+        const failure = page.messages[0];
+        expect(failure.content).toMatchObject({ role: 'agent', meta: { nativeExecution: {
+            threadId: 'thread', turnId: 'failed', turn: { status: 'failed', started: true, ended: true },
+        } }, content: { data: { type: 'error', message: 'Codex error: Upstream request rejected' } } });
+        const replay = await read(new NativeCodexHistory('thread', source, home));
+        expect(replay.messages.map(m => m.id)).toEqual([failure.id]);
+        const context = await history.read({ operation: 'context', messageId: failure.id, radius: 1 }) as MessageContextResponse;
+        expect(context.messages.map(m => m.id)).toContain(failure.id);
+        expect(source.calls.every(call => Number(call.params.limit) <= 32 && call.params.itemsView === 'notLoaded')).toBe(true);
+    });
     it('recovers persisted interrupted status, refreshes and reconnects without duplicate or successor mislabel', async () => {
         const { source, home, history } = await fixture();
         source.addTurn('stopped', 'interrupted', false, true);

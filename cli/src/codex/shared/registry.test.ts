@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 
 const state = vi.hoisted(() => ({ home: '', auth: 'token', processes: new Map<number, string | undefined>() }));
 vi.mock('@/configuration', () => ({ configuration: { get happyHomeDir() { return state.home; }, apiUrl: 'hub', get cliApiToken() { return state.auth; } } }));
@@ -11,7 +10,7 @@ import { findRuntime, readRuntimes, runtimeAlive, runtimeAuthHash, runtimeMayBeA
 const directories: string[] = [];
 afterEach(async () => { state.processes.clear(); state.auth = 'token'; await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
 async function fixture(): Promise<CodexRuntimeRecord> {
-    const home = await mkdtemp(join(tmpdir(), 'hapi-owner-')); directories.push(home); state.home = join(home, 'hapi');
+    const home = await mkdtemp('/mnt/cache/data-cache/hapi-owner-'); directories.push(home); state.home = join(home, 'hapi');
     return { id: 'owner', pid: 1111, marker: 'worker-start', serverPid: 2222, serverMarker: 'server-start', command: 'codex', args: [],
         codexHome: join(home, 'codex'), endpoint: 'unix://private', hub: 'hub', authHash: runtimeAuthHash(),
         sessions: { sid: { threadId: 'thread', namespace: 'ns', active: true } } };
@@ -39,6 +38,12 @@ describe('shared runtime ownership', () => {
         const directory = join(owner.codexHome, 'hapi-runtime-owners'); await mkdir(directory, { recursive: true });
         await writeFile(join(directory, 'broken.json'), '{');
         await expect(withThreadOwnership(owner.codexHome, 'thread', 'new', async () => {})).rejects.toThrow('Cannot verify');
+    });
+    it('allows confirmed new threads while retaining cold-resume and active-owner protection', async () => {
+        const owner = await fixture(); owner.pendingCreations = ['unbound']; state.processes.set(1111, owner.marker); await saveRuntime(owner);
+        expect(await withThreadOwnership(owner.codexHome, 'new-thread', 'new', async () => 'bound', 'created')).toBe('bound');
+        await expect(withThreadOwnership(owner.codexHome, 'thread', 'new', async () => {}, 'created')).rejects.toThrow('hapi resume sid');
+        await expect(withThreadOwnership(owner.codexHome, 'new-thread', 'new', async () => {})).rejects.toThrow('unconfirmed creation');
     });
     it('readRuntimes({ strict: true }) fails closed on corrupt hub registry files', async () => {
         // Soft [] would let stopSession argv-sweep tree-kill shared wrappers (#1911).

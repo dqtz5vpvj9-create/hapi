@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, spyOn } from 'bun:test'
+import type { Database } from 'bun:sqlite'
 import { AGENT_MESSAGE_PAYLOAD_TYPE } from '@hapi/protocol'
 import { getReasoningStreamId } from '@hapi/protocol/messages'
 import { Store } from './index'
@@ -414,6 +415,39 @@ describe('getDeliverableMessagesAfter: CLI backfill excludes future-scheduled ro
 })
 
 describe('countFutureScheduledLocalMessages', () => {
+    it('uses the pending schedule index for both list statistics without scanning delivered history', () => {
+        const store = makeStore()
+        const db = (store as unknown as { db: Database }).db
+        const session = makeSession(store, 'scheduled-list-index')
+        const other = makeSession(store, 'scheduled-list-other')
+        const now = Date.now()
+        db.transaction(() => {
+            for (let index = 0; index < 1_000; index++) {
+                store.messages.addMessage(session.id, { text: 'delivered' }, `delivered-${index}`)
+                store.messages.markMessagesInvoked(session.id, [`delivered-${index}`], now)
+            }
+        })()
+        store.messages.addMessage(session.id, { text: 'future' }, 'future', now + 10_000)
+        store.messages.addMessage(session.id, { text: 'later' }, 'later', now + 20_000)
+        store.messages.addMessage(session.id, { text: 'due' }, 'due', now)
+        store.messages.addMessage(other.id, { text: 'outside selection' }, 'outside', now + 5_000)
+        const prepare = spyOn(db, 'prepare')
+        try {
+            expect(store.messages.countFutureScheduledBySessionIds([session.id], now).get(session.id)).toBe(2)
+            expect(store.messages.minFutureScheduledAtBySessionIds([session.id], now).get(session.id)).toBe(now + 10_000)
+            const queries = prepare.mock.calls.map(([sql]) => sql)
+            expect(queries).toHaveLength(2)
+            for (const sql of queries) {
+                const plan = db.query(`EXPLAIN QUERY PLAN ${sql}`).all(session.id, now) as { detail: string }[]
+                expect(plan.some(row => row.detail.includes('idx_messages_scheduled_pending (scheduled_at>?)'))).toBe(true)
+                expect(plan.some(row => row.detail.includes('idx_messages_local_id'))).toBe(false)
+            }
+        } finally {
+            prepare.mockRestore()
+            store.close()
+        }
+    })
+
     it('counts only future scheduled uninvoked local messages', () => {
         const store = makeStore()
         const session = makeSession(store, 'sched-count')

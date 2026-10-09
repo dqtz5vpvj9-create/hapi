@@ -718,10 +718,12 @@ export function countFutureScheduledBySessionIds(
         return counts
     }
 
+    // The local-ID index also matches these predicates, but scans delivered
+    // history. Use the existing partial index to visit only pending schedules.
     const placeholders = sessionIds.map(() => '?').join(',')
     const rows = prepareCached(db, `
         SELECT session_id, COUNT(*) AS count
-        FROM messages
+        FROM messages INDEXED BY idx_messages_scheduled_pending
         WHERE session_id IN (${placeholders})
           AND invoked_at IS NULL
           AND local_id IS NOT NULL
@@ -751,7 +753,7 @@ export function minFutureScheduledAtBySessionIds(
     const placeholders = sessionIds.map(() => '?').join(',')
     const rows = prepareCached(db, `
         SELECT session_id, MIN(scheduled_at) AS next_at
-        FROM messages
+        FROM messages INDEXED BY idx_messages_scheduled_pending
         WHERE session_id IN (${placeholders})
           AND invoked_at IS NULL
           AND local_id IS NOT NULL

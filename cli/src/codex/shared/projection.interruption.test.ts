@@ -16,7 +16,7 @@ describe('native interrupted turn projection', () => {
         const h = harness();
         await h.projection.notification('turn/completed', { threadId: 'native-thread', turn: { id: 'stopped-turn', status: 'interrupted' } });
         expect([...h.durable.values()]).toEqual([{ type: 'message', message: 'Aborted by user' }]);
-        expect(h.sendAgentMessage).not.toHaveBeenCalled();
+        expect(h.sendAgentMessage.mock.calls.every(([body]) => body.type === 'native-turn')).toBe(true);
         await h.projection.notification('turn/completed', { threadId: 'native-thread', turn: { id: 'next-turn', status: 'completed' } });
         expect(h.durable.size).toBe(1);
         await h.projection.notification('turn/completed', { threadId: 'native-thread', turn: { id: 'stopped-turn', status: 'interrupted' } });
@@ -35,6 +35,6 @@ describe('native interrupted turn projection', () => {
         expect(h.sendSessionEvent).toHaveBeenCalledTimes(2);
         expect(h.sendSessionEvent.mock.calls[1]).toEqual(first);
         expect(h.durable.size).toBe(1);
-        expect(h.sendAgentMessage).not.toHaveBeenCalled();
+        expect(h.sendAgentMessage.mock.calls.every(([body]) => body.type === 'native-turn')).toBe(true);
     });
 });

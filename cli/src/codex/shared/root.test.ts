@@ -722,3 +722,33 @@ describe('native session name synchronization', () => {
         expect(f.metadata()).toMatchObject({ name: 'New HAPI alias', codexLastSyncedName: 'New native title' });
     });
 });
+
+it('restores only current-turn async questions, steers their replies, and expires them on completion', async () => {
+    const f = await fixture({ external: true });
+    const question = { type: 'agentMessage', id: 'pending-call', questions: [{ title: 'Link?', options: null }] };
+    const native = f.root.client.request.bind(f.root.client);
+    const spy = vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+        if (method === 'turn/steer') return {};
+        return native(method, params);
+    });
+    f.native.thread.turns = [{ id: 'old', status: 'completed', items: [question] }];
+    await f.root.refresh();
+    await f.root.activate();
+    expect(Object.keys(f.state().requests ?? {})).toHaveLength(0);
+    expect(spy.mock.calls.some(([method]) => method === 'thread/items/list')).toBe(false);
+    f.native.thread.turns.push({ id: 'current', status: 'inProgress', items: [question] });
+    await f.root.refresh();
+    const [id, request] = Object.entries(f.state().requests!)[0]!;
+    const input = request.arguments as { questions: Array<{ id: string }> };
+    await f.rpc.get(RPC_METHODS.Permission)!({ id, approved: true, answers: { [input.questions[0]!.id]: { answers: ['user_note: example-link'] } } });
+    expect(spy).toHaveBeenCalledWith('turn/steer', expect.objectContaining({
+        expectedTurnId: 'current', clientUserMessageId: id,
+        input: [expect.objectContaining({ text: expect.stringContaining('"answer":"example-link"') })]
+    }));
+    expect(spy.mock.calls.some(([method]) => method === 'thread/queue/add')).toBe(false);
+    f.native.notify('turn/completed', { threadId: 'thread', turn: { id: 'current', status: 'completed' } });
+    expect(Object.keys(f.state().requests ?? {})).toHaveLength(0);
+    f.native.thread.turns[1]!.status = 'completed';
+    await f.root.refresh();
+    expect(Object.keys(f.state().requests ?? {})).toHaveLength(0);
+});

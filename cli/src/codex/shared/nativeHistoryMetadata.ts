@@ -100,6 +100,10 @@ export function nativeMetadataCutovers(home: string, threadId: string): Readonly
 
 export class NativeHistoryMetadata {
     private readonly generations: Array<{ id: string; offset: number; cutoff?: number }> = [];
+    private interruptedWithoutEnd: ReadonlySet<string> = new Set();
+    /** The native API marks stale open turns interrupted without writing an end
+     * event. Preserve that status without inventing a timestamp or ordinal. */
+    setInterruptedWithoutEnd(turnIds: ReadonlySet<string>): void { this.interruptedWithoutEnd = turnIds; }
     get coordinates(): string { return this.generations.map(generation => `${generation.id}:${generation.offset}:${generation.cutoff ?? 'head'}`).join('|'); }
     constructor(private readonly database: NativeMetadataDatabase, readonly threadId: string, aliases: string[] = [threadId], cutovers: ReadonlyMap<string, number> = new Map()) {
         let offset = 0;
@@ -139,7 +143,19 @@ export class NativeHistoryMetadata {
         if (!row || !['inProgress', 'completed', 'interrupted', 'failed'].includes(row.status)
             || (row.started_at == null && row.completed_at == null) || !Number.isSafeInteger(row.rollout_ordinal)
             || (row.status !== 'inProgress' && !Number.isSafeInteger(row.rollout_end_ordinal))) throw new NativeMetadataUnavailable();
-        return row;
+        return this.interruptedWithoutEnd.has(turnId) && row.status === 'inProgress'
+            && row.completed_at === null && row.rollout_end_ordinal === null
+            ? { ...row, status: 'interrupted' } : row;
+    }
+    /** Error metadata is read only for the failed turn currently being paged. */
+    failure(turnId: string): unknown {
+        for (const generation of [...this.generations].reverse()) {
+            const row = this.database.query(`SELECT error_json FROM thread_turns WHERE thread_id = ? AND turn_id = ?
+                ${generation.cutoff === undefined ? '' : `AND rollout_ordinal < ${generation.cutoff}`}`)
+                .get(generation.id, turnId) as { error_json: string | null } | undefined;
+            if (row) return row.error_json == null ? null : JSON.parse(row.error_json);
+        }
+        throw new NativeMetadataUnavailable();
     }
     item(turnId: string, itemId: string): NativeItemMetadata {
         const row = this.latest('thread_items', 'turn_id = ? AND item_id = ?', [turnId, itemId]) as NativeItemMetadata | undefined;

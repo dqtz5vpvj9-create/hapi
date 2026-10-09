@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
+import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -11,14 +12,14 @@ import { record } from './gateway';
 import { isProcessAlive } from '@/utils/process';
 
 const state = vi.hoisted(() => ({ home: '', sessions: new Map<string, MockSession>(), beforeBootstrap: undefined as (() => Promise<void>) | undefined }));
-class MockSession {
+class MockSession extends EventEmitter {
     readonly sessionId = randomUUID();
     state: AgentState = { requests: { 'old-worker': { tool: 'request_user_input', arguments: {}, createdAt: 0 } } }; metadata: Metadata;
     messages: unknown[] = []; consumed: string[] = []; dead = false;
     user?: (message: { content: { text: string } }, id?: string) => void;
     rpc = new Map<string, (params: unknown) => Promise<unknown>>();
     rpcHandlerManager = { registerHandler: (name: string, fn: (params: unknown) => Promise<unknown>) => { this.rpc.set(name, fn); } };
-    constructor(cwd: string) { this.metadata = { path: cwd, host: 'test', hostPid: process.pid, machineId: 'test', flavor: 'codex', capabilities: { concurrentClients: true } }; }
+    constructor(cwd: string) { super(); this.metadata = { path: cwd, host: 'test', hostPid: process.pid, machineId: 'test', flavor: 'codex', capabilities: { concurrentClients: true } }; }
     getMetadata() { return this.metadata; }
     updateMetadata(fn: (m: Metadata) => Metadata) { this.metadata = fn(this.metadata); }
     updateAgentState(fn: (s: AgentState) => AgentState) { this.state = fn(this.state); }
@@ -50,7 +51,7 @@ vi.mock('../utils/buildHapiMcpBridge', () => ({ buildHapiMcpBridge: async () => 
 describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Codex shared runtime', () => {
     afterEach(() => { vi.unstubAllEnvs(); state.sessions.clear(); state.beforeBootstrap = undefined; });
     it('rejects a child ID before creating a HAPI binding or calling native resume', async () => {
-        const home = await mkdtemp('/tmp/hapi-shared-child-'); state.home = home;
+        const home = await mkdtemp('/mnt/cache/data-cache/hapi-shared-child-'); state.home = home;
         const ch = join(home, 'codex'); await mkdir(ch);
         await writeFile(join(ch, 'config.toml'), 'model = "mock-model"\nmodel_provider = "mock"\n[model_providers.mock]\nname = "No model calls"\nbase_url = "http://127.0.0.1:1/v1"\nwire_api = "responses"\nrequires_openai_auth = false\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n');
         vi.stubEnv('CODEX_HOME', ch); vi.stubEnv('HOME', home);
@@ -73,7 +74,7 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Code
         } finally { requests.mockRestore(); await rm(home, { recursive: true, force: true }); }
     }, 30_000);
     it.each(['abort', 'failure'])('cleans up the native engine and partial roots on startup %s', async outcome => {
-        const home = await mkdtemp('/tmp/hapi-shared-startup-'); state.home = home;
+        const home = await mkdtemp('/mnt/cache/data-cache/hapi-shared-startup-'); state.home = home;
         const ch = join(home, 'codex'); await mkdir(ch);
         await writeFile(join(ch, 'config.toml'), 'model = "mock-model"\nmodel_provider = "mock"\n[model_providers.mock]\nname = "No model calls"\nbase_url = "http://127.0.0.1:1/v1"\nwire_api = "responses"\nrequires_openai_auth = false\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n');
         vi.stubEnv('CODEX_HOME', ch); vi.stubEnv('HOME', home);
@@ -99,7 +100,7 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Code
         } finally { release(); abort.abort(); await running.catch(() => {}); await rm(home, { recursive: true, force: true }); }
     }, 30_000);
     it('binds empty roots, exchanges messages, isolates /new, and archives only the selected root', async () => {
-        const home = await mkdtemp('/tmp/hapi-shared-test-'); state.home = home;
+        const home = await mkdtemp('/mnt/cache/data-cache/hapi-shared-test-'); state.home = home;
         const ch = join(home, 'codex'); const cwd = join(home, 'work'); await mkdir(ch); await mkdir(cwd);
         const modelRequests: unknown[] = [];
         const http = createServer((request, response) => {

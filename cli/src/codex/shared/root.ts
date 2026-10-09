@@ -1,3 +1,4 @@
+import { SharedCodexAsyncQuestions } from './asyncQuestions';
 import { readFileArtifact, type FileArtifactRequest } from '@/modules/common/handlers/artifacts';
 import { readNativeArtifact } from './artifacts';
 import { readCodexActivity } from '../utils/codexActivity';
@@ -56,6 +57,7 @@ export class SharedCodexRoot {
     private permissions!: SharedCodexPermissions;
     private queue!: SharedCodexQueue;
     private projection!: SharedCodexProjection;
+    private asyncQuestions?: SharedCodexAsyncQuestions;
     private nativeHistory?: NativeCodexHistory;
     private readonly children = new Map<string, SharedCodexProjection>();
     private readonly ancestry = new Map<string, string | null>();
@@ -106,10 +108,12 @@ export class SharedCodexRoot {
                 if (method === 'turn/started') {
                     this.turnRevision++; this.currentTurn = string(record(record(params).turn).id); this.interrupted = false;
                     if (this.currentTurn) this.latestTurn = { id: this.currentTurn, status: 'inProgress' };
+                    this.asyncQuestions?.setTurn(this.currentTurn);
                     this.publishSteering();
                 }
                 if (method === 'turn/completed' && (!this.currentTurn || record(record(params).turn).id === this.currentTurn)) {
                     this.turnRevision++; this.currentTurn = undefined; this.interrupted = record(record(params).turn).status === 'interrupted';
+                    this.asyncQuestions?.setTurn(this.currentTurn);
                     this.publishSteering();
                 }
                 const p = record(params);
@@ -214,7 +218,8 @@ export class SharedCodexRoot {
     private createPermissions(generation: string): SharedCodexPermissions {
         return new SharedCodexPermissions(this.session, this.client, generation, threadId =>
             threadId === this.threadId && this.settingsNative.approvalPolicy === 'never'
-            && record(this.settingsNative.sandboxPolicy ?? this.settingsNative.sandbox).type === 'dangerFullAccess');
+            && record(this.settingsNative.sandboxPolicy ?? this.settingsNative.sandbox).type === 'dangerFullAccess',
+            reply => this.asyncQuestions?.reply(reply) ?? Promise.resolve(false));
     }
     private async receiveRequest(request: { id: string | number; method: string; params: unknown }): Promise<void> {
         await this.bound;
@@ -258,6 +263,10 @@ export class SharedCodexRoot {
             items => this.session.syncNativeQueueSnapshot(items.map(item => ({ localId: item.clientUserMessageId, text: inputText(item.input) }))),
             ids => this.session.setSteerDeliveryState(ids, 'dispatching'));
         await this.queue.load();
+        this.asyncQuestions = new SharedCodexAsyncQuestions(this.session, threadId, async (id, text, turnId) => {
+            const result = await this.queue.steer(id, turnId, buildUserInputFromMessage(text));
+            if (!result.steered) throw new Error(result.error ?? 'Question reply has not been confirmed');
+        });
         this.projection = new SharedCodexProjection(this.session, threadId, id => this.queue.committed(id));
         this.session.updateMetadata(metadata => ({ ...metadata, codexSessionId: threadId, ...codexSubagentMetadata(response.thread), capabilities: {
             ...metadata.capabilities, concurrentClients: true, terminal: true,
@@ -357,6 +366,7 @@ export class SharedCodexRoot {
             else await projection.notification(method, params);
             return;
         }
+        if (method === 'item/started' || method === 'item/completed') this.asyncQuestions?.observe(record(p.item), string(p.turnId));
         if (method === 'turn/completed' && !this.host.external) this.session.sendSessionEvent({ type: 'ready' });
         if (method === 'thread/archived') { await this.host.end(this, false); return; }
         if (method === 'thread/queue/changed') await this.queue.reconcile();
@@ -417,12 +427,17 @@ export class SharedCodexRoot {
             : await this.readThread();
         this.acceptNativeName(thread.name, nameRevision, displayName);
         if (this.host.external) {
-            const latest = record(await this.client.request('thread/turns/list', { threadId: this.threadId, limit: 1, sortDirection: 'desc', itemsView: 'summary' }));
+            const latest = record(await this.client.request('thread/turns/list', { threadId: this.threadId, limit: 1, sortDirection: 'desc', itemsView: 'full' }));
             thread.turns = Array.isArray(latest.data) ? latest.data : [];
         }
         const turns = Array.isArray(thread.turns) ? thread.turns.map(record) : [];
         if (revision === this.turnRevision) {
-            this.currentTurn = string(turns.find(turn => turn.status === 'inProgress')?.id);
+            const activeTurn = turns.find(turn => turn.status === 'inProgress');
+            this.currentTurn = string(activeTurn?.id);
+            this.asyncQuestions?.setTurn(this.currentTurn);
+            for (const item of Array.isArray(activeTurn?.items) ? activeTurn.items : []) {
+                this.asyncQuestions?.observe(record(item), this.currentTurn);
+            }
             this.interrupted = turns.at(-1)?.status === 'interrupted';
             const last = turns.at(-1);
             const id = string(last?.id);

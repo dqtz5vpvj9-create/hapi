@@ -65,7 +65,7 @@ describe('indexed native lifecycle metadata', () => {
             const second = '22222222-2222-2222-2222-222222222222';
             const third = '33333333-3333-3333-3333-333333333333';
             for (const [id, turn, ordinal] of [[second, 'second', 5], [third, 'third', 9]] as const) {
-                f.database.query('INSERT INTO thread_turns SELECT ?,turn_id,1,status,started_at,completed_at,4 FROM thread_turns WHERE thread_id=? AND turn_id=?').run(id, f.threadId, turn);
+                f.database.query('INSERT INTO thread_turns(thread_id,turn_id,rollout_ordinal,status,started_at,completed_at,rollout_end_ordinal) SELECT ?,turn_id,1,status,started_at,completed_at,4 FROM thread_turns WHERE thread_id=? AND turn_id=?').run(id, f.threadId, turn);
                 f.database.query('INSERT INTO thread_items SELECT ?,turn_id,item_id,rollout_ordinal-?,created_at_ms,started_at_ms,completed_at_ms,item_type,item_json FROM thread_items WHERE thread_id=? AND turn_id=?').run(id, ordinal - 1, f.threadId, turn);
             }
             // An old retained duplicate is stale; official history reports the current status.
@@ -121,7 +121,7 @@ describe('indexed native lifecycle metadata', () => {
             f.database.query('UPDATE thread_turns SET thread_id=? WHERE turn_id=?').run(current, 'canonical');
             f.database.query('UPDATE thread_items SET thread_id=? WHERE turn_id=?').run(current, 'canonical');
             // A discarded middle-execution duplicate must not shadow the retained original.
-            f.database.query('INSERT INTO thread_turns SELECT ?,turn_id,20,status,started_at,completed_at,23 FROM thread_turns WHERE thread_id=? AND turn_id=?').run(middle, f.threadId, 'retained');
+            f.database.query('INSERT INTO thread_turns(thread_id,turn_id,rollout_ordinal,status,started_at,completed_at,rollout_end_ordinal) SELECT ?,turn_id,20,status,started_at,completed_at,23 FROM thread_turns WHERE thread_id=? AND turn_id=?').run(middle, f.threadId, 'retained');
             f.database.query('INSERT INTO thread_items SELECT ?,turn_id,item_id,rollout_ordinal+19,created_at_ms,started_at_ms,completed_at_ms,item_type,item_json FROM thread_items WHERE thread_id=? AND turn_id=?').run(middle, f.threadId, 'retained');
             f.turns.splice(f.turns.findIndex(turn => turn.id === 'abandoned'), 1);
             for (let i = f.items.length - 1; i >= 0; i--) if (f.items[i].turnId === 'abandoned') f.items.splice(i, 1);
@@ -153,7 +153,7 @@ describe('indexed native lifecycle metadata', () => {
             f.addTurn('parent-after-fork', 'completed', false, true);
             f.addTurn('child', 'completed', false, true);
             const parent = '22222222-2222-2222-2222-222222222222';
-            f.database.query('INSERT INTO thread_turns SELECT ?,turn_id,rollout_ordinal,status,started_at,completed_at,rollout_end_ordinal FROM thread_turns WHERE thread_id=?').run(parent, f.threadId);
+            f.database.query('INSERT INTO thread_turns(thread_id,turn_id,rollout_ordinal,status,started_at,completed_at,rollout_end_ordinal) SELECT ?,turn_id,rollout_ordinal,status,started_at,completed_at,rollout_end_ordinal FROM thread_turns WHERE thread_id=?').run(parent, f.threadId);
             f.database.query('INSERT INTO thread_items SELECT ?,turn_id,item_id,rollout_ordinal,created_at_ms,started_at_ms,completed_at_ms,item_type,item_json FROM thread_items WHERE thread_id=?').run(parent, f.threadId);
             f.database.query("DELETE FROM thread_turns WHERE thread_id=? AND turn_id='parent-after-fork'").run(f.threadId);
             f.database.query("DELETE FROM thread_items WHERE thread_id=? AND turn_id='parent-after-fork'").run(f.threadId);
@@ -188,7 +188,7 @@ describe('indexed native lifecycle metadata', () => {
             const parentReplacement = '33333333-3333-3333-3333-333333333333';
             f.database.query("UPDATE thread_turns SET thread_id=? WHERE turn_id!='child'").run(parent);
             f.database.query("UPDATE thread_items SET thread_id=? WHERE turn_id!='child'").run(parent);
-            f.database.query('INSERT INTO thread_turns SELECT ?,turn_id,20,status,started_at,completed_at,23 FROM thread_turns WHERE thread_id=? AND turn_id=?').run(parentReplacement, parent, 'inherited');
+            f.database.query('INSERT INTO thread_turns(thread_id,turn_id,rollout_ordinal,status,started_at,completed_at,rollout_end_ordinal) SELECT ?,turn_id,20,status,started_at,completed_at,23 FROM thread_turns WHERE thread_id=? AND turn_id=?').run(parentReplacement, parent, 'inherited');
             f.database.query('INSERT INTO thread_items SELECT ?,turn_id,item_id,rollout_ordinal+19,created_at_ms,started_at_ms,completed_at_ms,item_type,item_json FROM thread_items WHERE thread_id=? AND turn_id=?').run(parentReplacement, parent, 'inherited');
             f.turns.splice(f.turns.findIndex(turn => turn.id === 'parent-after-fork'), 1);
             for (let i = f.items.length - 1; i >= 0; i--) if (f.items[i].turnId === 'parent-after-fork') f.items.splice(i, 1);

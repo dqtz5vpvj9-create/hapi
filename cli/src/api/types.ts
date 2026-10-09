@@ -1,3 +1,4 @@
+import { NativeExecutionSchema } from '@hapi/protocol/nativeExecution'
 import { ChatContentPartSchema } from '@hapi/protocol/artifacts';
 import {
     AgentStateSchema,
@@ -71,6 +72,7 @@ export type {
 }
 
 export const MessageMetaSchema = z.object({
+    nativeExecution: NativeExecutionSchema.optional(),
     sentFrom: z.string().optional(),
     // Shared Codex queue mirrors are replayable input, not transcript echoes.
     isNativeQueuedMessage: z.boolean().optional(),

@@ -1,3 +1,4 @@
+import { nativeTurnState } from '@hapi/protocol/nativeExecution';
 import { userContentWithParts, type ChatContentPart } from '@hapi/protocol/artifacts';
 import { AGENT_MESSAGE_PAYLOAD_TYPE } from '@hapi/protocol';
 import { MessagesQuerySchema, MessageContextQuerySchema, MessageOutlineQuerySchema, MessageDependenciesQuerySchema,
@@ -24,7 +25,9 @@ const stopId = (thread: string, turn: string) => `native-turn-status:${thread}:$
 export class NativeIndexedHistory {
     private epoch = freshNativeHistoryEpoch();
     private revision = 0;
+    private resetRevision = 0;
     private dirty = true;
+    private interruptedWithoutEnd: ReadonlySet<string> = new Set();
     private readonly expected = new Map<string, string>();
     private readonly cached = new Map<string, DecryptedMessage>();
     private readonly metadataCoordinates = new Map<string, string>();
@@ -32,7 +35,7 @@ export class NativeIndexedHistory {
         private readonly home: string) {}
     invalidate(reset = true) {
         this.revision++; this.dirty = true;
-        if (reset) { this.cached.clear(); this.expected.clear(); this.epoch = freshNativeHistoryEpoch(); }
+        if (reset) { this.resetRevision++; this.cached.clear(); this.expected.clear(); this.interruptedWithoutEnd = new Set(); this.epoch = freshNativeHistoryEpoch(); }
     }
     terminal(turn: Record<string, unknown>) {
         const id = string(turn.id); const status = string(turn.status);
@@ -52,14 +55,21 @@ export class NativeIndexedHistory {
     }
     private async synchronize(index: NativeHistoryMetadata) {
         if (!this.dirty) return;
+        const revision = this.revision;
         const page = record(await this.client.request('thread/turns/list', {
             threadId: this.threadId, limit: 32, sortDirection: 'desc', itemsView: 'notLoaded'
         }));
         if (!Array.isArray(page.data)) throw new NativeMetadataUnavailable();
+        const interruptedWithoutEnd = new Set<string>();
         for (const raw of page.data) {
             const turn = record(raw); const native = index.turn(String(turn.id));
-            if (!Array.isArray(turn.items) || turn.items.length || native.status !== turn.status
+            // Codex normalizes stale open turns to interrupted in its read API
+            // without persisting a completion. This is not an index-sync race.
+            const recovered = native.status === 'inProgress' && turn.status === 'interrupted'
+                && native.completed_at === null && turn.completedAt === null && native.rollout_end_ordinal === null;
+            if (!Array.isArray(turn.items) || turn.items.length || (native.status !== turn.status && !recovered)
                 || native.started_at !== turn.startedAt || native.completed_at !== turn.completedAt) throw new NativeMetadataUnavailable();
+            if (recovered) interruptedWithoutEnd.add(native.turn_id);
         }
         let confirmed = 0;
         for (const [id, status] of this.expected) {
@@ -70,7 +80,8 @@ export class NativeIndexedHistory {
         // A burst is drained in bounded reads, never silently forgotten or
         // turned into an unbounded query pass over the native history.
         if (this.expected.size) throw new NativeMetadataUnavailable();
-        this.dirty = false;
+        this.interruptedWithoutEnd = interruptedWithoutEnd;
+        this.dirty = revision !== this.revision;
     }
     private sources(index: NativeHistoryMetadata, ordinal: number, direction: 'asc' | 'desc', userOnly = false) {
         const items: Source[] = index.items(ordinal, direction, 32, userOnly).map(item => ({ kind: 'item', ordinal: item.rollout_ordinal, item }));
@@ -129,12 +140,26 @@ export class NativeIndexedHistory {
             if (source.kind === 'turn') {
                 if (turn.status !== source.turn.status || turn.rollout_end_ordinal !== source.ordinal) throw new NativeMetadataUnavailable();
                 const id = stopId(this.threadId, turn.turn_id);
+                const meta = { nativeExecution: { threadId: this.threadId, turnId: turn.turn_id,
+                    turn: nativeTurnState(turn.status, turn.started_at !== null, true) } };
                 if (turn.status === 'interrupted') {
                     const localId = `codex:${this.threadId}:${turn.turn_id}:turn_aborted`;
                     // Reuse the durable stop event wire/render path, with a separate turn origin.
-                    append(id, localId, { role: 'agent', content: { type: 'event', data: { type: 'message', message: 'Aborted by user' }, id: localId } },
+                    append(id, localId, { role: 'agent', meta, content: { type: 'event', data: { type: 'message', message: 'Aborted by user' }, id: localId } },
                         9999, (turn.completed_at ?? turn.started_at!) * 1000);
                 } else if (this.cached.delete(id)) this.epoch = freshNativeHistoryEpoch();
+                if (turn.status === 'failed') {
+                    const sink = { getMetadata: () => null, sendAgentMessage: (body: Record<string, unknown>) => {
+                        if (body.type !== 'error') return;
+                        append(`native-turn-status:${this.threadId}:${turn.turn_id}:error`, String(body.id),
+                            { role: 'agent', meta, content: { type: AGENT_MESSAGE_PAYLOAD_TYPE, data: body } },
+                            9999, (turn.completed_at ?? turn.started_at!) * 1000);
+                    } } as unknown as ApiSessionClient;
+                    await new SharedCodexProjection(sink, this.threadId, async () => {}).notification('turn/completed', {
+                        threadId: this.threadId, turn: { id: turn.turn_id, status: turn.status,
+                            startedAt: turn.started_at, error: index.failure(turn.turn_id) },
+                    });
+                }
                 continue;
             }
             const entry = bodies.get(`${source.item.turn_id}:${source.item.item_id}`)!;
@@ -143,18 +168,26 @@ export class NativeIndexedHistory {
             let ordinal = 0;
             const emitted = new Map<string, number>();
             const write = (content: unknown, stableId: string) => {
+                // The native sparse index owns lifecycle facts. The single-item
+                // wrapper below only drives the legacy content converter.
+                const envelope = record(content);
+                const payload = record(record(envelope.content).data);
+                const nativeExecution = { threadId: this.threadId, turnId: turn.turn_id, itemId: source.item.item_id,
+                    ...(record(payload.nativeExecution).phase ? { phase: record(payload.nativeExecution).phase } : {}),
+                    turn: nativeTurnState(turn.status, turn.started_at !== null, turn.rollout_end_ordinal !== null) };
+                content = { ...envelope, meta: { ...record(envelope.meta), nativeExecution } };
                 const id = `native:${this.threadId}:${turn.turn_id}:${source.item.item_id}:${encodeURIComponent(stableId)}`;
                 const order = emitted.get(id) ?? ++ordinal; emitted.set(id, order);
                 append(id, stableId, content, order, source.item.started_at_ms ?? source.item.created_at_ms);
             };
             const sink = { getMetadata: () => null, updateMetadata: () => {},
-                sendUserMessage: (text: string, _meta: unknown, id: string, parts?: ChatContentPart[]) => write({ role: 'user', content: userContentWithParts(text, parts), meta: { sentFrom: 'cli' } }, id),
+                sendUserMessage: (text: string, meta: unknown, id: string, parts?: ChatContentPart[]) => write({ role: 'user', content: userContentWithParts(text, parts), meta: { sentFrom: 'cli', ...record(meta) } }, id),
                 sendAgentMessage: (body: unknown) => write({ role: 'agent', content: { type: AGENT_MESSAGE_PAYLOAD_TYPE, data: body }, meta: { sentFrom: 'cli' } }, string(record(body).id)!),
                 sendSessionEvent: (event: unknown, id: string) => write({ role: 'agent', content: { type: 'event', data: event, id } }, id)
             } as unknown as ApiSessionClient;
             // Terminal status is projected exactly once by its own metadata row.
             await new SharedCodexProjection(sink, this.threadId, async () => {}, undefined, true).history({ turns: [{ id: turn.turn_id,
-                status: 'completed', items: [entry.item] }] });
+                status: 'completed', items: [entry.item] }] }, false);
             for (const id of previousIds) if (!emitted.has(id)) { this.cached.delete(id); this.epoch = freshNativeHistoryEpoch(); }
         }
         while (this.cached.size > 512) this.cached.delete(this.cached.keys().next().value!);
@@ -176,9 +209,9 @@ export class NativeIndexedHistory {
     }
     private anchor(index: NativeHistoryMetadata, id: string): Source {
         const parts = id.split(':');
-        if (parts[0] === 'native-turn-status' && parts[1] === this.threadId && parts[3] === 'turn_aborted') {
+        if (parts[0] === 'native-turn-status' && parts[1] === this.threadId && ['turn_aborted', 'error'].includes(parts[3])) {
             const turn = index.turn(parts[2]);
-            if (turn.status !== 'interrupted') throw new NativeMetadataUnavailable();
+            if (turn.status !== (parts[3] === 'error' ? 'failed' : 'interrupted')) throw new NativeMetadataUnavailable();
             return { kind: 'turn', ordinal: turn.rollout_end_ordinal!, turn };
         }
         if (parts[0] !== 'native' || parts[1] !== this.threadId || !parts[2] || !parts[3]) throw new Error('Native message not found');
@@ -186,7 +219,7 @@ export class NativeIndexedHistory {
         return { kind: 'item', ordinal: item.rollout_ordinal, item };
     }
     async read(raw: unknown): Promise<MessagesResponse | MessageContextResponse | MessageOutlineResponse> {
-        const revision = this.revision;
+        const resetRevision = this.resetRevision;
         let database: ReturnType<typeof openNativeMetadata> | undefined;
         try {
             if (!this.home) throw new NativeMetadataUnavailable();
@@ -197,6 +230,7 @@ export class NativeIndexedHistory {
             database.query('BEGIN').get();
             const index = new NativeHistoryMetadata(database, this.threadId, generations.ids, generations.cutovers);
             await this.synchronize(index);
+            index.setInterruptedWithoutEnd(this.interruptedWithoutEnd);
             // Earlier projections can still receive late metadata updates.
             // A changed generation span invalidates old coordinates before
             // applying any cursor; stable message IDs remain context anchors.
@@ -207,11 +241,13 @@ export class NativeIndexedHistory {
             if (request.operation === 'context') result = await this.context(index, request);
             else if (request.operation === 'outline') result = await this.outline(index, request);
             else result = await this.page(index, request);
-            if (revision !== this.revision) throw new NativeMetadataUnavailable();
+            // Appends do not invalidate the prefix captured by this read
+            // transaction. Only structural resets revoke its coordinates.
+            if (resetRevision !== this.resetRevision) throw new NativeMetadataUnavailable();
             if (this.epoch !== epochBeforeRead && request.operation !== 'context' && request.operation !== 'outline')
-                result = await this.page(index, { ...request, beforeAt: undefined, beforeSeq: undefined, afterAt: undefined, afterSeq: undefined });
+                result = await this.page(index, { ...request, epoch: undefined, beforeAt: undefined, beforeSeq: undefined, afterAt: undefined, afterSeq: undefined });
             result.page.reset = request.epoch !== undefined && request.epoch !== this.epoch;
-            if (revision !== this.revision) throw new NativeMetadataUnavailable();
+            if (resetRevision !== this.resetRevision) throw new NativeMetadataUnavailable();
             return result;
         } catch (error) {
             this.dirty = true;

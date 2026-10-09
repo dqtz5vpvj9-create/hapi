@@ -45,7 +45,7 @@ describe('shared history projection', () => {
         const original = send.mock.calls.slice(1, 3);
         projection.reset(); send.mockClear();
         await projection.history({ turns: [{ id: 'turn', status: 'completed', items: [item] }] });
-        expect(send.mock.calls).toEqual(original);
+        expect(send.mock.calls.filter(([body]) => (parentThreadId ? body.message : body)?.type?.startsWith('tool-call'))).toMatchObject(original);
     });
 
     it('waits for final proposal content after an active snapshot', async () => {
@@ -53,7 +53,8 @@ describe('shared history projection', () => {
         const session = { getMetadata: () => ({}), sendAgentMessage: send } as unknown as ApiSessionClient;
         const projection = new SharedCodexProjection(session, 'thread', async () => {});
         await projection.history({ turns: [{ id: 'turn', status: 'inProgress', items: [{ id: 'plan', type: 'plan', text: 'partial' }] }] });
-        expect(send).not.toHaveBeenCalled();
+        expect(send.mock.calls.every(([body]) => body.type === 'native-turn')).toBe(true);
+        send.mockClear();
         await projection.notification('item/completed', { threadId: 'thread', turnId: 'turn', item: { id: 'plan', type: 'plan', text: 'final' } });
         expect(send.mock.calls[0][0]).toMatchObject({ input: { plan: 'final' } });
         expect(send.mock.calls[1][0]).toMatchObject({ output: null });
@@ -117,14 +118,16 @@ describe('shared history projection', () => {
         const projection = new SharedCodexProjection(session, 'thread', async () => {});
         const snapshot = { turns: [{ id: 'turn', status: 'completed', items: [{ id: 'item', type: 'agentMessage', text: 'complete' }] }] };
         await projection.history(snapshot); projection.reset(); await projection.history(snapshot);
-        expect(send).toHaveBeenCalledTimes(2); expect(send.mock.calls[0]).toEqual(send.mock.calls[1]);
+        const replies = send.mock.calls.filter(([body]) => body.type === 'message');
+        expect(replies).toHaveLength(2); expect(replies[0]).toEqual(replies[1]);
     });
     it('does not settle an active snapshot under the final message id', async () => {
         const send = vi.fn();
         const session = { getMetadata: () => ({}), sendAgentMessage: send } as unknown as ApiSessionClient;
         const projection = new SharedCodexProjection(session, 'thread', async () => {});
         await projection.history({ turns: [{ id: 'turn', status: 'inProgress', items: [{ id: 'item', type: 'agentMessage', text: 'partial' }] }] });
-        expect(send).not.toHaveBeenCalled();
+        expect(send.mock.calls.every(([body]) => body.type === 'native-turn')).toBe(true);
+        send.mockClear();
         await projection.notification('item/completed', { threadId: 'thread', turnId: 'turn', item: { id: 'item', type: 'agentMessage', text: 'complete' } });
         expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'message', message: 'complete' }), expect.any(String));
     });
@@ -140,6 +143,33 @@ describe('shared history projection', () => {
 });
 
 describe('native assistant text streaming', () => {
+    it('carries one native identity and phase from deltas into settlement, without borrowing a reused item phase', async () => {
+        const send = vi.fn();
+        const projection = new SharedCodexProjection({ getMetadata: () => ({}), sendAgentMessage: send } as unknown as ApiSessionClient, 'thread', async () => {});
+        await projection.notification('turn/started', { turn: { id: 'turn-a', status: 'inProgress' } });
+        await projection.notification('item/started', { turnId: 'turn-a', item: { id: 'item', type: 'agentMessage', phase: 'final_answer', text: '' } });
+        await projection.notification('item/agentMessage/delta', { turnId: 'turn-a', itemId: 'item', delta: 'First' });
+        await projection.notification('item/completed', { turnId: 'turn-a', item: { id: 'item', type: 'agentMessage', phase: 'final_answer', text: 'First answer' } });
+        await projection.notification('turn/completed', { turn: { id: 'turn-a', status: 'completed' } });
+        const text = send.mock.calls.map(([body]) => body).filter(body => body.type === 'message');
+        expect(text.map(body => body.id)).toEqual([text[0].id, text[0].id]);
+        expect(text.every(body => body.nativeExecution.phase === 'final_answer' && body.nativeExecution.turnId === 'turn-a')).toBe(true);
+        expect(send.mock.lastCall?.[0].nativeExecution.turn).toEqual({ status: 'completed', started: true, ended: true });
+        await projection.notification('item/agentMessage/delta', { turnId: 'turn-b', itemId: 'item', delta: 'Unknown phase' });
+        expect(send.mock.lastCall?.[0].nativeExecution.phase).toBeUndefined();
+    });
+
+    it('does not manufacture lifecycle facts from a single-item conversion wrapper or a missing start timestamp', async () => {
+        const send = vi.fn();
+        const projection = new SharedCodexProjection({ getMetadata: () => ({}), sendAgentMessage: send } as unknown as ApiSessionClient, 'thread', async () => {});
+        const snapshot = { turns: [{ id: 'turn', status: 'completed', items: [{ id: 'item', type: 'agentMessage', phase: 'final_answer', text: 'Answer' }] }] };
+        await projection.history(snapshot, false);
+        expect(send.mock.calls).toHaveLength(1);
+        expect(send.mock.calls[0][0].nativeExecution).toEqual({ threadId: 'thread', turnId: 'turn', itemId: 'item', phase: 'final_answer' });
+        projection.reset(); send.mockClear();
+        await projection.history(snapshot);
+        expect(send.mock.calls.filter(([body]) => body.type === 'native-turn').every(([body]) => body.nativeExecution.turn.started === false)).toBe(true);
+    });
     it.each([undefined, 'parent'])('streams before completion and settles the same identity (parent: %s)', async parent => {
         const send = vi.fn();
         const projection = new SharedCodexProjection({ getMetadata: () => ({}), sendAgentMessage: send } as unknown as ApiSessionClient, 'thread', async () => {}, parent);

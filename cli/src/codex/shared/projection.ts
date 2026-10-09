@@ -1,3 +1,4 @@
+import { nativeTurnState, type NativeExecution } from '@hapi/protocol/nativeExecution';
 import { createHash } from 'node:crypto';
 import type { ApiSessionClient } from '@/api/apiSession';
 import { normalizeSessionDisplayTitle } from '@/agent/sessionDisplayRename';
@@ -37,6 +38,8 @@ export class SharedCodexProjection {
     private converter = new AppServerEventConverter();
     private readonly emitted = new Set<string>();
     private readonly textStreams = new Map<string, { text: string; sentAt: number }>();
+    private readonly itemPhases = new Map<string, NativeExecution['phase']>();
+    private readonly activeTurns = new Set<string>();
     private readonly turns = new Map<string, string>();
     private readonly turnModels = new Map<string, string>();
     // Unlike transcript emission, title side effects survive reset/replay.
@@ -49,7 +52,7 @@ export class SharedCodexProjection {
     }
 
     turnFor(id: string): string | undefined { return this.turns.get(id); }
-    reset(): void { this.converter = new AppServerEventConverter(); this.emitted.clear(); this.textStreams.clear(); }
+    reset(): void { this.converter = new AppServerEventConverter(); this.emitted.clear(); this.textStreams.clear(); this.itemPhases.clear(); this.activeTurns.clear(); }
     private send(body: Record<string, unknown>, key: string, snapshot = false): void {
         if (this.emitted.has(key)) return;
         if (!snapshot) this.emitted.add(key);
@@ -91,11 +94,12 @@ export class SharedCodexProjection {
         await this.project(method, params, modelAtReceipt);
     }
 
-    private async project(method: string, params: unknown, modelAtReceipt?: string): Promise<void> {
+    private async project(method: string, params: unknown, modelAtReceipt?: string, snapshotTurn?: NativeExecution['turn']): Promise<void> {
         if (method.startsWith('codex/event/')) return;
         const p = record(params);
         const item = record(p.item);
         const turnId = string(p.turnId) ?? string(record(p.turn).id);
+        if (turnId && method === 'turn/started') this.activeTurns.add(turnId);
         // Settings may already describe the next turn by the time queued
         // notifications are projected. Never attribute usage to that model.
         if (turnId && method === 'turn/started' && modelAtReceipt && !this.turnModels.has(turnId)) {
@@ -105,6 +109,20 @@ export class SharedCodexProjection {
             this.turnModels.set(turnId, string(p.toModel)!);
         }
         const itemId = string(item.id) ?? string(p.itemId);
+        const phaseKey = `${turnId}:${itemId}`;
+        if (itemId && (item.phase === 'commentary' || item.phase === 'final_answer')) this.itemPhases.set(phaseKey, item.phase);
+        const nativeExecution: NativeExecution | undefined = turnId ? {
+            threadId: this.threadId, turnId, ...(itemId ? { itemId } : {}),
+            ...(itemId && this.itemPhases.get(phaseKey) ? { phase: this.itemPhases.get(phaseKey) } : {}),
+            ...((snapshotTurn || p.turn) ? { turn: snapshotTurn ?? nativeTurnState(record(p.turn).status,
+                record(p.turn).startedAt != null || this.activeTurns.has(turnId), method === 'turn/completed') } : {})
+        } : undefined;
+        if (turnId && method === 'turn/completed') this.activeTurns.delete(turnId);
+        const send = (body: Record<string, unknown>, key: string, snapshot = false) =>
+            this.send({ ...body, ...(nativeExecution ? { nativeExecution } : {}) }, key, snapshot);
+        if (!this.parentThreadId && nativeExecution && (method === 'turn/started' || method === 'turn/completed')) {
+            send({ type: 'native-turn' }, `lifecycle:${turnId}:${method}`);
+        }
         const textKey = `${turnId ?? 'thread'}:${itemId}:agent_message`;
         if (method === 'item/started' && item.type === 'agentMessage' && itemId && typeof item.text === 'string'
             && !this.emitted.has(textKey) && !this.textStreams.has(textKey)) {
@@ -119,7 +137,7 @@ export class SharedCodexProjection {
             // joins provisional text and the authoritative completed item in Web.
             const now = Date.now();
             if (now - stream.sentAt >= 120 && stream.text.trim()) {
-                this.send({ type: 'message', message: stream.text, streamSnapshot: true }, textKey, true);
+                send({ type: 'message', message: stream.text, streamSnapshot: true }, textKey, true);
                 stream.sentAt = now;
             }
             return;
@@ -134,14 +152,14 @@ export class SharedCodexProjection {
                 const { parts } = projectNativeContent(this.threadId, turnId ?? '', item);
                 const text = parts.filter(part => part.type === 'text').map(part => part.text).join('\n');
                 const rich = parts.some(part => part.type !== 'text');
-                if (text || parts.length) this.session.sendUserMessage(text, undefined, id, rich ? parts : undefined);
+                if (text || parts.length) this.session.sendUserMessage(text, { nativeExecution }, id, rich ? parts : undefined);
                 this.session.updateMetadata(metadata => ({ ...metadata, conversationHistoryTurns: Object.fromEntries(this.turns),
                     ...(turnId && (!firstInTurn || firstInTurn === id) ? { conversationHistoryPoints: { ...metadata.conversationHistoryPoints, [id]: true } } : {})
                 }));
             }
         }
         if (this.parentThreadId && (method === 'turn/started' || method === 'turn/completed')) {
-            this.send({ type: 'agent-run-update', agentId: this.threadId, cardId: `codex-agent:${this.threadId}`,
+            send({ type: 'agent-run-update', agentId: this.threadId, cardId: `codex-agent:${this.threadId}`,
                 status: method === 'turn/started' ? 'running' : record(p.turn).status === 'completed' ? 'completed' : 'failed'
             }, `lifecycle:${turnId}:${method}`);
         }
@@ -149,10 +167,10 @@ export class SharedCodexProjection {
         if (special && itemId && turnId && (method === 'item/started' || method === 'item/completed')) {
             const name = string(item.tool) ?? string(item.name) ?? String(item.type);
             const key = `${turnId}:${itemId}`;
-            this.send({ type: 'tool-call', name, callId: itemId, input: item.arguments ?? { path: item.path, prompt: item.revisedPrompt } }, `${key}:native-tool-start`);
+            send({ type: 'tool-call', name, callId: itemId, input: item.arguments ?? { path: item.path, prompt: item.revisedPrompt } }, `${key}:native-tool-start`);
             if (method === 'item/completed') {
                 const { parts } = projectNativeContent(this.threadId, turnId, item);
-                this.send({ type: 'tool-call-result', callId: itemId, output: { content: parts },
+                send({ type: 'tool-call-result', callId: itemId, output: { content: parts },
                     is_error: item.success === false || item.status === 'failed' || item.failure != null }, `${key}:native-tool-end`);
             }
             return;
@@ -163,40 +181,40 @@ export class SharedCodexProjection {
             const key = `${turnId ?? 'thread'}:${itemId ?? callId ?? createHash('sha256').update(JSON.stringify(event)).digest('hex')}:${event.type}`;
             if (event.type === 'agent_message') {
                 this.textStreams.delete(key);
-                this.send({ type: 'message', message: event.message, streamSnapshot: true }, key);
+                send({ type: 'message', message: event.message, streamSnapshot: true }, key);
             }
-            else if (event.type === 'agent_reasoning') this.send({ type: 'reasoning', message: event.text }, key);
+            else if (event.type === 'agent_reasoning') send({ type: 'reasoning', message: event.text }, key);
             else if (event.type === 'exec_command_begin' && callId) {
-                this.send({ type: 'tool-call', name: 'CodexBash', callId, input: event }, key);
+                send({ type: 'tool-call', name: 'CodexBash', callId, input: event }, key);
             } else if (event.type === 'exec_command_end' && callId) {
-                this.send({ type: 'tool-call-result', callId, output: { ...event, stdout: event.output } }, key);
+                send({ type: 'tool-call-result', callId, output: { ...event, stdout: event.output } }, key);
             } else if (event.type === 'patch_apply_begin' && callId) {
-                this.send({ type: 'tool-call', name: 'CodexPatch', callId, input: { changes: event.changes, auto_approved: event.auto_approved } }, key);
+                send({ type: 'tool-call', name: 'CodexPatch', callId, input: { changes: event.changes, auto_approved: event.auto_approved } }, key);
             } else if (event.type === 'patch_apply_end' && callId) {
-                this.send({ type: 'tool-call-result', callId, output: { stdout: event.stdout, stderr: event.stderr, success: event.success } }, key);
+                send({ type: 'tool-call-result', callId, output: { stdout: event.stdout, stderr: event.stderr, success: event.success } }, key);
             } else if (event.type === 'mcp_tool_call_begin' && callId) {
                 const invocation = record(event.invocation);
-                this.send({ type: 'tool-call', name: `mcp__${invocation.server}__${invocation.tool}`, callId, input: invocation.arguments ?? {} }, key);
+                send({ type: 'tool-call', name: `mcp__${invocation.server}__${invocation.tool}`, callId, input: invocation.arguments ?? {} }, key);
             } else if (event.type === 'mcp_tool_call_end' && callId) {
                 const result = record(event.result);
-                this.send({ type: 'tool-call-result', callId, output: item.type === 'mcpToolCall' && projectNativeContent(this.threadId, turnId ?? '', item).parts.some(part => part.type !== 'text')
+                send({ type: 'tool-call-result', callId, output: item.type === 'mcpToolCall' && projectNativeContent(this.threadId, turnId ?? '', item).parts.some(part => part.type !== 'text')
                     ? { content: projectNativeContent(this.threadId, turnId ?? '', item).parts }
                     : result.Ok ?? result.Err ?? event.result, is_error: 'Err' in result }, key);
             } else if (event.type === 'codex_tool_call_begin' && callId) {
-                this.send({ type: 'tool-call', name: event.name, callId, input: event.input ?? event.arguments }, key);
+                send({ type: 'tool-call', name: event.name, callId, input: event.input ?? event.arguments }, key);
             } else if (event.type === 'codex_tool_call_end' && callId) {
-                this.send({ type: 'tool-call-result', callId, output: event.output, is_error: event.is_error }, key);
+                send({ type: 'tool-call-result', callId, output: event.output, is_error: event.is_error }, key);
             } else if (event.type === 'token_count' || event.type === 'context_compacted' || event.type.startsWith('thread_goal_')) {
                 const model = event.type === 'token_count' && turnId ? this.turnModels.get(turnId) : undefined;
-                this.send({ ...event, ...(model ? { model } : {}), flavor: 'codex', scope: { role: 'parent', threadId: this.threadId }, scope_role: 'parent', thread_id: this.threadId }, key);
+                send({ ...event, ...(model ? { model } : {}), flavor: 'codex', scope: { role: 'parent', threadId: this.threadId }, scope_role: 'parent', thread_id: this.threadId }, key);
             } else if (event.type === 'proposed_plan' && turnId && itemId) {
                 const planId = codexPlanProposalId(this.threadId, turnId, itemId);
-                this.send({ type: 'tool-call', name: 'ExitPlanMode', callId: planId, input: { plan: event.plan } }, key);
+                send({ type: 'tool-call', name: 'ExitPlanMode', callId: planId, input: { plan: event.plan } }, key);
                 // A proposal is durable content, not a native approval request.
-                this.send({ type: 'tool-call-result', callId: planId, output: null }, `${key}:result`);
+                send({ type: 'tool-call-result', callId: planId, output: null }, `${key}:result`);
             } else if (event.type === 'plan_update') {
-                this.send({ type: 'tool-call', name: 'update_plan', callId: 'codex-plan-state', input: { plan: event.plan, source: 'codex' } }, key);
-                this.send({ type: 'tool-call-result', callId: 'codex-plan-state', output: { plan: event.plan, source: 'codex', status: 'updated' } }, `${key}:result`);
+                send({ type: 'tool-call', name: 'update_plan', callId: 'codex-plan-state', input: { plan: event.plan, source: 'codex' } }, key);
+                send({ type: 'tool-call-result', callId: 'codex-plan-state', output: { plan: event.plan, source: 'codex', status: 'updated' } }, `${key}:result`);
             } else if (event.type === 'turn_aborted' && !this.parentThreadId) {
                 // Reuse the durable session status event, with a turn identity
                 // shared by live notifications and history replay.
@@ -206,14 +224,14 @@ export class SharedCodexProjection {
                     this.session.sendSessionEvent({ type: 'message', message: 'Aborted by user' }, `codex:${this.threadId}:${stopKey}`);
                 }
             } else if (event.type === 'task_failed') {
-                this.send({ type: 'error', message: `Codex error: ${event.error ?? event.message ?? 'Turn failed'}` }, key);
+                send({ type: 'error', message: `Codex error: ${event.error ?? event.message ?? 'Turn failed'}` }, key);
             }
         }
         if (item.type === 'collabAgentToolCall') {
             const states = record(item.agentsStates);
             for (const [agentId, state] of Object.entries(states)) {
                 const status = string(record(state).status) ?? 'running';
-                this.send({ type: 'agent-run-update', agentId, cardId: `codex-agent:${agentId}`,
+                send({ type: 'agent-run-update', agentId, cardId: `codex-agent:${agentId}`,
                     status: status === 'completed' ? 'completed' : status === 'errored' ? 'failed' : 'running',
                     summary: record(state).message, input: item, scope: { role: 'child', threadId: agentId, parentThreadId: this.threadId }, scope_role: 'child', thread_id: agentId
                 }, `agent:${agentId}:${itemId}:${method}:${JSON.stringify(state)}`);
@@ -221,7 +239,7 @@ export class SharedCodexProjection {
         }
     }
 
-    async history(thread: unknown): Promise<void> {
+    async history(thread: unknown, emitLifecycle = true): Promise<void> {
         const turns = record(thread).turns;
         if (!Array.isArray(turns)) return;
         const titleRevision = this.titleRevision;
@@ -229,6 +247,11 @@ export class SharedCodexProjection {
         for (const value of turns) {
             const turn = record(value);
             if (!Array.isArray(turn.items)) continue;
+            const terminal = ['completed', 'failed', 'error', 'interrupted', 'cancelled', 'canceled'].includes(String(turn.status));
+            const facts = emitLifecycle ? nativeTurnState(turn.status, turn.startedAt != null, terminal) : undefined;
+            if (facts && !this.parentThreadId) this.send({ type: 'native-turn', nativeExecution: {
+                threadId: this.threadId, turnId: turn.id, turn: facts,
+            } }, `lifecycle:${turn.id}:history:${turn.status}`);
             for (const item of turn.items) {
                 const params = { threadId: this.threadId, turnId: turn.id, item };
                 const titleKey = `${string(turn.id) ?? 'thread'}:${record(item).id}`;
@@ -236,7 +259,7 @@ export class SharedCodexProjection {
                 if (!this.parentThreadId && string(record(item).id) && pendingTitle && !this.completedTitles.has(titleKey)) {
                     this.pendingTitles.set(titleKey, pendingTitle);
                 }
-                await this.project('item/started', params);
+                await this.project('item/started', params, undefined, facts);
                 // Active snapshots can contain partial assistant text. Do not
                 // settle it under the final stable id and suppress completion.
                 if (turn.status !== 'inProgress' || record(item).status === 'completed' || record(item).type === 'userMessage') {
@@ -248,13 +271,13 @@ export class SharedCodexProjection {
                         }
                         this.pendingTitles.delete(titleKey);
                     }
-                    await this.project('item/completed', params);
+                    await this.project('item/completed', params, undefined, facts);
                 }
             }
             // A terminal turn may have no assistant item. Replay its status as
             // well as its items so reconnecting cannot silently hide it.
-            if (['failed', 'error', 'interrupted', 'cancelled', 'canceled'].includes(String(turn.status))) {
-                await this.project('turn/completed', { threadId: this.threadId, turn });
+            if (emitLifecycle && terminal) {
+                await this.project('turn/completed', { threadId: this.threadId, turn }, undefined, facts);
             }
         }
         // Repair sessions created while remote title projection was missing.
