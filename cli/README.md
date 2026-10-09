@@ -300,3 +300,7 @@ Android's `-PhapiVersionName` override is preserved.
 
 - `../hub/README.md`
 - `../web/README.md`
+
+### Offline test portability
+
+Tests create isolated fixtures with `join(tmpdir(), prefix)` and remove them after each test; they do not depend on a developer's `/mnt/cache` directory. The real native-name integration suite is opt-in via `HAPI_RUN_NATIVE_CODEX_TESTS=true` and requires a locally installed compatible Codex CLI. Default test runs skip it. It must not be enabled when native CLI execution is prohibited.

@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { NativeStopFixture } from '@/test/nativeStopFixture';
@@ -7,7 +9,7 @@ import type { MessageDependenciesResponse, MessagesResponse } from '@hapi/protoc
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 async function fixture() {
-    const home = await mkdtemp('/mnt/cache/data-cache/native-nested-test-');
+    const home = await mkdtemp(join(tmpdir(), 'native-nested-test-'));
     const sources = new Map(['root', 'child', 'grandchild', 'unrelated'].map(id => [id, new NativeStopFixture(home, id)]));
     cleanups.push(async () => { for (const source of sources.values()) source.close(); await rm(home, { recursive: true, force: true }); });
     const add = (thread: string, id: string, item: Record<string, unknown>) => {
@@ -102,7 +104,7 @@ describe('indexed nested dependency user flow', () => {
 
 describe('dependencies-first shared native coordinate epoch', () => {
     it.each(['ancestor', 'replacement', 'descendant'] as const)('resets %s changes before returning dependency coordinates and keeps page/context coherent', async mode => {
-        const home = await mkdtemp('/mnt/cache/data-cache/native-deps-first-');
+        const home = await mkdtemp(join(tmpdir(), 'native-deps-first-'));
         const root = '11111111-1111-1111-1111-111111111111';
         const parent = '22222222-2222-2222-2222-222222222222';
         const child = '33333333-3333-3333-3333-333333333333';

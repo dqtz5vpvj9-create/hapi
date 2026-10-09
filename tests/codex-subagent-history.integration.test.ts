@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
@@ -10,7 +11,7 @@ describe('bounded native subagent transcript reader', () => {
     let database: Database
     const threadId = randomUUID()
     beforeEach(() => {
-        home = mkdtempSync('/mnt/cache/data-cache/hapi-runtime/subagent-reader-')
+        home = mkdtempSync(join(tmpdir(), 'subagent-reader-'))
         mkdirSync(join(home, 'sessions'))
         database = new Database(join(home, 'state_5.sqlite'))
         database.exec('CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT)')

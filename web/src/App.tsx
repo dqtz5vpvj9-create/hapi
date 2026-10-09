@@ -1,3 +1,4 @@
+import { workspacePresentation } from '@/workspace/presentation'
 import { WorkspaceStore, workspaceStorageKey, panes } from '@/workspace/workspaceStore'
 import { WorkspaceSync } from '@/workspace/workspaceSync'
 import { useNarrowViewport } from '@/hooks/useNarrowViewport'
@@ -196,7 +197,7 @@ function AppInner() {
         }
     }, [workspace, api])
     const workspaceState = useSyncExternalStore(workspace.subscribe, workspace.get)
-    const workspaceActive = pathname === '/sessions/workspace'
+    const workspaceActive = workspacePresentation(workspaceState.mode, pathname)
     const narrowWorkspace = useNarrowViewport()
     const visibleSessionIds = useMemo(() => {
         const active = workspaceState.workspaces.find(w => w.id === workspaceState.activeId)

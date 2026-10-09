@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, rm, access } from 'node:fs/promises';
@@ -10,8 +11,9 @@ import { SharedCodexRoot } from './root';
 import { record } from './gateway';
 import { initializeSharedClient, resolveSharedCodex } from './launch';
 
-it('syncs real native renames, repairs missed events and reconnects without loading messages or calling a model', async () => {
-    const directory = await mkdtemp('/mnt/cache/data-cache/hapi-title-integration-');
+// This suite starts an installed native CLI. Ordinary unit/CI runs must be offline.
+it.skipIf(process.env.HAPI_RUN_NATIVE_CODEX_TESTS !== 'true')('syncs real native renames, repairs missed events and reconnects without loading messages or calling a model', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'hapi-title-integration-'));
     const home = join(directory, 'codex');
     await mkdir(home);
     await writeFile(join(home, 'config.toml'), 'model = "mock"\nmodel_provider = "mock"\n[model_providers.mock]\nname = "No model calls"\nbase_url = "http://127.0.0.1:1/v1"\nwire_api = "responses"\nrequires_openai_auth = false\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n');

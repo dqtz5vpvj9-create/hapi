@@ -71,7 +71,9 @@ export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foregro
         }
         if (options.to === '/sessions/$sessionId' && target?.sessionId) {
             if (target.sessionId !== sessionId) store.bind(pane.id, { kind: 'chat', sessionId: target.sessionId }, sessionId)
-            setTool(null); return
+            setTool(null)
+            if (store.focusedPane()?.id === pane.id) await routeNavigate(options)
+            return
         }
         await routeNavigate(options)
     }, [store, pane, sessionId, session?.metadata?.path, session?.metadata?.machineId, routeNavigate])

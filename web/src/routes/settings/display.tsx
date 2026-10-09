@@ -1,3 +1,5 @@
+import { useAppContext } from '@/lib/app-context'
+import { useSyncExternalStore } from 'react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from '@/lib/use-translation'
 import { getAppearanceOptions, useAppearance } from '@/hooks/useTheme'
@@ -151,6 +153,8 @@ function ThemeColorControls() {
 }
 
 export default function SettingsDisplayPage() {
+    const { workspace } = useAppContext()
+    const workspaceState = useSyncExternalStore(workspace?.subscribe ?? (() => () => {}), workspace?.get ?? (() => null))
     const { t } = useTranslation()
     const { appearance, setAppearance } = useAppearance()
     const { fontScale, setFontScale } = useFontScale()
@@ -176,6 +180,11 @@ export default function SettingsDisplayPage() {
 
     return (
         <SettingsPageContent description={t('settings.display.description')}>
+            <SettingsSection title={t('workspace.mode')}>
+                <SettingsChoiceGroup label={t('workspace.mode')} value={workspaceState?.mode ?? 'single'} columns={2}
+                    options={[{ value: 'single', label: t('workspace.single') }, { value: 'workspace', label: 'tmux' }]}
+                    onChange={value => { if (value === 'workspace') workspace?.enter(); else workspace?.leave() }} />
+            </SettingsSection>
             <SettingsSection title={t('settings.display.appearance')}>
                 <SettingsChoiceGroup
                     label={t('settings.display.appearanceMode')}

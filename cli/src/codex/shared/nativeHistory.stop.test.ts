@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { NativeCodexHistory } from './nativeHistory';
@@ -7,7 +9,7 @@ import type { MessagesResponse, MessageContextResponse, MessageOutlineResponse, 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 async function fixture() {
-    const home = await mkdtemp('/mnt/cache/data-cache/native-stop-test-');
+    const home = await mkdtemp(join(tmpdir(), 'native-stop-test-'));
     const source = new NativeStopFixture(home);
     cleanups.push(async () => { source.close(); await rm(home, { recursive: true, force: true }); });
     return { home, source, history: new NativeCodexHistory('thread', source, home) };
@@ -184,7 +186,7 @@ describe('native sparse terminal-status history', () => {
             FROM thread_items WHERE thread_id=? AND rollout_ordinal<=? AND item_type='userMessage'
             ORDER BY rollout_ordinal DESC LIMIT 32`).all('thread', Number.MAX_SAFE_INTEGER).map(row => row.detail);
         expect(plan.some(row => row.includes('idx_thread_items_user_messages'))).toBe(true);
-        await writeFile('/mnt/cache/data-cache/hapi-pipeline/repair/native-stop-revalidation/outline-fixture-cost.json', JSON.stringify({
+        await writeFile(join(source.home, 'outline-fixture-cost.json'), JSON.stringify({
             scope: 'actual SQLite fixture + actual NativeIndexedHistory + strict issued-cursor RPC',
             turns: 1000, selectedUserEntries: outline.entries.length, totalNativeCalls: source.calls.length,
             bodyCalls: bodyCalls.length, rawBodyRows: bodyCalls.reduce((sum, call) => sum + call.count, 0),

@@ -449,3 +449,9 @@ one line; exploration grouping and shared protocol fixtures are unchanged.
 
 `e2e/codex-command-presentation.spec.ts` checks single-line ellipsis, hidden
 output, detail opening/closing and no horizontal overflow at 390px and 1280px.
+
+### Persistent tmux presentation
+
+View mode is a device-local preference, selectable in the session header and Display settings. Ordinary `/sessions/:id` links open/focus that conversation within the existing workspace when tmux is selected. Route changes, Back/Forward, settings and task creation do not change the preference. `/sessions/workspace` is a legacy landing URL and does not override an explicit ordinary-mode choice. Temporary session screens retain the workspace, disable its shortcuts and mark its panes inactive until return. Switching back to ordinary mode is explicit and preserves the saved layout.
+
+Regression coverage: `workspace-mode.spec.ts` exercises the real router with a simulated Hub at desktop and phone widths; `presentation.test.ts` covers URL classification. No model calls are required.

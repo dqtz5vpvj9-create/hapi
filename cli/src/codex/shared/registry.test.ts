@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -10,7 +11,7 @@ import { findRuntime, readRuntimes, runtimeAlive, runtimeAuthHash, runtimeMayBeA
 const directories: string[] = [];
 afterEach(async () => { state.processes.clear(); state.auth = 'token'; await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
 async function fixture(): Promise<CodexRuntimeRecord> {
-    const home = await mkdtemp('/mnt/cache/data-cache/hapi-owner-'); directories.push(home); state.home = join(home, 'hapi');
+    const home = await mkdtemp(join(tmpdir(), 'hapi-owner-')); directories.push(home); state.home = join(home, 'hapi');
     return { id: 'owner', pid: 1111, marker: 'worker-start', serverPid: 2222, serverMarker: 'server-start', command: 'codex', args: [],
         codexHome: join(home, 'codex'), endpoint: 'unix://private', hub: 'hub', authHash: runtimeAuthHash(),
         sessions: { sid: { threadId: 'thread', namespace: 'ns', active: true } } };

@@ -171,6 +171,10 @@ const probe = {
             stream.emit({ type: 'message-received', sessionId, message: next })
         }
     },
+    navigate: (to: string) => router.navigate({ to }),
+    back: () => router.history.back(),
+    forward: () => router.history.forward(),
+    pathname: () => router.state.location.pathname,
     connections: () => [...streams].map(s => s.url),
 }
 declare global { interface Window { __workspaceFixture: typeof probe } }

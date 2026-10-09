@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -6,7 +7,7 @@ import { searchLocalCodexSessions } from '../cli/src/modules/common/codexSession
 
 describe('incremental Codex session search', () => {
     it('finds old names beyond 200, pages without gaps, and applies literal search and directory filters before pagination', () => {
-        const home = mkdtempSync('/mnt/cache/data-cache/hapi-codex-search-')
+        const home = mkdtempSync(join(tmpdir(), 'hapi-codex-search-'))
         const previous = process.env.CODEX_HOME
         process.env.CODEX_HOME = home
         const db = new Database(join(home, 'state_5.sqlite'))

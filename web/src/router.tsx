@@ -1,3 +1,4 @@
+import { workspacePresentation, workspaceChatTarget } from '@/workspace/presentation'
 import { WorkspaceIcon } from '@/workspace/WorkspaceIcon'
 import { getRecentSessionWarmup } from '@/lib/recent-session-warmup'
 import { SessionPaneController } from '@/components/SessionPaneController'
@@ -14,6 +15,7 @@ import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 
 import { SessionList } from '@/components/SessionList'
 import { SessionQuickSwitcher } from '@/components/SessionQuickSwitcher'
+const WorkspaceShell = lazyRouteComponent(() => import('@/workspace/WorkspaceShell'), 'WorkspaceShell')
 const NewSession = lazyRouteComponent(() => import('@/components/NewSession'), 'NewSession')
 import { WorkspaceBrowser } from '@/components/WorkspaceBrowser'
 import { LoadingState } from '@/components/LoadingState'
@@ -190,9 +192,10 @@ function SessionsPage() {
     const workspaceState = useSyncExternalStore(workspace?.subscribe ?? (() => () => {}), workspace?.get ?? (() => null))
     const listView = useLocation({ select: location => location.search.view === 'list' })
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
+        || (pathname === '/sessions/workspace' && workspaceState?.mode !== 'workspace')
     const selectingWorkspace = isSessionsIndex && listView && workspaceState?.mode === 'workspace'
     const focusedResource = workspace?.focusedPane()?.resource
-    const selectedSessionId = pathname === '/sessions/workspace' || selectingWorkspace
+    const selectedSessionId = workspaceState?.mode === 'workspace'
         ? focusedResource?.kind === 'chat' ? focusedResource.sessionId : null
         : sessionMatch && sessionMatch.sessionId !== 'new' ? sessionMatch.sessionId : null
     const selectedSession = useMemo(
@@ -207,26 +210,38 @@ function SessionsPage() {
         setInitializedHub(baseUrl)
     }, [baseUrl, error, isLoading, sessions])
     useSelectedSessionSeen(selectedSessionId, selectedSession?.updatedAt)
-    const isWorkspace = pathname === '/sessions/workspace'
+    const isWorkspace = workspacePresentation(workspaceState?.mode, pathname)
+    const chatTarget = workspaceChatTarget(pathname)
+    useEffect(() => {
+        if (isWorkspace && chatTarget && workspaceState?.sync.initialized) workspace?.openSession(chatTarget)
+    }, [isWorkspace, chatTarget, workspace, workspaceState?.sync.initialized])
+    const showWorkspace = isWorkspace && (Boolean(chatTarget) || (isSessionsIndex && !listView) || pathname === '/sessions/workspace')
     const selectSession = (id: string) => {
         if ((isWorkspace || selectingWorkspace) && workspace) {
             if (workspace.openSession(id)) getRecentSessionWarmup(api).switchTo(id)
-            if (selectingWorkspace) navigate({ to: '/sessions/workspace', ...PRESERVE_SESSION_SIDEBAR_SCROLL })
+            navigate(getSessionListSelectionNavigation(id))
         } else navigate(getSessionListSelectionNavigation(id))
     }
     const openSessionInPane = (id: string, axis: 'horizontal' | 'vertical') => {
         if (!workspace) return
         if (!isWorkspace && !selectingWorkspace) workspace.enter(selectedSessionId)
         if (workspace.openSession(id, axis)) getRecentSessionWarmup(api).switchTo(id)
-        if (!isWorkspace) navigate({ to: '/sessions/workspace', ...PRESERVE_SESSION_SIDEBAR_SCROLL })
+        navigate(getSessionListSelectionNavigation(id))
     }
-    const modeControl = <button type="button" className="flex h-9 w-9 items-center justify-center rounded-md text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]" aria-label={t(selectingWorkspace ? 'workspace.return' : 'workspace.mode')} title={t(selectingWorkspace ? 'workspace.return' : isWorkspace ? 'workspace.single' : 'workspace.modeWorkspace')} aria-pressed={isWorkspace || selectingWorkspace}
+    const returnControl = selectingWorkspace ? <button type="button" className="h-9 rounded-md px-2 text-xs" aria-label={t('workspace.return')}
+        onClick={() => navigate({ to: '/sessions', ...PRESERVE_SESSION_SIDEBAR_SCROLL })}>{t('workspace.return')}</button> : null
+    const modeControl = <button type="button" className="flex h-9 items-center gap-1 rounded-md px-2 text-xs text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)]" aria-label={t('workspace.mode')} title={t('workspace.mode')} aria-pressed={workspaceState?.mode === 'workspace'}
         onClick={() => {
             if (!workspace) return
-            if (selectingWorkspace) navigate({ to: '/sessions/workspace', ...PRESERVE_SESSION_SIDEBAR_SCROLL })
-            else if (isWorkspace) { const id = workspace.leave(); navigate(id ? getSessionListSelectionNavigation(id) : { to: '/sessions' }) }
-            else { workspace.enter(selectedSessionId); navigate({ to: '/sessions/workspace', ...PRESERVE_SESSION_SIDEBAR_SCROLL }) }
-        }}><WorkspaceIcon /></button>
+            if (workspace.get().mode === 'workspace') {
+                const id = workspace.leave()
+                navigate(id ? getSessionListSelectionNavigation(id) : { to: '/sessions' })
+            } else {
+                workspace.enter(selectedSessionId)
+                if (selectedSessionId) workspace.openSession(selectedSessionId)
+                navigate(selectedSessionId ? getSessionListSelectionNavigation(selectedSessionId) : { to: '/sessions' })
+            }
+        }}><WorkspaceIcon /><span>{workspaceState?.mode === 'workspace' ? 'tmux' : t('workspace.single')}</span></button>
     const sidebar = useSidebarResize(isWorkspace)
     const handleNewSessionInDirectory = useCallback((args: { machineId: string | null; directory: string }) => {
         navigate({
@@ -249,7 +264,7 @@ function SessionsPage() {
             />
             <div className="app-session-layout flex h-full min-h-0" data-workspace-layout={isWorkspace || undefined}>
             <div
-                className={`app-session-sidebar-frame ${isSessionsIndex ? 'flex' : 'hidden split:flex'} w-full shrink-0 flex-col bg-[var(--app-bg)]`}
+                className={`app-session-sidebar-frame ${isSessionsIndex && !showWorkspace ? 'flex' : 'hidden split:flex'} w-full shrink-0 flex-col bg-[var(--app-bg)]`}
                 style={{ '--sidebar-w': `${sidebar.width}px` } as React.CSSProperties}
             >
                 <div className="app-session-sidebar flex min-h-0 flex-1 flex-col pt-[env(safe-area-inset-top)]">
@@ -277,7 +292,7 @@ function SessionsPage() {
                         renderHeader={false}
                         headerActions={<SessionListHeaderActions
                             compact={isWorkspace}
-                            viewModeControl={isWorkspace ? undefined : modeControl}
+                            viewModeControl={<>{returnControl}{modeControl}</>}
                             onSwitch={() => setQuickSwitchOpen(true)}
                             onBrowse={canBrowse ? () => navigate({ to: '/browse' }) : undefined}
                             onSettings={() => navigate({ to: '/settings' })}
@@ -298,9 +313,10 @@ function SessionsPage() {
                 onPointerDown={sidebar.onPointerDown}
             />
 
-            <div className={`${isSessionsIndex ? 'hidden split:flex' : 'flex'} min-w-0 flex-1 flex-col bg-[var(--app-bg)]`}>
-                <div className="flex-1 min-h-0">
-                    <Outlet />
+            <div className={`${isSessionsIndex && !showWorkspace ? 'hidden split:flex' : 'flex'} min-w-0 flex-1 flex-col bg-[var(--app-bg)]`}>
+                <div className="flex-1 min-h-0 relative">
+                    {isWorkspace ? <div className="h-full" hidden={!showWorkspace} inert={!showWorkspace}><WorkspaceShell foreground={showWorkspace} /></div> : null}
+                    {!showWorkspace ? <Outlet /> : null}
                 </div>
             </div>
             </div>
@@ -309,9 +325,7 @@ function SessionsPage() {
 }
 
 function SessionsIndexPage() {
-    const { workspace } = useAppContext()
-    const { view } = useSearch({ from: '/sessions/' })
-    return view !== 'list' && workspace?.get().mode === 'workspace' ? <Navigate to="/sessions/workspace" replace /> : null
+    return null
 }
 
 function SessionPage() {
@@ -568,7 +582,7 @@ const sessionsRoute = createRoute({
 const workspaceRoute = createRoute({
     getParentRoute: () => sessionsRoute,
     path: 'workspace',
-    component: lazyRouteComponent(() => import('@/workspace/WorkspaceShell'), 'WorkspaceShell'),
+    component: SessionsIndexPage,
 })
 
 const sessionsIndexRoute = createRoute({

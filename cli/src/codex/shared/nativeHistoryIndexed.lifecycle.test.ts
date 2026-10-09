@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -7,7 +8,7 @@ import { NativeHistoryMetadata, openNativeMetadata, NativeMetadataUnavailable } 
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 function fixture() {
-    const home = mkdtempSync('/mnt/cache/data-cache/indexed-lifecycle-'); dirs.push(home);
+    const home = mkdtempSync(join(tmpdir(), 'indexed-lifecycle-')); dirs.push(home);
     const f = new NativeStopFixture(home, '11111111-1111-1111-1111-111111111111');
     const request = async <T>(method: string, params?: unknown): Promise<T> => {
         if (method === 'thread/read') return { thread: { id: f.threadId } } as T;

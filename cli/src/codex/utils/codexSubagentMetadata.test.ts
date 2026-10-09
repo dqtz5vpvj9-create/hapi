@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -25,7 +26,7 @@ describe('Codex subagent lineage', () => {
         }
     });
     it('publishes primed transcript metadata without replaying historical messages', async () => {
-        const dir = await mkdtemp(join(process.env.TMPDIR ?? '/mnt/cache/data-cache', 'hapi-lineage-'));
+        const dir = await mkdtemp(join(tmpdir(), 'hapi-lineage-'));
         const observed: unknown[] = [], messages: unknown[] = [];
         const payload = { id: 'child', source };
         await writeFile(join(dir, 'child.jsonl'), JSON.stringify({ type: 'session_meta', payload }) + '\n'

@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -92,7 +93,7 @@ describe('native chat artifacts', () => {
         expect(result.parts[0]).toEqual({ type: 'text', text: 'Compare these.' });
     });
     it('reads only recorded native image-view files and rejects non-image bytes', async () => {
-        const directory = await mkdtemp('/mnt/cache/data-cache/hapi-artifact-view-test-');
+        const directory = await mkdtemp(join(tmpdir(), 'hapi-artifact-view-test-'));
         const file = join(directory, 'view.png');
         const item = { id: 'view', type: 'imageView', path: file };
         try {
@@ -108,7 +109,7 @@ describe('native chat artifacts', () => {
         expect(result.parts).toEqual([{ type: 'text', text: 'Denied' }]);
     });
     it('loads saved files afresh, keeps missing descriptors and enforces path boundaries', async () => {
-        const directory = await mkdtemp('/mnt/cache/data-cache/hapi-artifact-test-');
+        const directory = await mkdtemp(join(tmpdir(), 'hapi-artifact-test-'));
         const file = join(directory, 'report.html');
         try {
             const item = { id: 'display', type: 'mcpToolCall', server: 'hapi', tool: 'display_media', status: 'completed', arguments: { path: file }, result: { content: [], isError: false } };

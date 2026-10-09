@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -17,7 +18,7 @@ describe('machine subagent history authorization', () => {
     const rootThreadId = randomUUID()
     const threadId = randomUUID()
     beforeEach(() => {
-        directory = mkdtempSync('/mnt/cache/data-cache/hapi-runtime/subagent-scope-')
+        directory = mkdtempSync(join(tmpdir(), 'subagent-scope-'))
         workspace = join(directory, 'workspace'); outside = join(directory, 'outside')
         mkdirSync(workspace); mkdirSync(outside)
         lineage.mockReset(); readHistory.mockReset()

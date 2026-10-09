@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -6,7 +7,7 @@ import { SharedCodexQueue } from './queue';
 const directories: string[] = [];
 afterEach(async () => { for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }); });
 async function fixture() {
-    const dir = await mkdtemp('/mnt/cache/data-cache/hapi-native-acceptance-'); directories.push(dir);
+    const dir = await mkdtemp(join(tmpdir(), 'hapi-native-acceptance-')); directories.push(dir);
     const request = vi.fn(async (_method: string, _params?: unknown): Promise<any> => ({ data: [] }));
     const consumed = vi.fn(); const uncertain = vi.fn(); const snapshot = vi.fn();
     const queue = new SharedCodexQueue({ request }, 'thread', join(dir, 'ledger.json'), consumed, uncertain, undefined, undefined, snapshot);

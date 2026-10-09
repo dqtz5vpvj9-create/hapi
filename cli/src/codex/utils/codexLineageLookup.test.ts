@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -6,7 +7,7 @@ const cleanups: string[] = [];
 afterEach(async () => { for (const path of cleanups.splice(0)) await rm(path, { recursive: true, force: true }); });
 describe('metadata-only Codex lineage lookup', () => {
     it('reads existing archived and active headers without parsing malformed message bodies or returning unrelated sessions', async () => {
-        const home = await mkdtemp(`${process.env.TMPDIR ?? '/mnt/cache/data-cache'}/hapi-lineage-lookup-`); cleanups.push(home);
+        const home = await mkdtemp(join(tmpdir(), 'hapi-lineage-lookup-')); cleanups.push(home);
         const parent = '11111111-1111-1111-1111-111111111111';
         const child = '22222222-2222-2222-2222-222222222222';
         const other = '33333333-3333-3333-3333-333333333333';

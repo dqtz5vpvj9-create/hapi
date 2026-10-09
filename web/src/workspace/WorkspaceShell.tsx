@@ -24,15 +24,13 @@ import { workspaceModel, workspaceTree } from './layoutAdapter'
 import 'flexlayout-react/style/light.css'
 import './workspace.css'
 
-export function WorkspaceShell() {
+export function WorkspaceShell(props: { foreground?: boolean } = {}) {
     const { api, workspace: store } = useAppContext()
     const { sessions } = useSessions(api)
     const { machines } = useMachines(api, true)
     const labels = useMachineLabels(machines)
     const title = useCallback((id: string) => { const session = sessions.find(s => s.id === id); return session ? getSessionTitle(session) : id.slice(0, 8) }, [sessions])
     const navigate = useNavigate()
-    // Direct links must select workspace mode just like the view-mode button.
-    useEffect(() => { store?.enter() }, [store])
     const pickSession = useCallback(() => {
         const sidebar = document.querySelector<HTMLElement>('.app-session-sidebar-frame')
         if (sidebar && sidebar.getBoundingClientRect().width > 0) {
@@ -47,7 +45,7 @@ export function WorkspaceShell() {
     if (!store) return null
     return <MachineIdentityProvider machines={Object.fromEntries(machines.map(m => [m.id, m]))} labels={labels}>
         <DocumentLeaveDialog store={store} />
-        <WorkspaceSurface sessions={sessions} store={store} title={title}
+        <WorkspaceSurface foreground={props.foreground} sessions={sessions} store={store} title={title}
             onPick={pickSession} onSingle={() => { const id = store.leave(); void navigate(id ? { to: '/sessions/$sessionId', params: { sessionId: id } } : { to: '/sessions' }) }} />
     </MachineIdentityProvider>
 }
@@ -75,7 +73,7 @@ function retainWorkspaceViews(state: ReturnType<WorkspaceStore['get']>, recent: 
     return retained
 }
 
-export function WorkspaceSurface(props: { sessions?: SessionSummary[]; store: WorkspaceStore; title: (id: string) => string; onPick: () => void; onSingle: () => void; renderPane?: ComponentType<PaneProps> }) {
+export function WorkspaceSurface(props: { foreground?: boolean; sessions?: SessionSummary[]; store: WorkspaceStore; title: (id: string) => string; onPick: () => void; onSingle: () => void; renderPane?: ComponentType<PaneProps> }) {
     const { store } = props
     const state = useSyncExternalStore(store.subscribe, store.get)
     const { t } = useTranslation()
@@ -179,7 +177,7 @@ export function WorkspaceSurface(props: { sessions?: SessionSummary[]; store: Wo
     useEffect(() => {
         const clear = () => { prefixRef.current = false; setPrefix(false); clearTimeout(prefixTimer.current) }
         const handle = (event: KeyboardEvent) => {
-            if (event.isComposing || event.repeat) return
+            if (props.foreground === false || event.isComposing || event.repeat) return
             // Nonmodal feature tips may remain open beside the composer. They
             // must not disable workspace navigation when focus is elsewhere.
             const inDialog = event.target instanceof Element && event.target.closest('[role="dialog"]')
@@ -213,7 +211,7 @@ export function WorkspaceSurface(props: { sessions?: SessionSummary[]; store: Wo
         }
         window.addEventListener('keydown', handle, true)
         return () => { clearTimeout(prefixTimer.current); window.removeEventListener('keydown', handle, true) }
-    }, [store, focused, allPanes, changeWorkspace, focusDirection, focusPane, split, createWindow])
+    }, [props.foreground, store, focused, allPanes, changeWorkspace, focusDirection, focusPane, split, createWindow])
     const Pane = props.renderPane ?? WorkspacePane
     const [renameId, setRenameId] = useState<string | null>(null)
     const [rename, setRename] = useState('')
@@ -234,7 +232,7 @@ export function WorkspaceSurface(props: { sessions?: SessionSummary[]; store: Wo
             </div> : null}
             {retained.map(w => <div key={w.id} className="workspace-stage" data-workspace-id={w.id}
                 data-workspace-visible={w.id === active?.id} aria-hidden={w.id !== active?.id} inert={w.id !== active?.id}>
-                <WorkspaceForeground.Provider value={w.id === active?.id}><WorkspaceLayout workspace={w} mobile={mobile}
+                <WorkspaceForeground.Provider value={props.foreground !== false && w.id === active?.id}><WorkspaceLayout workspace={w} mobile={mobile}
                     focused={state.focused[w.id]} zoomed={!!state.zoomed[w.id]} store={store}
                     sessions={props.sessions} title={props.title} onPick={props.onPick} onMoveNew={moveToNewWindow} Pane={Pane} models={models.current} /></WorkspaceForeground.Provider>
             </div>)}

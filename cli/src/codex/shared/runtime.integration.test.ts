@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { EventEmitter } from 'node:events';
@@ -51,7 +52,7 @@ vi.mock('../utils/buildHapiMcpBridge', () => ({ buildHapiMcpBridge: async () => 
 describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Codex shared runtime', () => {
     afterEach(() => { vi.unstubAllEnvs(); state.sessions.clear(); state.beforeBootstrap = undefined; });
     it('rejects a child ID before creating a HAPI binding or calling native resume', async () => {
-        const home = await mkdtemp('/mnt/cache/data-cache/hapi-shared-child-'); state.home = home;
+        const home = await mkdtemp(join(tmpdir(), 'hapi-shared-child-')); state.home = home;
         const ch = join(home, 'codex'); await mkdir(ch);
         await writeFile(join(ch, 'config.toml'), 'model = "mock-model"\nmodel_provider = "mock"\n[model_providers.mock]\nname = "No model calls"\nbase_url = "http://127.0.0.1:1/v1"\nwire_api = "responses"\nrequires_openai_auth = false\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n');
         vi.stubEnv('CODEX_HOME', ch); vi.stubEnv('HOME', home);
@@ -74,7 +75,7 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Code
         } finally { requests.mockRestore(); await rm(home, { recursive: true, force: true }); }
     }, 30_000);
     it.each(['abort', 'failure'])('cleans up the native engine and partial roots on startup %s', async outcome => {
-        const home = await mkdtemp('/mnt/cache/data-cache/hapi-shared-startup-'); state.home = home;
+        const home = await mkdtemp(join(tmpdir(), 'hapi-shared-startup-')); state.home = home;
         const ch = join(home, 'codex'); await mkdir(ch);
         await writeFile(join(ch, 'config.toml'), 'model = "mock-model"\nmodel_provider = "mock"\n[model_providers.mock]\nname = "No model calls"\nbase_url = "http://127.0.0.1:1/v1"\nwire_api = "responses"\nrequires_openai_auth = false\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n');
         vi.stubEnv('CODEX_HOME', ch); vi.stubEnv('HOME', home);
@@ -100,7 +101,7 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Code
         } finally { release(); abort.abort(); await running.catch(() => {}); await rm(home, { recursive: true, force: true }); }
     }, 30_000);
     it('binds empty roots, exchanges messages, isolates /new, and archives only the selected root', async () => {
-        const home = await mkdtemp('/mnt/cache/data-cache/hapi-shared-test-'); state.home = home;
+        const home = await mkdtemp(join(tmpdir(), 'hapi-shared-test-')); state.home = home;
         const ch = join(home, 'codex'); const cwd = join(home, 'work'); await mkdir(ch); await mkdir(cwd);
         const modelRequests: unknown[] = [];
         const http = createServer((request, response) => {

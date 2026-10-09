@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -6,7 +7,7 @@ import { lookupCodexSessionLineage } from '../cli/src/codex/utils/codexLineageLo
 
 describe('Codex lineage native metadata integration', () => {
     it('reads real SQLite spawn metadata and legacy header parents while preserving indexed identity and retrying unresolved subagents', async () => {
-        const home = await mkdtemp(`${process.env.TMPDIR ?? '/mnt/cache/data-cache'}/hapi-lineage-index-`);
+        const home = await mkdtemp(join(tmpdir(), 'hapi-lineage-index-'));
         const db = new Database(join(home, 'state_1.sqlite'));
         try {
             db.exec('CREATE TABLE threads (id TEXT PRIMARY KEY, cwd TEXT, source TEXT, rollout_path TEXT, thread_source TEXT, agent_nickname TEXT, agent_role TEXT, agent_path TEXT)');

@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { NativeStopFixture } from '@/test/nativeStopFixture';
@@ -12,7 +14,7 @@ afterEach(() => {
     }
 });
 function fixture(onRead?: (method: string) => void) {
-    const home = mkdtempSync('/mnt/cache/data-cache/indexed-concurrent-');
+    const home = mkdtempSync(join(tmpdir(), 'indexed-concurrent-'));
     const f = new NativeStopFixture(home, '11111111-1111-1111-1111-111111111111');
     fixtures.push({ home, f });
     const client = { request: async <T>(method: string, params?: unknown): Promise<T> => {
