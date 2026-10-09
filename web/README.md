@@ -64,6 +64,21 @@ See `src/router.tsx` for route definitions.
 
 ### Chat interface (`src/components/SessionChat.tsx`)
 
+Desktop session lists use one 34px row per conversation across themes. Device
+and path details are available on hover, and the subagent disclosure arrow sits
+beside the parent title. Child conversations use the same single-line layout.
+Touch layouts retain their existing row sizes.
+
+Each desktop row reserves a fixed status slot: `!` for permission, `?` for user
+input, a spinner for working, an open circle for background tasks, and a dot for
+unread activity. Pending requests remain visible when selected or thinking.
+Unread activity is not labelled as successful completion. Recent-list ordering
+stays chronological so a status update does not independently move a row.
+The adjacent machine icon is randomly assigned once by the Hub, avoiding icons
+already used in that namespace, and persisted in machine metadata. Reconnects,
+Runner metadata updates, and renames preserve it. Filters show the same icon
+with the machine name; browsers cache the identity for offline machine rows.
+
 The Codex theme has a desktop layout at the existing 920px split breakpoint.
 Navigation occupies a quiet sidebar with text tabs, a machine picker and a
 floating new-task input. The conversation and composer fill the right pane,
@@ -221,6 +236,77 @@ The spec drives a Vite-served fixture page (`web/e2e-fixtures/scratchlist-fixtur
 that mounts the production `ScratchlistPanel` in isolation, so no hub /
 auth / socket setup is required.
 
+## Recent session switching
+
+Native Codex keeps the presentation of the five most recently opened sessions
+in memory: prepared message nodes, disclosure state and measured row heights.
+Switching back opens its latest cached content. The existing global SSE feed
+keeps recent sessions warm in the background: change notifications are
+coalesced into one bounded read at a time, with no idle polling. Foreground
+loads take priority. Preloading pauses while hidden, offline, on 2G or in data
+saver mode, and slows on 3G. Reloading the current page and returning from its
+file/terminal view keep the existing bookmark behavior.
+
+The cache follows the API client's authentication
+lifetime; a history epoch change clears disclosure and geometry for that
+session. This presentation cache retains no hidden chat DOM and writes no
+additional transcript. The workspace view separately keeps a bounded set of
+mounted readers and editors so returning need not reconstruct them.
+Evicted sessions use the existing loading paths.
+Browser coverage is in [the captured-history runner](../scripts/testing/tester-army/README.md).
+
+## Workspace view
+
+The session sidebar's view-mode button opens the tmux-style workspace. This
+is independent of the selected visual theme. Its tabs are called **windows**
+in the UI, matching tmux: each window holds chat and terminal panes, with
+drag-to-split, resize, directional focus and temporary maximize. The store and
+API continue to call these workspace documents; this is not an extra hierarchy.
+The bottom bar switches windows and returns to a single chat.
+Selecting an already open chat focuses its existing pane. On narrow screens,
+P1 / P2 controls project one pane without changing the saved desktop layout.
+The bottom bar's persistent `P＋` opens a new pane through the existing session
+list (or desktop sidebar). It reuses a focused empty pane when selection was
+cancelled. **New window**, available in Window actions or with Ctrl-b c,
+creates a window immediately and opens the existing session chooser (on desktop,
+it focuses the sidebar search). It does not ask for a name first; rename a tab
+later by double-clicking it or using Window actions. Existing saved names remain
+unchanged. The tab shows only the name; pane counts belong in the window switcher.
+Directional splits remain in Pane actions and the existing shortcuts.
+
+The keyboard prefix is Ctrl-b: `%` splits right, `"` splits below, arrows move
+focus, `o` cycles panes, `z` toggles maximize, `x` closes a view, `c` creates a
+window, and `n` / `p` or `1`–`9` switch windows. Press Ctrl-b twice to
+send the second one to a terminal.
+
+Workspace structure currently persists in this browser's localStorage,
+scoped to the Hub and authenticated identity. It stores references, not chat
+transcripts. Visible chats share the existing global event stream and retain
+their presentation caches. The active workspace and up to four inactive pane
+views stay mounted, keeping five single-pane workspaces or three two-pane
+workspaces ready. The immediate previous workspace is always retained even if
+it alone exceeds that inactive budget, preserving alternation between two large
+layouts. Other views are evicted in least-recently-used order; their drafts and
+semantic reading bookmarks survive. The budget reserves all panes in each
+retained layout, including on mobile and while maximized. A phone pane loads
+on its first visit, then keeps its reader and editor mounted when switching
+P1/P2. Hidden panes preserve their own last visible dimensions, so FlexLayout's
+maximization does not collapse or resize their virtual readers. Hidden panes
+and stages are inert and cannot claim focus or mark a conversation read.
+Message synchronization on return runs behind the retained view. This bounds
+mounted readers, not total browser memory or cold-load latency.
+The workspace composer places its attachment picker directly to the left of
+the input. The status row keeps a separate `@` action for session references;
+the ordinary single-chat composer retains its existing Add menu.
+Closing a pane does not issue a stop request. Terminal panes reattach using
+stable IDs, but still inherit the existing session terminal's idle and process
+lifetime limits. Shared layouts and a durable machine-level terminal host are
+separate unfinished stages; see [implementation status](../docs/plans/tmux-workspace-stage-one.md).
+
+`e2e/workspace.spec.ts` drives the production App and chat components through
+`web/e2e-fixtures/workspace-fixture.html`, using simulated Hub responses and
+events without model calls. Run it with `bun run test:e2e e2e/workspace.spec.ts`.
+
 ## Chat media and documents
 
 Codex chat preserves the order of text, images and audio in user messages and
@@ -234,10 +320,40 @@ is opened. Uploaded files retain their existing upload lifecycle. If the agent
 is offline, the original file was deleted, or a resource exceeds the 25 MiB
 limit, the card explains why the preview is unavailable and offers retry.
 
-HTML previews run in an isolated iframe. Inline scripts can provide local
-interaction, but external scripts, network access, parent-page access and MCP
-app callbacks are unavailable. Browser codec support determines which audio
-and video formats can play.
+HTML and HTM documents open in Preview mode in the existing document pane;
+Source uses the existing editor and version-checked save flow. Mixed line
+endings prevent source writes, but do not prevent HTML preview. HTML exceeding
+the 4 MiB editing limit remains previewable within the 64 MiB file read limit.
+
+The preview keeps the report's styles and local JavaScript in an opaque-origin
+iframe. Relative CSS (including imports), scripts, fonts and images use the
+original session's authorized file reader. Images and responsive image
+candidates load when they approach the viewport. Windows file URLs, UNC paths,
+extended-length paths and percent-encoded filenames resolve on the original
+machine; file links open beside the document in the same workspace. Same-page
+anchors stay inside the preview. Parent-page access, network requests, nested
+frames, form submission and MCP app callbacks remain unavailable. This is a
+local report preview, not a development server for networked SPAs or module
+import graphs. Browser codec support determines playable media formats.
+
+Pane and workspace switches, and Preview/Source switches without edits, retain
+the iframe. After a remount or explicit reload of unchanged HTML, the bridge
+restores scroll, details and ordinary form fields; password and file inputs
+are excluded. Arbitrary application-internal JavaScript state is retained only
+while the iframe remains mounted. Each document's resource cache is bounded to
+32 MiB and participates in the existing document registry budget. Reload reads
+resources again without replacing a dirty source draft.
+
+Rendered HTML selections carry their quote, DOM endpoints and original file
+revision into the originating conversation's draft. DOM positions describe the
+rendered document, not source line offsets. Referencing a selection never sends
+a message automatically. The host checks the originating iframe, current
+preview generation and message schema before accepting bridge messages.
+
+`e2e/html-document.spec.ts` covers isolated report rendering, Windows file links,
+local resources, pane state, source editing, mixed endings and selected-text
+references at desktop and phone widths. The fixture simulates the Hub boundary;
+it does not assert real Windows or phone-device acceptance.
 
 The media browser test mounts the production preview components in a local
 fixture, without creating a hub session:
@@ -272,3 +388,5 @@ bun run build:web -- --base /<repo>/
 Clear the hub override in the same dialog to return to same-origin behavior.
 
 The mobile keyboard layout and configuration follow [Haven](src/components/Terminal/termbeam/HAVEN.md), including content-sized 32px keys, paired navigation columns, row placement, macros and JSON editing.
+
+Session-list recency is captured when the list opens. Live activity updates the row's status and timestamp without reordering existing rows; newly discovered sessions join by their initial activity time. Selecting a list view or explicitly refreshing updates the ordering snapshot. Search relevance and explicit pinned/state sections still apply. This prevents concurrent streaming sessions from repeatedly moving under the pointer. Regression coverage exercises repeated updates on the mounted `SessionList`, not only static status glyphs.

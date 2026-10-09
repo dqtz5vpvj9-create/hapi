@@ -15,6 +15,8 @@ Source of truth: `hub/src/web/routes/events.ts`, `hub/src/sse/sseManager.ts`, `h
 | `token` | JWT | Browser `EventSource` cannot set headers, so the auth middleware accepts `?token=` **on this path only** (`hub/src/web/middleware/auth.ts`). Clients that can set headers may use `Authorization: Bearer` instead. |
 | `all` | `true` \| `1` | Global subscription: every event in the token's namespace. |
 | `sessionId` | session id | Session-scoped subscription. |
+| `sessionIds` | JSON array of session IDs | Workspace body subscription; canonical IDs are deduplicated. Missing/deleted sessions are skipped; foreign-namespace IDs are rejected. |
+| `messageMode` | `full` (default) \| `notify` | In notify mode, each `message-received` becomes a body-free `message-updated`; metadata and queue-control events are unchanged. |
 | `machineId` | machine id | Machine-scoped subscription (web does not use this). |
 | `visibility` | `visible` \| `hidden` | Initial visibility state. Anything other than the literal `visible` is treated as `hidden` (the default). See [Visibility](#visibility). |
 | `lastEventId` | event id | Resume cursor for manually rebuilt connections. The standard `Last-Event-ID` **request header wins** over this param when both are present (auto-reconnecting EventSource implementations send the header). |
@@ -24,6 +26,8 @@ Up-front checks, before any bytes stream:
 | Condition | Response |
 |---|---|
 | Hub sync engine not ready | `503 {"error":"Not connected"}` |
+| Malformed `sessionIds` or invalid `messageMode` | `400` |
+| Any `sessionIds` entry in another namespace | `403 {"error":"Session access denied"}` |
 | `sessionId` unknown | `404 {"error":"Session not found"}` |
 | `sessionId` in another namespace | `403 {"error":"Session access denied"}` |
 | `machineId` unknown / foreign namespace | `404` / `403` (same pattern) |
@@ -80,7 +84,7 @@ Live broadcasts that occur while the replay is being written are queued server-s
 
 ### Cursor rules (normative)
 
-- Keep one cursor **per subscription filter set** (the `all` / `sessionId` / `machineId` tuple, plus hub + namespace). Never replay a cursor recorded under a different filter set — the hub would replay against the wrong filter and the `ok` verdict would be wrong for what you actually missed.
+- Keep one cursor **per subscription filter set** (the `all` / `sessionId` / sorted unique `sessionIds` / `machineId` / `messageMode` tuple, plus hub + namespace). Never replay a cursor recorded under a different filter set — the hub would replay against the wrong filter and the `ok` verdict would be wrong for what you actually missed.
 - Update the cursor **after** the event is durably handled. If handling throws, leave the cursor behind the event so the hub redelivers it (at-least-once delivery; handlers must be idempotent).
 - Send the cursor on reconnect via `Last-Event-ID` header or `?lastEventId`.
 
@@ -110,8 +114,10 @@ Any received frame — heartbeat included — counts as activity for the stalene
 
 The reference client holds **two** concurrent connections (`web/src/App.tsx`, `web/src/lib/appSseSubscriptions.ts`):
 
-1. **Global** — `all=true`, alive for the whole app session. Drives the session list, machine list, badges, toasts.
-2. **Session** — `sessionId=<open session>`, recreated on every session switch. Drives the open chat.
+1. **Global** — `all=true&messageMode=notify`, alive for the whole app session. Drives the session list, machine list, badges, toasts and queue identity, without receiving message bodies.
+2. **Visible chats** — `sessionId=<open session>` in single-chat mode, or `sessionIds=<JSON array>` in workspace mode. The workspace array contains the visible chat panes: one on mobile or while zoomed, all visible chats in a desktop split. Changing this set reconnects only this stream and starts without the old set's cursor. A replay gap resynchronizes the history and queued state of every visible chat.
+
+The global `message-updated` notification can refresh a bounded recently viewed history in the background. It does not erase history and is not a substitute for body-stream gap recovery. A client requesting no `messageMode` continues to receive full bodies.
 
 Hub-side delivery (`SSEManager.shouldSend`):
 
@@ -120,17 +126,17 @@ Hub-side delivery (`SSEManager.shouldSend`):
 | `connection-changed` | the connection itself |
 | `heartbeat` | every connection |
 | `toast` | every **visible** connection in the namespace, regardless of filter (no `id`, never replayed) |
-| `message-received`, `scheduled-matured` | `all=true` connections + matching `sessionId` connections |
-| `session-added` / `session-updated` / `session-removed` / `session-ended` / `messages-invalidated` / `messages-consumed` / `messages-indeterminate` / `messages-requeued` / `message-cancelled` | `all=true` connections + matching `sessionId` connections |
+| `message-received`, `scheduled-matured` | `all=true` connections + matching `sessionId` / `sessionIds` connections |
+| `session-added` / `session-updated` / `session-removed` / `session-ended` / `messages-invalidated` / `messages-consumed` / `messages-indeterminate` / `messages-requeued` / `message-cancelled` | `all=true` connections + matching `sessionId` / `sessionIds` connections |
 | `machine-updated`, `machine-agy-models-updated` | `all=true` connections + matching `machineId` connections |
 
-**The global connection must also handle the message-stream events** (`message-received`, `messages-consumed`, `messages-indeterminate`, `messages-requeued`, `message-cancelled`, `scheduled-matured`): while a session connection is down (reconnect gap) or the session isn't open, the global pipe is the only one alive, and it must still keep queued/optimistic bookkeeping correct — mark local messages consumed, remove cancelled rows, and refresh session-list scheduled counts. The session-scoped connection additionally ingests `message-received` into the message window.
+**The global connection must also handle the message-stream events** (`message-updated` in notify mode, `message-received` in full mode, `messages-dispatching`, `messages-consumed`, `messages-indeterminate`, `messages-requeued`, `message-cancelled`, `scheduled-matured`): while a session connection is down (reconnect gap) or the session isn't open, the global pipe is the only one alive, and it must still keep queued/optimistic bookkeeping correct — mark local messages consumed, remove cancelled rows, and refresh session-list scheduled counts. The session-scoped connection additionally ingests `message-received` into the message window.
 
 The two connections have **no ordering relationship with each other** — the same `session-updated` patch can arrive on both, in either order. That is why the versioned-patch gate below exists.
 
 ---
 
-## SyncEvent union (16 types)
+## SyncEvent union
 
 Schema: `SyncEventSchema` in `shared/src/schemas.ts` (discriminated on `type`). All events except `connection-changed` carry `namespace?: string`. Ignore unknown event types.
 
@@ -140,12 +146,14 @@ Schema: `SyncEventSchema` in `shared/src/schemas.ts` (discriminated on `type`). 
 | `session-updated` | `sessionId`, `data?: Session \| SessionPatch` | See [Versioned patch algorithm](#versioned-patch-algorithm). |
 | `session-removed` | `sessionId` | Drop the session from the list, drop its detail cache, clear its message window. |
 | `message-received` | `sessionId`, `message: DecryptedMessage` | Ingest into the message window; advance the tail cursor (see [pagination](./pagination.md)). Also fired for the caller's own send (the localId echo). |
+| `message-updated` | `sessionId`, `scheduled: boolean` | Body-free notification requested by `messageMode=notify`. Preserve queue controls and, for scheduled messages, refresh scheduled counts. This carries the same event ID as the full body would have carried. |
 | `messages-invalidated` | `sessionId`; rewind may also include `reason: 'rewind'` and `truncateFromLocalId` | Message history changed **structurally** (rewind, fork, import, clear). For a rewind, retain only the known prefix through the client boundary before tail-syncing; for every other invalidation, discard the whole window and run a fresh tail sync. Global scope: refetch the session list. |
 | `scheduled-matured` | `sessionId` | A scheduled message became due and was handed to the agent. Refetch list/queue indicators. |
 | `session-ended` | `sessionId`, `reason?: 'completed'\|'terminated'\|'error'\|'handoff'\|'cleared'` | Session lifecycle signal (the `session-updated` flow still carries the state change). |
 | `machine-updated` | `machineId`, `data?: Machine \| MachinePatch \| null` | Full `Machine`: upsert (remove when `active:false`). `null`: machine removed. Patch `{active?, activeAt?, updatedAt?}`: `active:false` ⇒ remove, otherwise refetch machines. `data` absent ⇒ refetch. |
 | `machine-agy-models-updated` | `machineId` | The machine's `agy models` listing changed on a background re-check. Refetch `GET /api/machines/:id/agy-models` for that machine (answered from the machine's cache; it starts no `agy` run and produces no further event). Emitted when the re-check changes what that route would answer — a different listing, or a sign-in warning that appeared or cleared — never for the machine's first listing. |
 | `toast` | `data: {title, body, sessionId, url}` | Show as in-app toast/banner. Only delivered to visible connections (see [Visibility](#visibility)). |
+| `messages-dispatching` | `sessionId`, `localIds: string[]` | Mark identified queued rows as dispatching, including while their chat is hidden. |
 | `messages-consumed` | `sessionId`, `localIds: string[]`, `invokedAt: number` | The agent consumed queued user messages: stamp `invokedAt`, flip status to `sent`, remove from the queued bar. |
 | `messages-indeterminate` | `sessionId`, `localIds: string[]` | A native dispatch/queue mutation has an unknown outcome. Keep the row uninvoked, show an explicit Retry/Cancel resolution, and do not auto-replay it. Shared-engine Retry/Cancel can remain unavailable until reconciliation proves the outcome. |
 | `messages-requeued` | `sessionId`, `localIds: string[]` | An explicit Retry restored delivery to the normal queue. Clear the indeterminate marker. |
