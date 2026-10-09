@@ -435,3 +435,17 @@ controls, the real message store and fork recovery helper with deterministic
 transport failures. It covers desktop/mobile cleanup, fork cancellation and
 navigation retry, steering without SSE, and steering network failure. These
 fixtures do not launch a real agent or use paid model credentials.
+
+### Codex command rows
+
+Codex shell calls show `Ran <command>` on one ellipsized line (`Running` while
+active, `Run` before execution; localized in Chinese). Native shell argv such
+as `['/bin/bash', '-lc', command]` displays the actual script. Newlines become
+visible return markers in the summary; original input and full output remain
+unchanged in the detail dialog. Results are not rendered inline, even when
+rich output is available. Pending permission inputs and approval controls
+remain visible. Ordinary collapsed tool groups expose each Codex command as
+one line; exploration grouping and shared protocol fixtures are unchanged.
+
+`e2e/codex-command-presentation.spec.ts` checks single-line ellipsis, hidden
+output, detail opening/closing and no horizontal overflow at 390px and 1280px.

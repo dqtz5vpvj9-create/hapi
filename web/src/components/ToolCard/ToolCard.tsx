@@ -1,3 +1,4 @@
+import { getCodexCommandText, singleLineCommand } from '@/lib/codex-command-label'
 import { useChatDisclosure } from '@/components/AssistantChat/context'
 import { ContentParts, richToolParts } from '@/components/Artifacts/ContentParts'
 import { useOptionalHappyChatContext } from '@/components/AssistantChat/context'
@@ -442,14 +443,21 @@ function ToolCardInner(props: ToolCardProps) {
     const useCompactTerminalCard = shouldUseCompactTerminalToolCard(toolName, props.terminalToolDisplayMode)
     const isPlan = toolName === 'ExitPlanMode' || toolName === 'exit_plan_mode'
     const needsApproval = props.block.tool.permission?.status === 'pending'
-    const richParts = richToolParts(props.block.tool.result)
+    const isCodexCommand = toolName === 'CodexBash'
+    const codexCommand = isCodexCommand ? getCodexCommandText(props.block.tool.input) : null
+    const codexPrefix = props.block.tool.state === 'running' ? t('tool.command.running')
+        : props.block.tool.state === 'pending' ? t('tool.command.pending') : t('tool.command.ran')
+    const codexLabel = codexCommand ? `${codexPrefix} ${singleLineCommand(codexCommand)}` : null
+    // Results stay in details, including rich MCP-style output. Pending
+    // approval still shows its full input and approval controls below.
+    const richParts = isCodexCommand ? null : richToolParts(props.block.tool.result)
     const showInline = Boolean(richParts) || shouldShowInlineToolCardBody(toolName, presentation.minimal, props.terminalToolDisplayMode)
         || (needsApproval && !isSubagentToolName(toolName) && !isAskUserQuestionToolName(toolName) && !isRequestUserInputToolName(toolName))
     const terminalCommand = TERMINAL_RELATED_TOOL_NAMES.has(toolName)
         ? (Array.isArray((props.block.tool.input as { command?: unknown } | null)?.command)
             ? (props.block.tool.input as { command: string[] }).command.join(' ')
             : getInputStringAny(props.block.tool.input, ['command', 'cmd'])) : null
-    const showCommandSummary = !showInline && Boolean(terminalCommand) && props.terminalToolDisplayMode === 'detailed'
+    const showCommandSummary = !isCodexCommand && !showInline && Boolean(terminalCommand) && props.terminalToolDisplayMode === 'detailed'
     const CompactToolView = showInline ? getToolViewComponent(toolName) : null
     const compactViewOwnsInteractions = toolName === 'CodexDiff'
     const ResultToolView = getToolResultViewComponent(toolName)
@@ -489,7 +497,7 @@ function ToolCardInner(props: ToolCardProps) {
         <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--app-hint)]">
             <span className="shrink-0"><DetailsIcon /></span>
             <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">{presentation.icon}</span>
-            <span data-execution-active={executionActive || undefined} data-execution-label={executionActive ? t('session.item.running') : undefined} className={cn("min-w-0 truncate font-mono text-sm", executionActive && "hapi-execution-sweep")} title={toolTitle}>{isCodexAgentCard ? toolTitle : toolName}</span>
+            <span data-execution-active={executionActive || undefined} data-execution-label={executionActive ? t('session.item.running') : undefined} className={cn("min-w-0 truncate font-mono text-sm", executionActive && "hapi-execution-sweep")} title={codexCommand ?? toolTitle}>{codexLabel ?? (isCodexAgentCard ? toolTitle : toolName)}</span>
             <span className={cn('shrink-0', stateColor)} aria-label={props.block.tool.state}><ToolStatusIcon state={props.block.tool.state} /></span>
             <time className="shrink-0 tabular-nums opacity-65" dateTime={new Date(props.block.createdAt).toISOString()}>
                 {new Date(props.block.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}

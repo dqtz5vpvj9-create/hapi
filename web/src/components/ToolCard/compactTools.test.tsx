@@ -63,3 +63,30 @@ describe('compact tool entry behavior', () => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 })
+
+it.each(['compact', 'detailed'] as const)('shows the Codex command on one truncated row in %s mode, with output only in details', mode => {
+    const value = block('CodexBash')
+    const command = 'ls -ld /home/chris/.agentsview /android; df -h\nsystemctl --user list-units'
+    value.tool.input = { command: ['/bin/bash', '-lc', command] }
+    value.tool.description = 'Inspect the environment'
+    const view = render(ui(value, undefined, mode))
+    const label = screen.getByText('Ran ls -ld /home/chris/.agentsview /android; df -h ↵ systemctl --user list-units')
+    expect(label).toHaveClass('truncate')
+    expect(label).toHaveAttribute('title', command)
+    expect(view.container).not.toHaveTextContent('FULL_RESULT_BODY')
+    expect(screen.queryByText('CodexBash')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('FULL_RESULT_BODY')
+    expect(screen.getByRole('dialog')).toHaveTextContent('systemctl --user list-units')
+})
+
+it('does not claim a running Codex command has completed and retains failure status', () => {
+    const value = block('CodexBash')
+    value.tool.state = 'running'
+    const view = render(ui(value))
+    expect(screen.getByText('Running ssh example.invalid inspect-report')).toBeVisible()
+    view.rerender(ui({ ...value, tool: { ...value.tool, state: 'error' } }))
+    expect(screen.getByText('Ran ssh example.invalid inspect-report')).toBeVisible()
+    expect(screen.getByLabelText('error')).toBeVisible()
+    expect(screen.queryByText('FULL_RESULT_BODY')).not.toBeInTheDocument()
+})

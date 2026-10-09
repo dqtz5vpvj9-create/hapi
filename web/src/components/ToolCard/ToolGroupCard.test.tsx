@@ -548,3 +548,14 @@ describe('ToolGroupCard', () => {
         })
     })
 })
+
+it('shows each Codex command on a single line even when its ordinary group is collapsed', () => {
+    const tools = [makeToolBlock('command-one', 'CodexBash', { command: ['/bin/bash', '-lc', 'ls -ld /android; df -h'] }), makeToolBlock('command-two', 'CodexBash', { command: 'systemctl --user list-units' })]
+    tools[0].tool.result = 'PRIVATE_COMMAND_OUTPUT'
+    renderCard(makeGroup({ tools, presentationMode: 'default' }))
+    expect(screen.getByText('Ran ls -ld /android; df -h')).toHaveClass('truncate')
+    expect(screen.getByText('Ran systemctl --user list-units')).toBeVisible()
+    expect(screen.queryByText('PRIVATE_COMMAND_OUTPUT')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Ran ls -ld/ }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('PRIVATE_COMMAND_OUTPUT')
+})

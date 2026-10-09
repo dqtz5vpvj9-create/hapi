@@ -1,3 +1,4 @@
+import { getCodexCommandText, singleLineCommand } from '@/lib/codex-command-label'
 import { useChatDisclosure } from '@/components/AssistantChat/context'
 import { toolArtifactCount } from '@/components/Artifacts/ContentParts'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -109,6 +110,13 @@ function RowLabel(props: { block: ToolCallBlock; metadata: SessionMetadataSummar
         description: props.block.tool.nativeTitle ?? props.block.tool.description,
         metadata: props.metadata
     }, t), [props.block, props.metadata, t])
+
+    const command = props.block.tool.name === 'CodexBash' ? getCodexCommandText(props.block.tool.input) : null
+    if (command) {
+        const prefix = props.block.tool.state === 'running' ? t('tool.command.running')
+            : props.block.tool.state === 'pending' ? t('tool.command.pending') : t('tool.command.ran')
+        return <span title={command} className="min-w-0 flex-1 truncate whitespace-nowrap font-mono text-sm">{prefix} {singleLineCommand(command)}</span>
+    }
 
     return (
         <div className="min-w-0 flex-1">
@@ -313,6 +321,13 @@ export function ToolGroupCard(props: {
                 </button>
             </CardHeader>
 
+            {!open && props.block.presentationMode !== 'codex-exploration' ? props.block.tools.filter(tool => tool.tool.name === 'CodexBash').map(tool => (
+                <button key={tool.id} type="button" onClick={() => setSelectedToolId(tool.id)}
+                    className="flex w-full min-w-0 items-center gap-2 py-1 pl-6 text-left text-[var(--app-hint)] focus-visible:ring-2 focus-visible:ring-[var(--app-link)]">
+                    <RowLabel block={tool} metadata={props.metadata} />
+                    <span className={cn('shrink-0', toolStatusColorClass(tool.tool.state))} aria-label={tool.tool.state}><ToolStatusIcon state={tool.tool.state} /></span>
+                </button>
+            )) : null}
             {open ? (
                 <CardContent className="px-3 pb-3 pt-1">
                     <div className="flex flex-col gap-2">
