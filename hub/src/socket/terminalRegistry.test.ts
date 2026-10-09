@@ -14,10 +14,22 @@ describe('TerminalRegistry onRemove', () => {
         const removed: string[] = []
         const reg = new TerminalRegistry({ idleTimeoutMs: 0, onRemove: (e) => removed.push(e.terminalId) })
         reg.register('t1', 's1', 'sockA', 'cli1')
+        reg.detachBySocket('sockA')
         // Reconnect: same terminalId + session, different web socket → the stale
         // entry is re-registered silently so the client keeps its scrollback.
         reg.register('t1', 's1', 'sockB', 'cli1')
         expect(removed).toEqual([])
+        expect(reg.get('t1')?.socketId).toBe('sockB')
+    })
+
+    it('does not let another browser tab take control of an attached workspace terminal', () => {
+        const reg = new TerminalRegistry({ idleTimeoutMs: 0 })
+        reg.register('workspace-terminal', 's1', 'first-tab', 'cli1')
+        expect(reg.register('workspace-terminal', 's1', 'second-tab', 'cli1')).toBeNull()
+        expect(reg.get('workspace-terminal')?.socketId).toBe('first-tab')
+        reg.detachBySocket('first-tab')
+        expect(reg.register('workspace-terminal', 's1', 'second-tab', 'cli1')?.socketId).toBe('second-tab')
+        expect(reg.register('workspace-terminal', 'other-session', 'second-tab', 'cli1')).toBeNull()
     })
 
     it('detaches terminals on web disconnect without releasing their resources', () => {

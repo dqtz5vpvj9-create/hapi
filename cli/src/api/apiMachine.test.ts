@@ -615,6 +615,27 @@ describe('ApiMachineClient Codex transcript handlers', () => {
         }
     })
 
+    it('shares cwd resolution within a request and rechecks it on the next request', async () => {
+        for (let index = 0; index < 20; index++) {
+            writeCodexTranscript(codexHome, `shared-${index}.jsonl`, { id: `shared-${index}`, cwd: workspaceRoot }, 'prompt')
+        }
+        const machine = makeMachine('codex-shared-cwd')
+        const client = new ApiMachineClient('cli-token', machine, [workspaceRoot])
+        const policy = (client as unknown as { pathPolicy: { resolveForCheck(path: string): Promise<string> } }).pathPolicy
+        const resolve = vi.spyOn(policy, 'resolveForCheck')
+        try {
+            const first = await callListCodexSessions(client, machine.id, {}) as { sessions: unknown[] }
+            expect(first.sessions).toHaveLength(20)
+            expect(resolve).toHaveBeenCalledTimes(1)
+            // Model a symlink retargeted outside the allowed root after the
+            // first query. A cross-request permission cache would leak rows.
+            resolve.mockResolvedValue(realpathSync.native(outsideRoot))
+            const second = await callListCodexSessions(client, machine.id, {}) as { sessions: unknown[] }
+            expect(second.sessions).toHaveLength(0)
+            expect(resolve).toHaveBeenCalledTimes(2)
+        } finally { resolve.mockRestore(); client.shutdown() }
+    })
+
     it('filters import-by-sessionId Codex sessions to workspace roots before returning message bodies', async () => {
         writeCodexTranscript(codexHome, 'allowed.jsonl', {
             id: 'allowed-session-id',

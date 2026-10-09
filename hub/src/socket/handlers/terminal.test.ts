@@ -201,6 +201,7 @@ describe('terminal socket handlers', () => {
             sessionId: 'session-1', terminalId: 'terminal-1', cols: 80, rows: 24
         })
 
+        terminalSocket.trigger('disconnect')
         const replacement = new FakeSocket('replacement-socket')
         replacement.data.namespace = 'default'
         registerTerminalHandlers(replacement as unknown as SocketWithData, {

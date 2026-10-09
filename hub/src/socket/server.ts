@@ -13,6 +13,7 @@ import { SOCKET_MAX_HTTP_BUFFER_SIZE } from './socketLimits'
 import type { SyncEvent } from '../sync/syncEngine'
 import { TerminalRegistry } from './terminalRegistry'
 import { clearUserTerminalBuffer } from './userTerminalBuffer'
+import { registerMachineTerminalTransport } from './machineTerminalTransport'
 import type { CliSocketWithData, SocketData, SocketServer } from './socketTypes'
 
 const jwtPayloadSchema = z.object({
@@ -169,5 +170,6 @@ export function createSocketServer(deps: SocketServerDeps): {
         maxTerminalsPerSession
     }))
 
+    registerMachineTerminalTransport(io, deps.store, rpcRegistry)
     return { io, engine, rpcRegistry }
 }

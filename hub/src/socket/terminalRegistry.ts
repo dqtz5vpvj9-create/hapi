@@ -33,17 +33,14 @@ export class TerminalRegistry {
     register(terminalId: string, sessionId: string, socketId: string, cliSocketId: string): TerminalRegistryEntry | null {
         const existing = this.terminals.get(terminalId)
         if (existing) {
+            if (existing.sessionId !== sessionId) return null
             if (existing.socketId === socketId) {
                 return existing
             }
-            if (existing.sessionId !== sessionId) {
-                return null
-            }
-            // Same session, different socket — stale entry from a previous
-            // connection (e.g. socket reconnect in a PWA). Terminal IDs are
-            // client-generated UUIDs so cross-client collisions are not a
-            // realistic concern; clean up and re-register. Skip onRemove so the
-            // reconnecting client keeps its scrollback buffer.
+            // Saved workspaces can be opened in two browser tabs. A stable ID
+            // must not let the second viewer steal an attached shell. Only a
+            // detached connection may be replaced; its output survives rebind.
+            if (this.terminalsBySocket.get(existing.socketId)?.has(terminalId)) return null
             this.remove(terminalId, false)
         }
 

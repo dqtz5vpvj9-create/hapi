@@ -103,7 +103,7 @@ export function normalizeTerminalInputForHost(data: string): string {
     return normalized
 }
 
-function buildFilteredEnv(): NodeJS.ProcessEnv {
+export function buildFilteredEnv(): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = {}
     for (const [key, value] of Object.entries(process.env)) {
         if (!value) {

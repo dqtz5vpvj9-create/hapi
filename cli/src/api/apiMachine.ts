@@ -62,7 +62,7 @@ import { readCodexSubagentMessages } from '../codex/utils/codexSubagentHistory'
 import { lookupCodexSessionLineage } from '../codex/utils/codexLineageLookup'
 import { connectNativeCodexThread, nativeCodexEligibility } from '../codex/shared/nativeConnection'
 import { ConnectCodexSessionRequestSchema } from '@hapi/protocol/apiTypes'
-import { archiveLocalCodexSession, searchLocalCodexSessions, listLocalCodexSessionSummaries, listLocalCodexSessionsWithMessagesByIds } from '../modules/common/codexSessions'
+import { archiveLocalCodexSession, createLocalCodexSessionSearch, getLocalCodexSessionSummary, listLocalCodexSessionsWithMessagesByIds } from '../modules/common/codexSessions'
 import { listLocalPiSessionSummaries, listLocalPiSessionsWithMessagesByIds } from '../modules/common/piSessions'
 import { buildSocketIoExtraHeaderOptions } from './hubExtraHeaders'
 import { collectMachineHealth } from '@/utils/machineHealth'
@@ -71,6 +71,9 @@ import { homedir } from 'node:os'
 import type { CursorChatStoreStatus } from '@hapi/protocol/apiTypes'
 import { MachinePathPolicy } from './machinePathPolicy'
 import { getAgentAvailabilityResponse } from '@/agent/agentAvailability'
+import { TerminalHostBridge } from '@/terminal/TerminalHostBridge'
+import { startWindowsProcessProbe } from '@/utils/windowsProcessProbe'
+import { MachineTerminalRpcRequestSchema } from '@hapi/protocol/terminals'
 
 export { normalizeWindowsDriveRoot } from './machinePathPolicy'
 
@@ -119,14 +122,23 @@ export class ApiMachineClient {
     private rpcHandlerManager: RpcHandlerManager
 
     private readonly pathPolicy: MachinePathPolicy
+    private readonly terminalBridge: TerminalHostBridge
 
     constructor(
         private readonly token: string,
         private readonly machine: Machine,
         private readonly workspaceRoots?: string[]
     ) {
+        startWindowsProcessProbe()
         this.pathPolicy = new MachinePathPolicy({
             workspaceRoots,
+        })
+        this.terminalBridge = new TerminalHostBridge({
+            directory: join(configuration.happyHomeDir, 'terminal-host'),
+            pathPolicy: this.pathPolicy,
+            send: (viewerId, event) => {
+                if (this.socket?.connected) this.socket.emit('machine-terminal:event', { machineId: this.machine.id, viewerId, event })
+            },
         })
 
         this.rpcHandlerManager = new RpcHandlerManager({
@@ -135,6 +147,10 @@ export class ApiMachineClient {
         })
 
         registerCommonHandlers(this.rpcHandlerManager, getInvokedCwd())
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.MachineTerminal, async params => ({
+            ok: true,
+            value: await this.terminalBridge.request(MachineTerminalRpcRequestSchema.parse(params)),
+        }))
 
         // Only the machine daemon answers `<machineId>:listAgyModels`, so it is
         // the one process that can tell the hub its catalog moved.
@@ -337,7 +353,7 @@ export class ApiMachineClient {
 
         this.rpcHandlerManager.registerHandler(RPC_METHODS.ConnectCodexSession, async (params: unknown) => {
             const { threadId } = ConnectCodexSessionRequestSchema.parse(params)
-            const target = listLocalCodexSessionSummaries(Number.MAX_SAFE_INTEGER).find(session => session.id === threadId)
+            const target = getLocalCodexSessionSummary(threadId)
             if (!target || !await this.isLocalSessionWithinWorkspaceRoots(target)) {
                 throw new Error('Codex session is unavailable or outside workspace roots')
             }
@@ -408,27 +424,64 @@ export class ApiMachineClient {
                         return { success: false, error: 'Path is outside workspace roots' }
                     }
                 }
+                const started = performance.now()
+                let indexMs = 0, eligibilityMs = 0, permissionsMs = 0, pages = 1
                 const requestedIds = parsed.data.sessionIds
                     ? new Set(parsed.data.sessionIds)
                     : null
-                let page = requestedIds ? null : searchLocalCodexSessions(parsed.data)
-                let candidates = requestedIds ? listLocalCodexSessionsWithMessagesByIds(requestedIds) : page!.sessions
-                const eligibility = requestedIds ? null : await nativeCodexEligibility()
-                const sessions = []
-                const limit = parsed.data.limit ?? 50
-                while (true) {
-                    for (const session of candidates) {
-                        if (await this.isLocalSessionWithinWorkspaceRoots(session)) {
-                            sessions.push(eligibility ? { ...session, connectionState: eligibility.error ? 'unavailable' as const : eligibility.loaded.has(session.id) ? 'attached' as const : 'history' as const, ...(eligibility.error ? { connectionError: eligibility.error } : {}) } : session)
+                const catalog = requestedIds ? null : createLocalCodexSessionSearch()
+                try {
+                    const indexStarted = performance.now()
+                    let page = requestedIds ? null : catalog!.search(parsed.data)
+                    let candidates = requestedIds ? listLocalCodexSessionsWithMessagesByIds(requestedIds) : page!.sessions
+                    indexMs += performance.now() - indexStarted
+                    const eligibilityStarted = performance.now()
+                    const eligibilityRequest = requestedIds ? Promise.resolve(null) : nativeCodexEligibility().then(result => {
+                        eligibilityMs = performance.now() - eligibilityStarted
+                        return result
+                    })
+                    // Sessions often share a cwd. Resolve each path once per request,
+                    // while still checking symlinks afresh on the next request.
+                    const permissions = new Map<string, Promise<boolean>>()
+                    const permitted = (session: { cwd?: string | null }) => {
+                        const cwd = session.cwd?.trim() ?? ''
+                        let result = permissions.get(cwd)
+                        if (!result) {
+                            result = this.isLocalSessionWithinWorkspaceRoots(session)
+                            permissions.set(cwd, result)
                         }
+                        return result
                     }
-                    if (!page || page.nextCursor === null || sessions.length >= limit) break
-                    // Fill the visible page after permission filtering, so an inaccessible
-                    // batch cannot hide permitted sessions further down the index.
-                    page = searchLocalCodexSessions({ ...parsed.data, cursor: page.nextCursor, limit: limit - sessions.length })
-                    candidates = page.sessions
-                }
-                return { success: true, sessions, nextCursor: page?.nextCursor ?? null }
+                    const sessions = []
+                    const limit = parsed.data.limit ?? 50
+                    while (true) {
+                        const permissionsStarted = performance.now()
+                        const checks = Promise.all(candidates.map(permitted)).then(result => {
+                            permissionsMs += performance.now() - permissionsStarted
+                            return result
+                        })
+                        const [eligibility, allowed] = await Promise.all([
+                            eligibilityRequest,
+                            checks,
+                        ])
+                        for (const [index, session] of candidates.entries()) {
+                            if (allowed[index]) {
+                                sessions.push(eligibility ? { ...session, connectionState: eligibility.error ? 'unavailable' as const : eligibility.loaded.has(session.id) ? 'attached' as const : 'history' as const, ...(eligibility.error ? { connectionError: eligibility.error } : {}) } : session)
+                            }
+                        }
+                        if (!page || page.nextCursor === null || sessions.length >= limit) break
+                        // Fill the visible page after permission filtering, so an inaccessible
+                        // batch cannot hide permitted sessions further down the index.
+                        const nextStarted = performance.now()
+                        page = catalog!.search({ ...parsed.data, cursor: page.nextCursor, limit: limit - sessions.length })
+                        candidates = page.sessions
+                        indexMs += performance.now() - nextStarted
+                        pages += 1
+                    }
+                    const ms = performance.now() - started
+                    if (ms > 100) logger.debug('[NativeCodexCatalog] Slow query', { ms, indexMs, eligibilityMs, permissionsMs, pages, directories: permissions.size, rows: sessions.length })
+                    return { success: true, sessions, nextCursor: page?.nextCursor ?? null }
+                } finally { catalog?.close() }
             }
         )
 
@@ -638,6 +691,7 @@ export class ApiMachineClient {
 
         this.socket.on('connect', () => {
             logger.debug('[API MACHINE] Connected to bot')
+            this.terminalBridge.start()
             this.rpcHandlerManager.onSocketConnect(this.socket)
             this.updateRunnerState((state) => ({
                 ...(state ?? {}),
@@ -682,6 +736,7 @@ export class ApiMachineClient {
 
         this.socket.on('disconnect', () => {
             logger.debug('[API MACHINE] Disconnected from bot')
+            this.terminalBridge.stop()
             this.rpcHandlerManager.onSocketDisconnect()
             this.stopKeepAlive()
         })
@@ -778,6 +833,7 @@ export class ApiMachineClient {
     }
 
     shutdown(): void {
+        this.terminalBridge.stop()
         this.stopKeepAlive()
         // The listener holds this client, and the socket is about to close.
         setAgyCatalogChangeListener(null)
