@@ -1,6 +1,6 @@
 import { useAppContext } from '@/lib/app-context'
 import { useSyncExternalStore } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/lib/use-translation'
 import { getAppearanceOptions, useAppearance } from '@/hooks/useTheme'
 import { getColorThemeOptions, getColorThemePreview, useColorTheme, type ColorThemePreset } from '@/hooks/useColorTheme'
@@ -86,6 +86,7 @@ function SessionPreviewLimitControl() {
     const { t } = useTranslation()
     const { sessionPreviewLimit, setSessionPreviewLimit } = useSessionPreviewLimit()
     const [draft, setDraft] = useState(String(sessionPreviewLimit))
+    const cancelBlur = useRef(false)
 
     useEffect(() => setDraft(String(sessionPreviewLimit)), [sessionPreviewLimit])
 
@@ -109,10 +110,26 @@ function SessionPreviewLimitControl() {
                     max={MAX_SESSION_PREVIEW_LIMIT}
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
-                    onBlur={commit}
+                    onBlur={() => {
+                        if (cancelBlur.current) {
+                            cancelBlur.current = false
+                            return
+                        }
+                        commit()
+                    }}
                     onKeyDown={(event) => {
-                        if (event.key === 'Enter') { commit(); event.currentTarget.blur() }
-                        if (event.key === 'Escape') { setDraft(String(sessionPreviewLimit)); event.currentTarget.blur() }
+                        if (event.nativeEvent.isComposing) return
+                        if (event.key === 'Enter') {
+                            event.preventDefault()
+                            event.currentTarget.blur()
+                        }
+                        if (event.key === 'Escape') {
+                            event.preventDefault()
+                            // blur fires before React applies the restored draft.
+                            cancelBlur.current = true
+                            setDraft(String(sessionPreviewLimit))
+                            event.currentTarget.blur()
+                        }
                     }}
                     className="h-8 w-14 border-x border-[var(--app-border)] bg-transparent text-center text-sm text-[var(--app-fg)] outline-none"
                 />
