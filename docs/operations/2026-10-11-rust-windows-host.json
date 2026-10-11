@@ -1,0 +1,223 @@
+{
+  "checks": [
+    "Supervisor runs in Session 0",
+    "engine has medium, non-admin Session 0 token",
+    "runner has medium, non-admin Session 0 token",
+    "native has medium, non-admin Session 0 token",
+    "Same-user pipe and AF_UNIX relay perform WebSocket RPC",
+    "Only persisted root restored; loaded, child, archived and deleted roots skipped",
+    "Recovery never submits a model turn, tool call or user message",
+    "Native argument boundaries preserve spaces, empty strings, quotes, Unicode and trailing slash",
+    "32 concurrent native clients receive RPC without exhausting the listener",
+    "Duplicate supervisor/dispatch cannot launch another engine",
+    "Runner handoff retains existing detached session",
+    "Runner restart retains existing detached session",
+    "Engine fault kills owned descendants before recovery",
+    "Native bridge fault cleans up its owned descendants",
+    "Contended state publication does not terminate supervisor or engine",
+    "Exactly two native resident hosts; no PowerShell role wrappers",
+    "Cleanup checks use recorded nonzero process identities",
+    "Supervisor crash leaves no owned backend process behind",
+    "Complete isolated process inventory has no unrecorded orphan",
+    "Production supervisor, engine, Runner and bridge generations unchanged"
+  ],
+  "passed": true,
+  "trial": "D:\\hapi\\temp\\rust-e79c87005e",
+  "memorySamples": [
+    {
+      "workingSet": 15851520.0,
+      "hosts": [
+        {
+          "workingSet": 6893568,
+          "handles": 92,
+          "privateCommit": 1085440,
+          "pid": 1355656,
+          "threads": 3
+        },
+        {
+          "workingSet": 8957952,
+          "handles": 115,
+          "privateCommit": 2551808,
+          "pid": 1858132,
+          "threads": 4
+        }
+      ],
+      "privateCommit": 3637248.0
+    },
+    {
+      "workingSet": 15851520.0,
+      "hosts": [
+        {
+          "workingSet": 6893568,
+          "handles": 92,
+          "privateCommit": 1085440,
+          "pid": 1355656,
+          "threads": 3
+        },
+        {
+          "workingSet": 8957952,
+          "handles": 115,
+          "privateCommit": 2551808,
+          "pid": 1858132,
+          "threads": 4
+        }
+      ],
+      "privateCommit": 3637248.0
+    },
+    {
+      "workingSet": 15851520.0,
+      "hosts": [
+        {
+          "workingSet": 6893568,
+          "handles": 92,
+          "privateCommit": 1085440,
+          "pid": 1355656,
+          "threads": 3
+        },
+        {
+          "workingSet": 8957952,
+          "handles": 115,
+          "privateCommit": 2551808,
+          "pid": 1858132,
+          "threads": 4
+        }
+      ],
+      "privateCommit": 3637248.0
+    },
+    {
+      "workingSet": 15851520.0,
+      "hosts": [
+        {
+          "workingSet": 6893568,
+          "handles": 92,
+          "privateCommit": 1085440,
+          "pid": 1355656,
+          "threads": 3
+        },
+        {
+          "workingSet": 8957952,
+          "handles": 115,
+          "privateCommit": 2551808,
+          "pid": 1858132,
+          "threads": 4
+        }
+      ],
+      "privateCommit": 3637248.0
+    }
+  ],
+  "timestamp": "2026-10-11T02:56:02.8284610Z",
+  "boundary": "Isolated S4U task, synthetic roles, 32 concurrent WebSocket RPC clients and private state. Production backend unchanged. Not deployed.",
+  "nativeCompatibility": {
+    "passed": true,
+    "transport": "existing same-user production pipe, WebSocket RPC",
+    "operations": [
+      "initialize",
+      "thread/loaded/list"
+    ],
+    "loadedCount": 17,
+    "modelCalls": 0
+  },
+  "candidate": {
+    "target": "x86_64-pc-windows-gnu",
+    "rustc": "1.96.0",
+    "releaseBytes": 1272832,
+    "retainedExecutable": "/mnt/cache/build-cache/hapi-windows-host-20261011/hapi-windows-host.exe"
+  },
+  "earlierNineteenCheckRun": {
+    "timestamp": "2026-10-11T02:44:15.9287933Z",
+    "passed": true,
+    "memorySamples": [
+      {
+        "privateCommit": 2945024.0,
+        "workingSet": 15585280.0,
+        "hosts": [
+          {
+            "pid": 1836880,
+            "handles": 92,
+            "threads": 3,
+            "workingSet": 6905856,
+            "privateCommit": 1081344
+          },
+          {
+            "pid": 1321760,
+            "handles": 115,
+            "threads": 4,
+            "workingSet": 8679424,
+            "privateCommit": 1863680
+          }
+        ]
+      },
+      {
+        "privateCommit": 2945024.0,
+        "workingSet": 15585280.0,
+        "hosts": [
+          {
+            "pid": 1836880,
+            "handles": 92,
+            "threads": 3,
+            "workingSet": 6905856,
+            "privateCommit": 1081344
+          },
+          {
+            "pid": 1321760,
+            "handles": 115,
+            "threads": 4,
+            "workingSet": 8679424,
+            "privateCommit": 1863680
+          }
+        ]
+      },
+      {
+        "privateCommit": 2945024.0,
+        "workingSet": 15585280.0,
+        "hosts": [
+          {
+            "pid": 1836880,
+            "handles": 92,
+            "threads": 3,
+            "workingSet": 6905856,
+            "privateCommit": 1081344
+          },
+          {
+            "pid": 1321760,
+            "handles": 115,
+            "threads": 4,
+            "workingSet": 8679424,
+            "privateCommit": 1863680
+          }
+        ]
+      },
+      {
+        "privateCommit": 2945024.0,
+        "workingSet": 15585280.0,
+        "hosts": [
+          {
+            "pid": 1836880,
+            "handles": 92,
+            "threads": 3,
+            "workingSet": 6905856,
+            "privateCommit": 1081344
+          },
+          {
+            "pid": 1321760,
+            "handles": 115,
+            "threads": 4,
+            "workingSet": 8679424,
+            "privateCommit": 1863680
+          }
+        ]
+      }
+    ]
+  },
+  "initialFailedHarnessAttempt": {
+    "assertion": "Timeout: outer job cleanup",
+    "cause": "Missing PID was converted to zero and treated as live. Restart waits and cleanup observations were invalid. Fixed before the passing runs."
+  },
+  "cleanup": {
+    "passed": true,
+    "remainingTestTasks": 0,
+    "ownedTestProcesses": 0,
+    "trialDirectoriesRemoved": 4,
+    "productionTaskChanged": false
+  }
+}

@@ -96,3 +96,14 @@ The bridge wrapper alone was restarted by its supervisor; engine, pipe and Runne
 Use the validated **Bun 1.4.0** toolchain for the Windows build. A 1.3.13 build of the same bridge source failed to open the named pipe despite a successful build and `--version`; that candidate was rolled back. The 1.4.0 transport smoke passed on the device. On this build host the validated toolchain is `/mnt/cache/build-cache/hapi-upstream-toolchain/bun`; put `TMPDIR` and `BUN_INSTALL_CACHE_DIR` on the cache disk.
 
 Before changing the running native launcher, compile `cli/scripts/windows-native-transport-smoke.ts` with the **same toolchain** as the candidate executable and run it against the existing local relay. It checks handshake, Codex initialization and reconnect without submitting a model turn. A successful Hub WebSocket check does not test this named-pipe transport. Keep the old binary and launcher available until an original Windows session's authenticated history read also passes through the new bridge.
+
+## Rust host candidate
+
+[`native/windows-host`](../../native/windows-host/README.md) implements the same
+restricted bootstrap, ownership jobs, supervision, pipe relay and native probe
+without resident PowerShell hosts. `configure-rust-host.ps1` writes its launch
+configuration; `register-rust-background.ps1` registers it after the old backend
+has been explicitly drained and stopped. The running PowerShell backend is not
+automatically migrated. See the [isolated Windows acceptance and memory
+measurements](../../docs/operations/2026-10-11-rust-windows-host.md) for what has
+been verified and what remains before production adoption.

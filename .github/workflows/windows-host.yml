@@ -1,0 +1,47 @@
+name: Native Windows host
+
+on:
+    pull_request:
+        paths:
+            - native/windows-host/**
+            - scripts/windows/configure-rust-host.ps1
+            - scripts/windows/register-rust-background.ps1
+            - .github/workflows/windows-host.yml
+    push:
+        paths:
+            - native/windows-host/**
+            - scripts/windows/configure-rust-host.ps1
+            - scripts/windows/register-rust-background.ps1
+            - .github/workflows/windows-host.yml
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    windows:
+        runs-on: windows-latest
+        timeout-minutes: 15
+        defaults:
+            run:
+                shell: pwsh
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@1.96.0
+              with:
+                  components: rustfmt, clippy
+            - name: Format, lint and unit tests
+              run: |
+                  cargo fmt --manifest-path native/windows-host/Cargo.toml --check
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+                  cargo clippy --manifest-path native/windows-host/Cargo.toml --all-targets --features test-fixture --locked -- -D warnings
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+                  cargo test --manifest-path native/windows-host/Cargo.toml --locked
+                  exit $LASTEXITCODE
+            - name: Build isolated fixture and native host
+              run: cargo build --manifest-path native/windows-host/Cargo.toml --release --locked --features test-fixture --bins
+            - name: Session 0 ownership and transport acceptance
+              run: |
+                  $nativeHost = Join-Path $PWD 'native/windows-host/target/release/hapi-windows-host.exe'
+                  $fixture = Join-Path $PWD 'native/windows-host/target/release/hapi-host-fixture.exe'
+                  & ./native/windows-host/tests/windows-smoke.ps1 -HostExecutable $nativeHost -FixtureExecutable $fixture -TemporaryRoot $env:RUNNER_TEMP
