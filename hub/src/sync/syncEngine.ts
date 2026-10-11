@@ -213,6 +213,8 @@ export class SyncEngine {
     private readonly opencodeClearTails = new Map<string, Promise<ClearOpencodeSessionResult>>()
     /** Serialize fork/rewind per session so concurrent native rollbacks cannot stack. */
     private readonly historyActionsInFlight = new Set<string>()
+    /** History, outline and context can all open the same cold native thread. */
+    private readonly nativeConnectionsInFlight = new Map<string, Promise<void>>()
     /**
      * Hub owner id for accountable work-graph principals (A2A P1/P3).
      * Defaults to "1" for unit tests; startHub overwrites with getOrCreateOwnerId().
@@ -3180,7 +3182,12 @@ export class SyncEngine {
 
         let initialSession = access.session
         if (!initialSession.active && initialSession.metadata?.codexNativeSession) {
-            return { type: 'error', code: 'resume_unavailable', message: 'Native Codex bridge is offline; reconnect the existing native session.' }
+            try {
+                await this.reconnectNativeSession(initialSession.id)
+                return { type: 'success', sessionId: initialSession.id }
+            } catch (error) {
+                return { type: 'error', code: 'resume_unavailable', message: error instanceof Error ? error.message : 'Native Codex connection unavailable' }
+            }
         }
         if (await this.recoverInactiveReservedClear(initialSession, namespace)) {
             initialSession = this.sessionCache.getSessionByNamespace(sessionId, namespace) ?? initialSession
@@ -4390,8 +4397,39 @@ export class SyncEngine {
         return await this.rpcGateway.connectCodexSessionForMachine(machineId, threadId)
     }
 
+    private reconnectNativeSession(sessionId: string): Promise<void> {
+        const pending = this.nativeConnectionsInFlight.get(sessionId)
+        if (pending) return pending
+        const connect = async () => {
+            const session = this.sessionCache.getSession(sessionId)
+            const metadata = session?.metadata
+            if (!session || !metadata?.codexNativeSession || !metadata.machineId || !metadata.codexSessionId) {
+                throw new Error('Native Codex session binding is unavailable')
+            }
+            const machine = this.machineCache.getMachineByNamespace(metadata.machineId, session.namespace)
+            if (!machine?.active) throw new Error('The machine hosting this Codex session is offline')
+            // Reattach the original native thread through its Runner. Never spawn
+            // a replacement, replay input, or route to another machine/namespace.
+            const reply = asRecord(await this.rpcGateway.connectCodexSessionForMachine(metadata.machineId, metadata.codexSessionId))
+            if (typeof reply?.error === 'string') throw new Error(reply.error)
+            if (reply?.sessionId !== sessionId || reply?.threadId !== metadata.codexSessionId) {
+                throw new Error('Native Codex connection did not confirm the original session')
+            }
+        }
+        const task = connect().finally(() => this.nativeConnectionsInFlight.delete(sessionId))
+        this.nativeConnectionsInFlight.set(sessionId, task)
+        return task
+    }
+
     async readCodexHistory(sessionId: string, query: Record<string, unknown>) {
-        const result = await this.rpcGateway.readCodexHistory(sessionId, query)
+        let result: Awaited<ReturnType<RpcGateway['readCodexHistory']>>
+        try {
+            result = await this.rpcGateway.readCodexHistory(sessionId, query)
+        } catch (error) {
+            if (!(error instanceof RpcTargetMissingError)) throw error
+            await this.reconnectNativeSession(sessionId)
+            result = await this.rpcGateway.readCodexHistory(sessionId, query)
+        }
         if (result && typeof result === 'object' && 'error' in result && typeof result.error === 'string') {
             throw new Error(result.error)
         }
