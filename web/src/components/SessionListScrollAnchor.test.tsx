@@ -30,6 +30,24 @@ describe('SessionListScrollAnchor observation', () => {
         rerender(view(second, 236))
         expect(onScrollRestored).toHaveBeenCalledTimes(1)
     })
+    it.each([false, true])('uses the requested first-visible policy (%s) without changing the directory default', preferFirstVisible => {
+        const view = (sessions: SessionSummary[], first: number, second: number) => <div data-testid="scroller">
+            <SessionListScrollAnchor sessions={sessions} className="" preferFirstVisible={preferFirstVisible}>
+                <button className="session-list-item" data-session-scroll-anchor data-y={first}>First</button>
+                <button className="session-list-item" data-session-scroll-anchor data-y={second}>Second</button>
+            </SessionListScrollAnchor>
+        </div>
+        const { getByTestId, rerender } = render(view([], 200, 400))
+        const scroller = getByTestId('scroller')
+        scroller.scrollTop = 100
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+            const top = this.dataset.y ? Number(this.dataset.y) - scroller.scrollTop : 0
+            const height = this === scroller ? 680 : 34
+            return { top, bottom: top + height, left: 0, right: 320, width: 320, height, x: 0, y: top, toJSON() {} }
+        })
+        rerender(view([], 272, 436))
+        expect(scroller.scrollTop).toBe(preferFirstVisible ? 172 : 136)
+    })
     it('does not announce a nonexistent restoration while at the top', () => {
         const onScrollRestored = vi.fn()
         const view = (sessions: SessionSummary[]) => <div><SessionListScrollAnchor

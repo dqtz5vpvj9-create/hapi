@@ -147,3 +147,75 @@ describe('Recent bounded mounting', () => {
         expect(container.querySelectorAll('.app-session-date-heading').length).toBe(1)
     })
 })
+
+describe('Recent refresh owns its reordered projection', () => {
+    beforeEach(() => {
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+            const scroller = document.querySelector('.app-session-list-content') as HTMLElement | null
+            const root = this.closest<HTMLElement>('[data-recent-root]')
+            const isScroller = this.classList.contains('app-session-list-content')
+            const isList = this.getAttribute('data-testid') === 'recent-session-list'
+            const top = root ? Number(root.dataset.index) * 36 - (scroller?.scrollTop ?? 0)
+                : isList ? -(scroller?.scrollTop ?? 0) : 0
+            const height = isScroller ? 680 : isList ? parseFloat(this.style.height) || 680 : 34
+            return { top, bottom: top + height, left: 0, right: 320, width: 320, height, x: 0, y: top, toJSON() {} }
+        })
+        vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(function (this: HTMLElement) {
+            return [this.getBoundingClientRect()] as unknown as DOMRectList
+        })
+    })
+    it('preserves the reader when only recency snapshot changes, without another sessions response', () => {
+        const initial = sessions(1000)
+        const { container, updateSessions } = mount(initial)
+        const scroller = scrollTo(container, 18000)
+        const anchor = container.querySelector('[data-recent-root="row-500"]') as HTMLElement
+        expect(anchor).toBeTruthy()
+        expect(anchor.getBoundingClientRect().top).toBe(0)
+        // This real summary update arrives first, but frozen recency keeps its
+        // former seat. The explicit refresh below changes no sessions prop.
+        const updated = initial.map(item => item.id === 'row-900' ? { ...item, updatedAt: 999999999 }
+            : item.id === 'row-517' ? { ...item, updatedAt: 1000000000 } : item)
+        updateSessions(updated)
+        expect(anchor.getBoundingClientRect().top).toBe(0)
+        fireEvent.click(screen.getByRole('button', { name: 'Recent' }))
+        expect(container.querySelector('[data-recent-root="row-500"]')).toBe(anchor)
+        expect(anchor.getBoundingClientRect().top).toBe(0)
+        expect(scroller.scrollTop).toBe(18072)
+        // The virtual observer sees that landing immediately; reverse input
+        // remains native and reaches the preceding logical window.
+        scrollTo(container, 17676)
+        expect(container.querySelector('[data-recent-root="row-490"]')).toBeTruthy()
+    })
+    it.each(['promoted', 'removed'] as const)('uses the next visible survivor when the first row is %s out of the window', mode => {
+        const initial = sessions(1000)
+        const { container, updateSessions } = mount(initial)
+        const scroller = scrollTo(container, 18000)
+        const oldFirst = container.querySelector('[data-recent-root="row-500"]')
+        const next = container.querySelector('[data-recent-root="row-501"]') as HTMLElement
+        expect(next.getBoundingClientRect().top).toBe(36)
+        if (mode === 'removed') {
+            updateSessions(initial.filter(item => item.id !== 'row-500'))
+        } else {
+            updateSessions(initial.map(item => item.id === 'row-500' ? { ...item, updatedAt: 999999999 } : item))
+            fireEvent.click(screen.getByRole('button', { name: 'Recent' }))
+        }
+        expect(container.contains(oldFirst)).toBe(false)
+        expect(container.querySelector('[data-recent-root="row-501"]')).toBe(next)
+        expect(next.getBoundingClientRect().top).toBe(36)
+        expect(scroller.scrollTop).toBe(mode === 'removed' ? 17964 : 18000)
+    })
+
+    it('follows the first visible row when it is promoted but explicitly retained', () => {
+        const initial = sessions(1000)
+        const { container, updateSessions } = mount(initial, vi.fn(), 'row-500')
+        const scroller = scrollTo(container, 18000)
+        const anchor = container.querySelector('[data-recent-root="row-500"]') as HTMLElement
+        expect(anchor.getBoundingClientRect().top).toBe(0)
+        updateSessions(initial.map(item => item.id === 'row-500' ? { ...item, updatedAt: 999999999 } : item))
+        fireEvent.click(screen.getByRole('button', { name: 'Recent' }))
+        expect(container.querySelector('[data-recent-root="row-500"]')).toBe(anchor)
+        expect(anchor.getBoundingClientRect().top).toBe(0)
+        expect(scroller.scrollTop).toBe(0)
+    })
+
+})

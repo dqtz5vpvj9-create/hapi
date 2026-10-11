@@ -2270,7 +2270,7 @@ export function SessionList(props: {
                 </div>
             ) : null}
             <div ref={attachScrollContainer} className="app-session-list-content app-scroll-y session-list-scrollbar-left scrollbar-auto-hide min-h-0 flex-1">
-            <SessionListScrollAnchor sessions={props.sessions} onScrollRestored={offset => recentScrollObserver.current?.observeScroll(offset)} className="mx-auto flex w-full max-w-content flex-col gap-1 pl-1.5 pr-2 pb-2">
+            <SessionListScrollAnchor sessions={listView === 'recent' ? recentSessions : props.sessions} preferFirstVisible={listView === 'recent'} onScrollRestored={offset => recentScrollObserver.current?.observeScroll(offset)} className="mx-auto flex w-full max-w-content flex-col gap-1 pl-1.5 pr-2 pb-2">
                 {props.sessions.length === 0 && !props.isLoading ? (
                     <SessionsEmptyState
                         onNewSession={props.onNewSession}

@@ -1,7 +1,7 @@
 import { Component, createRef, type ReactNode } from 'react'
 import type { SessionSummary } from '@/types/api'
 
-type Props = { children: ReactNode; className: string; sessions: SessionSummary[]; onScrollRestored?: (offset: number) => void }
+type Props = { children: ReactNode; className: string; sessions: SessionSummary[]; preferFirstVisible?: boolean; onScrollRestored?: (offset: number) => void }
 type Snapshot = { scrollTop: number; anchors: { element: HTMLElement; top: number }[] }
 
 /** Read the old DOM at commit time, before rows move between pinned sections. */
@@ -33,9 +33,10 @@ export class SessionListScrollAnchor extends Component<Props, object, Snapshot |
         const container = content?.parentElement
         if (!content || !container || !snapshot) return
         const viewportTop = container.getBoundingClientRect().top
-        // Prefer the least-reordered survivor, not a project that was just sent to
-        // the top/bottom. Compare content offsets so native scroll anchoring cannot
-        // make that moved project look stationary.
+        // Directory groups prefer the least-reordered survivor. Recent keeps
+        // the first visible row that survives in the committed window; if it
+        // leaves the window or is removed, the next surviving row takes over.
+        // Compare content offsets so native anchoring cannot hide a move.
         const candidates = snapshot.anchors
             .filter(({ element }) => content.contains(element)
                 && !element.closest('.collapsible-panel:not([data-open])'))
@@ -45,8 +46,8 @@ export class SessionListScrollAnchor extends Component<Props, object, Snapshot |
                 ...anchor,
                 shift: anchor.rect.top - viewportTop + container.scrollTop - anchor.top - snapshot.scrollTop,
             }))
-            .sort((a, b) => Math.abs(a.shift) - Math.abs(b.shift))
-        const anchor = candidates[0]
+        const anchor = this.props.preferFirstVisible ? candidates[0]
+            : candidates.sort((a, b) => Math.abs(a.shift) - Math.abs(b.shift))[0]
         const scrollTop = anchor ? snapshot.scrollTop + anchor.shift : snapshot.scrollTop
         if (Math.abs(container.scrollTop - scrollTop) > 0.5) container.scrollTop = scrollTop
         // Publish the browser's actual landing, including native anchoring,
