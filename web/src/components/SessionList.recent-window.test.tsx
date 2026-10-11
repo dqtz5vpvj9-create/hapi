@@ -111,6 +111,23 @@ describe('Recent bounded mounting', () => {
         fireEvent.keyDown(document, { key: 'Escape' })
         expect(container.contains(first)).toBe(false)
     })
+    it('reveals a newly pending child without remounting its retained root', () => {
+        const items = sessions(1000)
+        const child = session('child', 'Child needing approval', { metadata: {
+            name: 'Child needing approval', path: '/work/hapi', flavor: 'codex', machineId: 'm1',
+            agentSessionId: 'child', codexParentThreadId: 'row-0',
+        } })
+        const { container, updateSessions } = mount([...items, child], vi.fn(), 'row-0')
+        const root = container.querySelector('[data-recent-root="row-0"]')
+        expect(screen.queryByText('Child needing approval')).toBeNull()
+        scrollTo(container, 18000)
+        expect(container.querySelector('[data-recent-root="row-0"]')).toBe(root)
+        updateSessions([...items, { ...child, pendingRequestsCount: 2 }])
+        expect(container.querySelector('[data-recent-root="row-0"]')).toBe(root)
+        expect(screen.getByText('Child needing approval')).toBeTruthy()
+        expect(screen.getByRole('button', { name: /Subagents \(1\) 2 awaiting approval/ })).toHaveAttribute('aria-expanded', 'true')
+        expect((container.querySelector('.app-session-list-content') as HTMLElement).scrollTop).toBe(18000)
+    })
     it('restores expanded children when their root remounts', () => {
         const items = sessions(1000)
         const child = session('child', 'Child task', { metadata: { name: 'Child task', path: '/work/hapi', flavor: 'codex', machineId: 'm1', agentSessionId: 'child', codexParentThreadId: 'row-0' } })

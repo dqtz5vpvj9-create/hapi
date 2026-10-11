@@ -1,4 +1,4 @@
-import { createContext, Fragment, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
+import { createContext, Fragment, memo, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
 import { defaultRangeExtractor, observeElementOffset, observeElementRect, useVirtualizer } from '@tanstack/react-virtual'
 import type { SessionSummary } from '@/types/api'
 import { useTranslation } from '@/lib/use-translation'
@@ -46,6 +46,16 @@ function RetainedRoot({ id, retain, children }: {
     const onRetain = useCallback((item: string, active: boolean) => retain(id, item, active), [id, retain])
     return <RetainRecentRow.Provider value={onRetain}>{children}</RetainRecentRow.Provider>
 }
+
+// Virtualizer range updates must not rerender unchanged session subtrees.
+// Keep callback identity in the default shallow comparison: parent updates can
+// change selection, hierarchy, or status options without changing the session.
+const RecentRowContent = memo(function RecentRowContent({ session, renderSession }: {
+    session: SessionSummary
+    renderSession: (session: SessionSummary) => ReactNode
+}) {
+    return renderSession(session)
+})
 
 function DateHeading({ time, previousTime }: { time: number; previousTime?: number }) {
     const { t } = useTranslation()
@@ -173,7 +183,7 @@ export function RecentSessionList({ sessions, scrollElement, scrollObserverRef, 
                 <div data-index={row.index} data-recent-root={session.id} ref={virtualizer.measureElement} className="flow-root w-full">
                     <RetainedRoot id={session.id} retain={retain}>
                         {narrow ? <DateHeading time={timeFor(session)} previousTime={row.index > 0 ? timeFor(sessions[row.index - 1]) : undefined} /> : null}
-                        {renderSession(session)}
+                        <RecentRowContent session={session} renderSession={renderSession} />
                     </RetainedRoot>
                 </div>
             </Fragment>
