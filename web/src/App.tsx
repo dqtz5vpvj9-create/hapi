@@ -328,6 +328,7 @@ function AppInner() {
             // received updates during the SSE gap would otherwise serve stale
             // cached data on remount.  See tiann/hapi#884.
             queryClient.invalidateQueries({ queryKey: ['session'] }),
+            queryClient.invalidateQueries({ queryKey: ['scratchlist'] }),
             refreshAllAgyCatalogs(queryClient)
         ]
         const refreshMessages = api ? Promise.all(activeSessionIds.map(id => syncTailMessages(api, id))) : Promise.resolve()
