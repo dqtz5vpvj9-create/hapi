@@ -70,3 +70,13 @@ Windows/Linux 使用相同状态适配代码，但本轮没有在 Lis-iMac 实�
 将固定 20 改为 .NET 的 `NamedPipeServerStream.MaxAllowedServerInstances`，保留 `PipeOptions.CurrentUserOnly`。只重启代理，两个 Windows Codex PID 和启动时间保持不变。使用与正式 CLI 相同 Bun 1.4.0 的真实 CodexAppServerClient 验证 initialize、loaded-list、detach 和立即 reconnect，两次均成功。新增 `scripts/windows/tests/native-pipe-capacity.ps1` 保持 24 个初始化连接并验证旧连接仍能读取和新连接重连；测试只读取 loaded IDs，不打开新会话、不提交模型任务。此修复没有采用尚未完成的 Rust supervisor。
 
 本次发布目录：`/mnt/cache/build-cache/hapi-presence-release-20261011`。临时日志、部署前数据库在线备份及浏览器证据：`/mnt/cache/data-cache/hapi-release-20261011`。数据库升级只新增执行版本与阅读游标表；已在副本中验证恢复 user_version=29 后旧版 Store 可以打开兼容的附加表，回退不必用旧聊天库覆盖新数据。旧版本脚本资源保留，供发布时仍打开的浏览器使用。
+
+### 正式发布结果
+
+`8a3ed6b8` 已推送到用户 fork 的 main，生产 HTTPS 首页与该发布目录的最终构建内容完全一致。Hub、Linux 原生桥接及 Linux Runner 已切换到固定发布目录；Windows 原生桥接与 Runner 使用 `hapi-presence-20261011.exe`。Runner 通过 `/stop` 平滑退出，保留 detached 会话。未采用工作树中的 Rust host、会话启动优化、文档返回与菜单改动；这些未完成修改在发布后已完整恢复到工作树，并保留 stash 备份。
+
+最终合并后 Web 测试为 3980 通过、1 跳过，19 项浏览器测试全部通过，覆盖冷进入期间的真实滚轮/触控输入、首次展示、预读、反向复用和跨客户端未读同步。第一次同时有构建和组件测试运行时，反向复用测试达到 45 秒超时；停止其他任务后不改变测试或超时，完整 19 项复跑通过。Windows 24 并发连接和真实生产客户端两次 initialize/reconnect 检查通过。
+
+线上原有两台机器 ID 均重连并认证，87 个会话可列出；Linux 与 Windows 已有会话的历史读取和实际聊天 DOM/输入框检查通过，41 个浏览器脚本资源无加载错误和 JS 异常。返回了全部会话的执行版本，以及用户阅读状态。切换期间 Linux 在检查时存活的 12 个 Codex app-server PID/启动时间保持不变；Windows 原先 2 个 Codex PID及用户随后启动的第三个 PID均保留。现有拥有原生引擎的 SharedRuntime 进程保留旧代码，避免升级时中断执行，待用户结束后新启动使用新版 CLI。
+
+**性能限制必须保留：** Windows 桥接切换前的一次已有会话读取为 141ms；切换后检查曾出现 17.1 秒，随后连续读取为 7.5 秒和 5.0 秒。请求最终返回正确消息，但不能据此宣称 Windows 历史读取性能验收通过或达到 100ms。此项需要单独分解原生 RPC、元数据与正文路径成本；没有用加长超时将其记为性能通过。手机物理触摸及 Windows 注销/重启仍不属于这次部署验收。
