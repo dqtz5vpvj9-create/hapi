@@ -117,10 +117,12 @@ export function SessionRowSummary(props: {
     const todoProgress = getTodoProgress(s)
     const attention = useMemo(
         () => {
+            const seenAt = lastSeenAt ?? getSessionLastSeenAt(s.id)
+            const unreadAt = manualUnreadAt === undefined ? getSessionManualUnreadAt(s.id) : manualUnreadAt
             const candidate = classifySessionAttention(s, {
                 selected,
-                lastSeenAt: lastSeenAt ?? getSessionLastSeenAt(s.id),
-                manualUnreadAt: manualUnreadAt === undefined ? getSessionManualUnreadAt(s.id) : manualUnreadAt,
+                lastSeenAt: unreadAt === null ? seenAt : Math.min(seenAt, unreadAt - 1),
+                manualUnreadAt: unreadAt,
             })
             return showDetailedStatus || candidate?.kind === 'permission' || candidate?.kind === 'input'
                 ? candidate : null

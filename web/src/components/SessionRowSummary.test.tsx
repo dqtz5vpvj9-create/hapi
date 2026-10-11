@@ -46,6 +46,17 @@ describe('SessionRowSummary background status', () => {
         localStorage.clear()
     })
 
+    it('renders remote manual unread from a shared snapshot whose seen watermark already reached the activity', () => {
+        const summary = makeSummary({ updatedAt: 2000, backgroundTaskCount: 0 })
+        const row = (manualUnreadAt: number | null) => <I18nProvider>
+            <SessionRowSummary session={summary} showDetailedStatus lastSeenAt={2000} manualUnreadAt={manualUnreadAt} />
+        </I18nProvider>
+        const view = render(row(2000))
+        expect(view.container.querySelector('[data-session-status="unread"]')).toBeInTheDocument()
+        view.rerender(row(null))
+        expect(view.container.querySelector('[data-session-status="unread"]')).toBeNull()
+    })
+
     it('keeps a selected waiting request visible through thinking updates, then shows running when resolved', () => {
         const session = makeSummary({ thinking: true, pendingRequestKinds: ['permission'], pendingRequestsCount: 1 })
         const row = (summary: SessionSummary) => <I18nProvider><SessionRowSummary session={summary} selected showDetailedStatus /></I18nProvider>
