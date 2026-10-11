@@ -7,6 +7,7 @@ import Foundation
 /// keyed by request id and are resolved over
 /// `POST /api/sessions/:id/permissions/:requestId/approve|deny`.
 public struct AgentStateRequest: Codable, Equatable, Sendable {
+    public var blocking: Bool?
     public var tool: String
     /// Correlates a native tool call; approval still uses the request dictionary key.
     public var toolCallId: String?
@@ -15,7 +16,8 @@ public struct AgentStateRequest: Codable, Equatable, Sendable {
     /// Epoch ms when the request was raised; older CLIs omit it.
     public var createdAt: Int?
 
-    public init(tool: String, arguments: JSONValue? = nil, createdAt: Int? = nil, toolCallId: String? = nil) {
+    public init(tool: String, arguments: JSONValue? = nil, createdAt: Int? = nil, toolCallId: String? = nil, blocking: Bool? = nil) {
+        self.blocking = blocking
         self.tool = tool
         self.toolCallId = toolCallId
         self.arguments = arguments

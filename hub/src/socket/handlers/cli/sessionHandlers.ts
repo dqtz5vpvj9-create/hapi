@@ -12,12 +12,17 @@ import { extractBackgroundTaskDelta } from '../../../sync/backgroundTasks'
 import { shouldRecordSessionActivity } from '../../../sync/sessionActivity'
 import type { CliSocketWithData } from '../../socketTypes'
 import type { SessionEndReason } from '@hapi/protocol'
+import { NativeRuntimeStateSchema } from '@hapi/protocol/schemas'
 import type { AccessErrorReason, AccessResult } from './types'
+
+let nextConnection = 0
 
 type SessionAlivePayload = {
     sid: string
     time: number
     thinking?: boolean
+    execution?: import('@hapi/protocol/schemas').NativeRuntimeState
+    sourceConnection?: number
     mode?: 'local' | 'remote'
     permissionMode?: PermissionMode
     model?: string | null
@@ -29,6 +34,7 @@ type SessionAlivePayload = {
 }
 
 type SessionEndPayload = {
+    sourceConnection?: number
     sid: string
     time: number
     reason?: SessionEndReason
@@ -90,6 +96,7 @@ export type SessionHandlersDeps = {
     onSessionAlive?: (payload: SessionAlivePayload) => void
     onSessionReady?: (payload: SessionReadyPayload) => void
     onSessionEnd?: (payload: SessionEndPayload) => void
+    isCurrentSessionSource?: (sessionId: string, connection: number) => boolean
     onWebappEvent?: (event: SyncEvent) => void
     onBackgroundTaskDelta?: (sessionId: string, delta: { started: number; completed: number }) => void
     onSessionActivity?: (sessionId: string, updatedAt: number) => void
@@ -104,15 +111,17 @@ export type SessionHandlersDeps = {
 
 export function registerSessionHandlers(socket: CliSocketWithData, deps: SessionHandlersDeps): void {
     const { store, resolveSessionAccess, emitAccessError, onSessionAlive, onSessionReady, onSessionEnd, onWebappEvent, onBackgroundTaskDelta, onSessionActivity, onAgentProgress, onSweepImmediateQueued, onMessagesConsumed } = deps
+    const sourceConnection = ++nextConnection
 
     socket.on('native-history-changed', data => {
-        const parsed = z.object({ sid: z.string(), updatedAt: z.number().int().nonnegative().optional() }).safeParse(data)
+        const parsed = z.object({ sid: z.string(), updatedAt: z.number().int().nonnegative().optional(), activityOnly: z.boolean().optional() }).safeParse(data)
         if (!parsed.success) return
+        if (deps.isCurrentSessionSource?.(parsed.data.sid, sourceConnection) === false) return
         const access = resolveSessionAccess(parsed.data.sid, { fresh: true })
         if (!access.ok) { emitAccessError('session', parsed.data.sid, access.reason); return }
         const metadata = access.value.metadata as Metadata | null
         if (!metadata?.codexNativeSession) return
-        if (parsed.data.updatedAt !== undefined && parsed.data.updatedAt !== metadata.codexUpdatedAt) {
+        if (parsed.data.updatedAt !== undefined && parsed.data.updatedAt > (metadata.codexUpdatedAt ?? 0)) {
             const result = store.sessions.updateSessionMetadata(parsed.data.sid,
                 { ...metadata, codexUpdatedAt: parsed.data.updatedAt }, access.value.metadataVersion,
                 access.value.namespace, { touchUpdatedAt: false })
@@ -121,7 +130,7 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
                     data: { metadata: { version: result.version, value: result.value as Metadata | null } } })
             }
         }
-        onWebappEvent?.({ type: 'messages-invalidated', sessionId: parsed.data.sid, reason: 'native-history' })
+        if (!parsed.data.activityOnly) onWebappEvent?.({ type: 'messages-invalidated', sessionId: parsed.data.sid, reason: 'native-history' })
     })
 
     socket.on('native-queue-snapshot', data => {
@@ -431,7 +440,9 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
             emitAccessError('session', data.sid, sessionAccess.reason)
             return
         }
-        onSessionAlive?.(data)
+        const execution = data.execution === undefined ? undefined : NativeRuntimeStateSchema.safeParse(data.execution)
+        if (execution && !execution.success) return
+        onSessionAlive?.({ ...data, execution: execution?.data, sourceConnection })
     })
 
     socket.on('session-ready', (data: SessionReadyPayload) => {
@@ -590,6 +601,6 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
             }
         }
 
-        onSessionEnd?.(data)
+        onSessionEnd?.({ ...data, sourceConnection })
     })
 }

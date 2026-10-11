@@ -1,3 +1,4 @@
+import { classifySessionActivity, toSessionSummary } from '@hapi/protocol'
 import type { VisibleChatBlock } from '@/chat/toolGroups'
 import type { ToolCallBlock } from '@/chat/types'
 import type { Session } from '@/types/api'
@@ -7,8 +8,7 @@ export type ExecutionPresentation = { running: boolean; activeToolId: string | n
 /** Only the connected, authoritative current turn may animate. */
 export function getExecutionPresentation(session: Session, blocks: readonly VisibleChatBlock[], connected: boolean, atTail: boolean): ExecutionPresentation {
     const stopped = { running: false, activeToolId: null, thinking: false }
-    if (!connected || !session.active || !session.thinking) return stopped
-    if (Object.keys(session.agentState?.requests ?? {}).length > 0) return stopped
+    if (!connected || classifySessionActivity(toSessionSummary(session)).kind !== 'running') return stopped
     const tools: ToolCallBlock[] = []
     let terminalEventAt = -1
     let latestProgressAt = -1
@@ -25,9 +25,9 @@ export function getExecutionPresentation(session: Session, blocks: readonly Visi
     }
     blocks.forEach(block => visit(block))
     const startedAt = session.activeTurnStartedAt
-    if (startedAt != null && terminalEventAt >= startedAt) return stopped
-    if (startedAt == null && atTail && terminalEventAt >= 0 && terminalEventAt >= latestProgressAt) return stopped
-    if (tools.some(block => block.tool.permission?.status === 'pending'
+    if (!session.execution && startedAt != null && terminalEventAt >= startedAt) return stopped
+    if (!session.execution && startedAt == null && atTail && terminalEventAt >= 0 && terminalEventAt >= latestProgressAt) return stopped
+    if (!session.execution && tools.some(block => block.tool.permission?.status === 'pending'
         && (startedAt == null ? block.createdAt > terminalEventAt : block.createdAt >= startedAt))) return stopped
     const active = atTail ? tools.filter(block => block.tool.state === 'running'
         && (startedAt == null ? block.createdAt > terminalEventAt : (block.tool.startedAt ?? block.createdAt) >= startedAt))

@@ -14,6 +14,8 @@ import { applyWorkspaceCommand, type WorkspaceSnapshot, type WorkspaceUpdateRequ
 import { captureReadingAnchor, type ReadingAnchor } from '@/lib/reading-anchor'
 import { getMessageWindowState } from '@/lib/message-window-store'
 import '@/index.css'
+import cliPackage from '../../cli/package.json'
+import { CURRENT_MACHINE_CAPABILITIES } from '@hapi/protocol/runnerCapabilities'
 
 // Exercise the real router, App, pane controllers, composer and history readers.
 // Only the Hub boundary is simulated; no model or native process is started.
@@ -39,6 +41,17 @@ const sessions: Session[] = titles.map((name, index) => ({
     metadata: { name, path: '/mnt/cache/src/hapi', host: 'CHRIS', flavor: 'codex', codexNativeSession: !(params.has('mixed') && index === 1), codexSessionId: `native-${index + 1}`, machineId: 'machine-chris', ...(params.has('controls') ? { capabilities: { concurrentClients: true } } : {}) },
     metadataVersion: 1, agentState: null, agentStateVersion: 0, model: 'gpt-6.1-sol', modelReasoningEffort: 'high', permissionMode: 'yolo',
 }))
+if (params.has('presenceSample')) {
+    localStorage.setItem('hapi.sessionListView', 'recent')
+    for (const [index, session] of sessions.entries()) {
+        session.metadata = { ...session.metadata!, machineId: index % 2 ? 'machine-win' : 'machine-chris', codexStoreId: '/native/store', codexUpdatedAt: Date.now() - (index + 1) * 60000 }
+        session.updatedAt = session.metadata.codexUpdatedAt!
+        session.executionVersion = 1
+        session.execution = { owner: session.metadata.machineId!, generation: 'sample', sequence: 1,
+            status: index === 3 ? 'systemError' : index < 2 ? 'active' : 'idle', waitingOn: index === 1 ? ['input'] : [], turnId: 'turn', startedAt: Date.now() - 60000, completedAt: null }
+        session.thinking = session.execution.status === 'active'
+    }
+}
 function message(sessionId: string, seq: number, text?: string): DecryptedMessage {
     const meta = { nativeExecution: { threadId: sessionId, turnId: `${sessionId}-turn-${Math.ceil(seq / 2)}`, itemId: `${sessionId}-${seq}`, phase: 'final_answer', turn: { status: 'completed', started: true, ended: true } } }
     const richAnswer = params.has('rich') && seq === 320
@@ -101,6 +114,7 @@ let releaseResume: (() => void) | null = null
 const documentText = () => localStorage.getItem('fixture:document-text') ?? '# 文档工作区\n\n这是可以直接编辑和保存的 Markdown 原文件。\n\n## 本次验收\n\n- 保留来源聊天\n- 切换窗格保留草稿\n- 选区进入原会话草稿\n\n```typescript\nconst status = "ready"\n```\n'
 const documentHash = async (text: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))), byte => byte.toString(16).padStart(2, '0')).join('')
 const probe = {
+    presenceEvent(event: SyncEvent) { for (const stream of streams) stream.emit(event) },
     fileWrites: [] as { path: string; expectedHash: string; content: string }[],
     updateDocument(text: string) { localStorage.setItem('fixture:document-text', text) },
     sends: [] as { sessionId: string; text: string; localId: string }[],
@@ -191,6 +205,7 @@ window.fetch = async (input, init) => {
     if (!url.pathname.startsWith('/api/')) return realFetch(input, init)
     const path = url.pathname, method = init?.method ?? 'GET'
     probe.requests.push(`${method} ${path}${url.search}`)
+    if (params.has('presence') && (path === '/api/sessions' || path.endsWith('/read-state'))) return realFetch(input, init)
     if (heldHistory && method === 'GET' && /\/messages(?:[/?]|$)/.test(path)) await heldHistory
     let data: unknown
     if (path.startsWith('/api/workspaces')) {
@@ -216,7 +231,8 @@ window.fetch = async (input, init) => {
     else if (path === '/api/voice/backend') data = { backend: null, backends: [] }
     else if (path === '/api/voice/transcription/providers') data = { providers: [] }
     else if (path.endsWith('/codex-models')) data = { success: true, models: [{ id: 'gpt-6.1-sol', model: 'gpt-6.1-sol', displayName: '6.1 Sol', supportedReasoningEfforts: ['low', 'medium', 'high'] }] }
-    else if (path === '/api/machines') data = { machines: [] }
+    else if (path === '/api/machines') data = { machines: params.has('presenceSample') ? ['machine-chris', 'machine-win'].map((id, index) => ({ id, namespace: 'fixture', seq: 1, createdAt, updatedAt: createdAt, active: true, activeAt: Date.now(), metadataVersion: 1, runnerStateVersion: 1, runnerState: null,
+        metadata: { host: index ? 'Lis-iMac' : 'CHRIS', displayName: index ? 'Lis-iMac (Windows)' : 'CHRIS (Linux)', platform: index ? 'win32' : 'linux', icon: index ? '💠' : '🌙', happyCliVersion: cliPackage.version, capabilities: [...CURRENT_MACHINE_CAPABILITIES] } })) : [] }
     else if (path === '/api/hub-settings') data = { sessionSummaryContract: false, sessionSummaryInChat: false }
     else {
         const match = path.match(/^\/api\/sessions\/([^/]+)(.*)$/)

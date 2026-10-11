@@ -1137,8 +1137,8 @@ export class ApiSessionClient extends EventEmitter {
         this.notifyUserActivity()
     }
 
-    emitNativeHistoryChanged(updatedAt?: number): void {
-        this.emitOrQueue(() => this.socket.emit('native-history-changed', { sid: this.sessionId, ...(updatedAt !== undefined ? { updatedAt } : {}) }))
+    emitNativeHistoryChanged(updatedAt?: number, activityOnly = false): void {
+        this.emitOrQueue(() => this.socket.emit('native-history-changed', { sid: this.sessionId, ...(updatedAt !== undefined ? { updatedAt } : {}), ...(activityOnly ? { activityOnly: true } : {}) }))
     }
 
     syncNativeQueuedMessage(localId: string, text: string | null): void {
@@ -1296,6 +1296,7 @@ export class ApiSessionClient extends EventEmitter {
         thinking: boolean,
         mode: 'local' | 'remote' | undefined,
         runtime?: {
+            execution?: import('@hapi/protocol/schemas').NativeRuntimeState
             permissionMode?: SessionPermissionMode
             model?: SessionModel
             modelReasoningEffort?: string | null

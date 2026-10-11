@@ -65,7 +65,7 @@ afterEach(async () => {
     finally { vi.useRealTimers(); }
 });
 
-async function fixture(opts?: { hubArchived?: boolean; external?: boolean; nativeHistory?: boolean; end?: RootHost['end']; name?: string; nativeName?: string | null; syncedName?: string | null }) {
+async function fixture(opts?: { fresh?: boolean; hubArchived?: boolean; external?: boolean; nativeHistory?: boolean; end?: RootHost['end']; name?: string; nativeName?: string | null; syncedName?: string | null; beforeBind?: (root: SharedCodexRoot) => void; subscribe?: boolean }) {
     const directory = await mkdtemp(join(tmpdir(), 'hapi-shared-root-'));
     let state: AgentState = { steeringActive: true };
     let metadata: Metadata = { path: directory, host: 'test', flavor: 'codex', name: opts?.name, codexLastSyncedName: opts?.syncedName };
@@ -99,7 +99,11 @@ async function fixture(opts?: { hubArchived?: boolean; external?: boolean; nativ
     cleanups.push(async () => { await root.close(false); await rm(directory, { recursive: true, force: true }); });
     await root.prepare();
     if (opts && 'nativeName' in opts) Object.assign((root.client as any).thread, { name: opts.nativeName });
-    await root.bind('thread', { model: 'mock', thread: { turns: [] } }, false);
+    opts?.beforeBind?.(root);
+    const calls = vi.spyOn(root.client, 'request');
+    await root.bind('thread', { model: 'mock', thread: { turns: [] } }, opts?.subscribe ?? false, opts?.fresh);
+    const bindCalls = [...calls.mock.calls];
+    calls.mockRestore();
     const native = root.client as unknown as {
         initialized: boolean;
         thread: { id: string; name?: string | null; turns: NativeTurn[] };
@@ -121,7 +125,7 @@ async function fixture(opts?: { hubArchived?: boolean; external?: boolean; nativ
         cleanups.unshift(async () => { stopSource.close(); });
     }
     return {
-        root, native, rpc, send, stopSource, metadata: () => metadata, state: () => state, updateState,
+        root, native, rpc, send, stopSource, bindCalls, metadata: () => metadata, state: () => state, updateState,
         userMessage: (message: UserMessage, localId: string) => userMessage?.(message, localId),
         reconnect: () => reconnect?.(),
         emitHubArchived: () => { for (const listener of hubArchivedListeners) listener(); },
@@ -753,4 +757,87 @@ it('restores only current-turn async questions, steers their replies, and expire
     f.native.thread.turns[1]!.status = 'completed';
     await f.root.refresh();
     expect(Object.keys(f.state().requests ?? {})).toHaveLength(0);
+});
+
+
+it('binds fresh roots without history scans, retaining the queue and settings readiness gate', async () => {
+    const f = await fixture({ fresh: true });
+    const methods = f.bindCalls.map(([method]) => method);
+    expect(methods).toContain('thread/queue/list');
+    for (const method of ['thread/resume', 'thread/read', 'thread/list', 'thread/goal/get']) expect(methods).not.toContain(method);
+    f.userMessage({ role: 'user', content: { type: 'text', text: 'first input' } }, 'fresh-input');
+    await Promise.resolve();
+    expect(f.native.queue).toHaveLength(0);
+    const calls = vi.spyOn(f.root.client, 'request');
+    await f.root.activate({ collaborationMode: 'plan' });
+    await (f.root as any).work;
+    expect(f.native.queue).toEqual([expect.objectContaining({ clientUserMessageId: 'fresh-input' })]);
+    expect(f.rpc.has(RPC_METHODS.ForkConversation)).toBe(true);
+    expect(calls.mock.calls.some(([method]) => method === 'thread/goal/get')).toBe(true);
+});
+it('retains history, descendant, goal and queue hydration for resumed roots', async () => {
+    const f = await fixture();
+    expect(f.bindCalls.map(([method]) => method)).toEqual(expect.arrayContaining([
+        'thread/read', 'thread/list', 'thread/goal/get', 'thread/queue/list'
+    ]));
+});
+
+describe('authoritative native runtime state', () => {
+    it('preserves a turn notification received while the initial resume response is in flight', async () => {
+        const f = await fixture({ fresh: true, subscribe: true, beforeBind(root) {
+            const request = root.client.request.bind(root.client);
+            vi.spyOn(root.client, 'request').mockImplementation(async (method, params) => {
+                if (method !== 'thread/resume') return request(method, params);
+                (root.client as any).notify('turn/started', { threadId: 'thread', turn: { id: 'new-turn', startedAt: 1791700000 } });
+                return { thread: { id: 'thread', status: { type: 'idle' }, turns: [] } };
+            });
+        } });
+        const alive = vi.spyOn(f.root.session, 'keepAlive');
+        await f.root.activate();
+        expect(alive.mock.lastCall?.[2]?.execution).toMatchObject({ status: 'active', turnId: 'new-turn' });
+    });
+    it('clears Running on native idle even when no turn/completed arrived', async () => {
+        const f = await fixture(); const alive = vi.spyOn(f.root.session, 'keepAlive');
+        f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'turn' } });
+        f.native.notify('thread/status/changed', { threadId: 'thread', status: { type: 'idle' } });
+        await f.root.activate();
+        expect(alive.mock.lastCall?.[0]).toBe(false);
+        expect(alive.mock.lastCall?.[2]?.execution?.status).toBe('idle');
+    });
+    it.each(['completed', 'failed', 'interrupted'])('does not resurrect a %s turn on a late duplicate start', async status => {
+        const f = await fixture(); const alive = vi.spyOn(f.root.session, 'keepAlive');
+        f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'turn' } });
+        f.native.notify('turn/completed', { threadId: 'thread', turn: { id: 'turn', status } });
+        f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'turn' } });
+        await f.root.activate();
+        expect(alive.mock.lastCall?.[0]).toBe(false);
+        expect(f.state().steeringActive).toBe(false);
+    });
+    it('uses runtime notLoaded over stale inProgress history without discarding that history', async () => {
+        const f = await fixture();
+        f.native.thread.turns = [{ id: 'unfinished', status: 'inProgress', items: [] }];
+        Object.assign(f.native.thread, { status: { type: 'notLoaded' } });
+        await f.root.refresh();
+        const alive = vi.spyOn(f.root.session, 'keepAlive'); await f.root.activate();
+        expect(alive.mock.lastCall?.[0]).toBe(false);
+        expect(alive.mock.lastCall?.[2]?.execution?.status).toBe('notLoaded');
+    });
+    it('fills a missing native start timestamp from a later snapshot of the same turn', async () => {
+        const f = await fixture();
+        f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'unfinished' } });
+        f.native.thread.turns = [{ id: 'unfinished', status: 'inProgress', items: [], started_at: 1791700000 } as NativeTurn];
+        await f.root.refresh();
+        const alive = vi.spyOn(f.root.session, 'keepAlive'); await f.root.activate();
+        expect(alive.mock.lastCall?.[2]?.execution?.startedAt).toBe(1791700000000);
+    });
+    it('publishes the real native start time and waiting flags, and stops trusting an uninitialized transport', async () => {
+        const f = await fixture(); const alive = vi.spyOn(f.root.session, 'keepAlive');
+        f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'turn', startedAt: 1791700000 } });
+        f.native.notify('thread/status/changed', { threadId: 'thread', status: { type: 'active', activeFlags: ['waitingOnUserInput'] } });
+        await f.root.activate();
+        expect(alive.mock.lastCall?.[2]?.execution).toMatchObject({ startedAt: 1791700000000, waitingOn: ['input'] });
+        f.native.initialized = false; (f.root as any).alive();
+        expect(alive.mock.lastCall?.[0]).toBe(false);
+        expect(alive.mock.lastCall?.[2]?.execution?.status).toBe('disconnected');
+    });
 });

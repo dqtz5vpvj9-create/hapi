@@ -1,3 +1,4 @@
+import { classifySessionActivity } from '@hapi/protocol'
 import { useOptionalAppContext } from '@/lib/app-context'
 import { panes } from '@/workspace/workspaceStore'
 import { getRecentSessionWarmup } from '@/lib/recent-session-warmup'
@@ -55,7 +56,6 @@ import {
     useSessionLastSeenVersion
 } from '@/lib/sessionLastSeen'
 import { useSessionRowTooltipIds } from '@/components/HoverTooltip'
-import { subscribeCodexImportedSessions } from '@/lib/codexImportedSessions'
 import { formatReopenError } from '@/lib/reopenError'
 import { resolveCursorReopenGate } from '@/lib/sessionResume'
 import { getSessionTitle, hasSessionTitleSignal } from '@/lib/sessionTitle'
@@ -122,7 +122,7 @@ export function bucketRunningSessions(
         if (!session.active) {
             continue
         }
-        if (session.thinking || (session.backgroundTaskCount ?? 0) > 0) {
+        if (classifySessionActivity(session).running) {
             buckets.working.push(session)
         } else if ((session.pendingRequestsCount ?? 0) > 0) {
             buckets.pending.push(session)
@@ -251,6 +251,9 @@ export function getSessionDedupKey(session: SessionSummary): string | null {
     if (!agentId) return null
     // Scope by flavor: agentSessionId is flattened from native ids and can retain a
     // stale cross-flavor value (codexSessionId ?? claudeSessionId ?? ...).
+    if (session.metadata?.flavor === 'codex') {
+        return JSON.stringify(['codex', session.metadata.machineId ?? null, session.metadata.codexStoreId ?? null, agentId])
+    }
     return `${session.metadata?.flavor ?? 'unknown'}:${agentId}`
 }
 
@@ -1422,17 +1425,10 @@ export function SessionList(props: {
     const [markAllReadOpen, setMarkAllReadOpen] = useState(false)
     const [nativeSubagent, setNativeSubagent] = useState<{ parentSessionId: string; agent: NativeSubagent } | null>(null)
     const openNativeSubagent: OpenNativeSubagent = (parentSessionId, agent) => setNativeSubagent({ parentSessionId, agent })
-    const [, setCodexImportedSessionsVersion] = useState(0)
     const normalizedQuery = normalizeSearch(searchQuery)
     const timeRange = getSessionTimeRange(customStart, customEnd)
     const isFiltering = normalizedQuery.length > 0 || timeRange !== null
 
-    useEffect(() => {
-        // 中文注释：监听导入标记变化，让列表在“导入完成”或“用户已在 Hapi 中继续会话”后立即刷新时间文案。
-        return subscribeCodexImportedSessions(() => {
-            setCodexImportedSessionsVersion((value) => value + 1)
-        })
-    }, [])
 
     const resolveMachineLabel = (machineId: string | null): string => {
         if (machineId && machineLabelsById[machineId]) {
@@ -1546,9 +1542,9 @@ export function SessionList(props: {
             (session.metadata?.machineId ?? UNKNOWN_MACHINE_ID) === activeMachineFilter),
         [unreadFilteredSessions, activeMachineFilter]
     )
-    const runningCount = buildSessionHierarchy(machineScopedSessions.filter(session => session.active && (session.thinking || session.pendingRequestsCount > 0 || session.backgroundTaskCount > 0)), sidebarSessions).roots.length
+    const runningCount = buildSessionHierarchy(machineScopedSessions.filter(session => classifySessionActivity(session).running), sidebarSessions).roots.length
     const scopedSessions = useMemo(() => showRunningOnly
-        ? machineScopedSessions.filter(session => session.active && (session.thinking || session.pendingRequestsCount > 0 || session.backgroundTaskCount > 0))
+        ? machineScopedSessions.filter(session => classifySessionActivity(session).running)
         : machineScopedSessions, [machineScopedSessions, showRunningOnly])
     const sessionHierarchy = useMemo(() => buildSessionHierarchy(scopedSessions, sidebarSessions), [scopedSessions, sidebarSessions])
     const machineFilteredSessions = sessionHierarchy.roots

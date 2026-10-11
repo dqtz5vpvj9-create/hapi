@@ -1,0 +1,71 @@
+import type { NativeRuntimeState } from '@hapi/protocol/schemas';
+import { record, string } from './gateway';
+
+function nativeTime(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value)
+        ? value < 1e12 ? value * 1000 : value : null;
+}
+
+/** State of this root's owning transport, never of another daemon reading its history. */
+export class NativeRuntimeStateTracker {
+    private status: NativeRuntimeState['status'] = 'idle';
+    private waitingOn: NativeRuntimeState['waitingOn'] = [];
+    private turnId: string | null = null;
+    private startedAt: number | null = null;
+    private completedAt: number | null = null;
+    private sequence = 0;
+    private readonly terminal = new Set<string>();
+    constructor(private readonly owner: string, private readonly generation: string) {}
+
+    started(turn: Record<string, unknown>): boolean {
+        const id = string(turn.id);
+        if (!id || this.terminal.has(id)) return false;
+        // Native UUIDv7 turn ids have chronological order. Do not apply that
+        // assumption to arbitrary legacy/test ids.
+        const uuid7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-/i;
+        if (this.turnId && uuid7.test(id) && uuid7.test(this.turnId) && id < this.turnId) return false;
+        if (id !== this.turnId) {
+            this.startedAt = nativeTime(turn.startedAt ?? turn.started_at);
+            this.completedAt = null;
+        } else this.startedAt ??= nativeTime(turn.startedAt ?? turn.started_at);
+        this.turnId = id; this.status = 'active'; this.waitingOn = [];
+        return true;
+    }
+    completed(turn: Record<string, unknown>): void {
+        const id = string(turn.id);
+        if (!id) return;
+        this.terminal.add(id);
+        if (this.terminal.size > 64) this.terminal.delete(this.terminal.values().next().value!);
+        if (this.turnId && this.turnId !== id) return;
+        this.turnId = id;
+        this.status = turn.status === 'failed' ? 'systemError' : 'idle';
+        this.waitingOn = [];
+        this.completedAt = nativeTime(turn.completedAt ?? turn.completed_at);
+    }
+    acceptStatus(raw: unknown): void {
+        const status = record(raw);
+        if (!['active', 'idle', 'notLoaded', 'systemError'].includes(String(status.type))) return;
+        this.status = status.type as NativeRuntimeState['status'];
+        const flags = Array.isArray(status.activeFlags) ? status.activeFlags : [];
+        this.waitingOn = [];
+        if (flags.includes('waitingOnApproval')) this.waitingOn.push('approval');
+        if (flags.includes('waitingOnUserInput')) this.waitingOn.push('input');
+    }
+    snapshot(thread: Record<string, unknown>, turns: Record<string, unknown>[], acceptStatus = true): void {
+        const priorStatus = this.status; const priorWaiting = this.waitingOn;
+        const latest = turns.at(-1);
+        if (latest?.status === 'inProgress') this.started(latest);
+        else if (latest) this.completed(latest);
+        else { this.status = 'idle'; this.waitingOn = []; }
+        // History can retain inProgress after unloading. Runtime status wins.
+        if (acceptStatus) this.acceptStatus(thread.status);
+        else { this.status = priorStatus; this.waitingOn = priorWaiting; }
+    }
+    disconnected(): void { this.status = 'disconnected'; this.waitingOn = []; }
+    get running(): boolean { return this.status === 'active'; }
+    report(connected: boolean): NativeRuntimeState {
+        return { owner: this.owner, generation: this.generation, sequence: ++this.sequence,
+            status: connected ? this.status : 'disconnected', waitingOn: connected ? this.waitingOn : [],
+            turnId: this.turnId, startedAt: this.startedAt, completedAt: this.completedAt };
+    }
+}

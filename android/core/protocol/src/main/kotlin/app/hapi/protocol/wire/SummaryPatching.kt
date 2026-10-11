@@ -149,6 +149,8 @@ object SummaryPatching {
             flavor = metadata.flavor,
             worktree = metadata.worktree,
             agentSessionId = summaryAgentSessionId(metadata),
+            codexStoreId = metadata.codexStoreId,
+            codexUpdatedAt = metadata.codexUpdatedAt,
             lifecycleState = metadata.lifecycleState,
             hapiMcpUrl = metadata.hapiMcpUrl,
         )
@@ -164,9 +166,12 @@ object SummaryPatching {
     fun toSessionSummary(session: Session): SessionSummary = SessionSummary(
         id = session.id,
         active = session.active,
+        executionVersion = session.executionVersion,
+        execution = session.execution,
+        blockingRequestKinds = computePendingRequestKinds(session.agentState?.copy(requests = session.agentState.requests?.filterValues { it.blocking != false })),
         thinking = session.thinking,
         activeAt = session.activeAt,
-        updatedAt = session.updatedAt,
+        updatedAt = if (session.metadata?.flavor == "codex") session.metadata.codexUpdatedAt ?: session.updatedAt else session.updatedAt,
         pinned = session.pinned ?: false,
         globalPinned = session.globalPinned ?: false,
         metadata = toSessionSummaryMetadata(session.metadata),
@@ -208,8 +213,11 @@ object SummaryPatching {
      *   `permissionMode` / `collaborationMode` / `copilotAgentMode` have no
      *   summary counterpart — ignored, like the reference.
      */
-    fun applySessionSummaryPatch(current: SessionSummary, patch: SessionPatch): SessionSummary {
+    fun applySessionSummaryPatch(current: SessionSummary, incoming: SessionPatch): SessionSummary {
+        val patch = app.hapi.protocol.patch.stripStaleExecutionPatch(current.executionVersion, incoming)
         var next = current.copy(
+            executionVersion = patch.executionVersion ?: current.executionVersion,
+            execution = (patch.execution as? OptionalField.Present)?.value ?: if (patch.execution is OptionalField.Present) null else current.execution,
             active = patch.active ?: current.active,
             thinking = patch.thinking ?: current.thinking,
             activeAt = patch.activeAt ?: current.activeAt,
@@ -244,6 +252,7 @@ object SummaryPatching {
         patch.agentState?.let { agentState ->
             if (agentState.version >= current.agentStateVersion) {
                 next = next.copy(
+                    blockingRequestKinds = computePendingRequestKinds(agentState.value?.copy(requests = agentState.value.requests?.filterValues { it.blocking != false })),
                     pendingRequestsCount = computePendingRequestsCount(agentState.value),
                     pendingRequestKinds = computePendingRequestKinds(agentState.value),
                     pendingRequests = computePendingRequests(agentState.value, next.updatedAt),
@@ -259,6 +268,7 @@ object SummaryPatching {
                 )
             }
         }
+        if (next.metadata?.flavor == "codex") next.metadata?.codexUpdatedAt?.let { next = next.copy(updatedAt = it) }
         return next
     }
 
@@ -305,7 +315,10 @@ object SummaryPatching {
      * effect is suppressing a re-render that stores an equal-rendering value.
      */
     fun isRenderIrrelevantPatch(current: SessionSummary, next: SessionSummary): Boolean {
-        return current.active == next.active
+        return current.executionVersion == next.executionVersion
+            && current.execution == next.execution
+            && current.blockingRequestKinds == next.blockingRequestKinds
+            && current.active == next.active
             && current.thinking == next.thinking
             && current.updatedAt == next.updatedAt
             && current.backgroundTaskCount == next.backgroundTaskCount

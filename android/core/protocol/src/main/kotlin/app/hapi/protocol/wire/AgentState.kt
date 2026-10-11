@@ -29,6 +29,7 @@ data class AgentState(
 /** A pending tool-permission / user-input request (`AgentStateRequestSchema`). */
 @Serializable
 data class AgentStateRequest(
+    val blocking: Boolean? = null,
     val tool: String,
     /** Tool arguments, shape depends on [tool] (zod `unknown`). */
     val arguments: JsonElement = JsonNull,

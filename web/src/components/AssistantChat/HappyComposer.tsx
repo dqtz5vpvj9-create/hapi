@@ -309,6 +309,7 @@ export function HappyComposer(props: {
     effort?: string | null
     active?: boolean
     allowSendWhenInactive?: boolean
+    execution?: import('@hapi/protocol/schemas').NativeRuntimeState | null
     thinking?: boolean
     abortError?: Error | null
     agentState?: AgentState | null
@@ -2333,6 +2334,7 @@ export function HappyComposer(props: {
             ) : undefined}
             active={active}
             thinking={thinking}
+            execution={props.execution}
             agentState={agentState}
             backgroundTaskCount={backgroundTaskCount}
             contextSize={contextSize}
@@ -2537,7 +2539,7 @@ export function HappyComposer(props: {
                             compactControls={glassLayout ? <>
                                 {agentFlavor === 'codex' ? <ComposerGoalControl goal={props.goal ?? null} disabled={disabled || !active || (controlledByUser && !concurrentClients)} onCaptureInputSelection={captureGoalInputSelection} onAction={props.onGoalAction} /> : null}
                             </> : undefined}
-                            permissionControl={glassLayout ? (<StatusBar compact controlsDisabled={controlsDisabled} active={active} thinking={thinking} agentState={agentState} permissionMode={permissionMode} agentFlavor={agentFlavor} permissionOpen={showSettings && settingsSection === 'permission'} onPermissionClick={showPermissionSettings ? button => handleSettingsToggle('permission', button) : undefined} />) : undefined}
+                            permissionControl={glassLayout ? (<StatusBar compact execution={props.execution} controlsDisabled={controlsDisabled} active={active} thinking={thinking} agentState={agentState} permissionMode={permissionMode} agentFlavor={agentFlavor} permissionOpen={showSettings && settingsSection === 'permission'} onPermissionClick={showPermissionSettings ? button => handleSettingsToggle('permission', button) : undefined} />) : undefined}
                             goalMode={goalMode}
                             canSend={canSend}
                             controlsDisabled={controlsDisabled}

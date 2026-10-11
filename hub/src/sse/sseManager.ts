@@ -6,6 +6,7 @@ import type { VisibilityTracker } from '../visibility/visibilityTracker'
 export type SSESubscription = {
     id: string
     namespace: string
+    userId?: number
     all: boolean
     sessionId: string | null
     sessionIds: readonly string[]
@@ -67,6 +68,7 @@ export class SSEManager {
     subscribe(options: {
         id: string
         namespace: string
+        userId?: number
         all?: boolean
         sessionId?: string | null
         sessionIds?: readonly string[]
@@ -81,6 +83,7 @@ export class SSEManager {
         const subscription: SSEConnection = {
             id: options.id,
             namespace: options.namespace,
+            userId: options.userId,
             all: Boolean(options.all),
             sessionId: options.sessionId ?? null,
             sessionIds: options.sessionIds ?? [],
@@ -316,6 +319,7 @@ export class SSEManager {
     }
 
     private shouldSend(connection: SSEConnection, event: SyncEvent): boolean {
+        if (event.type === 'session-read-state' && event.userId !== connection.userId) return false
         if (event.type !== 'connection-changed') {
             const eventNamespace = event.namespace
             if (!eventNamespace || eventNamespace !== connection.namespace) {

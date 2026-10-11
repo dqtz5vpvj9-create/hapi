@@ -1698,6 +1698,7 @@ describe('sessions routes', () => {
         const scheduledIds: string[][] = []
         const engine = {
             refreshCodexSessionLineage: () => new Promise<void>(() => {}),
+            getSessionReadStates: () => ({}),
             getSessionsByNamespace: () => sessions,
             getFutureScheduledMessageCounts: (ids: string[]) => {
                 scheduledIds.push(ids)
@@ -1734,6 +1735,7 @@ describe('sessions routes', () => {
         ]
         const engine = {
             refreshCodexSessionLineage: async () => {},
+            getSessionReadStates: () => ({}),
             getSessionsByNamespace: () => sessions,
             getFutureScheduledMessageCounts: (ids: string[]) => new Map(ids.map((id) => [id, 0])),
             getNextScheduledAtBySessionIds: (_ids: string[]) => new Map<string, number>(),

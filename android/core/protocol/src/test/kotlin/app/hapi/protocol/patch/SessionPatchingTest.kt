@@ -451,4 +451,15 @@ class SessionPatchingTest {
         )
         assertEquals(61_000, assertNotNull(applySessionDetailPatch(session, minuteLater)).activeAt)
     }
+
+    @Test
+    fun `execution completion cannot be undone by an old native patch`() {
+        val runtime = """{"owner":"engine","generation":"g1","sequence":2,"status":"idle","waitingOn":[],"turnId":"turn","startedAt":100,"completedAt":200}"""
+        val completed = assertNotNull(SessionPatches.parse(HapiJson.parseToJsonElement("""{"executionVersion":2,"execution":$runtime,"thinking":false,"activeTurnStartedAt":null}""")))
+        val current = assertNotNull(applySessionDetailPatch(makeSession(), completed))
+        assertEquals(2L, current.executionVersion)
+        assertEquals("idle", current.execution?.status)
+        assertNull(applySessionDetailPatch(current, SessionPatch(executionVersion = 1, thinking = true)))
+        assertNull(SessionPatches.parse(HapiJson.parseToJsonElement("""{"execution":{"owner":"engine"}}""")))
+    }
 }

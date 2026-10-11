@@ -267,6 +267,17 @@ export class SyncEngine {
         }
     }
 
+    getSessionReadStates(namespace: string, userId: number) {
+        return this.store.presence.readStates(namespace, userId)
+    }
+
+    updateSessionReadState(namespace: string, userId: number, sessionId: string,
+        input: { expectedVersion: number; seenAt: number; manualUnreadAt: number | null }) {
+        const result = this.store.presence.updateReadState(namespace, userId, sessionId, input)
+        if (result.applied) this.eventPublisher.emit({ type: 'session-read-state', namespace, sessionId, userId, state: result.state })
+        return result
+    }
+
     subscribe(listener: SyncEventListener): () => void {
         return this.eventPublisher.subscribe(listener)
     }
@@ -567,6 +578,8 @@ export class SyncEngine {
     }
 
     handleSessionAlive(payload: {
+        execution?: import('@hapi/protocol/schemas').NativeRuntimeState
+        sourceConnection?: number
         sid: string
         time: number
         thinking?: boolean
@@ -578,9 +591,14 @@ export class SyncEngine {
         serviceTier?: string | null
         collaborationMode?: CodexCollaborationMode
     }): void {
+        if (!this.isCurrentSessionSource(payload.sid, payload.sourceConnection)) return
         this.sessionCache.handleSessionAlive(payload)
         this.messageService.replayImmediateQueuedMessages(payload.sid)
         this.triggerDedupIfNeeded(payload.sid)
+    }
+
+    isCurrentSessionSource(sessionId: string, connection: number | undefined): boolean {
+        return this.sessionCache.isCurrentSource(sessionId, connection)
     }
 
     handleSessionReady(payload: { sid: string; time: number }): void {
@@ -601,7 +619,8 @@ export class SyncEngine {
         this.sessionCache.clearQueuedThinkingGrace(sessionId)
     }
 
-    handleSessionEnd(payload: { sid: string; time: number; reason?: SessionEndReason }): void {
+    handleSessionEnd(payload: { sid: string; time: number; reason?: SessionEndReason; sourceConnection?: number }): void {
+        if (!this.sessionCache.isCurrentSource(payload.sid, payload.sourceConnection)) return
         const before = this.sessionCache.getSession(payload.sid)
         if (before?.metadata?.opencodeClearOperation?.state === 'reserved' && payload.reason !== 'cleared') {
             const operation = before.metadata.opencodeClearOperation

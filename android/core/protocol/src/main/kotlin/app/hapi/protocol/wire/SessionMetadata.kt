@@ -37,6 +37,8 @@ data class SessionMetadata(
     // (`getSummaryAgentSessionId`, `shared/src/sessionSummary.ts`).
     val claudeSessionId: String? = null,
     val codexSessionId: String? = null,
+    val codexStoreId: String? = null,
+    val codexUpdatedAt: Long? = null,
     val geminiSessionId: String? = null,
     val opencodeSessionId: String? = null,
     val grokSessionId: String? = null,

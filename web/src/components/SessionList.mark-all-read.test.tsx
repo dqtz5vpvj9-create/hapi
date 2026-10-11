@@ -105,7 +105,7 @@ describe('SessionList mark all as read', () => {
         const title = within(dialog).getByRole('heading', { name: 'Mark all as read?' })
         expect(title.parentElement).toHaveClass('pr-0')
         expect(title).toHaveClass('min-h-6', 'px-10', 'text-center', 'leading-6')
-        expect(screen.getByText('This will mark 2 unread sessions as read on this device.')).toBeTruthy()
+        expect(screen.getByText('This will mark 2 unread sessions as read across your devices.')).toBeTruthy()
         expect(within(dialog).getByRole('button', { name: 'Confirm' })).toHaveClass('bg-red-600', 'text-white')
         expect(JSON.parse(localStorage.getItem('hapi.sessionLastSeen.v1')!)).toMatchObject({ unreadA: 1000, unreadB: 2000 })
 

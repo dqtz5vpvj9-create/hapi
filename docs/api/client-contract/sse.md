@@ -149,6 +149,7 @@ Schema: `SyncEventSchema` in `shared/src/schemas.ts` (discriminated on `type`). 
 | `message-updated` | `sessionId`, `scheduled: boolean` | Body-free notification requested by `messageMode=notify`. Preserve queue controls and, for scheduled messages, refresh scheduled counts. This carries the same event ID as the full body would have carried. |
 | `messages-invalidated` | `sessionId`; rewind may also include `reason: 'rewind'` and `truncateFromLocalId` | Message history changed **structurally** (rewind, fork, import, clear). For a rewind, retain only the known prefix through the client boundary before tail-syncing; for every other invalidation, discard the whole window and run a fresh tail sync. Global scope: refetch the session list. |
 | `scheduled-matured` | `sessionId` | A scheduled message became due and was handed to the agent. Refetch list/queue indicators. |
+| `session-read-state` | `sessionId`, `userId`, `state: {version, seenAt, manualUnreadAt}` | Same authenticated user and namespace only, including replay. Apply only newer read revisions; manual unread is independent of the monotonic seen cursor. |
 | `session-ended` | `sessionId`, `reason?: 'completed'\|'terminated'\|'error'\|'handoff'\|'cleared'` | Session lifecycle signal (the `session-updated` flow still carries the state change). |
 | `machine-updated` | `machineId`, `data?: Machine \| MachinePatch \| null` | Full `Machine`: upsert (remove when `active:false`). `null`: machine removed. Patch `{active?, activeAt?, updatedAt?}`: `active:false` ⇒ remove, otherwise refetch machines. `data` absent ⇒ refetch. |
 | `machine-agy-models-updated` | `machineId` | The machine's `agy models` listing changed on a background re-check. Refetch `GET /api/machines/:id/agy-models` for that machine (answered from the machine's cache; it starts no `agy` run and produces no further event). Emitted when the re-check changes what that route would answer — a different listing, or a sign-in warning that appeared or cleared — never for the machine's first listing. |
@@ -167,13 +168,14 @@ Schema: `SyncEventSchema` in `shared/src/schemas.ts` (discriminated on `type`). 
 
 The most bug-prone part of the protocol. `session-updated.data` is either a **full `Session`** or a **`SessionPatch`** (`shared/src/schemas.ts`); reference implementation `applySessionDetailPatch` in `web/src/hooks/useSSE.ts`.
 
-1. **Full session** (validates against `SessionSchema` and `data.id === event.sessionId`): replace the cached session wholesale.
+1. **Full session** (validates against `SessionSchema` and `data.id === event.sessionId`): reconcile against the cached execution, metadata, agent-state and todo watermarks. A late REST response or full SSE record must not overwrite a newer execution revision.
 2. **Patch** (validates against the strict `SessionPatchSchema` — unknown keys make it fail — and is non-empty): apply field-by-field as below.
 3. **Absent or unparseable `data`**: fall back to refetching the session detail and list over REST.
 
 Patch application, field by field:
 
-- **Flat fields** — `active`, `thinking`, `activeAt`, `model`, `modelReasoningEffort`, `effort`, `serviceTier`, `permissionMode`, `collaborationMode`, `copilotAgentMode`, `backgroundTaskCount`: last-write-wins assignment when present. `activeTurnStartedAt` appears in patches but the reference implementation deliberately never applies it from a patch (`web/src/lib/sessionPatch.ts`) — take it from full-session payloads only; the `sse/` fixtures pin this.
+- **Execution snapshot** — `executionVersion` is a durable, increasing Hub revision. Apply `active`, `thinking`, `activeAt`, `activeTurnStartedAt`, `execution`, runtime model/mode fields and `backgroundTaskCount` only for a strictly newer revision. An unversioned execution update cannot overwrite a versioned snapshot. Hub execution patches contain the complete execution fields; independent metadata/agent-state patches retain their own gates. Explicit `activeTurnStartedAt: null` clears the timer.
+- **Native execution facts** — `execution` carries owning engine `owner`, transport `generation`, `sequence`, native `status`, `waitingOn`, `turnId`, `startedAt` and `completedAt`. Runtime status overrides historical in-progress items. `notLoaded` is not Running; `disconnected` overrides a healthy CLI-to-Hub heartbeat. A pending request with `blocking:false` needs attention without stopping execution. Summary rows expose `blockingRequestKinds` separately from all pending requests.
 - **`updatedAt`** — max-monotonic: `updatedAt = max(cached.updatedAt, patch.updatedAt)`. A stale replay must never move the clock backward.
 - **Versioned sub-patches** — `metadata`, `agentState`, `todos`, `teamState` each arrive as a wrapper `{version: number, value: …}`. Apply `value` and store `version` **only when `version` is strictly greater than the cached watermark**:
 
@@ -190,7 +192,7 @@ Patch application, field by field:
 
 ### Keep-alive noise
 
-The CLI keep-alive makes the hub re-broadcast a patch roughly **every 10 s per active session**, in which typically only `activeAt` moves. Recommendation (web: `isRenderIrrelevantSessionPatch`): treat a patch as render-irrelevant when the only effective change is an `activeAt` delta **< 60 s** (relative-time labels only change at minute boundaries); the session-list path ignores `activeAt` entirely. Apply the data if you like, but do not re-render or re-sort six times a minute for it.
+The CLI keep-alive makes the hub re-broadcast a patch roughly **every 10 s per active session**, in which typically only `activeAt` moves. Preserve the latest execution watermark even when the visible state is unchanged. Recommendation for unversioned legacy keep-alives (web: `isRenderIrrelevantSessionPatch`): treat a patch as render-irrelevant when the only effective change is an `activeAt` delta **< 60 s** (relative-time labels only change at minute boundaries); the session-list path ignores `activeAt` entirely. Apply the data if you like, but do not re-render or re-sort six times a minute for it.
 
 Reference list sort (web): `globalPinned` > `pinned` > `active` > `pendingRequestsCount` (among active) > `updatedAt` desc.
 

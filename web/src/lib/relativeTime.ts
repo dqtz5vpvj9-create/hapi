@@ -13,11 +13,12 @@ export function formatSessionListDate(date: Date): string {
  */
 export function formatRelativeTime(
     value: number,
-    t: (key: string, params?: Record<string, string | number>) => string
+    t: (key: string, params?: Record<string, string | number>) => string,
+    now: number = Date.now()
 ): string | null {
     const ms = value < 1_000_000_000_000 ? value * 1000 : value
     if (!Number.isFinite(ms)) return null
-    const delta = Date.now() - ms
+    const delta = now - ms
     if (delta < 60_000) return t('session.time.justNow')
     const minutes = Math.floor(delta / 60_000)
     if (minutes < 60) return t('session.time.minutesAgo', { n: minutes })

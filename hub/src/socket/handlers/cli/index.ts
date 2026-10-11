@@ -15,6 +15,8 @@ type SessionAlivePayload = {
     sid: string
     time: number
     thinking?: boolean
+    execution?: import('@hapi/protocol/schemas').NativeRuntimeState
+    sourceConnection?: number
     mode?: 'local' | 'remote'
     permissionMode?: PermissionMode
     model?: string | null
@@ -24,6 +26,7 @@ type SessionAlivePayload = {
 }
 
 type SessionEndPayload = {
+    sourceConnection?: number
     sid: string
     time: number
 }
@@ -46,6 +49,7 @@ export type CliHandlersDeps = {
     onSessionAlive?: (payload: SessionAlivePayload) => void
     onSessionReady?: (payload: SessionReadyPayload) => void
     onSessionEnd?: (payload: SessionEndPayload) => void
+    isCurrentSessionSource?: (sessionId: string, connection: number) => boolean
     onMachineAlive?: (payload: MachineAlivePayload) => void
     onWebappEvent?: (event: SyncEvent) => void
     onBackgroundTaskDelta?: (sessionId: string, delta: { started: number; completed: number }) => void
@@ -177,6 +181,7 @@ export function registerCliHandlers(socket: CliSocketWithData, deps: CliHandlers
         onSessionAlive,
         onSessionReady,
         onSessionEnd,
+        isCurrentSessionSource: deps.isCurrentSessionSource,
         onWebappEvent,
         onBackgroundTaskDelta,
         onSessionActivity,

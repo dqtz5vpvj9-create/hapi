@@ -46,3 +46,11 @@ describe('authoritative execution presentation', () => {
         expect(getExecutionPresentation(session, [{ kind: 'tool-group', tools: [tool('grouped', 'running')] } as never], true, true).activeToolId).toBe('grouped')
     })
 })
+
+it('does not suppress native execution for a nonblocking question or a previous turn terminal row', () => {
+    const active = { ...session, execution: { owner: 'engine', generation: 'connection', sequence: 1, status: 'active', waitingOn: [], turnId: 'new-turn', startedAt: 100, completedAt: null },
+        agentState: { requests: { q: { tool: 'request_user_input', blocking: false, arguments: {} } } } } as Session
+    const previous = { kind: 'agent-event', id: 'old-ready', createdAt: 120, event: { type: 'ready' } } as never
+    expect(getExecutionPresentation(active, [previous], true, true).running).toBe(true)
+    expect(getExecutionPresentation({ ...active, execution: { ...active.execution!, waitingOn: ['input'] } }, [], true, true).running).toBe(false)
+})

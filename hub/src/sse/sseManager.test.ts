@@ -426,3 +426,18 @@ describe('SSEManager agy catalog announcements', () => {
         expect(globalBeta).toHaveLength(0)
     })
 })
+
+it('isolates live and replayed read cursors by user as well as namespace', () => {
+    const manager = new SSEManager(0, new VisibilityTracker())
+    const a: SyncEvent[] = [], b: SyncEvent[] = [], foreign: SyncEvent[] = []
+    let cursor: string | undefined
+    manager.subscribe({ id: 'a', namespace: 'n', userId: 1, all: true, send: (event, id) => { a.push(event); cursor = id }, sendHeartbeat() {} })
+    manager.subscribe({ id: 'b', namespace: 'n', userId: 2, all: true, send: event => { b.push(event) }, sendHeartbeat() {} })
+    manager.subscribe({ id: 'foreign', namespace: 'other', userId: 1, all: true, send: event => { foreign.push(event) }, sendHeartbeat() {} })
+    manager.broadcast({ type: 'session-read-state', namespace: 'n', userId: 1, sessionId: 's', state: { version: 1, seenAt: 1, manualUnreadAt: null } })
+    manager.broadcast({ type: 'session-read-state', namespace: 'n', userId: 1, sessionId: 's', state: { version: 2, seenAt: 2, manualUnreadAt: null } })
+    expect(a).toHaveLength(2); expect(b).toHaveLength(0); expect(foreign).toHaveLength(0)
+    const replay = manager.subscribe({ id: 'b-replay', namespace: 'n', userId: 2, all: true, resumeFrom: cursor, send() {}, sendHeartbeat() {} })
+    expect(replay.replay).toHaveLength(0)
+    manager.stop()
+})

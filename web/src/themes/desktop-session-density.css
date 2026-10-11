@@ -9,7 +9,7 @@
     line-height: 0;
 }
 
-.app-session-machine-icon { display: none; }
+.app-session-machine-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 18px; font-size: 14px; }
 /* Desktop navigation is a single-line list in every theme. Touch layouts keep
    their larger targets. Disclosure and selection remain separate buttons. */
 @media (min-width: 920px) {

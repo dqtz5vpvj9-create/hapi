@@ -12,6 +12,9 @@ import kotlinx.serialization.Serializable
 data class SessionSummary(
     val id: String,
     val active: Boolean,
+    val executionVersion: Long? = null,
+    val execution: NativeRuntimeState? = null,
+    val blockingRequestKinds: List<String>? = null,
     val thinking: Boolean = false,
     val activeAt: Long = 0,
     val updatedAt: Long = 0,
@@ -48,6 +51,8 @@ data class SessionSummaryMetadata(
     val flavor: String? = null,
     val worktree: WorktreeMetadata? = null,
     val agentSessionId: String? = null,
+    val codexStoreId: String? = null,
+    val codexUpdatedAt: Long? = null,
     val lifecycleState: String? = null,
     val hapiMcpUrl: String? = null,
 )

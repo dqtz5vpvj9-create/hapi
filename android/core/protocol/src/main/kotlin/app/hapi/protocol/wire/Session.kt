@@ -41,6 +41,8 @@ data class Session(
     val metadataVersion: Long,
     val agentState: AgentState? = null,
     val agentStateVersion: Long,
+    val executionVersion: Long? = null,
+    val execution: NativeRuntimeState? = null,
     val thinking: Boolean,
     val thinkingAt: Long,
     val activeTurnStartedAt: Long? = null,

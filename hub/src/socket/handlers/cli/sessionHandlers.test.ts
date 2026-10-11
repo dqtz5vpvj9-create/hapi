@@ -53,6 +53,34 @@ function reasoningTextOf(message: { content: unknown }): string {
 }
 
 describe('cli session handlers', () => {
+    it('ignores native activity from a socket superseded by a new owner', () => {
+        const store = new Store(':memory:')
+        const session = store.sessions.getOrCreateSession('native-activity', { codexNativeSession: true, codexUpdatedAt: 100 }, null, 'default')
+        const events: SyncEvent[] = []
+        let currentConnection = 0
+        const register = () => {
+            const socket = new FakeSocket()
+            registerSessionHandlers(socket as unknown as CliSocketWithData, {
+                store, resolveSessionAccess: () => ({ ok: true, value: store.sessions.getSession(session.id)! }),
+                emitAccessError() {}, onWebappEvent: event => events.push(event),
+                onSessionAlive: payload => { currentConnection = Math.max(currentConnection, payload.sourceConnection!) },
+                isCurrentSessionSource: (_id, connection) => connection >= currentConnection,
+            })
+            return socket
+        }
+        const old = register(), replacement = register()
+        replacement.trigger('session-alive', { sid: session.id, time: Date.now() })
+        old.trigger('native-history-changed', { sid: session.id, updatedAt: 300 })
+        expect(events).toHaveLength(0)
+        expect((store.sessions.getSession(session.id)!.metadata as { codexUpdatedAt: number }).codexUpdatedAt).toBe(100)
+        replacement.trigger('native-history-changed', { sid: session.id, updatedAt: 200 })
+        expect(events).toHaveLength(2)
+        expect((store.sessions.getSession(session.id)!.metadata as { codexUpdatedAt: number }).codexUpdatedAt).toBe(200)
+        replacement.trigger('native-history-changed', { sid: session.id, updatedAt: 250, activityOnly: true })
+        expect(events).toHaveLength(3)
+        expect(events.at(-1)!.type).toBe('session-updated')
+        store.close()
+    })
     it.each([false, true])('retains one native text snapshot through interleaving, completion and late replay (child=%s)', child => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession('text-stream', {}, null, 'default')

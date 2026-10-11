@@ -304,23 +304,17 @@ struct SessionPatchingTests {
 
     // MARK: - Replicated TS surprises
 
-    @Test func activeTurnStartedAtIsNeverApplied() throws {
-        // web/src/lib/sessionPatch.ts carries the field on the patch type but
-        // never assigns it; the port replicates that exactly.
+    @Test func executionRevisionGuardsStartAndCompletion() throws {
         let session = makeSession()
-        #expect(session.activeTurnStartedAt == nil)
-
-        let alone = applySessionDetailPatch(session: session, patch: SessionPatch(
-            activeTurnStartedAt: .value(5_000)
-        ))
-        #expect(alone == nil)
-
-        let combined = try #require(applySessionDetailPatch(session: session, patch: SessionPatch(
-            thinking: true,
-            activeTurnStartedAt: .value(5_000)
+        let running = try #require(applySessionDetailPatch(session: session, patch: SessionPatch(
+            executionVersion: 1, thinking: true, activeTurnStartedAt: .value(5_000)
         )))
-        #expect(combined.thinking)
-        #expect(combined.activeTurnStartedAt == nil)
+        #expect(running.activeTurnStartedAt == 5_000)
+        let completed = try #require(applySessionDetailPatch(session: running, patch: SessionPatch(
+            executionVersion: 2, thinking: false, activeTurnStartedAt: .null
+        )))
+        #expect(completed.activeTurnStartedAt == nil)
+        #expect(applySessionDetailPatch(session: completed, patch: SessionPatch(executionVersion: 1, thinking: true)) == nil)
     }
 
     @Test func scratchlistUpdatedAtIsARefetchTriggerOnly() {

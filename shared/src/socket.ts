@@ -261,6 +261,7 @@ export interface ClientToServerEvents {
         sid: string
         time: number
         thinking: boolean
+        execution?: import('./schemas').NativeRuntimeState
         mode?: 'local' | 'remote'
         permissionMode?: PermissionMode
         model?: string | null
@@ -276,7 +277,7 @@ export interface ClientToServerEvents {
     'messages-consumed': (data: { sid: string; localIds: string[]; clearQueuedThinkingGrace?: boolean; steered?: boolean }) => void
     'messages-indeterminate': (data: { sid: string; localIds: string[] }) => void
     /** Native shared-engine queue projection. null = positively acknowledged removal. */
-    'native-history-changed': (data: { sid: string; updatedAt?: number }) => void
+    'native-history-changed': (data: { sid: string; updatedAt?: number; activityOnly?: boolean }) => void
     'native-queue-message': (data: { sid: string; localId: string; text: string | null }) => void
     'native-queue-snapshot': (data: { sid: string; messages: Array<{ localId: string; text: string }> }) => void
     'messages-steer-state': (data: { sid: string; localIds: string[]; state: 'queued' | 'dispatching' }, cb: (response: { ok: boolean }) => void) => void

@@ -42,7 +42,7 @@ describe('StatusBar context details popover', () => {
             </I18nProvider>
         )
 
-        const thinkingLabel = screen.getByText(/…$/)
+        const thinkingLabel = screen.getByText('运行中')
         expect(thinkingLabel.className.split(' ')).not.toContain('top-px')
         expect(thinkingLabel.previousElementSibling?.className.split(' ')).not.toContain('top-px')
         expect(thinkingLabel.parentElement?.className.split(' ')).toContain('top-px')

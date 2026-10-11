@@ -230,7 +230,7 @@ describe('deduplicateSessionsByAgentId', () => {
             })
         ]
 
-        expect(getSessionDedupKey(sessions[0])).toBe('codex:stale-shared-id')
+        expect(getSessionDedupKey(sessions[0])).toBe(JSON.stringify(['codex', null, null, 'stale-shared-id']))
         expect(getSessionDedupKey(sessions[1])).toBe('cursor:stale-shared-id')
         expect(deduplicateSessionsByAgentId(sessions).map(session => session.id).sort()).toEqual(['codex', 'cursor'])
         expect(prepareSidebarSessions(sessions).map(session => session.id).sort()).toEqual(['codex', 'cursor'])

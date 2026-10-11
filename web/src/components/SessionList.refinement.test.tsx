@@ -28,11 +28,36 @@ function mount(sessions: SessionSummary[], onStartTask = vi.fn()) {
 }
 function tabs(container: HTMLElement) { return within(container.querySelector('.app-session-mobile-tabs') as HTMLElement) }
 describe('Refined phone list', () => {
+    it('shows native waiting flags before a question card arrives and excludes them from Running', () => {
+        const waiting = (kind: 'approval' | 'input') => session(kind, `${kind} task`, {
+            active: true, thinking: true, execution: { owner: 'machine', generation: 'generation', sequence: 1,
+                status: 'active', waitingOn: [kind], turnId: 'turn', startedAt: 100, completedAt: null },
+        })
+        const { container } = mount([waiting('input'), waiting('approval')])
+        const input = screen.getByText('input task').closest('.session-list-item')!
+        const approval = screen.getByText('approval task').closest('.session-list-item')!
+        expect(input.querySelector('[data-session-status="input"]')).toBeTruthy()
+        expect(approval.querySelector('[data-session-status="permission"]')).toBeTruthy()
+        expect(input.querySelector('.app-session-row-execution')?.textContent).toBe('Needs input')
+        expect(approval.querySelector('.app-session-row-execution')?.textContent).toBe('Permission required')
+        expect(tabs(container).getByRole('button', { name: 'Running 0' })).toBeTruthy()
+    })
+    it('retains execution indicators alongside unread and asynchronous questions', () => {
+        const base = { owner: 'machine', generation: 'generation', sequence: 1, waitingOn: [], turnId: 'turn', startedAt: 100, completedAt: null }
+        const failed = session('failed', 'Failed task', { active: true, execution: { ...base, status: 'systemError' } })
+        const async = session('async', 'Async task', { active: true, thinking: true, execution: { ...base, status: 'active' },
+            pendingRequestKinds: ['input'], blockingRequestKinds: [], pendingRequestsCount: 1 })
+        mount([failed, async])
+        expect(screen.getByText('Failed task').closest('.session-list-item')!.querySelector('[data-session-status="error"]')).toBeTruthy()
+        const row = screen.getByText('Async task').closest('.session-list-item')!
+        expect(row.querySelector('[data-session-status="running"]')).toBeTruthy()
+        expect(row.querySelector('[data-session-status="input"]')).toBeTruthy()
+    })
     it('filters actual running/approval state and restores all sessions from Recent', () => {
         const { container } = mount([session('working', 'Working task', { active: true, thinking: true }), session('quiet', 'Quiet active', { active: true }), session('history', 'Old task'), session('approval', 'Approval task', { active: true, pendingRequestsCount: 1 })])
-        fireEvent.click(tabs(container).getByRole('button', { name: 'Running 2' }))
+        fireEvent.click(tabs(container).getByRole('button', { name: 'Running 1' }))
         expect(screen.getByText('Working task')).toBeTruthy()
-        expect(screen.getByText('Approval task')).toBeTruthy()
+        expect(screen.queryByText('Approval task')).toBeNull()
         expect(screen.queryByText('Quiet active')).toBeNull()
         expect(screen.queryByText('Old task')).toBeNull()
         fireEvent.click(tabs(container).getByRole('button', { name: 'Recent' }))

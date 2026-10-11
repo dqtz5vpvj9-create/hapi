@@ -1,13 +1,11 @@
+import { acceptSessionReadState } from '@/lib/sessionLastSeen'
+import { reconcileSessionSnapshot } from '@hapi/protocol'
+import { applySessionSummaryPatch, reconcileSessionSummary } from '@/lib/sessionSummaryPatch'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-    computePendingRequestKinds,
-    computePendingRequests,
-    computePendingRequestsCount,
-    computeTodoProgress,
     isObject,
-    toSessionSummary,
-    toSessionSummaryMetadata
+    toSessionSummary
 } from '@hapi/protocol'
 import { MachinePatchSchema, MachineSchema, SessionPatchSchema, SessionSchema } from '@hapi/protocol/schemas'
 import type {
@@ -150,6 +148,7 @@ export function sameSessionSummaryMetadata(
         && current.summary?.text === next.summary?.text
         && current.flavor === next.flavor
         && current.agentSessionId === next.agentSessionId
+        && current.codexStoreId === next.codexStoreId
         && current.codexUpdatedAt === next.codexUpdatedAt
         && current.codexParentThreadId === next.codexParentThreadId
         && current.codexAgentNickname === next.codexAgentNickname
@@ -165,7 +164,11 @@ export function sameSessionSummaryMetadata(
 }
 
 export function isRenderIrrelevantPatch(current: SessionSummary, next: SessionSummary): boolean {
-    return current.active === next.active
+    return current.executionVersion === next.executionVersion
+        && current.execution?.status === next.execution?.status
+        && current.execution?.waitingOn.join(',') === next.execution?.waitingOn.join(',')
+        && current.blockingRequestKinds?.join(',') === next.blockingRequestKinds?.join(',')
+        && current.active === next.active
         && current.thinking === next.thinking
         && current.updatedAt === next.updatedAt
         && current.backgroundTaskCount === next.backgroundTaskCount
@@ -505,7 +508,7 @@ export function useSSE(options: {
                 }
                 const nextSessions = previous.sessions.slice()
                 if (existingIndex >= 0) {
-                    nextSessions[existingIndex] = summary
+                    nextSessions[existingIndex] = reconcileSessionSummary(existing, summary)
                 } else {
                     nextSessions.push(summary)
                 }
@@ -532,49 +535,7 @@ export function useSSE(options: {
                     return previous
                 }
 
-                const nextSummary: SessionSummary = {
-                    ...current,
-                    active: patch.active ?? current.active,
-                    thinking: patch.thinking ?? current.thinking,
-                    activeAt: patch.activeAt ?? current.activeAt,
-                    // Monotonic: stale versioned-patch replays can carry an
-                    // older updatedAt; never move the list clock backward.
-                    updatedAt: patch.updatedAt !== undefined
-                        ? Math.max(current.updatedAt, patch.updatedAt)
-                        : current.updatedAt,
-                    backgroundTaskCount: Object.prototype.hasOwnProperty.call(patch, 'backgroundTaskCount')
-                        ? patch.backgroundTaskCount ?? 0
-                        : current.backgroundTaskCount,
-                    model: Object.prototype.hasOwnProperty.call(patch, 'model') ? patch.model ?? null : current.model,
-                    modelReasoningEffort: Object.prototype.hasOwnProperty.call(patch, 'modelReasoningEffort')
-                        ? patch.modelReasoningEffort ?? null
-                        : current.modelReasoningEffort,
-                    effort: Object.prototype.hasOwnProperty.call(patch, 'effort') ? patch.effort ?? null : current.effort
-                }
-
-                // Gate versioned fields against THIS summary's watermarks —
-                // not the detail query. Global SSE covers every session;
-                // requiring detail would force O(N) /sessions invalidation.
-                // teamState is a summary no-op (not rendered on the list).
-                if (patch.todos !== undefined && patch.todos.version >= current.todosUpdatedAt) {
-                    nextSummary.todoProgress = computeTodoProgress(patch.todos.value)
-                    nextSummary.todosUpdatedAt = patch.todos.version
-                }
-                if (patch.agentState !== undefined && patch.agentState.version >= current.agentStateVersion) {
-                    nextSummary.pendingRequestsCount = computePendingRequestsCount(patch.agentState.value)
-                    nextSummary.pendingRequestKinds = computePendingRequestKinds(patch.agentState.value)
-                    nextSummary.pendingRequests = computePendingRequests(patch.agentState.value, nextSummary.updatedAt)
-                    nextSummary.agentStateVersion = patch.agentState.version
-                }
-                if (patch.metadata !== undefined && patch.metadata.version >= current.metadataVersion) {
-                    nextSummary.metadata = toSessionSummaryMetadata(patch.metadata.value)
-                    nextSummary.metadataVersion = patch.metadata.version
-                }
-
-                // Native activity is authoritative; connection/state patches use Hub wall time.
-                if (nextSummary.metadata?.flavor === 'codex' && nextSummary.metadata.codexUpdatedAt !== undefined) {
-                    nextSummary.updatedAt = nextSummary.metadata.codexUpdatedAt
-                }
+                const nextSummary = applySessionSummaryPatch(current, patch)
 
                 patched = true
                 // The keep-alive patch repeats every field every ~10s per active
@@ -664,6 +625,10 @@ export function useSSE(options: {
         const handleSyncEvent = (event: SyncEvent) => {
             lastActivityAtRef.current = Date.now()
 
+            if (event.type === 'session-read-state') {
+                acceptSessionReadState(event.sessionId, event.state)
+                return
+            }
             if (event.type === 'heartbeat') {
                 return
             }
@@ -760,7 +725,10 @@ export function useSSE(options: {
                     void queryClient.removeQueries({ queryKey: queryKeys.session(event.sessionId) })
                     clearMessageWindow(event.sessionId)
                 } else if (isSessionRecord(event.data) && event.data.id === event.sessionId) {
-                    queryClient.setQueryData<SessionResponse>(queryKeys.session(event.sessionId), { session: event.data })
+                    const incoming = event.data
+                    queryClient.setQueryData<SessionResponse>(queryKeys.session(event.sessionId), previous => ({
+                        session: reconcileSessionSnapshot(previous?.session, incoming)
+                    }))
                     upsertSessionSummary(event.data)
                 } else {
                     const patch = getSessionPatch(event.data)
@@ -816,6 +784,7 @@ export function useSSE(options: {
         }
 
         const handleMessage = (message: MessageEvent<string>) => {
+            if (eventSourceRef.current !== eventSource) return
             if (typeof message.data !== 'string') {
                 return
             }

@@ -1,3 +1,4 @@
+import { classifySessionActivity } from '@hapi/protocol'
 import type { SessionSummary } from '@/types/api'
 
 export type SessionAttention =
@@ -21,12 +22,13 @@ export function classifySessionAttention(
     const pendingRequestKinds = Array.isArray(summary.pendingRequestKinds)
         ? summary.pendingRequestKinds
         : []
+    const activity = classifySessionActivity(summary)
 
-    if (pendingRequestKinds.includes('permission')) {
+    if (activity.kind === 'permission' || pendingRequestKinds.includes('permission')) {
         return { kind: 'permission' }
     }
 
-    if (pendingRequestKinds.includes('input')) {
+    if (activity.kind === 'input' || pendingRequestKinds.includes('input')) {
         return { kind: 'input' }
     }
 
@@ -36,7 +38,7 @@ export function classifySessionAttention(
             : null
     }
 
-    if (summary.thinking) {
+    if (activity.kind === 'running') {
         return null
     }
 

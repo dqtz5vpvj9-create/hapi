@@ -1,3 +1,5 @@
+import { classifySessionActivity, computePendingRequestKinds, computeBlockingRequestKinds } from '@hapi/protocol'
+import type { NativeRuntimeState } from '@hapi/protocol/schemas'
 import {
     getCodexCollaborationModeLabel,
     getCopilotAgentModeLabel,
@@ -22,25 +24,6 @@ import { useTranslation } from '@/lib/use-translation'
 import { useSessionHeaderMetadata } from '@/hooks/useSessionHeaderMetadata'
 import { useGlassSurface } from '@/themes/glass/GlassScene'
 
-// Vibing messages for thinking state
-const VIBING_MESSAGES = [
-    "Accomplishing", "Actioning", "Actualizing", "Baking", "Booping", "Brewing",
-    "Calculating", "Cerebrating", "Channelling", "Churning", "Clauding", "Coalescing",
-    "Cogitating", "Computing", "Combobulating", "Concocting", "Conjuring", "Considering",
-    "Contemplating", "Cooking", "Crafting", "Creating", "Crunching", "Deciphering",
-    "Deliberating", "Determining", "Discombobulating", "Divining", "Doing", "Effecting",
-    "Elucidating", "Enchanting", "Envisioning", "Finagling", "Flibbertigibbeting",
-    "Forging", "Forming", "Frolicking", "Generating", "Germinating", "Hatching",
-    "Herding", "Honking", "Ideating", "Imagining", "Incubating", "Inferring",
-    "Manifesting", "Marinating", "Meandering", "Moseying", "Mulling", "Mustering",
-    "Musing", "Noodling", "Percolating", "Perusing", "Philosophising", "Pontificating",
-    "Pondering", "Processing", "Puttering", "Puzzling", "Reticulating", "Ruminating",
-    "Scheming", "Schlepping", "Shimmying", "Simmering", "Smooshing", "Spelunking",
-    "Spinning", "Stewing", "Sussing", "Synthesizing", "Thinking", "Tinkering",
-    "Transmuting", "Unfurling", "Unravelling", "Vibing", "Wandering", "Whirring",
-    "Wibbling", "Wizarding", "Working", "Wrangling"
-]
-
 const PERMISSION_TONE_CLASSES: Record<PermissionModeTone, string> = {
     neutral: 'text-[var(--app-hint)]',
     info: 'text-blue-500',
@@ -57,9 +40,11 @@ function getConnectionStatus(
     agentState: AgentState | null | undefined,
     voiceStatus: ConversationStatus | undefined,
     backgroundTaskCount: number,
-    t: (key: string) => string
+    t: (key: string) => string,
+    execution?: NativeRuntimeState | null
 ): { text: string; color: string; dotColor: string; isPulsing: boolean } {
-    const hasPermissions = agentState?.requests && Object.keys(agentState.requests).length > 0
+    const activity = classifySessionActivity({ active, thinking, execution, backgroundTaskCount,
+        pendingRequestKinds: computePendingRequestKinds(agentState), blockingRequestKinds: computeBlockingRequestKinds(agentState) })
 
     // Voice connecting takes priority
     if (voiceStatus === 'connecting') {
@@ -71,7 +56,7 @@ function getConnectionStatus(
         }
     }
 
-    if (!active) {
+    if (!activity.connected) {
         return {
             text: t('misc.offline'),
             color: 'text-[#999]',
@@ -80,17 +65,17 @@ function getConnectionStatus(
         }
     }
 
-    if (hasPermissions) {
+    if (activity.kind === 'permission' || activity.kind === 'input' || activity.kind === 'error') {
         return {
-            text: t('misc.permissionRequired'),
+            text: t(activity.kind === 'input' ? 'session.item.needsInput' : activity.kind === 'error' ? 'session.item.error' : 'misc.permissionRequired'),
             color: 'text-[#FF9500]',
             dotColor: 'bg-[#FF9500]',
             isPulsing: true
         }
     }
 
-    if (thinking) {
-        const vibingMessage = VIBING_MESSAGES[Math.floor(Math.random() * VIBING_MESSAGES.length)].toLowerCase() + '…'
+    if (activity.kind === 'running') {
+        const vibingMessage = t('session.item.running')
         return {
             text: vibingMessage,
             color: 'text-[#007AFF]',
@@ -99,7 +84,7 @@ function getConnectionStatus(
         }
     }
 
-    if (backgroundTaskCount > 0) {
+    if (activity.kind === 'background') {
         return {
             text: `${backgroundTaskCount} background task${backgroundTaskCount > 1 ? 's' : ''} running`,
             color: 'text-[#007AFF]',
@@ -203,6 +188,7 @@ export function StatusBar(props: {
     permissionOpen?: boolean
     active: boolean
     thinking: boolean
+    execution?: NativeRuntimeState | null
     agentState: AgentState | null | undefined
     backgroundTaskCount?: number
     contextSize?: number
@@ -230,8 +216,8 @@ export function StatusBar(props: {
     const detailsGlassRef = useGlassSurface<HTMLDivElement>()
     const contextGlassRef = useGlassSurface<HTMLDivElement>()
     const connectionStatus = useMemo(
-        () => getConnectionStatus(props.active, props.thinking, props.agentState, props.voiceStatus, props.backgroundTaskCount ?? 0, t),
-        [props.active, props.thinking, props.agentState, props.voiceStatus, props.backgroundTaskCount, t]
+        () => getConnectionStatus(props.active, props.thinking, props.agentState, props.voiceStatus, props.backgroundTaskCount ?? 0, t, props.execution),
+        [props.active, props.thinking, props.agentState, props.voiceStatus, props.backgroundTaskCount, props.execution, t]
     )
 
     const contextHeuristicModel = props.contextModel ?? props.model

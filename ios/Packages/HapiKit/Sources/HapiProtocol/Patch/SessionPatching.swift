@@ -1,21 +1,26 @@
 import Foundation
 
-// Pure session-patch application rules, ported line-for-line from
-// `web/src/lib/sessionPatch.ts` (the normative reference — see
-// docs/api/client-contract/sse.md "Versioned patch algorithm").
-//
-// Portability notes against the TS source:
-// - `activeTurnStartedAt` and `scratchlistUpdatedAt` are carried by
-//   `SessionPatch` but deliberately NEVER applied to the `Session`, exactly
-//   like the reference implementation (`scratchlistUpdatedAt` is a bare
-//   refetch trigger; `activeTurnStartedAt` is simply not assigned there).
-// - JS distinguishes a `null` and an *absent* `activeTurnStartedAt` on the
-//   cached session; Swift folds both into `nil`. The only observable
-//   difference is which side of the render-irrelevance gate a
-//   `activeTurnStartedAt: null` patch lands on — and since the field is never
-//   assigned, `applySessionDetailPatch` returns the same result either way
-//   unless the patch also carries other changed fields (then TS may
-//   additionally refresh a sub-minute `activeAt`; harmless keep-alive data).
+/// Execution snapshots carry a durable hub revision, independent of delivery stream.
+public func stripStaleExecutionPatch(currentVersion: Int?, patch: SessionPatch) -> SessionPatch {
+    let newer = patch.executionVersion.map { $0 > (currentVersion ?? 0) } ?? (currentVersion == nil)
+    if newer { return patch }
+    var next = patch
+    next.active = nil
+    next.thinking = nil
+    next.activeAt = nil
+    next.activeTurnStartedAt = nil
+    next.execution = nil
+    next.executionVersion = nil
+    next.backgroundTaskCount = nil
+    next.model = nil
+    next.modelReasoningEffort = nil
+    next.effort = nil
+    next.serviceTier = nil
+    next.permissionMode = nil
+    next.collaborationMode = nil
+    next.copilotAgentMode = nil
+    return next
+}
 
 /// Version-monotonicity gate for structured patches carrying
 /// metadata / agentState / todos / teamState.
@@ -35,6 +40,8 @@ public func isNewerVersionedPatch(patchVersion: Int, cachedVersion: Int) -> Bool
 /// boundaries, so a sub-minute `activeAt` delta is treated as invisible;
 /// an `activeAt` move of ≥ 60 s stays render-relevant.
 public func isRenderIrrelevantSessionPatch(session: Session, patch: SessionPatch) -> Bool {
+    if let value = patch.executionVersion, value != session.executionVersion { return false }
+    if let field = patch.execution, field.wireValue != session.execution { return false }
     if let value = patch.active, value != session.active { return false }
     if let value = patch.thinking, value != session.thinking { return false }
     if let field = patch.activeTurnStartedAt, field.wireValue != session.activeTurnStartedAt { return false }
@@ -73,6 +80,7 @@ public func isRenderIrrelevantSessionPatch(session: Session, patch: SessionPatch
 /// Field-by-field only — versioned `{version, value}` wrappers are unwrapped
 /// under the strict `>` gate and never assigned wholesale.
 public func applySessionDetailPatch(session: Session, patch: SessionPatch) -> Session? {
+    let patch = stripStaleExecutionPatch(currentVersion: session.executionVersion, patch: patch)
     if isRenderIrrelevantSessionPatch(session: session, patch: patch) {
         return nil
     }
@@ -86,6 +94,9 @@ public func applySessionDetailPatch(session: Session, patch: SessionPatch) -> Se
         }
     }
 
+    if let value = patch.executionVersion { assign(\.executionVersion, value) }
+    if let field = patch.execution { assign(\.execution, field.wireValue) }
+    if let field = patch.activeTurnStartedAt { assign(\.activeTurnStartedAt, field.wireValue) }
     if let value = patch.active { assign(\.active, value) }
     if let value = patch.thinking { assign(\.thinking, value) }
     if let value = patch.activeAt { assign(\.activeAt, value) }
@@ -131,9 +142,7 @@ public func applySessionDetailPatch(session: Session, patch: SessionPatch) -> Se
         changed = true
     }
 
-    // Deliberately NOT applied (mirrors web/src/lib/sessionPatch.ts):
-    // - patch.activeTurnStartedAt — the reference never assigns it.
-    // - patch.scratchlistUpdatedAt — refetch trigger only.
+    // scratchlistUpdatedAt remains a refetch trigger.
 
     return changed ? next : nil
 }

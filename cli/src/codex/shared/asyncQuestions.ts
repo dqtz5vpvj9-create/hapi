@@ -53,7 +53,7 @@ export class SharedCodexAsyncQuestions {
         const input = { questions, canSkip: true };
         this.session.sendAgentMessage({ type: 'tool-call', name: 'request_user_input', callId: id, input, id }, id);
         this.session.updateAgentState(state => ({ ...state, requests: { ...state.requests,
-            [id]: { tool: 'request_user_input', toolCallId: id, arguments: input, createdAt: Date.now() } } }));
+            [id]: { tool: 'request_user_input', blocking: false, toolCallId: id, arguments: input, createdAt: Date.now() } } }));
     }
 
     async reply(reply: { id: string; approved: boolean; answers?: Record<string, Answer> }): Promise<boolean> {

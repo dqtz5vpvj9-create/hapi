@@ -23,6 +23,8 @@ public struct Session: Codable, Equatable, Sendable {
     public var metadataVersion: Int
     public var agentState: AgentState?
     public var agentStateVersion: Int
+    public var executionVersion: Int?
+    public var execution: NativeRuntimeState?
     public var thinking: Bool
     public var thinkingAt: Int
     public var activeTurnStartedAt: Int?
@@ -56,6 +58,8 @@ public struct Session: Codable, Equatable, Sendable {
         metadataVersion: Int,
         agentState: AgentState? = nil,
         agentStateVersion: Int,
+        executionVersion: Int? = nil,
+        execution: NativeRuntimeState? = nil,
         thinking: Bool,
         thinkingAt: Int,
         activeTurnStartedAt: Int? = nil,
@@ -85,6 +89,8 @@ public struct Session: Codable, Equatable, Sendable {
         self.metadataVersion = metadataVersion
         self.agentState = agentState
         self.agentStateVersion = agentStateVersion
+        self.executionVersion = executionVersion
+        self.execution = execution
         self.thinking = thinking
         self.thinkingAt = thinkingAt
         self.activeTurnStartedAt = activeTurnStartedAt
@@ -118,6 +124,8 @@ public struct Session: Codable, Equatable, Sendable {
         metadataVersion = try container.decode(Int.self, forKey: .metadataVersion)
         agentState = try container.decodeIfPresent(AgentState.self, forKey: .agentState)
         agentStateVersion = try container.decode(Int.self, forKey: .agentStateVersion)
+        executionVersion = try container.decodeIfPresent(Int.self, forKey: .executionVersion)
+        execution = try container.decodeIfPresent(NativeRuntimeState.self, forKey: .execution)
         thinking = try container.decode(Bool.self, forKey: .thinking)
         thinkingAt = try container.decode(Int.self, forKey: .thinkingAt)
         activeTurnStartedAt = try container.decodeIfPresent(Int.self, forKey: .activeTurnStartedAt)

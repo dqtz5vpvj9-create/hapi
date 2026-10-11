@@ -1166,8 +1166,7 @@ function selectImportTargetSession(
         ))
         .filter((candidate) => (
             !sourceMachineId
-            || typeof candidate.metadata?.machineId !== 'string'
-            || candidate.metadata.machineId === sourceMachineId
+            || candidate.metadata?.machineId === sourceMachineId
         ))
         .sort((a, b) => b.updatedAt - a.updatedAt)
 

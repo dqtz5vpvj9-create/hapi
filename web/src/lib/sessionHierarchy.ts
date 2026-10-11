@@ -12,7 +12,7 @@ export function buildSessionHierarchy(visible: SessionSummary[], all: SessionSum
     const byId = new Map(all.map(session => [session.id, session]));
     const byThread = new Map<string, SessionSummary>();
     const key = (session: SessionSummary, threadId: string) =>
-        JSON.stringify([session.metadata?.machineId ?? null, session.metadata?.flavor ?? null, threadId]);
+        JSON.stringify([session.metadata?.machineId ?? null, session.metadata?.flavor ?? null, session.metadata?.codexStoreId ?? null, threadId]);
     for (const session of all) {
         if (session.metadata?.agentSessionId) byThread.set(key(session, session.metadata.agentSessionId), session);
     }

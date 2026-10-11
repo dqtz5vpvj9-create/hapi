@@ -1,3 +1,4 @@
+import { SessionPresenceStore, createSessionPresenceSchema } from './sessionPresenceStore'
 import { Database } from 'bun:sqlite'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -45,8 +46,10 @@ export {
     WorkGraphValidationError
 } from './workGraph'
 
-const SCHEMA_VERSION: number = 29
+const SCHEMA_VERSION: number = 30
 const REQUIRED_TABLES = [
+    'session_execution_versions',
+    'session_read_states',
     'sessions',
     'machines',
     'messages',
@@ -71,6 +74,7 @@ export class Store {
     private readonly _dbPath: string
     private closed: boolean = false
 
+    readonly presence: SessionPresenceStore
     readonly sessions: SessionStore
     readonly machines: MachineStore
     readonly messages: MessageStore
@@ -126,6 +130,7 @@ export class Store {
             }
         }
 
+        this.presence = new SessionPresenceStore(this.db)
         this.sessions = new SessionStore(this.db)
         this.machines = new MachineStore(this.db)
         this.messages = new MessageStore(this.db)
@@ -361,6 +366,7 @@ export class Store {
             26: () => createMessageDependencySchema(this.db),
             27: () => createMessageOutlineSchema(this.db),
             28: () => createWorkspaceSchema(this.db),
+            29: () => createSessionPresenceSchema(this.db),
         })
 
         if (currentVersion === 0) {
@@ -614,6 +620,7 @@ export class Store {
         `)
         createMessageDependencySchema(this.db)
         createMessageOutlineSchema(this.db)
+        createSessionPresenceSchema(this.db)
         createWorkspaceSchema(this.db)
     }
 

@@ -156,6 +156,8 @@ public enum SummaryPatching {
             flavor: metadata.flavor,
             worktree: metadata.worktree,
             agentSessionId: summaryAgentSessionId(metadata),
+            codexStoreId: metadata.codexStoreId,
+            codexUpdatedAt: metadata.codexUpdatedAt,
             lifecycleState: metadata.lifecycleState,
             hapiMcpUrl: metadata.hapiMcpUrl
         )
@@ -170,9 +172,14 @@ public enum SummaryPatching {
         SessionSummary(
             id: session.id,
             active: session.active,
+            executionVersion: session.executionVersion,
+            execution: session.execution,
+            blockingRequestKinds: computePendingRequestKinds(session.agentState.map { state in
+                var state = state; state.requests = state.requests?.filter { $0.value.blocking != false }; return state
+            }),
             thinking: session.thinking,
             activeAt: session.activeAt,
-            updatedAt: session.updatedAt,
+            updatedAt: session.metadata?.flavor == "codex" ? (session.metadata?.codexUpdatedAt ?? session.updatedAt) : session.updatedAt,
             pinned: session.pinned ?? false,
             globalPinned: session.globalPinned ?? false,
             metadata: toSessionSummaryMetadata(session.metadata),
@@ -219,7 +226,10 @@ public enum SummaryPatching {
         _ current: SessionSummary,
         _ patch: SessionPatch
     ) -> SessionSummary {
+        let patch = stripStaleExecutionPatch(currentVersion: current.executionVersion, patch: patch)
         var next = current
+        if let version = patch.executionVersion { next.executionVersion = version }
+        if let field = patch.execution { next.execution = field.wireValue }
         next.active = patch.active ?? current.active
         next.thinking = patch.thinking ?? current.thinking
         next.activeAt = patch.activeAt ?? current.activeAt
@@ -238,6 +248,9 @@ public enum SummaryPatching {
             next.todosUpdatedAt = todos.version
         }
         if let agentState = patch.agentState, agentState.version >= current.agentStateVersion {
+            next.blockingRequestKinds = computePendingRequestKinds(agentState.value.map { state in
+                var state = state; state.requests = state.requests?.filter { $0.value.blocking != false }; return state
+            })
             next.pendingRequestsCount = computePendingRequestsCount(agentState.value)
             next.pendingRequestKinds = computePendingRequestKinds(agentState.value)
             next.pendingRequests = computePendingRequests(agentState.value, fallbackSince: next.updatedAt)
@@ -247,6 +260,7 @@ public enum SummaryPatching {
             next.metadata = toSessionSummaryMetadata(metadata.value)
             next.metadataVersion = metadata.version
         }
+        if next.metadata?.flavor == "codex", let updatedAt = next.metadata?.codexUpdatedAt { next.updatedAt = updatedAt }
         return next
     }
 
@@ -289,6 +303,7 @@ public enum SummaryPatching {
     /// `undefined !== null` distinction for `modelReasoningEffort`; the only
     /// effect is suppressing a re-render that stores an equal-rendering value.
     public static func isRenderIrrelevantPatch(current: SessionSummary, next: SessionSummary) -> Bool {
+        if current.executionVersion != next.executionVersion || current.execution != next.execution || current.blockingRequestKinds != next.blockingRequestKinds { return false }
         if current.active != next.active { return false }
         if current.thinking != next.thinking { return false }
         if current.updatedAt != next.updatedAt { return false }

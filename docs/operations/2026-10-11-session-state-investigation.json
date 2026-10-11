@@ -1,0 +1,351 @@
+{
+  "scope": "Investigation only; no product fix or release",
+  "source": "Working tree based on 1beac515; existing unrelated edits preserved",
+  "replays": [
+    {
+      "name": "audit: native idle must end the displayed running state",
+      "status": "failed",
+      "expected": false,
+      "observed": true,
+      "assertion": "AssertionError: expected true to be false // Object.is equality"
+    },
+    {
+      "name": "audit: a completed turn must not revive from a late duplicate start",
+      "status": "failed",
+      "expected": false,
+      "observed": true,
+      "assertion": "AssertionError: expected true to be false // Object.is equality"
+    },
+    {
+      "name": "audit: late running patch cannot replace a newer idle fact",
+      "status": "failed",
+      "expected": false,
+      "observed": true,
+      "assertion": "AssertionError: expected true to be false // Object.is equality"
+    }
+  ],
+  "replaySource": {
+    "nativeTestsAppendTo": "cli/src/codex/shared/root.test.ts",
+    "nativeTestCases": " replay native lifecycle facts without model calls.\nit('audit: native idle must end the displayed running state', async () => {\n    const f = await fixture();\n    f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'audit-turn' } });\n    f.native.notify('thread/status/changed', { threadId: 'thread', status: { type: 'idle' } });\n    await Promise.resolve();\n    const heartbeat = vi.spyOn(f.root.session, 'keepAlive');\n    await f.root.activate();\n    expect(heartbeat.mock.lastCall?.[0]).toBe(false);\n});\nit('audit: a completed turn must not revive from a late duplicate start', async () => {\n    const f = await fixture();\n    f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'audit-turn' } });\n    f.native.notify('turn/completed', { threadId: 'thread', turn: { id: 'audit-turn', status: 'completed' } });\n    f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'audit-turn' } });\n    const heartbeat = vi.spyOn(f.root.session, 'keepAlive');\n    await f.root.activate();\n    expect(heartbeat.mock.lastCall?.[0]).toBe(false);\n});\n",
+    "webTestCases": "import { expect, it } from 'vitest'\nimport type { Session } from '@/types/api'\nimport { applySessionDetailPatch } from './sessionPatch'\nit('audit: late running patch cannot replace a newer idle fact', () => {\n const session = { id: 'audit', active: true, thinking: false, activeAt: 3000, updatedAt: 3000 } as Session\n const next = applySessionDetailPatch(session, { active: true, thinking: true, activeAt: 2000 }) ?? session\n expect(next.thinking).toBe(false)\n})\n"
+  },
+  "live": {
+    "observedAtMs": 1791692136125,
+    "scope": "Read-only Linux owning engines; no resume, turn, archive or restart requests",
+    "observations": [
+      {
+        "name": "四篇云计算论文主题解读",
+        "id": "104be9a3-5698-4416-b1d5-358d00ff706c",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a11958-39b3-7773-8f32-76c67959c8b0",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791426765,
+        "summaryUpdatedAt": 1791426765314,
+        "observedAtMs": 1791692136020
+      },
+      {
+        "name": "修复 Codex 后台服务重启",
+        "id": "3b933a6b-eacd-4f35-ae51-c4c6313e5ef6",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a11fc2-5682-7d31-a1fe-b6119b48cce9",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "systemError"
+        },
+        "nativeUpdatedAt": 1791536652,
+        "summaryUpdatedAt": 1791536652899,
+        "observedAtMs": 1791692136025
+      },
+      {
+        "name": "OpenHarmony 中文培训课件",
+        "id": "c0168e78-fb64-4d7e-938f-0eabc77a68d0",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a12600-b5d2-7382-b3e8-2b077564fafa",
+        "hubThinking": true,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "active",
+          "activeFlags": []
+        },
+        "nativeUpdatedAt": 1791692135,
+        "summaryUpdatedAt": 1791692106491,
+        "observedAtMs": 1791692136029
+      },
+      {
+        "name": "实现加密相机计划",
+        "id": "03ced63b-18ff-4360-9abe-ed90fcd916e7",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0dba6-dfa1-7d31-8c77-e79c313355d9",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791555357,
+        "summaryUpdatedAt": 1791555357322,
+        "observedAtMs": 1791692136043
+      },
+      {
+        "name": "实现文件互传工具",
+        "id": "75f9d361-5883-4779-a2ff-1fabd27443b0",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0dbec-e54d-79e3-ab9f-a37764f7aca6",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791691961,
+        "summaryUpdatedAt": 1791691961766,
+        "observedAtMs": 1791692136047
+      },
+      {
+        "name": "评估dsh subagent的token节省效果",
+        "id": "67e10180-d1e9-4619-afd7-00c2e4935ad6",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0e5c5-cdae-7101-9d53-228035271cfe",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791678120,
+        "summaryUpdatedAt": 1791678120797,
+        "observedAtMs": 1791692136050
+      },
+      {
+        "name": "PPoPP R2",
+        "id": "88e26f28-53f0-46cc-b949-d65d3f826f32",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0ed7a-2e72-7153-b9ca-9d5ab88816eb",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791555573,
+        "summaryUpdatedAt": 1791555573134,
+        "observedAtMs": 1791692136064
+      },
+      {
+        "name": "Reply with HAPPIER_NATIVE_READY",
+        "id": "d88c7e83-3ae1-454c-bf9e-857e6875bb14",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0f148-7857-7d53-9fd5-c37a13cd83e7",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791555570,
+        "summaryUpdatedAt": 1791555570981,
+        "observedAtMs": 1791692136070
+      },
+      {
+        "name": "Reply with HAPI_AUTO_DISCOVERY_OK",
+        "id": "4d5de598-01e5-4fc3-90b1-93aadaf1b335",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0f182-691e-7c33-bcb1-cc90dc02f08e",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791555567,
+        "summaryUpdatedAt": 1791555567778,
+        "observedAtMs": 1791692136076
+      },
+      {
+        "name": "HAPI Main",
+        "id": "7a4ad556-ec01-4489-a0e5-06ed996bf250",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0f1c3-a604-76a0-bbd9-b805c6320be7",
+        "hubThinking": true,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "active",
+          "activeFlags": []
+        },
+        "nativeUpdatedAt": 1791692135,
+        "summaryUpdatedAt": 1791692123289,
+        "observedAtMs": 1791692136083
+      },
+      {
+        "name": "实现加密相机计划",
+        "id": "b4757405-a314-4da0-8c46-62f0f4e69adf",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0f829-3925-7640-b6aa-876d2ad03156",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791555569,
+        "summaryUpdatedAt": 1791555569084,
+        "observedAtMs": 1791692136091
+      },
+      {
+        "name": "HAPI terminal",
+        "id": "f03abbc0-36f6-4239-9f10-f63917bf7184",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0fd20-8cce-7101-bce0-bd03d8d674af",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791555569,
+        "summaryUpdatedAt": 1791555569560,
+        "observedAtMs": 1791692136094
+      },
+      {
+        "name": "HAPI 修复 session 创建目录限制",
+        "id": "f14d6807-810c-4cd0-8828-29e4708e6883",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0fd23-78f6-7152-ac89-a148b12a9a23",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791555573,
+        "summaryUpdatedAt": 1791555573289,
+        "observedAtMs": 1791692136098
+      },
+      {
+        "name": "移除Benchmark应用的cgroup设置",
+        "id": "307338e8-b2d6-4e65-b2a2-d3044c9c1c19",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a104ee-f99e-7c92-9c13-a2567bbb421f",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791555573,
+        "summaryUpdatedAt": 1791555573789,
+        "observedAtMs": 1791692136100
+      },
+      {
+        "name": "$agentsview 我周五需要做一个workreport，汇报内容我打算定为汇报Choreo这几个月进行revis…",
+        "id": "6316505c-b13e-4def-929e-6dc0b8d209e8",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a110b4-1ef5-76e0-b1c9-a2c1c3484533",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791536251,
+        "summaryUpdatedAt": 1791536251915,
+        "observedAtMs": 1791692136104
+      },
+      {
+        "name": null,
+        "id": "32e52469-bfe0-4406-b9f8-aafdec67ab99",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a11fe8-ca88-70c0-af9d-3cd4519c99a6",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791544773,
+        "summaryUpdatedAt": 1791544773905,
+        "observedAtMs": 1791692136108
+      },
+      {
+        "name": "迁移目录并保持服务正常",
+        "id": "7d8c37a5-07c7-4984-8022-c2c909b6bf61",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a12055-a206-7d20-b6cf-6b4e828e6d85",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791546517,
+        "summaryUpdatedAt": 1791546517974,
+        "observedAtMs": 1791692136110
+      },
+      {
+        "name": "Fix this",
+        "id": "abeeaba3-23d6-47da-a0bc-e2264e7be0b3",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a12396-77ca-71e2-ba39-889be59ee473",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791598505,
+        "summaryUpdatedAt": 1791598505489,
+        "observedAtMs": 1791692136113
+      },
+      {
+        "name": "盘点 codex-session-listener 功能",
+        "id": "9a553f21-b705-43a6-8772-54668f16bf35",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0f049-bc7e-7931-a486-ba3bf480331b",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791618764,
+        "summaryUpdatedAt": 1791618764123,
+        "observedAtMs": 1791692136115
+      },
+      {
+        "name": "This is the isolated OpenCode Web to HAPI adapter test. Reply only OPENCODE_TRIAL_READY. Do not use tools.",
+        "id": "8bc3a07a-ad85-47e7-b6f1-74a69fc8693d",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a0f1d7-82bd-7641-b045-a522495b28f6",
+        "hubThinking": false,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "idle"
+        },
+        "nativeUpdatedAt": 1791618385,
+        "summaryUpdatedAt": 1791618385547,
+        "observedAtMs": 1791692136119
+      },
+      {
+        "name": "oaRAM CC 存储构建与集成",
+        "id": "9805bbe1-9949-4ac2-9150-5f19c23e9455",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "01a10cb7-b99c-7ac0-b110-f50347662c30",
+        "hubThinking": true,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "active",
+          "activeFlags": []
+        },
+        "nativeUpdatedAt": 1791692123,
+        "summaryUpdatedAt": 1791692123396,
+        "observedAtMs": 1791692136123
+      },
+      {
+        "name": "read Compre-readable.md and continue this codex session",
+        "id": "623a23b8-d7a2-4e65-97ba-e3b910e284e4",
+        "machineId": "0154b2b7-8726-4eae-be5b-90ccf2044af1",
+        "threadId": "019f781c-7f6e-7100-ad04-e7a497caa43d",
+        "hubThinking": true,
+        "pendingKinds": [],
+        "nativeStatus": {
+          "type": "active",
+          "activeFlags": []
+        },
+        "nativeUpdatedAt": 1791692134,
+        "summaryUpdatedAt": 1791692124320,
+        "observedAtMs": 1791692136125
+      }
+    ],
+    "windowsProbe": "SSH banner timeout; not a native-state or device-offline diagnosis"
+  }
+}

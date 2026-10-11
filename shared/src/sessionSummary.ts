@@ -1,4 +1,4 @@
-import type { AgentState, Metadata, Session, TodoItem, WorktreeMetadata, CodexSubagent } from './schemas'
+import type { NativeRuntimeState, AgentState, Metadata, Session, TodoItem, WorktreeMetadata, CodexSubagent } from './schemas'
 import { isKnownFlavor } from './flavors'
 import type { AgentFlavor } from './modes'
 
@@ -40,6 +40,7 @@ export type SessionSummaryMetadata = {
     flavor?: string | null
     worktree?: WorktreeMetadata
     agentSessionId?: string
+    codexStoreId?: string
     codexUpdatedAt?: number
     codexParentThreadId?: string
     codexAgentNickname?: string
@@ -56,6 +57,9 @@ export type SessionSummary = {
     id: string
     active: boolean
     thinking: boolean
+    execution?: NativeRuntimeState | null
+    executionVersion?: number
+    blockingRequestKinds?: PendingRequestKind[]
     activeAt: number
     updatedAt: number
     pinned?: boolean
@@ -100,6 +104,14 @@ export function computePendingRequestKinds(agentState: AgentState | null | undef
     return kinds.has('permission') && kinds.has('input')
         ? ['permission', 'input']
         : Array.from(kinds)
+}
+
+export function computeBlockingRequestKinds(agentState: AgentState | null | undefined): PendingRequestKind[] {
+    const kinds = new Set<PendingRequestKind>()
+    for (const request of Object.values(agentState?.requests ?? {})) {
+        if (request.blocking !== false) kinds.add(classifyKind(request.tool))
+    }
+    return Array.from(kinds)
 }
 
 export function computePendingRequests(
@@ -204,6 +216,7 @@ export function toSessionSummaryMetadata(metadata: Metadata | null | undefined):
         flavor: metadata.flavor ?? null,
         worktree: metadata.worktree,
         agentSessionId: getSummaryAgentSessionId(metadata),
+        codexStoreId: metadata.codexStoreId ?? metadata.homeDir,
         codexUpdatedAt: metadata.codexUpdatedAt,
         codexParentThreadId: metadata.codexParentThreadId,
         codexAgentNickname: metadata.codexAgentNickname,
@@ -221,6 +234,9 @@ export function toSessionSummary(session: Session): SessionSummary {
         id: session.id,
         active: session.active,
         thinking: session.thinking,
+        execution: session.execution,
+        executionVersion: session.executionVersion,
+        blockingRequestKinds: computeBlockingRequestKinds(session.agentState),
         activeAt: session.activeAt,
         updatedAt: session.metadata?.flavor === 'codex'
             ? session.metadata.codexUpdatedAt ?? session.updatedAt

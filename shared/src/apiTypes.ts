@@ -123,7 +123,7 @@ export type AuthResponse = {
     }
 }
 
-export type SessionsResponse = { sessions: SessionSummary[] }
+export type SessionsResponse = { sessions: SessionSummary[]; readStates?: Record<string, import('./schemas').SessionReadState> }
 export type SessionResponse = { session: Session }
 export type MessagesResponse = {
     messages: DecryptedMessage[]

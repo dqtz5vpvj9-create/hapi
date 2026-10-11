@@ -1,3 +1,5 @@
+import { classifySessionActivity } from '@hapi/protocol'
+import { useRelativeTimeClock } from '@/hooks/useRelativeTimeClock'
 import { useNarrowViewport } from '@/hooks/useNarrowViewport'
 import { useMemo } from 'react'
 import type { SessionSummary } from '@/types/api'
@@ -10,7 +12,6 @@ import { classifySessionAttention } from '@/lib/sessionAttention'
 import { getSessionLastSeenAt, getSessionManualUnreadAt } from '@/lib/sessionLastSeen'
 import { formatRelativeTime } from '@/lib/relativeTime'
 import { formatScheduledTooltipDetail } from '@/lib/scheduledTime'
-import { getCodexImportedAt } from '@/lib/codexImportedSessions'
 import { getSessionTitle } from '@/lib/sessionTitle'
 import { useTranslation } from '@/lib/use-translation'
 import { getWorktreeSessionLabel } from '@/lib/sessionWorktreeLabel'
@@ -55,36 +56,6 @@ function getTodoProgress(session: SessionSummary): { completed: number; total: n
     if (!session.todoProgress) return null
     if (session.todoProgress.completed === session.todoProgress.total) return null
     return session.todoProgress
-}
-
-function formatCodexImportedRelativeTime(
-    value: number,
-    t: (key: string, params?: Record<string, string | number>) => string
-): string | null {
-    const ms = value < 1_000_000_000_000 ? value * 1000 : value
-    if (!Number.isFinite(ms)) return null
-    const delta = Date.now() - ms
-    if (delta < 60_000) return t('session.time.importedFromCodex.justNow')
-    const minutes = Math.floor(delta / 60_000)
-    if (minutes < 60) return t('session.time.importedFromCodex.minutesAgo', { n: minutes })
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return t('session.time.importedFromCodex.hoursAgo', { n: hours })
-    const days = Math.floor(hours / 24)
-    if (days < 7) return t('session.time.importedFromCodex.daysAgo', { n: days })
-    return formatRelativeTime(value, t)
-}
-
-function getSessionTimeLabel(
-    session: SessionSummary,
-    t: (key: string, params?: Record<string, string | number>) => string
-): string | null {
-    const importedAt = session.metadata?.flavor === 'codex'
-        ? getCodexImportedAt(session.metadata?.agentSessionId)
-        : null
-    if (importedAt !== null) {
-        return formatCodexImportedRelativeTime(importedAt, t)
-    }
-    return formatRelativeTime(session.updatedAt, t)
 }
 
 /**
@@ -134,17 +105,21 @@ export function SessionRowSummary(props: {
     } = props
     const { t } = useTranslation()
     const narrowViewport = useNarrowViewport()
+    const now = useRelativeTimeClock()
+    const activity = classifySessionActivity(s)
     const sessionName = getSessionTitle(s)
     const worktreeLabel = getWorktreeSessionLabel(s)
     const todoProgress = getTodoProgress(s)
     const attention = useMemo(
-        () => showDetailedStatus
-            ? classifySessionAttention(s, {
+        () => {
+            const candidate = classifySessionAttention(s, {
                 selected,
                 lastSeenAt: getSessionLastSeenAt(s.id),
                 manualUnreadAt: getSessionManualUnreadAt(s.id),
             })
-            : null,
+            return showDetailedStatus || candidate?.kind === 'permission' || candidate?.kind === 'input'
+                ? candidate : null
+        },
         [s, selected, showDetailedStatus, lastSeenVersion]
     )
     const attentionLabel = attention ? getAttentionLabel(attention, t) : null
@@ -160,7 +135,7 @@ export function SessionRowSummary(props: {
     )
     const attentionId = attentionTooltipIdProp ?? ownedIds.attentionId
     const scheduleId = scheduleTooltipIdProp ?? ownedIds.scheduleId
-    const timeLabel = getSessionTimeLabel(s, t)
+    const timeLabel = formatRelativeTime(s.updatedAt, t, now)
 
     return (
         <div className={`flex w-full min-w-0 flex-col gap-1 ${className ?? ''}`}>
@@ -168,6 +143,13 @@ export function SessionRowSummary(props: {
                 <div className="flex min-w-0 items-center gap-2">
                     <AgentFlavorIcon flavor={s.metadata?.flavor} className="app-session-row-agent h-4 w-4 shrink-0 -translate-y-px" />
                     <span className="app-session-row-status inline-flex shrink-0 items-center">
+                        {activity.kind === 'running' ? (
+                            <span title={t('session.item.running')} aria-label={t('session.item.running')} data-session-status="running">
+                                <LoaderIcon className="app-session-row-spinner h-3.5 w-3.5 shrink-0 animate-spin-slow text-[var(--app-badge-success-text)]" />
+                            </span>
+                        ) : activity.kind === 'error' ? (
+                            <span title={t('session.item.error')} aria-label={t('session.item.error')} data-session-status="error" className="text-[var(--app-badge-warning-text)]">!</span>
+                        ) : null}
                         {attention ? (
                             nestedTooltips && attentionId ? <SessionAttentionIndicator
                                 attention={attention}
@@ -181,11 +163,7 @@ export function SessionRowSummary(props: {
                                 <span aria-hidden="true">!</span>
                                 {!inRunningSection ? <span className="app-session-status-label text-[11px] font-medium leading-none">{t('session.item.pending')}</span> : null}
                             </span>
-                        ) : s.active && s.thinking ? (
-                            <span title={t('session.item.running')} aria-label={t('session.item.running')} data-session-status="running">
-                                <LoaderIcon className="app-session-row-spinner h-3.5 w-3.5 shrink-0 animate-spin-slow text-[var(--app-badge-success-text)]" />
-                            </span>
-                        ) : s.active && (s.backgroundTaskCount ?? 0) > 0 ? (
+                        ) : activity.kind === 'background' ? (
                             <span title={t('session.item.running')} aria-label={t('session.item.running')} data-session-status="background"
                                 className="inline-flex shrink-0 items-center gap-1 text-[var(--app-badge-success-text)]">
                                 <span aria-hidden="true">◌</span>
@@ -240,12 +218,13 @@ export function SessionRowSummary(props: {
                 </div>
             </div>
             {narrowViewport ? <div className="app-session-row-mobile-meta">
-                {urgentAttention || s.pendingRequestsCount > 0 ? <span className="app-session-row-execution text-[var(--app-badge-warning-text)]">{attentionLabel ?? t('session.item.pending')}</span>
-                    : s.active && (s.thinking || (s.backgroundTaskCount ?? 0) > 0) ? <span className="app-session-row-execution"><LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow" />{t('session.item.running')}</span> : null}
+                {machineLabel ? <span className="truncate" title={machineLabel}>{machineLabel}</span> : null}
+                {urgentAttention || s.pendingRequestsCount > 0 ? <span className="app-session-row-execution text-[var(--app-badge-warning-text)]">{activity.kind === 'running' ? `${t('session.item.running')} · ` : ''}{attentionLabel ?? t('session.item.pending')}</span>
+                    : activity.kind === 'error' ? <span className="app-session-row-execution">{t('session.item.error')}</span> : activity.running ? <span className="app-session-row-execution"><LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow" />{t('session.item.running')}</span> : null}
                 {workspaceLocation ? <span className="app-session-workspace-location" title={`${workspaceLocation.name} · P${workspaceLocation.pane}`}>
                     <span className="truncate">{workspaceLocation.name}</span>
                     <span className="shrink-0">· P{workspaceLocation.pane}</span>
-                </span> : <span className="truncate">{[s.metadata?.flavor === 'codex' ? 'Codex' : s.metadata?.flavor, projectLabel ?? (s.metadata?.worktree?.basePath ?? s.metadata?.path ?? '').split(/[\\/]/).filter(Boolean).at(-1), machineLabel].filter(Boolean).join(' · ')}</span>}
+                </span> : <span className="truncate">{[s.metadata?.flavor === 'codex' ? 'Codex' : s.metadata?.flavor, projectLabel ?? (s.metadata?.worktree?.basePath ?? s.metadata?.path ?? '').split(/[\\/]/).filter(Boolean).at(-1)].filter(Boolean).join(' · ')}</span>}
             </div> : null}
             {projectLabel || machineLabel ? (
                 <div className="app-session-row-desktop-meta truncate text-xs text-[var(--app-hint)]" title={[projectLabel, machineLabel].filter(Boolean).join(' · ')}>

@@ -39,6 +39,24 @@ export class SessionCache {
     ) {
     }
 
+    private readonly aliveSources = new Map<string, { connection: number; generation?: string; sequence: number; time: number }>()
+
+    private emit(event: Parameters<EventPublisher['emit']>[0]): void {
+        if ((event.type === 'session-updated' || event.type === 'session-added') && event.data) {
+            const data = event.data as Record<string, unknown>
+            const session = this.sessions.get(event.sessionId)
+            const fields = ['active', 'activeAt', 'thinking', 'activeTurnStartedAt', 'execution', 'backgroundTaskCount',
+                'model', 'modelReasoningEffort', 'effort', 'serviceTier', 'permissionMode', 'collaborationMode', 'copilotAgentMode'] as const
+            if (session && fields.some(key => key in data)) {
+                session.executionVersion = this.store.presence.nextExecutionVersion(session.id)
+                const snapshot = Object.fromEntries(fields.map(key => [key, session[key]]))
+                this.publisher.emit({ ...event, data: { ...data, ...snapshot, executionVersion: session.executionVersion } })
+                return
+            }
+        }
+        this.publisher.emit(event)
+    }
+
     getSessions(): Session[] {
         return Array.from(this.sessions.values())
     }
@@ -163,8 +181,9 @@ export class SessionCache {
             this.pendingThinkingUntilBySessionId.delete(sessionId)
             this.runtimeConfigUpdatedAtBySessionId.delete(sessionId)
             this.agentProgressAtBySessionId.delete(sessionId)
+            this.aliveSources.delete(sessionId)
             if (existed) {
-                this.publisher.emit({ type: 'session-removed', sessionId })
+                this.emit({ type: 'session-removed', sessionId })
             }
             return null
         }
@@ -233,6 +252,8 @@ export class SessionCache {
             thinking: existing?.thinking ?? false,
             thinkingAt: existing?.thinkingAt ?? 0,
             activeTurnStartedAt: existing?.activeTurnStartedAt ?? null,
+            execution: existing?.execution ?? null,
+            executionVersion: existing?.executionVersion ?? this.store.presence.executionVersion(sessionId),
             backgroundTaskCount: existing?.backgroundTaskCount ?? 0,
             todos,
             teamState,
@@ -248,7 +269,7 @@ export class SessionCache {
         }
 
         this.sessions.set(sessionId, session)
-        this.publisher.emit({ type: existing ? 'session-updated' : 'session-added', sessionId, data: session })
+        this.emit({ type: existing ? 'session-updated' : 'session-added', sessionId, data: session })
         return session
     }
 
@@ -257,7 +278,7 @@ export class SessionCache {
         const hasContent = this.store.messages.hasConversationContent(sessionId)
         if (session && session.hasConversationContent !== hasContent) {
             session.hasConversationContent = hasContent
-            this.publisher.emit({ type: 'session-updated', sessionId, data: { ...session } })
+            this.emit({ type: 'session-updated', sessionId, data: { ...session } })
         }
     }
 
@@ -289,7 +310,7 @@ export class SessionCache {
         session.activeAt = Math.max(session.activeAt, t)
 
         this.lastBroadcastAtBySessionId.set(session.id, Date.now())
-        this.publisher.emit({
+        this.emit({
             type: 'session-updated',
             sessionId: session.id,
             namespace: session.namespace,
@@ -364,20 +385,20 @@ export class SessionCache {
         if (patch.permissionMode !== undefined) session.permissionMode = patch.permissionMode
         if (patch.collaborationMode !== undefined) session.collaborationMode = patch.collaborationMode
         if (patch.backgroundTaskCount !== undefined) session.backgroundTaskCount = patch.backgroundTaskCount
-        if (patch.todos !== undefined) {
+        if (patch.todos !== undefined && patch.todos.version >= (session.todosUpdatedAt ?? 0)) {
             session.todos = patch.todos.value
             session.todosUpdatedAt = patch.todos.version
         }
         // Versioned teamState: key present + value null = TeamDelete clear.
-        if (patch.teamState !== undefined) {
+        if (patch.teamState !== undefined && patch.teamState.version >= (session.teamStateUpdatedAt ?? 0)) {
             session.teamState = patch.teamState.value ?? undefined
             session.teamStateUpdatedAt = patch.teamState.version
         }
-        if (patch.metadata !== undefined) {
+        if (patch.metadata !== undefined && patch.metadata.version >= session.metadataVersion) {
             session.metadata = patch.metadata.value
             session.metadataVersion = patch.metadata.version
         }
-        if (patch.agentState !== undefined) {
+        if (patch.agentState !== undefined && patch.agentState.version >= session.agentStateVersion) {
             session.agentState = patch.agentState.value
             session.agentStateVersion = patch.agentState.version
         }
@@ -386,6 +407,8 @@ export class SessionCache {
     }
 
     handleSessionAlive(payload: {
+        execution?: import('@hapi/protocol/schemas').NativeRuntimeState
+        sourceConnection?: number
         sid: string
         time: number
         thinking?: boolean
@@ -398,12 +421,22 @@ export class SessionCache {
         collaborationMode?: CodexCollaborationMode
         copilotAgentMode?: CopilotAgentMode
     }): void {
-        const t = clampAliveTime(payload.time)
+        const t = payload.execution ? Date.now() : clampAliveTime(payload.time)
         if (!t) return
 
         const session = this.sessions.get(payload.sid) ?? this.refreshSession(payload.sid)
         if (!session) return
 
+        const source = this.aliveSources.get(session.id)
+        const connection = payload.sourceConnection ?? 0
+        if (source && (connection < source.connection
+            || connection === source.connection && (payload.execution
+                ? source.generation && (payload.execution.generation !== source.generation || payload.execution.sequence <= source.sequence)
+                : source.generation !== undefined))) return
+        this.aliveSources.set(session.id, { connection, generation: payload.execution?.generation,
+            sequence: payload.execution?.sequence ?? 0, time: t })
+        const previousExecution = session.execution
+        if (payload.execution) session.execution = payload.execution
         const wasActive = session.active
         const wasThinking = session.thinking
         const previousActiveTurnStartedAt = session.activeTurnStartedAt
@@ -415,9 +448,9 @@ export class SessionCache {
         const previousCollaborationMode = session.collaborationMode
         const previousCopilotAgentMode = session.copilotAgentMode
         const pendingThinkingUntil = this.pendingThinkingUntilBySessionId.get(session.id) ?? 0
-        const requestedThinking = Boolean(payload.thinking)
+        const requestedThinking = payload.execution ? payload.execution.status === 'active' : Boolean(payload.thinking)
         const hubNow = Date.now()
-        const preserveQueuedThinking = !requestedThinking && pendingThinkingUntil > hubNow
+        const preserveQueuedThinking = !payload.execution && !requestedThinking && pendingThinkingUntil > hubNow
         const hasUnconsumedPrompt = preserveQueuedThinking
             && this.store.messages.getImmediateQueuedLocalMessages(session.id).length > 0
 
@@ -425,7 +458,9 @@ export class SessionCache {
         session.activeAt = Math.max(session.activeAt, t)
         session.thinking = requestedThinking || preserveQueuedThinking
         session.thinkingAt = t
-        if (!requestedThinking && preserveQueuedThinking && hasUnconsumedPrompt) {
+        if (payload.execution) {
+            session.activeTurnStartedAt = payload.execution.status === 'active' ? payload.execution.startedAt : null
+        } else if (!requestedThinking && preserveQueuedThinking && hasUnconsumedPrompt) {
             session.activeTurnStartedAt = hubNow
         } else if (wasThinking && !session.thinking) {
             session.activeTurnStartedAt = null
@@ -490,12 +525,16 @@ export class SessionCache {
         const shouldBroadcast = (!wasActive && session.active)
             || (wasThinking !== session.thinking)
             || turnBoundaryChanged
+            || previousExecution?.status !== session.execution?.status
+            || previousExecution?.turnId !== session.execution?.turnId
+            || previousExecution?.generation !== session.execution?.generation
+            || previousExecution?.waitingOn.join(',') !== session.execution?.waitingOn.join(',')
             || modeChanged
             || (now - lastBroadcastAt > 10_000)
 
         if (shouldBroadcast) {
             this.lastBroadcastAtBySessionId.set(session.id, now)
-            this.publisher.emit({
+            this.emit({
                 type: 'session-updated',
                 sessionId: session.id,
                 data: {
@@ -544,20 +583,20 @@ export class SessionCache {
         const wasThinking = session.thinking
         const previousUpdatedAt = session.updatedAt
 
-        session.thinking = true
+        if (!session.execution) session.thinking = true
         session.thinkingAt = nextTime
-        if (!wasThinking) session.activeTurnStartedAt = activeTurnStartedAt
+        if (!wasThinking && !session.execution) session.activeTurnStartedAt = activeTurnStartedAt
         session.updatedAt = Math.max(session.updatedAt, nextTime)
         this.pendingThinkingUntilBySessionId.set(session.id, nextTime + QUEUED_MESSAGE_THINKING_GRACE_MS)
         this.recordAgentProgress(session.id, nextTime)
 
         if (!wasThinking || session.updatedAt !== previousUpdatedAt) {
             this.lastBroadcastAtBySessionId.set(session.id, Date.now())
-            this.publisher.emit({
+            this.emit({
                 type: 'session-updated',
                 sessionId: session.id,
                 data: {
-                    thinking: true,
+                    thinking: session.thinking,
                     activeTurnStartedAt: session.activeTurnStartedAt,
                     updatedAt: session.updatedAt
                 } satisfies SessionPatch
@@ -575,7 +614,7 @@ export class SessionCache {
 
         session.backgroundTaskCount = next
         this.recordAgentProgress(sessionId)
-        this.publisher.emit({
+        this.emit({
             type: 'session-updated',
             sessionId,
             data: { backgroundTaskCount: next } satisfies SessionPatch
@@ -609,7 +648,7 @@ export class SessionCache {
         }
 
         session.updatedAt = Math.max(session.updatedAt, nextUpdatedAt)
-        this.publisher.emit({
+        this.emit({
             type: 'session-updated',
             sessionId,
             namespace: session.namespace,
@@ -744,7 +783,7 @@ export class SessionCache {
         const namespace = cached?.namespace
             ?? this.store.sessions.getSession(sessionId)?.namespace
         if (!namespace) return
-        this.publisher.emit({
+        this.emit({
             type: 'session-updated',
             sessionId,
             namespace,
@@ -752,7 +791,12 @@ export class SessionCache {
         })
     }
 
-    handleSessionEnd(payload: { sid: string; time: number }): void {
+    isCurrentSource(sessionId: string, connection: number | undefined): boolean {
+        return connection === undefined || connection >= (this.aliveSources.get(sessionId)?.connection ?? 0)
+    }
+
+    handleSessionEnd(payload: { sid: string; time: number; sourceConnection?: number }): void {
+        if (!this.isCurrentSource(payload.sid, payload.sourceConnection)) return
         const t = clampAliveTime(payload.time) ?? Date.now()
 
         const session = this.sessions.get(payload.sid) ?? this.refreshSession(payload.sid)
@@ -765,12 +809,13 @@ export class SessionCache {
         session.active = false
         this.store.sessions.setSessionActive(session.id, false, t, session.namespace)
         session.thinking = false
+        if (session.execution) session.execution = { ...session.execution, status: 'disconnected', waitingOn: [] }
         session.thinkingAt = t
         session.activeTurnStartedAt = null
         session.backgroundTaskCount = 0
         this.pendingThinkingUntilBySessionId.delete(session.id)
 
-        this.publisher.emit({
+        this.emit({
             type: 'session-updated',
             sessionId: session.id,
             data: { active: false, thinking: false, activeTurnStartedAt: null, backgroundTaskCount: 0 } satisfies SessionPatch
@@ -787,12 +832,16 @@ export class SessionCache {
             session.active = false
             this.store.sessions.setSessionActive(session.id, false, now, session.namespace)
             session.thinking = false
+            session.thinkingAt = now
+            session.activeTurnStartedAt = null
+            session.backgroundTaskCount = 0
+            if (session.execution) session.execution = { ...session.execution, status: 'disconnected', waitingOn: [] }
             this.pendingThinkingUntilBySessionId.delete(session.id)
             expired.push(session.id)
-            this.publisher.emit({
+            this.emit({
                 type: 'session-updated',
                 sessionId: session.id,
-                data: { active: false } satisfies SessionPatch
+                data: { active: false, thinking: false, activeTurnStartedAt: null, backgroundTaskCount: 0 } satisfies SessionPatch
             })
         }
 
@@ -892,7 +941,7 @@ export class SessionCache {
             this.markRuntimeConfigUpdated(sessionId, 'copilotAgentMode', appliedAt)
         }
 
-        this.publisher.emit({ type: 'session-updated', sessionId, data: session })
+        this.emit({ type: 'session-updated', sessionId, data: session })
     }
 
     private markRuntimeConfigUpdated(
@@ -1237,7 +1286,7 @@ export class SessionCache {
             await deleteScratchlistSessionAttachmentDir(hapiHome, session.namespace, sessionId)
         })
 
-        this.publisher.emit({ type: 'session-removed', sessionId, namespace: session.namespace })
+        this.emit({ type: 'session-removed', sessionId, namespace: session.namespace })
     }
 
     async mergeSessions(oldSessionId: string, newSessionId: string, namespace: string): Promise<void> {
@@ -1281,9 +1330,9 @@ export class SessionCache {
         if (movedMessages.moved > 0) {
             this.store.usage.transferSession(oldSessionId, newSessionId)
             if (!options.deleteOldSession) {
-                this.publisher.emit({ type: 'messages-invalidated', sessionId: oldSessionId, namespace })
+                this.emit({ type: 'messages-invalidated', sessionId: oldSessionId, namespace })
             }
-            this.publisher.emit({ type: 'messages-invalidated', sessionId: newSessionId, namespace })
+            this.emit({ type: 'messages-invalidated', sessionId: newSessionId, namespace })
         }
 
         // tiann/hapi#920: transfer scratchlist rows BEFORE the
@@ -1471,7 +1520,7 @@ export class SessionCache {
 
             const existed = this.sessions.delete(oldSessionId)
             if (existed) {
-                this.publisher.emit({ type: 'session-removed', sessionId: oldSessionId, namespace })
+                this.emit({ type: 'session-removed', sessionId: oldSessionId, namespace })
             }
             this.lastBroadcastAtBySessionId.delete(oldSessionId)
             this.todoBackfillAttemptedSessionIds.delete(oldSessionId)
@@ -1488,7 +1537,7 @@ export class SessionCache {
 
         const refreshed = this.refreshSession(newSessionId)
         if (refreshed) {
-            this.publisher.emit({ type: 'session-updated', sessionId: newSessionId, data: refreshed })
+            this.emit({ type: 'session-updated', sessionId: newSessionId, data: refreshed })
         }
     }
 
@@ -1657,8 +1706,9 @@ export class SessionCache {
         const scoped = (field: 'codexSessionId' | 'claudeSessionId' | 'geminiSessionId' | 'opencodeSessionId' | 'grokSessionId' | 'cursorSessionId' | 'piSessionId' | 'agySessionId' | 'copilotSessionId', value: string) => ({
             field,
             value,
-            dedupeKey: field === 'piSessionId' ? `${field}:${metadata.machineId ?? 'unscoped'}:${value}` : `${field}:${value}`,
-            ...(field === 'piSessionId' && metadata.machineId ? { machineId: metadata.machineId } : {})
+            dedupeKey: field === 'codexSessionId' ? JSON.stringify([field, metadata.machineId ?? null, metadata.codexStoreId ?? metadata.homeDir ?? null, value])
+                : field === 'piSessionId' ? `${field}:${metadata.machineId ?? 'unscoped'}:${value}` : `${field}:${value}`,
+            ...((field === 'piSessionId' || field === 'codexSessionId') && metadata.machineId ? { machineId: metadata.machineId } : {})
         })
         if (metadata.codexSessionId) return scoped('codexSessionId', metadata.codexSessionId)
         if (metadata.claudeSessionId) return scoped('claudeSessionId', metadata.claudeSessionId)
@@ -1697,7 +1747,7 @@ export class SessionCache {
                 const currentSession = this.sessions.get(sessionId)
                 const candidates: { id: string; session: Session }[] = []
                 if (currentSession?.metadata && currentSession.metadata[agentId.field] === agentId.value) {
-                    if (agentId.field !== 'piSessionId' || currentSession.metadata.machineId === agentId.machineId) {
+                    if (this.extractAgentSessionId(currentSession.metadata)?.dedupeKey === agentId.dedupeKey) {
                         candidates.push({ id: sessionId, session: currentSession })
                     }
                 }
@@ -1706,7 +1756,7 @@ export class SessionCache {
                     if (existing.namespace !== session.namespace) continue
                     if (!existing.metadata) continue
                     if (existing.metadata[agentId.field] !== agentId.value) continue
-                    if (agentId.field === 'piSessionId' && existing.metadata.machineId !== agentId.machineId) continue
+                    if (this.extractAgentSessionId(existing.metadata)?.dedupeKey !== agentId.dedupeKey) continue
                     candidates.push({ id: existingId, session: existing })
                 }
 

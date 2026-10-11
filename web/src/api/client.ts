@@ -1,3 +1,4 @@
+import { configureSessionReadSync, hydrateSessionReadStates } from '@/lib/sessionLastSeen'
 import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
 import type {
     AttachmentMetadata,
@@ -171,6 +172,7 @@ export class ApiClient {
         }
     }
 
+    private readonly readSyncScope: string | undefined
     private token: string
     private readonly baseUrl: string | null
     private readonly getToken: (() => string | null) | null
@@ -181,6 +183,16 @@ export class ApiClient {
         this.baseUrl = options?.baseUrl ?? null
         this.getToken = options?.getToken ?? null
         this.onUnauthorized = options?.onUnauthorized ?? null
+        let identity = ''
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+            identity = JSON.stringify([payload.ns, payload.uid])
+        } catch { /* Test clients may use a placeholder token. */ }
+        this.readSyncScope = identity ? `${this.baseUrl ?? location.origin}:${identity}` : undefined
+        if (this.readSyncScope) configureSessionReadSync(this.readSyncScope,
+            (sessionId, input) => this.request(`/api/sessions/${encodeURIComponent(sessionId)}/read-state`, {
+                method: 'PUT', body: JSON.stringify(input)
+            }))
     }
 
     private buildUrl(path: string): string {
@@ -302,7 +314,9 @@ export class ApiClient {
     }
 
     async getSessions(): Promise<SessionsResponse> {
-        return await this.request<SessionsResponse>('/api/sessions')
+        const response = await this.request<SessionsResponse>('/api/sessions')
+        if (this.readSyncScope && response.readStates) hydrateSessionReadStates(response.readStates, this.readSyncScope)
+        return response
     }
 
     async getHealth(): Promise<HubHealthResponse> {

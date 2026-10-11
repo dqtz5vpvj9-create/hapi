@@ -309,3 +309,7 @@ internal and must never be used by clients.
 | Cursor maintenance | `/api/sessions/:id/migrate-to-acp`, `/cursor-chat-store` | Desktop store migration |
 | Session export | `GET /api/sessions/:id/export` | Whole-session export through the web; separate from Android's full-text reader file export |
 | **CLI plane** | `/cli/*` (`hub/src/web/routes/cli.ts`) | **Forbidden for clients** — internal CLI↔hub surface; authenticates with the raw access token instead of a JWT and bypasses the client middleware. Never call it from a client, and never send the access token as a bearer anywhere except `POST /api/auth`'s JSON body |
+
+### Shared read state
+
+`GET /api/sessions` includes `readStates`, keyed by HAPI session ID and scoped to the authenticated user/namespace. `PUT /api/sessions/:id/read-state` accepts `{expectedVersion, seenAt, manualUnreadAt}` and returns `{applied, state}`. A version conflict returns HTTP 200 with `applied:false` and the current state; it does not clear a newer manual unread action. The normal session authorization guard applies. Clients persist offline intents under the Hub/account scope and reconcile after reconnect.

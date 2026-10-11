@@ -78,6 +78,7 @@ export const MetadataSchema = z.object({
     // session as a branch of `<id>` instead of an unrelated duplicate.
     forkedFrom: z.string().optional(),
     codexSessionId: z.string().optional(),
+    codexStoreId: z.string().optional(),
     // Native subagent lineage; independent forks use forkedFrom instead.
     // Native activity time, independent of HAPI connection and state updates.
     codexUpdatedAt: z.number().optional(),
@@ -208,6 +209,7 @@ export const AgentStateRequestSchema = z.object({
     tool: z.string(),
     // Correlation only; replies use the request map key, never this tool id.
     toolCallId: z.string().optional(),
+    blocking: z.boolean().optional(),
     arguments: z.unknown(),
     createdAt: z.number().nullish()
 })
@@ -217,6 +219,7 @@ export type AgentStateRequest = z.infer<typeof AgentStateRequestSchema>
 export const AgentStateCompletedRequestSchema = z.object({
     tool: z.string(),
     toolCallId: z.string().optional(),
+    blocking: z.boolean().optional(),
     arguments: z.unknown(),
     createdAt: z.number().nullish(),
     completedAt: z.number().nullish(),
@@ -357,6 +360,30 @@ export const DecryptedMessageSchema = z.object({
 
 export type DecryptedMessage = z.infer<typeof DecryptedMessageSchema>
 
+// User read cursors are independent of native execution.
+export const SessionReadStateSchema = z.object({
+    version: z.number().int().nonnegative(),
+    seenAt: z.number().finite().nonnegative(),
+    manualUnreadAt: z.number().finite().nonnegative().nullable()
+})
+export type SessionReadState = z.infer<typeof SessionReadStateSchema>
+export const UpdateSessionReadStateSchema = SessionReadStateSchema.omit({ version: true }).extend({
+    expectedVersion: z.number().int().nonnegative()
+})
+
+// Native facts are scoped to the owning engine and its connection generation.
+export const NativeRuntimeStateSchema = z.object({
+    owner: z.string(),
+    generation: z.string(),
+    sequence: z.number().int().nonnegative(),
+    status: z.enum(['active', 'idle', 'notLoaded', 'systemError', 'disconnected']),
+    waitingOn: z.array(z.enum(['approval', 'input'])),
+    turnId: z.string().nullable(),
+    startedAt: z.number().nullable(),
+    completedAt: z.number().nullable()
+})
+export type NativeRuntimeState = z.infer<typeof NativeRuntimeStateSchema>
+
 export const SessionSchema = z.object({
     hasConversationContent: z.boolean().optional(),
     id: z.string(),
@@ -376,6 +403,8 @@ export const SessionSchema = z.object({
     thinking: z.boolean(),
     thinkingAt: z.number(),
     activeTurnStartedAt: z.number().nullable().optional(),
+    execution: NativeRuntimeStateSchema.nullable().optional(),
+    executionVersion: z.number().int().nonnegative().optional(),
     backgroundTaskCount: z.number().optional(),
     todos: TodosSchema.optional(),
     teamState: TeamStateSchema.optional(),
@@ -429,6 +458,8 @@ export const SessionPatchSchema = z.object({
     active: z.boolean().optional(),
     thinking: z.boolean().optional(),
     activeTurnStartedAt: z.number().nullable().optional(),
+    execution: NativeRuntimeStateSchema.nullable().optional(),
+    executionVersion: z.number().int().nonnegative().optional(),
     activeAt: z.number().optional(),
     updatedAt: z.number().optional(),
     // Structured-patch fields for the second half of #884. Letting the four
@@ -593,6 +624,11 @@ const MachineChangedSchema = SessionEventBaseSchema.extend({
 })
 
 export const SyncEventSchema = z.discriminatedUnion('type', [
+    SessionChangedSchema.extend({
+        type: z.literal('session-read-state'),
+        userId: z.number(),
+        state: SessionReadStateSchema
+    }),
     SessionEventBaseSchema.extend({
         type: z.literal('workspaces-updated'),
         revision: z.number().int().nonnegative()

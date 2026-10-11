@@ -210,7 +210,7 @@ describe('alive incremental events', () => {
             expect(update.data).toEqual(expect.objectContaining({
                 activeTurnStartedAt: expect.any(Number)
             }))
-            expect(update.data).not.toHaveProperty('activeAt')
+            expect(update.data).toHaveProperty('activeAt', activeAtBeforeSend)
             expect((update.data as { updatedAt?: unknown }).updatedAt).toEqual(expect.any(Number))
         } finally {
             unsubscribe()

@@ -6,7 +6,7 @@ import type { Store } from '../store'
 import { getConfiguration } from '../configuration'
 import { constantTimeEquals } from '../utils/crypto'
 import { parseAccessToken } from '../utils/accessToken'
-import { registerCliHandlers } from './handlers/cli'
+import { registerCliHandlers, type CliHandlersDeps } from './handlers/cli'
 import { registerTerminalHandlers } from './handlers/terminal'
 import { RpcRegistry } from './rpcRegistry'
 import { SOCKET_MAX_HTTP_BUFFER_SIZE } from './socketLimits'
@@ -39,9 +39,10 @@ export type SocketServerDeps = {
     corsOrigins?: string[]
     getSession?: (sessionId: string) => { active: boolean; namespace: string } | null
     onWebappEvent?: (event: SyncEvent) => void
-    onSessionAlive?: (payload: { sid: string; time: number; thinking?: boolean; mode?: 'local' | 'remote' }) => void
+    onSessionAlive?: CliHandlersDeps['onSessionAlive']
     onSessionReady?: (payload: { sid: string; time: number }) => void
-    onSessionEnd?: (payload: { sid: string; time: number }) => void
+    onSessionEnd?: CliHandlersDeps['onSessionEnd']
+    isCurrentSessionSource?: CliHandlersDeps['isCurrentSessionSource']
     onMachineAlive?: (payload: { machineId: string; time: number; health?: unknown }) => void
     onBackgroundTaskDelta?: (sessionId: string, delta: { started: number; completed: number }) => void
     onSessionActivity?: (sessionId: string, updatedAt: number) => void
@@ -130,6 +131,7 @@ export function createSocketServer(deps: SocketServerDeps): {
         onSessionAlive: deps.onSessionAlive,
         onSessionReady: deps.onSessionReady,
         onSessionEnd: deps.onSessionEnd,
+        isCurrentSessionSource: deps.isCurrentSessionSource,
         onMachineAlive: deps.onMachineAlive,
         onWebappEvent: deps.onWebappEvent,
         onBackgroundTaskDelta: deps.onBackgroundTaskDelta,

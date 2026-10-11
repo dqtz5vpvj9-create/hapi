@@ -135,7 +135,7 @@
 .workspace-activity { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: inherit; color: var(--app-hint); white-space: nowrap; }
 .workspace-activity-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .workspace-activity[data-state="running"], .workspace-activity[data-state="background"] { color: var(--app-link); }
-.workspace-activity[data-state="permission"], .workspace-activity[data-state="input"] { color: var(--app-badge-warning-text); }
+.workspace-activity[data-state="permission"], .workspace-activity[data-state="input"], .workspace-activity[data-state="error"] { color: var(--app-badge-warning-text); }
 .workspace-activity[data-state="idle"] { color: var(--app-badge-success-text); }
 .workspace-pane [data-workspace-composer] .workspace-activity { order: -1; }
 .workspace-pane [data-workspace-composer] .composer-goal-slot { display: inline-flex; order: 1; }

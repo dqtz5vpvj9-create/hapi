@@ -27,6 +27,7 @@ import {
     toSessionSummary,
     UploadFileRequestSchema
 } from '@hapi/protocol'
+import { UpdateSessionReadStateSchema } from '@hapi/protocol/schemas'
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods'
 import type { SlashCommand } from '@hapi/protocol/apiTypes'
 import { Hono, type Context } from 'hono'
@@ -129,7 +130,17 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
             }
         })
 
-        return c.json({ sessions })
+        return c.json({ sessions, readStates: engine.getSessionReadStates(namespace, c.get('userId')) })
+    })
+
+    app.put('/sessions/:id/read-state', async c => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const access = requireSessionFromParam(c, engine)
+        if (access instanceof Response) return access
+        const parsed = UpdateSessionReadStateSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid read state' }, 400)
+        return c.json(engine.updateSessionReadState(c.get('namespace'), c.get('userId'), access.sessionId, parsed.data))
     })
 
     app.get('/sessions/:id/export', (c) => {

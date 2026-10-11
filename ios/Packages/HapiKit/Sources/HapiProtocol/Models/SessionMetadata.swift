@@ -117,6 +117,8 @@ public struct SessionMetadata: Codable, Equatable, Sendable {
     // `SummaryPatching`). Same field list as the Android reference port.
     public var claudeSessionId: String?
     public var codexSessionId: String?
+    public var codexStoreId: String?
+    public var codexUpdatedAt: Int?
     public var geminiSessionId: String?
     public var opencodeSessionId: String?
     public var grokSessionId: String?
@@ -144,6 +146,8 @@ public struct SessionMetadata: Codable, Equatable, Sendable {
         tools: [String]? = nil,
         claudeSessionId: String? = nil,
         codexSessionId: String? = nil,
+        codexStoreId: String? = nil,
+        codexUpdatedAt: Int? = nil,
         geminiSessionId: String? = nil,
         opencodeSessionId: String? = nil,
         grokSessionId: String? = nil,
@@ -170,6 +174,8 @@ public struct SessionMetadata: Codable, Equatable, Sendable {
         self.tools = tools
         self.claudeSessionId = claudeSessionId
         self.codexSessionId = codexSessionId
+        self.codexStoreId = codexStoreId
+        self.codexUpdatedAt = codexUpdatedAt
         self.geminiSessionId = geminiSessionId
         self.opencodeSessionId = opencodeSessionId
         self.grokSessionId = grokSessionId

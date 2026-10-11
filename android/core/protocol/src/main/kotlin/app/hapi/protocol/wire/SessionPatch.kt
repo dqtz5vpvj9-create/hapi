@@ -34,12 +34,12 @@ data class VersionedValue<T>(
  *   an explicit wire `null` clears the target field while absence leaves it
  *   untouched.
  *
- * Note `activeTurnStartedAt` and `scratchlistUpdatedAt` are carried but never
- * assigned by `applySessionDetailPatch` — replicating the reference client
- * (see `app.hapi.protocol.patch.SessionPatching`).
+ * `activeTurnStartedAt` follows execution revisions; `scratchlistUpdatedAt` is a refetch trigger.
  */
 data class SessionPatch(
     val active: Boolean? = null,
+    val executionVersion: Long? = null,
+    val execution: OptionalField<NativeRuntimeState?> = OptionalField.Absent,
     val thinking: Boolean? = null,
     val activeTurnStartedAt: OptionalField<Long?> = OptionalField.Absent,
     val activeAt: Long? = null,
@@ -62,7 +62,7 @@ data class SessionPatch(
 
 object SessionPatches {
     private val KNOWN_KEYS = setOf(
-        "active", "thinking", "activeTurnStartedAt", "activeAt", "updatedAt",
+        "execution", "executionVersion", "active", "thinking", "activeTurnStartedAt", "activeAt", "updatedAt",
         "metadata", "agentState", "todos", "teamState",
         "model", "modelReasoningEffort", "effort", "serviceTier",
         "permissionMode", "collaborationMode", "copilotAgentMode",
@@ -91,6 +91,9 @@ object SessionPatches {
         return try {
             SessionPatch(
                 active = obj["active"]?.let { it.boolOrNull ?: return null },
+                executionVersion = obj["executionVersion"]?.let { it.longOrNull ?: return null },
+                execution = if (!obj.containsKey("execution")) OptionalField.Absent
+                    else OptionalField.Present(obj["execution"]?.takeUnless { it is JsonNull }?.let { HapiJson.decodeFromJsonElement(NativeRuntimeState.serializer(), it) }),
                 thinking = obj["thinking"]?.let { it.boolOrNull ?: return null },
                 activeTurnStartedAt = optionalNullableLong(obj, "activeTurnStartedAt") ?: return null,
                 activeAt = obj["activeAt"]?.let { it.longOrNull ?: return null },

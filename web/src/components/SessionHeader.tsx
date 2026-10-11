@@ -200,7 +200,7 @@ export function SessionHeader(props: {
         () => resolveSessionHeaderMachineLabel(session, machineLabelsById),
         [session, machineLabelsById]
     )
-    const lastActiveAt = session.activeAt || session.updatedAt || session.createdAt
+    const lastActiveAt = (session.metadata?.flavor === 'codex' ? session.metadata.codexUpdatedAt : undefined) ?? session.updatedAt ?? session.createdAt
     // Relative labels cross minute/hour boundaries without new patches; tick
     // once a minute so "just now" does not freeze forever on inactive sessions.
     const relativeTimeTick = useMinuteTick(headerMetadata.lastActive)

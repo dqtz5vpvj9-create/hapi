@@ -57,6 +57,8 @@ public struct SessionSummaryMetadata: Codable, Equatable, Sendable {
     public var worktree: WorktreeMetadata?
     /// Native agent session id resolved per flavor by the hub.
     public var agentSessionId: String?
+    public var codexStoreId: String?
+    public var codexUpdatedAt: Int?
     public var lifecycleState: String?
     public var hapiMcpUrl: String?
 
@@ -68,6 +70,8 @@ public struct SessionSummaryMetadata: Codable, Equatable, Sendable {
         flavor: String? = nil,
         worktree: WorktreeMetadata? = nil,
         agentSessionId: String? = nil,
+        codexStoreId: String? = nil,
+        codexUpdatedAt: Int? = nil,
         lifecycleState: String? = nil,
         hapiMcpUrl: String? = nil
     ) {
@@ -78,6 +82,8 @@ public struct SessionSummaryMetadata: Codable, Equatable, Sendable {
         self.flavor = flavor
         self.worktree = worktree
         self.agentSessionId = agentSessionId
+        self.codexStoreId = codexStoreId
+        self.codexUpdatedAt = codexUpdatedAt
         self.lifecycleState = lifecycleState
         self.hapiMcpUrl = hapiMcpUrl
     }
@@ -95,6 +101,9 @@ public struct SessionSummary: Codable, Equatable, Sendable {
 
     public var id: String
     public var active: Bool
+    public var executionVersion: Int?
+    public var execution: NativeRuntimeState?
+    public var blockingRequestKinds: [PendingRequestKind]?
     public var thinking: Bool
     public var activeAt: Int
     public var updatedAt: Int
@@ -121,6 +130,9 @@ public struct SessionSummary: Codable, Equatable, Sendable {
     public init(
         id: String,
         active: Bool,
+        executionVersion: Int? = nil,
+        execution: NativeRuntimeState? = nil,
+        blockingRequestKinds: [PendingRequestKind]? = nil,
         thinking: Bool,
         activeAt: Int,
         updatedAt: Int,
@@ -143,6 +155,9 @@ public struct SessionSummary: Codable, Equatable, Sendable {
     ) {
         self.id = id
         self.active = active
+        self.executionVersion = executionVersion
+        self.execution = execution
+        self.blockingRequestKinds = blockingRequestKinds
         self.thinking = thinking
         self.activeAt = activeAt
         self.updatedAt = updatedAt

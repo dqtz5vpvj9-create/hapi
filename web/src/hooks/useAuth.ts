@@ -1,3 +1,4 @@
+import { disconnectSessionReadSync } from '@/lib/sessionLastSeen'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClient, ApiError } from '@/api/client'
 import type { AuthResponse } from '@/types/api'
@@ -176,6 +177,15 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
     // changes — only when auth presence toggles (login/logout). Rebuilding on every refresh churns
     // `api`'s identity, which remounts everything keyed on it (VoiceBackendSession `[props.api]`,
     // GeneratedImageCard `[ctx.api, ...]`) and drives the remount/refetch storm. Issue #927.
+    // A refreshed token for the same account keeps the client stable; a new
+    // account must receive a separate read-state scope even without a null-token frame.
+    let authIdentity = ''
+    if (token) {
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+            authIdentity = JSON.stringify([payload.ns, payload.uid])
+        } catch { /* Placeholder tokens have no identity in tests. */ }
+    }
     const hasToken = token !== null
     const api = useMemo(() => (
         hasToken
@@ -185,7 +195,9 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
                 onUnauthorized: () => refreshAuth({ force: true })
             })
             : null
-    ), [baseUrl, refreshAuth, hasToken])
+    ), [baseUrl, refreshAuth, hasToken, authIdentity])
+
+    useEffect(() => { if (!hasToken) disconnectSessionReadSync() }, [hasToken])
 
     useEffect(() => {
         let isCancelled = false

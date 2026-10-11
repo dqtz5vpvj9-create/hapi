@@ -1,3 +1,4 @@
+import { EXECUTION_FIELDS, stripStaleExecutionPatch } from '@hapi/protocol'
 import type { Session, SessionPatch } from '@/types/api'
 
 // Pure session-patch application logic, extracted from useSSE.ts so the rules
@@ -17,15 +18,10 @@ export function isNewerVersionedPatch(patchVersion: number, currentVersion: numb
 /**
  * True when applying `patch` to `session` would change nothing that renders.
  *
- * Keep-alive patches re-send fields about every ~10s. SessionHeader reads
- * `activeAt` for relative age, but `formatRelativeTime` only changes at
- * minute boundaries (`just now` while delta < 60s). Sub-minute `activeAt`
- * moves are therefore skipped here so the detail cache does not replace the
- * Session object (and re-render SessionChat / HappyThread) six times a
- * minute for an invisible label change. A delta of ≥60s is still
- * render-relevant so the header stays on `just now` for live sessions.
- * The session-list path still uses `isRenderIrrelevantPatch` (useSSE.ts),
- * which ignores `activeAt` entirely.
+ * Execution revisions must advance even when visible facts are unchanged,
+ * so an old REST response or duplicate SSE cannot regress runtime state.
+ * Unversioned legacy keep-alives may skip sub-minute activeAt changes;
+ * activity labels use updatedAt/codexUpdatedAt, never this connection clock.
  */
 export function isRenderIrrelevantSessionPatch(session: Session, patch: SessionPatch): boolean {
     const current = session as unknown as Record<string, unknown>
@@ -51,6 +47,7 @@ export function isRenderIrrelevantSessionPatch(session: Session, patch: SessionP
  * Exported for unit tests (Copilot mode keep-alive must not be dropped).
  */
 export function applySessionDetailPatch(session: Session, patch: SessionPatch): Session | null {
+    patch = stripStaleExecutionPatch(session, patch)
     if (isRenderIrrelevantSessionPatch(session, patch)) {
         return null
     }
@@ -62,6 +59,11 @@ export function applySessionDetailPatch(session: Session, patch: SessionPatch): 
             changed = true
         }
     }
+    for (const key of EXECUTION_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(patch, key)) Object.assign(nextSession, { [key]: patch[key] })
+    }
+    if (patch.executionVersion !== undefined) assign('executionVersion', patch.executionVersion)
+    changed ||= EXECUTION_FIELDS.some(key => session[key] !== nextSession[key])
     if (patch.active !== undefined) assign('active', patch.active)
     if (patch.thinking !== undefined) assign('thinking', patch.thinking)
     if (patch.activeAt !== undefined) assign('activeAt', patch.activeAt)

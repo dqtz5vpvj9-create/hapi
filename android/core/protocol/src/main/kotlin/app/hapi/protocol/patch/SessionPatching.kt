@@ -19,6 +19,27 @@ import kotlin.math.max
  * and an older one after a newer one — applying either would regress state
  * (resurrected permission requests, rewound resume ids).
  */
+fun stripStaleExecutionPatch(currentVersion: Long?, patch: SessionPatch): SessionPatch {
+    val newer = patch.executionVersion?.let { it > (currentVersion ?: 0) } ?: (currentVersion == null)
+    if (newer) return patch
+    return patch.copy(
+        active = null,
+        thinking = null,
+        activeAt = null,
+        activeTurnStartedAt = OptionalField.Absent,
+        execution = OptionalField.Absent,
+        executionVersion = null,
+        backgroundTaskCount = null,
+        model = OptionalField.Absent,
+        modelReasoningEffort = OptionalField.Absent,
+        effort = OptionalField.Absent,
+        serviceTier = OptionalField.Absent,
+        permissionMode = null,
+        collaborationMode = null,
+        copilotAgentMode = null,
+    )
+}
+
 fun isNewerVersionedPatch(patchVersion: Long, currentVersion: Long): Boolean {
     return patchVersion > currentVersion
 }
@@ -40,6 +61,8 @@ fun isNewerVersionedPatch(patchVersion: Long, currentVersion: Long): Boolean {
  * that field is never assigned anyway.
  */
 fun isRenderIrrelevantSessionPatch(session: Session, patch: SessionPatch): Boolean {
+    patch.executionVersion?.let { if (session.executionVersion != it) return false }
+    if (patch.execution is OptionalField.Present && session.execution != patch.execution.value) return false
     patch.active?.let { if (session.active != it) return false }
     patch.thinking?.let { if (session.thinking != it) return false }
     if (patch.activeTurnStartedAt is OptionalField.Present
@@ -84,13 +107,10 @@ fun isRenderIrrelevantSessionPatch(session: Session, patch: SessionPatch): Boole
  * - `updatedAt` is max-monotonic (a rejected stale replay must not rewind it);
  * - versioned sub-patches apply only when strictly newer than the cached
  *   watermark (`todosUpdatedAt` / `teamStateUpdatedAt` treat absent as 0);
- * - **`activeTurnStartedAt` and `scratchlistUpdatedAt` are deliberately NOT
- *   applied** — the TS reference never assigns them (`scratchlistUpdatedAt`
- *   is a bare refetch trigger; `activeTurnStartedAt` only arrives with full
- *   session payloads). They still participate in the render-irrelevance
- *   check, matching `Object.entries` semantics.
+ * - execution fields apply only for a newer executionVersion.
  */
-fun applySessionDetailPatch(session: Session, patch: SessionPatch): Session? {
+fun applySessionDetailPatch(session: Session, incoming: SessionPatch): Session? {
+    val patch = stripStaleExecutionPatch(session.executionVersion, incoming)
     if (isRenderIrrelevantSessionPatch(session, patch)) {
         return null
     }
@@ -102,6 +122,9 @@ fun applySessionDetailPatch(session: Session, patch: SessionPatch): Session? {
         changed = true
     }
 
+    patch.executionVersion?.let { if (next.executionVersion != it) set(next.copy(executionVersion = it)) }
+    if (patch.execution is OptionalField.Present && next.execution != patch.execution.value) set(next.copy(execution = patch.execution.value))
+    if (patch.activeTurnStartedAt is OptionalField.Present && next.activeTurnStartedAt != patch.activeTurnStartedAt.value) set(next.copy(activeTurnStartedAt = patch.activeTurnStartedAt.value))
     patch.active?.let { if (next.active != it) set(next.copy(active = it)) }
     patch.thinking?.let { if (next.thinking != it) set(next.copy(thinking = it)) }
     patch.activeAt?.let { if (next.activeAt != it) set(next.copy(activeAt = it)) }

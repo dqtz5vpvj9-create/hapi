@@ -112,6 +112,7 @@ export function createEventsRoutes(
             // here and the client skips its REST resync (`resume: 'ok'`).
             const { resume, replay } = manager.subscribe({
                 id: subscriptionId,
+                userId: c.get('userId'),
                 namespace,
                 all,
                 sessionId: resolvedSessionId,
