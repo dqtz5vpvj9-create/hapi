@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DecryptedMessage } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 
 vi.mock('./message-window-store', () => ({
     getQueuedReconcileCandidateLocalIds: vi.fn(),
+    getMessageWindowState: vi.fn(),
+    getQueuedMessageAuthority: vi.fn().mockReturnValue({}),
     markMessagesConsumed: vi.fn(),
     markMessagesIndeterminate: vi.fn(),
     markMessagesDispatching: vi.fn(),
@@ -13,6 +16,7 @@ vi.mock('./message-window-store', () => ({
 
 import {
     getQueuedReconcileCandidateLocalIds,
+    getMessageWindowState,
     markMessagesConsumed,
     markMessagesIndeterminate,
     markMessagesDispatching,
@@ -51,6 +55,15 @@ describe('reconcileQueuedStateAfterConnect', () => {
         vi.clearAllMocks()
         mockSyncTailMessages.mockResolvedValue(undefined)
         mockGetCandidates.mockReturnValue([])
+        const rows = new Map<string, DecryptedMessage>()
+        vi.mocked(getMessageWindowState).mockImplementation(() => {
+            const localIds = mockGetCandidates.mock.results.at(-1)?.value ?? []
+            return { messages: localIds.map((localId: string) => {
+                let row = rows.get(localId)
+                if (!row) { row = { id: localId, localId } as DecryptedMessage; rows.set(localId, row) }
+                return row
+            }) } as ReturnType<typeof getMessageWindowState>
+        })
         mockMarkMessagesIndeterminate.mockClear()
     })
 

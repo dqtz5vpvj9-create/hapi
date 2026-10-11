@@ -62,6 +62,7 @@ type MessagePosition = {
 }
 
 type InternalState = MessageWindowState & {
+    queuedMessageAuthority: WeakMap<DecryptedMessage, object>
     readingBookmark: SavedReadingAnchor | null
     readerAfter: MessagePosition | null
     tailSyncError: Error | null
@@ -103,6 +104,17 @@ const states = new Map<string, InternalState>()
 const listeners = new Map<string, Set<() => void>>()
 const tailSyncControllers = new Map<string, TailSyncController>()
 const appliedRewindLocalIds = new Map<string, Set<string>>()
+// No-op live events still advance authority without cloning visible rows.
+// Session-owned weak markers avoid retaining old IDs or leaking authority
+// across sessions that happen to share the same message object.
+export function getQueuedMessageAuthority(sessionId: string, message: DecryptedMessage): object {
+    const authority = getState(sessionId).queuedMessageAuthority
+    return authority.get(message) ?? authority
+}
+
+function advanceQueuedMessageAuthority(sessionId: string, message: DecryptedMessage): void {
+    getState(sessionId).queuedMessageAuthority.set(message, {})
+}
 
 const NOTIFY_THROTTLE_MS = 150
 const PERSIST_THROTTLE_MS = 200
@@ -346,6 +358,7 @@ function schedulePersist(sessionId: string): void {
 
 function createState(sessionId: string): InternalState {
     return {
+        queuedMessageAuthority: new WeakMap(),
         sessionId,
         messages: [],
         hasMore: false,
@@ -1836,6 +1849,7 @@ export function reconcileQueuedLocalIds(
 }
 
 export function appendOptimisticMessage(sessionId: string, message: DecryptedMessage): void {
+    advanceQueuedMessageAuthority(sessionId, message)
     updateState(sessionId, (previous) => {
         return mergeIntoWindow(previous, [message], {
             mode: previous.viewMode === 'history' ? 'prepend' : 'append',
@@ -1849,7 +1863,9 @@ export function updateMessageStatus(sessionId: string, localId: string, status: 
     updateState(sessionId, (previous) => {
         let changed = false
         const messages = previous.messages.map((message) => {
-            if (message.localId !== localId || message.status === status) return message
+            if (message.localId !== localId) return message
+            advanceQueuedMessageAuthority(sessionId, message)
+            if (message.status === status) return message
             changed = true
             return { ...message, status }
         })
@@ -1883,8 +1899,9 @@ function markMessagesDeliveryState(sessionId: string, localIds: string[], delive
     updateState(sessionId, (previous) => {
         let changed = false
         const messages = previous.messages.map((message) => {
-            if (!message.localId || !idSet.has(message.localId)
-                || message.invokedAt != null
+            if (!message.localId || !idSet.has(message.localId)) return message
+            advanceQueuedMessageAuthority(sessionId, message)
+            if (message.invokedAt != null
                 || (message.deliveryState === deliveryState && message.status !== 'failed')) {
                 return message
             }
@@ -1905,12 +1922,10 @@ export function markMessagesRequeued(sessionId: string, localIds: string[]): voi
     updateState(sessionId, (previous) => {
         let changed = false
         const messages = previous.messages.map((message) => {
-            if (
-                !message.localId
-                || !idSet.has(message.localId)
-                || (message.deliveryState === undefined && message.queueDismissed !== true
-                    && !(optimisticMessage(message) && message.status === 'failed'))
-            ) {
+            if (!message.localId || !idSet.has(message.localId)) return message
+            advanceQueuedMessageAuthority(sessionId, message)
+            if (message.deliveryState === undefined && message.queueDismissed !== true
+                && !(optimisticMessage(message) && message.status === 'failed')) {
                 return message
             }
             changed = true
@@ -1940,6 +1955,7 @@ export function markMessagesConsumed(
                 || (message.status === 'failed' && !optimisticMessage(message))) {
                 return message
             }
+            advanceQueuedMessageAuthority(sessionId, message)
             const needsStatus = message.status !== 'sent'
             const needsInvokedAt = message.invokedAt === null
             const needsSteered = steered === true && message.steered !== true
