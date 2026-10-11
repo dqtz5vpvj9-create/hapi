@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "origin": "Corrected synthetic long-history cold, warm, and passive geometry browser procedures",
+  "capturedSourceSha256": {
+    "driver.mjs": "1109847c2aad18c94d3b5128f5f814b9c3b3a427dbdded1a8ae3913748f8f838",
+    "probe.mjs": "141428257b63638ac4c0658178b528afa9da24ca039a37475620aa760965d22b",
+    "driver-warm.mjs": "4c4df9d12d808a83ae77de6129bfe345c150866ca9bf4a9c7b853a4aaa754dcc",
+    "probe-warm.mjs": "0431fd0b3cc50b6616c043f89a17a1b7013eb5aba086366c3a4369ea399bbf48",
+    "driver-geometry.mjs": "93be224d437b8b47247b95220d3741eaf16cf216b78f232fc7866d2859e1e777",
+    "probe-geometry.mjs": "c928627b552fc140a79113e0cd01c9f8c0f49ed75bdf8800f14efa5348e2096b"
+  },
+  "portabilityChanges": [
+    "Cold driver/probe files renamed with matching relative import",
+    "Chromium executable selected by HAPI_QA_CHROMIUM or installed Playwright browser",
+    "New strict shared runner reuses repository lifecycle and verifies source/assets/helpers"
+  ],
+  "measurementAlgorithm": "Original driver/probe timing, input scheduling, phases, geometry samples and reported fields preserved; no responsiveness improvement inferred from smoke completion",
+  "validation": "Portable procedure helper/browser validation pending"
+}

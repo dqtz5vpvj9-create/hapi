@@ -43,8 +43,8 @@ real UI distant-jump test. No direct production-store mutation for cold entry.
 Pure checks (only after measurement-slot permission):
 node --test scripts/testing/history/arithmetic-history.test.mjs
 
-No tests/build/browser have run at initial creation. Before a browser trial,
-obtain independent source review, run the pure contracts, build against a frozen
+Before each browser certification, obtain independent source review, run the
+pure contracts, build against a frozen
 source snapshot, record source/helper/asset SHA256 and verify no sources changed
 during build. Do not reuse mutable main as an unlabeled immutable source.
 
@@ -79,5 +79,48 @@ SOURCE_ROOT may select a frozen checkout; SOURCE_HEAD identifies an exported
 snapshot without .git. The output is exclusively created, builds have180s
 timeouts, and only this invocation's child process group is cleaned up. Existing
 output is never deleted by the wrapper. The config also requires explicit output.
-Portable helper contracts passed15/15 against accepted11c5382. Portable build/browser revalidation is pending; source portability alone
-is not performance certification. Browser driver/results are separate.
+## Certification recorded 2026-10-11
+
+The six-file portable fixture was published at commit
+325abda535edbad7336f4a43fa31302fe267a20e. Certification used the byte-identical
+six-file overlay on frozen accepted product11c5382bb8a7208725e9d78541a8bfffb09e7292:
+
+- Independent source review and15/15 arithmetic/fixture contracts passed.
+- The actual portable build wrapper passed, with529 output asset hashes checked,
+  inherited Recent helper hashes recorded, and no source drift during the build.
+- Four functional cold-entry cells passed: desktop/phone emulation × H320/100000.
+  Each generated220 bodies, at most200 per request; zero incorrect presented
+  frames were observed in those full-oracle smoke cells.
+
+These checks certify the recorded synthetic frontend fixture and functional
+smoke scope. They do not establish first-second responsiveness, physical-phone
+performance, real Hub/daemon scaling, or a statistical latency trend. Warm and
+passive geometry procedure portability is a separate validation stage.
+
+Run all browser-harness pure contracts from the repository root:
+bun run test:browser-harness
+The root test chain includes this command, so the existing Test CI job runs the
+Recent helper, history arithmetic and browser-procedure cell tests. It does not
+launch browser performance workloads as part of these pure contracts.
+
+
+## Browser procedure validation recorded 2026-10-11
+
+The [portable browser procedures and evidence contract](browser/EVIDENCE.md)
+were separately validated on frozen product390fa4ae31db430dca0aae297fbeb455645d32bf
+with the approved browser/CI overlay. The actual portable runner passed five
+functional cases: cold desktopH320 and phoneH100000, warm-code and warm-target
+phoneH100000, and a separate passive geometry phoneH100000 diagnostic. All
+recorded final content checks and trusted up/down input checks passed.
+
+Five negative/freshness checks also passed: malformed cell, missing build, stale
+build/source mapping, tampered asset, and reused result label were rejected
+before browser launch; original results and the frozen build were unchanged.
+The exact Bun helper command passed32/32 tests. These were functional
+certifications, not uncontended timing comparisons; other focused checks could
+overlap the browser cells. The original origin manifest retains its
+pre-validation capture status. This dated section records the later validation.
+
+This procedure link and validation summary are a documentation-only update made
+after certification. The tested executable/helper bytes and original build
+provenance were retained unchanged.
