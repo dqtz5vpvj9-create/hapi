@@ -9,6 +9,8 @@ export type MessageListNavigation = {
     contains: (messageId: string) => boolean
     pinReading: (messageId: string | null) => void
     releaseDestination: () => void
+    /** Observe the viewport owner's actual landing without another scroll write. */
+    observeProgrammaticScroll: (scrollTop: number) => void
     /** Committed row boxes match the virtual geometry; optionally require the tail. */
     isLayoutReady: (atTail: boolean) => boolean
 }
@@ -129,6 +131,7 @@ export const WindowedMessageList = memo(function WindowedMessageList({ scrollEle
         contains: (id) => ids.includes(ownerOf(id)),
         pinReading: setReadingId,
         releaseDestination: () => setDestinationId(null),
+        observeProgrammaticScroll: scrollOffsetObserver.observeLanding,
         isLayoutReady: atTail => measuredLayout.current && (!atTail || ids.length === 0
             || listRef.current?.querySelector(`[data-index="${ids.length - 1}"]`) != null),
         reveal: (id) => {
@@ -137,7 +140,7 @@ export const WindowedMessageList = memo(function WindowedMessageList({ scrollEle
             setDestinationId(id)
             return ids.includes(ownerOf(id))
         },
-    }), [ids, ownerOf])
+    }), [ids, ownerOf, scrollOffsetObserver])
 
     const rows = virtualizer.getVirtualItems()
     useLayoutEffect(() => {
