@@ -32,11 +32,9 @@ export function classifySessionAttention(
         return { kind: 'input' }
     }
 
-    if (options.selected) {
-        return options.manualUnreadAt === summary.updatedAt
-            ? { kind: 'unread' }
-            : null
-    }
+    // Selection can outlive the visible chat (for example, on the phone list).
+    // Only the shared reading watermark acknowledges new activity.
+    if (options.manualUnreadAt === summary.updatedAt) return { kind: 'unread' }
 
     if (activity.kind === 'running') {
         return null

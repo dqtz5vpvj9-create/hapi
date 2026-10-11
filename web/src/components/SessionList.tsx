@@ -1081,13 +1081,14 @@ function SessionItem(props: {
 
     const sessionName = getSessionTitle(s)
     const attention = useMemo(
-        () => showDetailedStatus
-            ? classifySessionAttention(s, {
+        () => {
+            const attention = classifySessionAttention(s, {
                 selected,
                 lastSeenAt,
                 manualUnreadAt
             })
-            : null,
+            return !showDetailedStatus && attention?.kind === 'background' ? null : attention
+        },
         [s, selected, showDetailedStatus, lastSeenAt, manualUnreadAt]
     )
     const hasScheduleTooltip = showDetailedStatus && s.futureScheduledMessageCount > 0

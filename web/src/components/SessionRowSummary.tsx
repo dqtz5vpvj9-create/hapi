@@ -121,11 +121,10 @@ export function SessionRowSummary(props: {
             const unreadAt = manualUnreadAt === undefined ? getSessionManualUnreadAt(s.id) : manualUnreadAt
             const candidate = classifySessionAttention(s, {
                 selected,
-                lastSeenAt: unreadAt === null ? seenAt : Math.min(seenAt, unreadAt - 1),
+                lastSeenAt: seenAt,
                 manualUnreadAt: unreadAt,
             })
-            return showDetailedStatus || candidate?.kind === 'permission' || candidate?.kind === 'input'
-                ? candidate : null
+            return !showDetailedStatus && candidate?.kind === 'background' ? null : candidate
         },
         [s, selected, showDetailedStatus, lastSeenVersion, lastSeenAt, manualUnreadAt]
     )
@@ -146,7 +145,7 @@ export function SessionRowSummary(props: {
 
     return (
         <div className={`flex w-full min-w-0 flex-col gap-1 ${className ?? ''}`}>
-            <div className={`app-session-row-main grid grid-cols-[minmax(9rem,1fr)_minmax(0,max-content)] items-center gap-2 ${!s.active ? 'opacity-50' : ''}`}>
+            <div className={`app-session-row-main grid grid-cols-[minmax(9rem,1fr)_minmax(0,max-content)] items-center gap-2 ${!s.active && attention?.kind !== 'unread' ? 'opacity-50' : ''}`}>
                 <div className="flex min-w-0 items-center gap-2">
                     <AgentFlavorIcon flavor={s.metadata?.flavor} className="app-session-row-agent h-4 w-4 shrink-0 -translate-y-px" />
                     <span className="app-session-row-status inline-flex shrink-0 items-center">
@@ -225,7 +224,6 @@ export function SessionRowSummary(props: {
                 </div>
             </div>
             {narrowViewport ? <div className="app-session-row-mobile-meta">
-                {machineLabel ? <span className="truncate" title={machineLabel}>{machineLabel}</span> : null}
                 {urgentAttention || s.pendingRequestsCount > 0 ? <span className="app-session-row-execution text-[var(--app-badge-warning-text)]">{activity.kind === 'running' ? `${t('session.item.running')} · ` : ''}{attentionLabel ?? t('session.item.pending')}</span>
                     : activity.kind === 'error' ? <span className="app-session-row-execution">{t('session.item.error')}</span> : activity.running ? <span className="app-session-row-execution"><LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow" />{t('session.item.running')}</span> : null}
                 {workspaceLocation ? <span className="app-session-workspace-location" title={`${workspaceLocation.name} · P${workspaceLocation.pane}`}>

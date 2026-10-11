@@ -209,7 +209,11 @@ function SessionsPage() {
         initializeSessionLastSeen(baseUrl, sessions)
         setInitializedHub(baseUrl)
     }, [baseUrl, error, isLoading, sessions])
-    useSelectedSessionSeen(selectedSessionId, selectedSession?.updatedAt)
+    // Workspace panes acknowledge their own visible chats. A retained focused
+    // pane must not be marked read while the phone shows the session list.
+    const readingSingleChat = workspaceState?.mode !== 'workspace'
+        && (pathname === `/sessions/${selectedSessionId}` || pathname === `/sessions/${selectedSessionId}/`)
+    useSelectedSessionSeen(readingSingleChat ? selectedSessionId : null, selectedSession?.updatedAt)
     const isWorkspace = workspacePresentation(workspaceState?.mode, pathname)
     const chatTarget = workspaceChatTarget(pathname)
     useEffect(() => {

@@ -53,20 +53,20 @@ describe('classifySessionAttention', () => {
         expect(attention).toEqual({ kind: 'unread' })
     })
 
-    it('does not show selected-session attention for ordinary new activity', () => {
+    it('keeps new activity unread when selection is retained behind the session list', () => {
         const attention = classifySessionAttention(
             makeSummary({ id: 'a', updatedAt: 5000 }),
             { selected: true, lastSeenAt: 1000 }
         )
-        expect(attention).toBeNull()
+        expect(attention).toEqual({ kind: 'unread' })
     })
 
-    it('does not carry an explicit unread dot across newer activity', () => {
+    it('shows newer unread activity after the explicitly marked update', () => {
         const attention = classifySessionAttention(
             makeSummary({ id: 'a', updatedAt: 6000 }),
             { selected: true, lastSeenAt: 5000, manualUnreadAt: 5000 }
         )
-        expect(attention).toBeNull()
+        expect(attention).toEqual({ kind: 'unread' })
     })
 
     it('prioritizes permission over unread activity', () => {

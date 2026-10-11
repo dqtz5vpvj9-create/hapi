@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@/types/api'
@@ -7,7 +7,7 @@ import { ToastProvider } from '@/lib/toast-context'
 import { SessionList } from './SessionList'
 import { SessionListHeaderActions } from './SessionListHeaderActions'
 import { loadNewTaskDraft } from '@/lib/new-task-draft'
-import { markSessionUnread } from '@/lib/sessionLastSeen'
+import { markSessionSeen, markSessionUnread } from '@/lib/sessionLastSeen'
 
 vi.mock('@/hooks/useNarrowViewport', () => ({ useNarrowViewport: () => true }))
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); localStorage.setItem('hapi.sessionListView', 'recent') })
@@ -28,6 +28,32 @@ function mount(sessions: SessionSummary[], onStartTask = vi.fn()) {
 }
 function tabs(container: HTMLElement) { return within(container.querySelector('.app-session-mobile-tabs') as HTMLElement) }
 describe('Refined phone list', () => {
+    it('shows newly completed unread results in Standard mode and clears the dot only when read', () => {
+        localStorage.setItem('hapi.sessionLastSeen.v1', JSON.stringify({ result: 100 }))
+        const native = { owner: 'machine', generation: 'g1', sequence: 1, waitingOn: [], turnId: 'turn', startedAt: 100, completedAt: null }
+        const running = session('result', 'Result task', { active: true, thinking: true, execution: { ...native, status: 'active' } })
+        const { container, updateSessions } = mount([running])
+        const row = screen.getByText('Result task').closest('.session-list-item')!
+        expect(row.querySelector('[data-session-status="unread"]')).toBeNull()
+        updateSessions([{ ...running, thinking: false, updatedAt: 200,
+            execution: { ...native, status: 'idle', sequence: 2, completedAt: 200 } }])
+        const dot = row.querySelector('[data-session-status="unread"]')!
+        expect(dot).toBeTruthy()
+        expect(dot.getAttribute('aria-label')).toBe('New activity')
+        expect(row).toHaveAttribute('aria-describedby', within(row).getByRole('tooltip', { hidden: true }).id)
+        expect(tabs(container).getByRole('button', { name: 'Unread 1' })).toBeTruthy()
+        act(() => markSessionSeen('result', 200))
+        expect(row.querySelector('[data-session-status="unread"]')).toBeNull()
+        expect(tabs(container).getByRole('button', { name: 'Unread 0' })).toBeTruthy()
+    })
+
+    it('identifies a machine by its fixed icon without repeating its name in the phone metadata', () => {
+        mount([session('one', 'One task')])
+        const row = screen.getByText('One task').closest('.session-list-item')!
+        expect(row.querySelector('[data-machine-id="m1"]')).toHaveAttribute('aria-label', 'Mint')
+        expect(row.querySelector('.app-session-row-mobile-meta')).not.toHaveTextContent('Mint')
+    })
+
     it('shows native waiting flags before a question card arrives and excludes them from Running', () => {
         const waiting = (kind: 'approval' | 'input') => session(kind, `${kind} task`, {
             active: true, thinking: true, execution: { owner: 'machine', generation: 'generation', sequence: 1,

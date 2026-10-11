@@ -36,9 +36,10 @@ export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foregro
         wasForeground.current = foreground
     }, [api, props.foreground, sessionId, pane.resource.kind])
     const { session } = useSession(api, sessionId || null)
-    useSelectedSessionSeen(props.focused && pane.resource.kind === 'chat' ? sessionId : null, session?.updatedAt)
     const routeNavigate = useNavigate()
     const [tool, setTool] = useState<{ view: 'directories' | 'changes' | 'file'; path?: string; staged?: boolean; query?: string } | null>(null)
+    useSelectedSessionSeen(props.focused && props.foreground !== false && !tool && pane.resource.kind === 'chat'
+        ? sessionId : null, session?.updatedAt)
     const closeTool = useCallback(() => setTool(null), [])
     useEffect(() => { setTool(null) }, [sessionId])
     const navigate = useCallback<ReturnType<typeof useNavigate>>(async options => {

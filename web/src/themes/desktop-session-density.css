@@ -1,13 +1,15 @@
 /* Unread completions use a blue dot independent of the theme's link color. */
 [data-session-status="unread"] > span[aria-hidden="true"] {
     display: block;
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background-color: #3b82f6;
     font-size: 0;
     line-height: 0;
 }
+
+.app-session-row-status { width: 16px; flex: 0 0 16px; justify-content: center; }
 
 .app-session-machine-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 18px; font-size: 14px; }
 /* Desktop navigation is a single-line list in every theme. Touch layouts keep

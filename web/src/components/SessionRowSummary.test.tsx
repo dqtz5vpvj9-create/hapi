@@ -119,7 +119,7 @@ describe('SessionRowSummary background status', () => {
         expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('New activity')
     })
 
-    it('shows an explicit unread dot for the selected session only', () => {
+    it('keeps newer activity unread until its shared watermark advances', () => {
         const session = makeSummary({
             id: 'selected-unread',
             active: false,
@@ -153,7 +153,7 @@ describe('SessionRowSummary background status', () => {
             </I18nProvider>
         )
 
-        expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
+        expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('New activity')
     })
 
     it('shows an explicit unread dot before the thinking spinner', () => {
