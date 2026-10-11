@@ -1,6 +1,7 @@
 import { Component, Fragment, memo, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type Ref, type ReactNode } from 'react'
 import { ThreadPrimitive, unstable_useThreadMessageIds, useAuiState, getExternalStoreMessages } from '@assistant-ui/react'
 import { defaultRangeExtractor, useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
+import { createProgrammaticScrollObserver } from './programmaticScrollOffset'
 
 export type MessageListNavigation = {
     /** Absence from the DOM is different from absence from loaded data. */
@@ -62,6 +63,7 @@ export const WindowedMessageList = memo(function WindowedMessageList({ scrollEle
     renderRow: (id: string) => ReactNode
 }) {
     const listRef = useRef<HTMLDivElement | null>(null)
+    const [scrollOffsetObserver] = useState(() => createProgrammaticScrollObserver())
     const measuredLayout = useRef(false)
     const [readingId, setReadingId] = useState(savedAnchorId ?? null)
     const [destinationId, setDestinationId] = useState<string | null>(null)
@@ -78,6 +80,8 @@ export const WindowedMessageList = memo(function WindowedMessageList({ scrollEle
         enabled: measurements === undefined || scrollElement !== null,
         count: ids.length,
         getScrollElement: () => scrollElement,
+        observeElementOffset: scrollOffsetObserver.observeOffset,
+        observeElementRect: scrollOffsetObserver.observeRect,
         getItemKey,
         estimateSize: () => 96,
         overscan: 6,
