@@ -109,7 +109,11 @@ function subscribeToStoreChanges(listener: () => void): () => void {
     }
 
     const handleStorage = (event: StorageEvent) => {
-        if (event.key !== STORAGE_KEY && event.key !== MANUAL_UNREAD_KEY) {
+        // clear() has no key; only a localStorage clear affects these maps.
+        const clearedLocalStorage = event.key === null
+            && event.storageArea !== null
+            && event.storageArea === getLocalStorage()
+        if (!clearedLocalStorage && event.key !== STORAGE_KEY && event.key !== MANUAL_UNREAD_KEY) {
             return
         }
         changeVersion += 1
@@ -128,7 +132,7 @@ function getStoreChangeVersion(): number {
     return changeVersion
 }
 
-/** Re-render consumers when same-tab read-state changes. */
+/** Re-render consumers when same-tab or cross-tab read-state changes. */
 export function useSessionLastSeenVersion(): number {
     return useSyncExternalStore(
         subscribeToStoreChanges,

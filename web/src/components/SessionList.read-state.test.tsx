@@ -120,6 +120,71 @@ describe('Session list shared read-state snapshot', () => {
         expect(attention(container, 'a')).toBeTruthy()
     })
 
+    it('refreshes mounted unread badges and the bulk count on a cross-tab localStorage clear', () => {
+        const items = [session('a', 'A'), session('b', 'B')]
+        localStorage.setItem(seenKey, JSON.stringify({ a: 100, b: 100 }))
+        const { container } = mount(items)
+        expect(attention(container, 'a')).toBeNull()
+        expect(attention(container, 'b')).toBeNull()
+        expect(screen.queryByRole('button', { name: /Mark all as read/ })).toBeNull()
+
+        act(() => {
+            // Simulate storage already changed by another tab, before its event arrives.
+            localStorage.clear()
+            window.dispatchEvent(new StorageEvent('storage', { key: null, storageArea: localStorage }))
+        })
+        expect(attention(container, 'a')).toBeTruthy()
+        expect(attention(container, 'b')).toBeTruthy()
+        expect(screen.getByRole('button', { name: 'Mark all as read (2)' })).toBeTruthy()
+
+        act(() => markAllSessionsSeen(items))
+        expect(attention(container, 'a')).toBeNull()
+        expect(attention(container, 'b')).toBeNull()
+        expect(screen.queryByRole('button', { name: /Mark all as read/ })).toBeNull()
+    })
+
+    it('ignores unrelated storage keys and sessionStorage clears without refreshing read state', () => {
+        localStorage.setItem(seenKey, JSON.stringify({ a: 100 }))
+        const { container } = mount([session('a', 'A')])
+        const reads = vi.spyOn(Storage.prototype, 'getItem')
+        act(() => {
+            window.dispatchEvent(new StorageEvent('storage', { key: 'unrelated', storageArea: localStorage }))
+            window.dispatchEvent(new StorageEvent('storage', { key: null, storageArea: sessionStorage }))
+        })
+        expect(reads.mock.calls.filter(([key]) => key === seenKey || key === unreadKey)).toEqual([])
+        expect(attention(container, 'a')).toBeNull()
+        expect(screen.queryByRole('button', { name: /Mark all as read/ })).toBeNull()
+    })
+
+    it('ignores an unscoped clear event when localStorage is unavailable', () => {
+        localStorage.setItem(seenKey, JSON.stringify({ a: 100 }))
+        const { container } = mount([session('a', 'A')])
+        vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => { throw new Error('storage denied') })
+        act(() => {
+            window.dispatchEvent(new StorageEvent('storage', { key: null, storageArea: null }))
+        })
+        expect(attention(container, 'a')).toBeNull()
+        expect(screen.queryByRole('button', { name: /Mark all as read/ })).toBeNull()
+    })
+
+    it('refreshes badges and the bulk count when the cross-tab manual-unread key changes or is removed', () => {
+        localStorage.setItem(seenKey, JSON.stringify({ a: 100 }))
+        const { container } = mount([session('a', 'A')], vi.fn(), 'a')
+        expect(attention(container, 'a')).toBeNull()
+        act(() => {
+            localStorage.setItem(unreadKey, JSON.stringify({ a: 100 }))
+            window.dispatchEvent(new StorageEvent('storage', { key: unreadKey, storageArea: localStorage }))
+        })
+        expect(attention(container, 'a')).toBeTruthy()
+        expect(screen.getByRole('button', { name: 'Mark all as read (1)' })).toBeTruthy()
+        act(() => {
+            localStorage.removeItem(unreadKey)
+            window.dispatchEvent(new StorageEvent('storage', { key: unreadKey, storageArea: localStorage }))
+        })
+        expect(attention(container, 'a')).toBeNull()
+        expect(screen.queryByRole('button', { name: /Mark all as read/ })).toBeNull()
+    })
+
     it('keeps persisted unread badges when writes fail, including partial success', () => {
         markSessionUnread('a', 100)
         const { container } = mount([session('a', 'A')], vi.fn(), 'a')
