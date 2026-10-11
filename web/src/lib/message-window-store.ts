@@ -1,5 +1,5 @@
 import { cancelQueuedStateRequest } from './queued-state-request-lifetime'
-import type { ReadingAnchor } from '@/lib/reading-anchor'
+import { refreshReadingAnchorCapture, type ReadingAnchor } from '@/lib/reading-anchor'
 import { getHistoryPageRepository, HistoryReadInvalidated, type HistoryPageRequest } from '@/lib/history-page-repository'
 import { getReasoningStreamId } from '@hapi/protocol/messages'
 import { ApiError, type ApiClient } from '@/api/client'
@@ -1319,6 +1319,21 @@ export function getMessageReadingAnchor(sessionId: string): ReadingAnchor | null
     return getState(sessionId).readingBookmark
 }
 
+function equalReadingBookmarks(left: SavedReadingAnchor | null, right: SavedReadingAnchor | null): boolean {
+    if (left === right) return true
+    if (!left || !right) return false
+    if (left.id !== right.id || left.topOffset !== right.topOffset || left.disclosure !== right.disclosure
+        || left.sourceMessageId !== right.sourceMessageId
+        || left.position?.at !== right.position?.at || left.position?.seq !== right.position?.seq) return false
+    const a = left.text, b = right.text
+    if (a !== b && (!a || !b || a.offset !== b.offset || a.quote !== b.quote
+        || a.quoteStart !== b.quoteStart || a.topOffset !== b.topOffset
+        || a.path.length !== b.path.length || a.path.some((part, index) => part !== b.path[index]))) return false
+    const c = left.code, d = right.code
+    return c === d || !!c && !!d && c.source === d.source && c.innerTopOffset === d.innerTopOffset
+        && c.position === d.position && c.quote === d.quote && c.quoteStart === d.quoteStart && c.topOffset === d.topOffset
+}
+
 /** Scrolling changes the bookmark, not the message projection. */
 export function saveMessageReadingAnchor(sessionId: string, anchor: ReadingAnchor | null, immediate = false): void {
     const state = getState(sessionId)
@@ -1329,6 +1344,10 @@ export function saveMessageReadingAnchor(sessionId: string, anchor: ReadingAncho
         readingBookmark = { ...anchor,
             sourceMessageId: source?.id ?? previous?.sourceMessageId,
             position: source?.seq != null ? { at: source.invokedAt ?? source.createdAt, seq: source.seq } : previous?.position }
+    }
+    if (equalReadingBookmarks(state.readingBookmark, readingBookmark)) {
+        if (state.readingBookmark && readingBookmark) refreshReadingAnchorCapture(state.readingBookmark, readingBookmark)
+        return
     }
     const next = { ...state, readingBookmark }
     states.set(sessionId, next)
