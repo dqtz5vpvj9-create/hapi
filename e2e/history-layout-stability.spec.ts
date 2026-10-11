@@ -50,9 +50,39 @@ test('keeps readable rows separated throughout older-page loading and delayed im
     page.on('pageerror', error => errors.push(error.message))
     const cdp = await page.context().newCDPSession(page)
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
-    await page.goto('/e2e-fixtures/history-load-fixture.html?readingAnchor=1&readingPending=1&longIncoming=1')
+    await page.goto('/e2e-fixtures/history-load-fixture.html?readingAnchor=1&readingPending=1&longIncoming=1&holdBefore=1')
     await expect(page.getByText(/^Anchor paragraph 090:/)).toBeVisible()
     await page.waitForTimeout(2000)
+
+    // Gate the API before mount, rather than after an adjacent-page preload
+    // could already have captured an ungated request. The seven-row initial
+    // fixture window starts at the image immediately above the long passage.
+    const initial = await page.evaluate(() => window.__probe.windowState())
+    expect(initial).toMatchObject({
+        messageCount: 7, oldestSeq: 1194, newestSeq: 1200,
+        isLoadingMore: false, isSyncingTail: false,
+    })
+    const setupProof: unknown[] = []
+    const recordSetup = async (phase: string) => {
+        setupProof.push(await page.evaluate(phase => {
+            const viewport = document.querySelector<HTMLElement>('.chat-scroll-y')!
+            const image = viewport.querySelector<HTMLImageElement>('img[alt="reading-anchor.svg"]')
+            const bounds = viewport.getBoundingClientRect()
+            const imageBounds = image?.getBoundingClientRect()
+            return {
+                phase, at: performance.now(), state: window.__probe.windowState(),
+                requests: window.__probe.requests.map(request => ({ ...request })),
+                finishedRequests: window.__probe.finishedRequests,
+                viewport: { top: viewport.scrollTop, height: viewport.clientHeight, scrollHeight: viewport.scrollHeight },
+                image: imageBounds ? {
+                    top: imageBounds.top, bottom: imageBounds.bottom, height: imageBounds.height,
+                    visiblePixels: Math.min(imageBounds.bottom, bounds.bottom) - Math.max(imageBounds.top, bounds.top),
+                } : null,
+            }
+        }, phase))
+        await info.attach(`delayed-image-setup-${phase}`, { body: JSON.stringify(setupProof.at(-1)), contentType: 'application/json' })
+    }
+    await recordSetup('before-input')
 
     await page.evaluate(() => {
         const state = { frames: [] as OverlapFrame[], stopped: false }
@@ -82,27 +112,46 @@ test('keeps readable rows separated throughout older-page loading and delayed im
             requestAnimationFrame(sample)
         }
         requestAnimationFrame(sample)
-        window.__probe.holdBefore()
     })
 
     const viewport = page.locator('.chat-scroll-y')
     const box = (await viewport.boundingBox())!
-    const delta = await viewport.evaluate(element => {
-        const passage = Array.from(element.querySelectorAll<HTMLElement>('[id^="hapi-message-"]'))
-            .find(row => row.id.includes('agent-text:m-1195'))!
-        return passage.getBoundingClientRect().top - element.getBoundingClientRect().top + 8
-    })
+    // Align the actual loaded-window edge. Aligning m-1195 instead leaves
+    // the image-containing row above it and can miss the foreground sentinel.
+    const delta = await viewport.evaluate(element => -element.scrollTop - 1)
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await page.mouse.wheel(0, delta)
+    await recordSetup('after-input')
+    await expect.poll(() => viewport.evaluate(element => element.scrollTop)).toBeLessThanOrEqual(1)
+    await expect.poll(() => page.evaluate(() => window.__probe.windowState().viewMode)).toBe('history')
     await expect.poll(() => page.evaluate(() => window.__probe.windowState().isLoadingMore)).toBe(true)
+    const heldRequests = await page.evaluate(() => window.__probe.requests.filter(request => request.direction === 'before'))
+    expect(heldRequests).toHaveLength(1)
+    expect(heldRequests[0]).toMatchObject({ beforeSeq: initial.oldestSeq, limit: 200 })
     const countBefore = await page.evaluate(() => window.__probe.windowState().messageCount)
-    await page.getByRole('img', { name: 'reading-anchor.svg', exact: true }).evaluate(image => {
+    expect(countBefore).toBe(initial.messageCount)
+    await recordSetup('foreground-held')
+
+    const image = page.getByRole('img', { name: 'reading-anchor.svg', exact: true })
+    await expect(image).toBeInViewport()
+    const imageHeight = await image.evaluate(element => element.getBoundingClientRect().height)
+    expect(imageHeight).toBeGreaterThan(0)
+    await image.evaluate(image => {
         image.style.maxHeight = 'none'
         image.style.height = `${image.getBoundingClientRect().height + 80}px`
     })
+    await expect.poll(() => image.evaluate(element => element.getBoundingClientRect().height)).toBeCloseTo(imageHeight + 80, 0)
+    await expect(image).toBeInViewport()
+    expect(await page.evaluate(() => window.__probe.windowState().isLoadingMore)).toBe(true)
+    expect(await page.evaluate(() => window.__probe.windowState().messageCount)).toBe(countBefore)
+    await recordSetup('image-grown-while-held')
+
     await page.evaluate(() => window.__probe.releaseBefore())
     await expect.poll(() => page.evaluate(() => window.__probe.windowState().isLoadingMore)).toBe(false)
     expect(await page.evaluate(() => window.__probe.windowState().messageCount)).toBeGreaterThan(countBefore)
+    await expect.poll(() => page.evaluate(() => window.__probe.windowState().oldestSeq)).toBe(initial.oldestSeq! - 200)
+    await recordSetup('older-page-applied')
+    await info.attach('delayed-image-setup-proof', { body: JSON.stringify(setupProof), contentType: 'application/json' })
     for (let index = 0; index < 10; index++) {
         await page.mouse.wheel(0, -700)
         await page.waitForTimeout(80)
