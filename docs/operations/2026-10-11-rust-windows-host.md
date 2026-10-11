@@ -1,5 +1,7 @@
 # Rust Windows host candidate — 2026-10-11 UTC
 
+This is the retained pre-deployment candidate report. See the [production adoption and measured savings](./2026-10-11-rust-host-production.md) for the subsequent deployment, including its cold-recovery limitation.
+
 Implemented the Windows resident infrastructure in
 [`native/windows-host`](../../native/windows-host/README.md). The candidate uses
 two native processes in place of six PowerShell hosts: an S4U token/job

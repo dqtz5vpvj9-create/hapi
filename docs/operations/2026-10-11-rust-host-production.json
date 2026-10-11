@@ -1,0 +1,154 @@
+{
+  "sourceCommit": "67d5bbc1",
+  "machine": "Lis-iMac",
+  "comparison": {
+    "before": {
+      "hostCount": 6,
+      "coreCount": 2,
+      "loadedThreadCount": 16,
+      "firstSample": "2026-10-11T11:26:46.7093992Z",
+      "lastSample": "2026-10-11T11:27:00.3061861Z",
+      "groups": {
+        "host": {
+          "workingSetMiB": 427.0703125,
+          "privateCommitMiB": 369.515625,
+          "cpuSingleCorePercent": 9.193348399147533,
+          "cpuSeconds": 1.25,
+          "sampleSeconds": 13.596787,
+          "threads": 120,
+          "handles": 3930
+        },
+        "core": {
+          "workingSetMiB": 182.62890625,
+          "privateCommitMiB": 612.23046875,
+          "cpuSingleCorePercent": 1.2640854048827859,
+          "cpuSeconds": 0.171875,
+          "sampleSeconds": 13.596787,
+          "threads": 59,
+          "handles": 471
+        },
+        "all": {
+          "workingSetMiB": 609.69921875,
+          "privateCommitMiB": 981.55859375,
+          "cpuSingleCorePercent": 10.45743380403032,
+          "cpuSeconds": 1.421875,
+          "sampleSeconds": 13.596787,
+          "threads": 179,
+          "handles": 4401
+        }
+      },
+      "rpc": {
+        "count": 30,
+        "p50ms": 0.68875,
+        "p95ms": 1.1893
+      }
+    },
+    "after": {
+      "hostCount": 2,
+      "coreCount": 2,
+      "loadedThreadCount": 16,
+      "firstSample": "2026-10-11T11:39:05.6348548Z",
+      "lastSample": "2026-10-11T11:39:17.0864347Z",
+      "groups": {
+        "host": {
+          "workingSetMiB": 15.76171875,
+          "privateCommitMiB": 4.40234375,
+          "cpuSingleCorePercent": 0.13644405400826787,
+          "cpuSeconds": 0.015625,
+          "sampleSeconds": 11.45158,
+          "threads": 3,
+          "handles": 271
+        },
+        "core": {
+          "workingSetMiB": 168.974609375,
+          "privateCommitMiB": 701.48828125,
+          "cpuSingleCorePercent": 2.046660810124018,
+          "cpuSeconds": 0.234375,
+          "sampleSeconds": 11.45158,
+          "threads": 63,
+          "handles": 504
+        },
+        "all": {
+          "workingSetMiB": 184.736328125,
+          "privateCommitMiB": 705.890625,
+          "cpuSingleCorePercent": 2.183104864132286,
+          "cpuSeconds": 0.25,
+          "sampleSeconds": 11.45158,
+          "threads": 66,
+          "handles": 775
+        }
+      },
+      "rpc": {
+        "count": 30,
+        "p50ms": 0.60775,
+        "p95ms": 1.5687
+      }
+    }
+  },
+  "deployment": {
+    "supervisor": {
+      "nativeReady": true,
+      "pid": 1739572,
+      "restorePending": false,
+      "roles": {
+        "engine": {
+          "failures": 0,
+          "pid": 1814200
+        },
+        "native": {
+          "failures": 0,
+          "pid": 1863480
+        },
+        "pipe": {
+          "failures": 0,
+          "inProcess": true,
+          "pid": 1739572
+        },
+        "runner": {
+          "failures": 0,
+          "pid": 1890336
+        }
+      },
+      "session": 0,
+      "timestamp": "2026-10-11T11:27:26.2095912Z"
+    },
+    "loadedBefore": 16,
+    "readyMs": 25837.0296,
+    "afterHostCount": 2,
+    "task": {
+      "TaskName": "HAPI-background",
+      "State": 4
+    },
+    "preservedDesktopProcesses": 1,
+    "deployed": true,
+    "loadedAfter": 16,
+    "beforeHostCount": 6
+  },
+  "historyVerification": {
+    "windowsNativeSessions": 16,
+    "allHTTP200": true,
+    "medianMs": 72.8225775,
+    "maxMs": 175.717215
+  },
+  "savings": {
+    "workingSetMiB": {
+      "absolute": 411.30859375,
+      "percent": 96.30933869935059
+    },
+    "privateCommitMiB": {
+      "absolute": 365.11328125,
+      "percent": 98.80861770053701
+    },
+    "cpuSingleCorePercent": {
+      "absolute": 9.056904345139266,
+      "percent": 98.51583940818647
+    }
+  },
+  "limitations": [
+    "Short sequential samples on the same machine; uptime, cache and network conditions differ.",
+    "Host-only totals exclude Runner/bridge, Codex and tools.",
+    "No end-to-end latency improvement established; RPC p95 increased in the short sample.",
+    "Native restoration took 25.8 seconds; HAPI bridge rebinding subsequently took several minutes with transient network timeouts and HTTP 503.",
+    "Reboot, logoff/login, RDP and long-duration acceptance not performed."
+  ]
+}
