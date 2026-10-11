@@ -4,6 +4,7 @@ import { ChatViewport, type ViewportLanding, type ViewportMetrics } from './dsh/
 import type { ChatScrollPosition } from './dsh/types'
 import type { ScrollFollow } from './dsh/use-scroll-follow'
 import type { NativeChatProjection } from './nativeProjection'
+import { isOpeningReaderTarget, openingWheelPixels } from './nativeOpeningInput'
 
 /** Geometry adapter only. DSH Reading/Navigation retain policy ownership. */
 export class NativeChatViewport extends ChatViewport {
@@ -17,6 +18,7 @@ export class NativeChatViewport extends ChatViewport {
     private retainedDocumentTop: number | null = null
     private pageCommitPending = false
     private layoutPosition: { key: string; top: number } | null = null
+    private openingTouch: { id: number; x: number; y: number } | null = null
     private disposed = false
     constructor(private projection: NativeChatProjection) { super() }
     override attach(list: HTMLElement, column: HTMLElement) {
@@ -24,6 +26,9 @@ export class NativeChatViewport extends ChatViewport {
         this.disposed = false
         list.addEventListener(CODE_READING_SOURCE_READY, this.layoutCommitted)
         list.addEventListener('scroll', this.releaseForReaderMotion, { capture: true, passive: true })
+        list.addEventListener('touchmove', this.openingTouchMove, { capture: true, passive: true })
+        list.addEventListener('touchend', this.endOpeningTouch, { capture: true, passive: true })
+        list.addEventListener('touchcancel', this.cancelOpeningTouch, { capture: true, passive: true })
         // Cancel even while a destination is still waiting for its virtual DOM.
         for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) list.addEventListener(type, this.interrupt, { capture: true, passive: true })
     }
@@ -33,15 +38,64 @@ export class NativeChatViewport extends ChatViewport {
         const list = this.elements?.list
         list?.removeEventListener(CODE_READING_SOURCE_READY, this.layoutCommitted)
         list?.removeEventListener('scroll', this.releaseForReaderMotion, true)
+        list?.removeEventListener('touchmove', this.openingTouchMove, true)
+        list?.removeEventListener('touchend', this.endOpeningTouch, true)
+        list?.removeEventListener('touchcancel', this.cancelOpeningTouch, true)
+        this.openingTouch = null
         for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) list?.removeEventListener(type, this.interrupt, true)
         super.detach()
     }
     private interrupt = (event: Event) => {
         if (event instanceof KeyboardEvent && !['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) return
-        if (event.target instanceof Element && event.target.closest('input,textarea,[contenteditable]')) return
+        if (event.target instanceof Element && event.target.closest('input,textarea,[contenteditable]')) {
+            if (event.type !== 'keydown') this.events?.openingInput?.(null)
+            return
+        }
+        const element = this.elements?.scroller
+        if (element) {
+            if (event instanceof KeyboardEvent || event.type === 'pointerdown') this.events?.openingInput?.(null)
+            if (event instanceof WheelEvent && this.events?.openingInputActive?.()
+                && (this.metrics()?.floor === 0 || this.events?.hasOpeningInput?.())) {
+                const delta = openingWheelPixels(event, element)
+                if (delta !== null) {
+                    if (this.metrics()?.floor === 0) this.events?.openingInput?.(delta)
+                } else if (event.deltaX || event.deltaY || event.ctrlKey) this.events?.openingInput?.(null)
+            }
+            if (event.type === 'touchstart' && this.events?.openingInputActive?.()) {
+                const touches = (event as TouchEvent).touches
+                const touch = touches.length === 1 && isOpeningReaderTarget(event.target, element) ? touches[0] : null
+                this.openingTouch = touch ? { id: touch.identifier, x: touch.clientX, y: touch.clientY } : null
+                if (!touch) this.events?.openingInput?.(null)
+            } else if (event.type === 'touchstart') this.openingTouch = null
+        }
         this.readScroll()
         this.stopPreserving()
         this.events?.interact()
+    }
+    private endOpeningTouch = () => { this.openingTouch = null }
+    private cancelOpeningTouch = () => { this.openingTouch = null; this.events?.openingInput?.(null) }
+    private openingTouchMove = (event: TouchEvent) => {
+        if (!this.events?.openingInputActive?.()) { this.openingTouch = null; return }
+        const previous = this.openingTouch, element = this.elements?.scroller
+        const touch = event.touches.length === 1 ? event.touches[0] : null
+        if (!previous || !element || !touch || touch.identifier !== previous.id) {
+            this.openingTouch = null
+            this.events?.openingInput?.(null)
+            return
+        }
+        this.openingTouch = { id: touch.identifier, x: touch.clientX, y: touch.clientY }
+        const delta = previous.y - touch.clientY
+        if (Math.abs(previous.x - touch.clientX) >= Math.abs(delta) && previous.x !== touch.clientX) {
+            this.cancelOpeningTouch()
+            return
+        }
+        if (!isOpeningReaderTarget(event.target, element)) { this.cancelOpeningTouch(); return }
+        if (this.metrics()?.floor === 0 && delta !== 0) this.events?.openingInput?.(delta)
+    }
+    override isOpeningLayoutReady() { return this.navigation?.isLayoutReady(true) ?? false }
+    override scrollOpeningOffset(top: number) {
+        if (this.elements) this.elements.scroller.style.overflowAnchor = 'auto'
+        return super.scrollOpeningOffset(top)
     }
     layoutCommitted = () => { this.invalidate(); this.events?.resize() }
     captureVirtualLayout() {

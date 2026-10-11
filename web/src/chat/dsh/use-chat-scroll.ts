@@ -11,6 +11,7 @@ import { useChatViewport, type ChatViewport, type ViewportScroll } from './use-c
 export interface ChatScrollInput extends ChatNavigationInput {
   readonly chatScroll: ChatViewSlotProps['chatScroll']
   readonly ready: boolean
+  readonly openingInputEnabled?: boolean
   readonly order: readonly string[]
   readonly lastKey: string | null
   readonly lastIsUser: boolean
@@ -45,7 +46,7 @@ interface ChatScrollState extends ChatReadingState {
  */
 export function useChatScroll(input: ChatScrollInput, adapter?: ChatViewport): ChatScrollState {
   const {
-    ready, order, firstSeq, lastKey, lastIsUser, steeringId, submissionId, running,
+    ready, openingInputEnabled = true, order, firstSeq, lastKey, lastIsUser, steeringId, submissionId, running,
     loadedTurns, chatScroll, hasMore, loadingOlder, loadOlder, loadThrough, historyEpoch, onViewportScroll,
   } = input
   const { viewport, listRef, columnRef } = useChatViewport(adapter)
@@ -79,6 +80,7 @@ export function useChatScroll(input: ChatScrollInput, adapter?: ChatViewport): C
       return
     }
     if (ownInput) {
+      reading.cancelOpeningScroll()
       navigation.cancel()
       reading.followTail()
       return
@@ -116,6 +118,12 @@ export function useChatScroll(input: ChatScrollInput, adapter?: ChatViewport): C
         navigation.readerSettled()
       },
       interact: () => { content.current.opened = true; navigation.cancel() },
+      hasOpeningInput: () => reading.openingPending,
+      openingInputActive: () => reading.openingInputActive,
+      openingInput: delta => {
+        if (delta === null) reading.cancelOpeningScroll()
+        else if (!content.current.input.ready) reading.captureOpeningScroll(delta)
+      },
       resize: () => {
         if (!content.current.opened) { processContent(); return }
         if (!navigation.contentCommitted()) reading.onResize()
@@ -137,19 +145,21 @@ export function useChatScroll(input: ChatScrollInput, adapter?: ChatViewport): C
   useLayoutEffect(() => {
     const previous = content.current.input
     content.current.input = {
-      ready, order, lastKey, lastIsUser, steeringId, submissionId, running, loadedTurns, chatScroll, historyEpoch, onViewportScroll, ...navigationInput,
+      ready, openingInputEnabled, order, lastKey, lastIsUser, steeringId, submissionId, running, loadedTurns, chatScroll, historyEpoch, onViewportScroll, ...navigationInput,
     }
+    reading.setOpeningReady(ready, openingInputEnabled)
     viewport.updateTurns(loadedTurns)
     const layoutChanged = previous.order !== order || previous.ready !== ready
     if (layoutChanged) viewport.invalidate()
     processContent()
     if (layoutChanged) reading.refreshActiveTurn()
   }, [
-    viewport, reading, processContent, navigationInput, ready, order, lastKey, lastIsUser,
+    viewport, reading, processContent, navigationInput, ready, openingInputEnabled, order, lastKey, lastIsUser,
     steeringId, submissionId, running, loadedTurns, chatScroll, historyEpoch, onViewportScroll,
   ])
 
   const returnToBottom = useCallback(() => {
+    reading.cancelOpeningScroll()
     navigation.cancel()
     reading.followTail()
   }, [navigation, reading])

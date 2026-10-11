@@ -766,6 +766,7 @@ function extractMessageContent(message: AppendMessage): { text: string; attachme
 }
 
 const EMPTY_NATIVE_BLOCKS: BlockWithThreadMessageId[] = []
+const EMPTY_LEGACY_BLOCKS: readonly VisibleChatBlock[] = []
 
 export function useHappyRuntime(props: {
     session: Session
@@ -903,21 +904,26 @@ export function useHappyRuntime(props: {
     const threadIdWrapperCacheRef = useRef(
         new WeakMap<VisibleChatBlock, BlockWithThreadMessageId>()
     )
+    // Native items are converted individually below. Preparing legacy joined
+    // response metadata would traverse the entire loaded window for values
+    // that the native converter never reads. Keep the handoff state above
+    // unchanged so switching presentation modes preserves its semantics.
+    const legacyBlocks = props.nativeNodes ? EMPTY_LEGACY_BLOCKS : props.blocks
     const blocksWithThreadIds = useMemo(
         () => assignThreadMessageIdsWithStableWrappers(
-            props.blocks,
+            legacyBlocks,
             threadIdWrapperCacheRef.current
         ),
-        [props.blocks]
+        [legacyBlocks]
     )
 
     const aggregates = useMemo(
-        () => aggregateResponseGroups(props.blocks),
-        [props.blocks]
+        () => aggregateResponseGroups(legacyBlocks),
+        [legacyBlocks]
     )
     const responseGroupTimestamps = useMemo(
-        () => getResponseGroupTimestamps(props.blocks),
-        [props.blocks]
+        () => getResponseGroupTimestamps(legacyBlocks),
+        [legacyBlocks]
     )
 
     const convertBlock = useCallback(
