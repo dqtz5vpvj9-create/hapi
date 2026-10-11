@@ -12,6 +12,11 @@ let changeVersion = 0
 type LastSeenStore = Record<string, number>
 type ManualUnreadStore = Record<string, number>
 
+export type SessionReadStateSnapshot = {
+    lastSeenById: Readonly<LastSeenStore>
+    manualUnreadById: Readonly<ManualUnreadStore>
+}
+
 function getLocalStorage(): Storage | null {
     if (typeof window === 'undefined') {
         return null
@@ -106,7 +111,11 @@ function subscribeToStoreChanges(listener: () => void): () => void {
     }
 
     const handleStorage = (event: StorageEvent) => {
-        if (event.key !== scopedKey(STORAGE_KEY) && event.key !== scopedKey(MANUAL_UNREAD_KEY)) {
+        // clear() has no key; only a localStorage clear affects these maps.
+        const clearedLocalStorage = event.key === null
+            && event.storageArea !== null
+            && event.storageArea === getLocalStorage()
+        if (!clearedLocalStorage && event.key !== scopedKey(STORAGE_KEY) && event.key !== scopedKey(MANUAL_UNREAD_KEY)) {
             return
         }
         changeVersion += 1
@@ -125,7 +134,7 @@ function getStoreChangeVersion(): number {
     return changeVersion
 }
 
-/** Re-render consumers when same-tab read-state changes. */
+/** Re-render consumers when same-tab or cross-tab read-state changes. */
 export function useSessionLastSeenVersion(): number {
     return useSyncExternalStore(
         subscribeToStoreChanges,
@@ -151,6 +160,11 @@ export function getSessionLastSeenSnapshot(): Readonly<Record<string, number>> {
     const store = readStore()
     for (const [id, manual] of Object.entries(readManualUnreadStore())) store[id] = Math.min(store[id] ?? 0, manual - 1)
     return store
+}
+
+/** Read each persisted map once for a parent render and its descendant rows. */
+export function getSessionReadStateSnapshot(): SessionReadStateSnapshot {
+    return { lastSeenById: readStore(), manualUnreadById: readManualUnreadStore() }
 }
 
 type SessionReadStateInput = {

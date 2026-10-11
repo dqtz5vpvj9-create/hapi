@@ -1,6 +1,7 @@
 import { Component, Fragment, memo, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type Ref, type ReactNode } from 'react'
 import { ThreadPrimitive, unstable_useThreadMessageIds, useAuiState, getExternalStoreMessages } from '@assistant-ui/react'
 import { defaultRangeExtractor, useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
+import { createProgrammaticScrollObserver } from './programmaticScrollOffset'
 
 export type MessageListNavigation = {
     /** Absence from the DOM is different from absence from loaded data. */
@@ -8,6 +9,8 @@ export type MessageListNavigation = {
     contains: (messageId: string) => boolean
     pinReading: (messageId: string | null) => void
     releaseDestination: () => void
+    /** Observe the viewport owner's actual landing without another scroll write. */
+    observeProgrammaticScroll: (scrollTop: number) => void
     /** Committed row boxes match the virtual geometry; optionally require the tail. */
     isLayoutReady: (atTail: boolean) => boolean
 }
@@ -62,6 +65,7 @@ export const WindowedMessageList = memo(function WindowedMessageList({ scrollEle
     renderRow: (id: string) => ReactNode
 }) {
     const listRef = useRef<HTMLDivElement | null>(null)
+    const [scrollOffsetObserver] = useState(() => createProgrammaticScrollObserver())
     const measuredLayout = useRef(false)
     const [readingId, setReadingId] = useState(savedAnchorId ?? null)
     const [destinationId, setDestinationId] = useState<string | null>(null)
@@ -78,6 +82,8 @@ export const WindowedMessageList = memo(function WindowedMessageList({ scrollEle
         enabled: measurements === undefined || scrollElement !== null,
         count: ids.length,
         getScrollElement: () => scrollElement,
+        observeElementOffset: scrollOffsetObserver.observeOffset,
+        observeElementRect: scrollOffsetObserver.observeRect,
         getItemKey,
         estimateSize: () => 96,
         overscan: 6,
@@ -125,6 +131,7 @@ export const WindowedMessageList = memo(function WindowedMessageList({ scrollEle
         contains: (id) => ids.includes(ownerOf(id)),
         pinReading: setReadingId,
         releaseDestination: () => setDestinationId(null),
+        observeProgrammaticScroll: scrollOffsetObserver.observeLanding,
         isLayoutReady: atTail => measuredLayout.current && (!atTail || ids.length === 0
             || listRef.current?.querySelector(`[data-index="${ids.length - 1}"]`) != null),
         reveal: (id) => {
@@ -133,7 +140,7 @@ export const WindowedMessageList = memo(function WindowedMessageList({ scrollEle
             setDestinationId(id)
             return ids.includes(ownerOf(id))
         },
-    }), [ids, ownerOf])
+    }), [ids, ownerOf, scrollOffsetObserver])
 
     const rows = virtualizer.getVirtualItems()
     useLayoutEffect(() => {

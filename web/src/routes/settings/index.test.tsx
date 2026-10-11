@@ -11,7 +11,7 @@ import SettingsVoicePage from './voice'
 import SettingsVoiceVoicesPage from './voice-voices'
 import SettingsVoiceAdvancedPage from './voice-advanced'
 
-const { context, navigate, setAppearance, setColorTheme, setFontScale, setTerminalFontSize, setComposerEnterBehavior, setCodexExplorationCollapsed, setVoice, setAppBadgeEnabled } = vi.hoisted(() => ({
+const { context, navigate, setAppearance, setColorTheme, setFontScale, setTerminalFontSize, setComposerEnterBehavior, setCodexExplorationCollapsed, setVoice, setAppBadgeEnabled, setSessionPreviewLimit } = vi.hoisted(() => ({
     context: { token: '' },
     navigate: vi.fn(),
     setAppearance: vi.fn(),
@@ -22,6 +22,7 @@ const { context, navigate, setAppearance, setColorTheme, setFontScale, setTermin
     setCodexExplorationCollapsed: vi.fn(),
     setVoice: vi.fn(),
     setAppBadgeEnabled: vi.fn(),
+    setSessionPreviewLimit: vi.fn(),
 }))
 
 const getHubSettings = vi.fn().mockResolvedValue({ sessionSummaryContract: false, sessionSummaryInChat: false })
@@ -112,7 +113,7 @@ vi.mock('@/hooks/useSessionPreviewLimit', () => ({
     MIN_SESSION_PREVIEW_LIMIT: 1,
     MAX_SESSION_PREVIEW_LIMIT: 99,
     normalizeSessionPreviewLimit: (value: number) => Math.max(1, Math.min(99, Math.round(value))),
-    useSessionPreviewLimit: () => ({ sessionPreviewLimit: 8, setSessionPreviewLimit: vi.fn() }),
+    useSessionPreviewLimit: () => ({ sessionPreviewLimit: 8, setSessionPreviewLimit }),
 }))
 
 vi.mock('@/hooks/useThemeColors', () => ({
@@ -301,6 +302,31 @@ describe('responsive settings pages', () => {
         expect(screen.getByRole('checkbox', { name: 'Created time' })).not.toBeChecked()
         expect(screen.getByRole('checkbox', { name: 'Updated time' })).not.toBeChecked()
         expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    })
+
+    it('cancels a numeric setting draft without saving it on blur', () => {
+        renderPage(<SettingsDisplayPage />)
+        const input = screen.getByRole('spinbutton', { name: 'Sessions Before Folding' })
+        input.focus()
+        fireEvent.change(input, { target: { value: '17' } })
+        fireEvent.keyDown(input, { key: 'Escape' })
+        expect(input).toHaveValue(8)
+        expect(setSessionPreviewLimit).not.toHaveBeenCalled()
+        input.focus()
+        fireEvent.change(input, { target: { value: '19' } })
+        fireEvent.blur(input)
+        expect(setSessionPreviewLimit).toHaveBeenCalledWith(19)
+    })
+
+    it('saves a numeric setting exactly once on Enter', () => {
+        renderPage(<SettingsDisplayPage />)
+        const input = screen.getByRole('spinbutton', { name: 'Sessions Before Folding' })
+        input.focus()
+        fireEvent.change(input, { target: { value: '150' } })
+        fireEvent.keyDown(input, { key: 'Enter' })
+        expect(setSessionPreviewLimit).toHaveBeenCalledTimes(1)
+        expect(setSessionPreviewLimit).toHaveBeenCalledWith(99)
+        expect(input).toHaveValue(99)
     })
 
     it('keeps the session status description visible with its choice group', () => {

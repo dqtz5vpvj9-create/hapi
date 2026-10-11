@@ -37,6 +37,7 @@ import { getAppGlobalSseSubscription, getAppSessionSseSubscription } from '@/lib
 import { canUseAppBadging, useAppBadge } from '@/hooks/useAppBadge'
 import { useAppBadgePreference } from '@/hooks/useAppBadgePreference'
 import { reconcileQueuedStateAfterConnect } from '@/lib/queued-state-reconciliation'
+import { cancelQueuedStateRequestsForApi } from '@/lib/queued-state-request-lifetime'
 import { LoginPrompt } from '@/components/LoginPrompt'
 import { InstallPrompt } from '@/components/InstallPrompt'
 import { OfflineBanner } from '@/components/OfflineBanner'
@@ -81,7 +82,7 @@ function AppInner() {
     const { token, api, isLoading: isAuthLoading, error: authError, needsBinding, bind } = useAuth(authSource, baseUrl)
     useEffect(() => {
         return () => {
-            if (api) { invalidateHistoryPages(api); clearSessionPresentations(api) }
+            if (api) { cancelQueuedStateRequestsForApi(api); invalidateHistoryPages(api); clearSessionPresentations(api) }
         }
     }, [api])
     const [titleSuggestionAvailable, setTitleSuggestionAvailable] = useState(false)
@@ -328,6 +329,7 @@ function AppInner() {
             // received updates during the SSE gap would otherwise serve stale
             // cached data on remount.  See tiann/hapi#884.
             queryClient.invalidateQueries({ queryKey: ['session'] }),
+            queryClient.invalidateQueries({ queryKey: ['scratchlist'] }),
             refreshAllAgyCatalogs(queryClient)
         ]
         const refreshMessages = api ? Promise.all(activeSessionIds.map(id => syncTailMessages(api, id))) : Promise.resolve()

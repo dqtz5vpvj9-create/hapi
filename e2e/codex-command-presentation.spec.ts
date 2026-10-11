@@ -19,3 +19,16 @@ for (const width of [390, 1280]) {
         await expect(page.getByText('DETAIL_OUTPUT_ONLY')).toHaveCount(0)
     })
 }
+
+for (const width of [390, 1280]) {
+    test(`PowerShell entry point is hidden only in the summary at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 844 })
+        await page.goto('/e2e-fixtures/codex-command-fixture.html?powershell')
+        await expect(page.getByRole('button', { name: /Ran rg needle src/ })).toBeVisible()
+        await expect(page.getByText(/Program Files/)).toHaveCount(0)
+        await page.getByRole('button', { name: /Ran rg needle src/ }).click()
+        await expect(page.getByRole('dialog')).toContainText('pwsh.exe')
+        await expect(page.getByRole('dialog')).toContainText('-Command')
+        await expect(page.getByRole('dialog')).toContainText('DETAIL_OUTPUT_ONLY')
+    })
+}

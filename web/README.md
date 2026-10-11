@@ -455,3 +455,12 @@ output, detail opening/closing and no horizontal overflow at 390px and 1280px.
 View mode is a device-local preference, selectable in the session header and Display settings. Ordinary `/sessions/:id` links open/focus that conversation within the existing workspace when tmux is selected. Route changes, Back/Forward, settings and task creation do not change the preference. `/sessions/workspace` is a legacy landing URL and does not override an explicit ordinary-mode choice. Temporary session screens retain the workspace, disable its shortcuts and mark its panes inactive until return. Switching back to ordinary mode is explicit and preserves the saved layout.
 
 Regression coverage: `workspace-mode.spec.ts` exercises the real router with a simulated Hub at desktop and phone widths; `presentation.test.ts` covers URL classification. No model calls are required.
+
+### Optional tester-army/e2e regressions
+
+`tests/tester-army/` supplies a separate deterministic browser suite for tmux,
+fork/steering recovery, scratchlist persistence and command presentation.
+See its [setup and verification limits](../tests/tester-army/README.md).
+After installing its pinned dependencies, run `bun run test:e2e:tester-army`
+with `E2E_TELEMETRY_DISABLED=1`. It needs no model or agent credentials and
+does not replace the existing Playwright CI tests.

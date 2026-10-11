@@ -41,6 +41,13 @@ const MESSAGE_SELECTOR = '.happy-thread-messages > [id], .happy-thread-messages 
 // Bookmarks outlive their mounted pane. A same-node shortcut must not keep the
 // old chat DOM alive; the semantic quote remains available after collection.
 const capturedTextNodes = new WeakMap<NonNullable<ReadingAnchor['text']>, { node: WeakRef<Text>; offset: number; quoteStart: number }>()
+/** Refresh an equal bookmark's capture without retaining a detached DOM tree. */
+export function refreshReadingAnchorCapture(retained: ReadingAnchor, captured: ReadingAnchor): void {
+    if (!retained.text || !captured.text) return
+    const association = capturedTextNodes.get(captured.text)
+    if (association) capturedTextNodes.set(retained.text, association)
+}
+
 const MAX_LOOKUP_NODES = 512
 const MAX_LOOKUP_CHARACTERS = 64 * 1024
 

@@ -44,9 +44,13 @@ describe('document file revisions', () => {
     it('serializes HAPI writes across handler registrations and permits only one identical-base writer', async () => {
         await writeFile(join(root, 'notes.txt'), 'base')
         const { hash } = await readDocumentFile('notes.txt', root)
-        const responses = await Promise.all(['first', 'second'].map(content => writeDocumentFile({ path: 'notes.txt', expectedHash: hash, content: Buffer.from(content).toString('base64') }, root)))
-        expect(responses.map(response => response.success)).toEqual([true, false])
-        expect(await readFile(join(root, 'notes.txt'), 'utf8')).toBe('first')
+        const contents = ['first', 'second']
+        const responses = await Promise.all(contents.map(content => writeDocumentFile({ path: 'notes.txt', expectedHash: hash, content: Buffer.from(content).toString('base64') }, root)))
+        // Path resolution is asynchronous; either request can reach the lock first.
+        expect(responses.filter(response => response.success)).toHaveLength(1)
+        expect(responses.find(response => !response.success)).toMatchObject({ success: false, code: 'conflict' })
+        const winner = responses.findIndex(response => response.success)
+        expect(await readFile(join(root, 'notes.txt'), 'utf8')).toBe(contents[winner])
     })
     it('does not follow an in-root symlink outside the authorized session', async () => {
         await symlink(join(root, '..'), join(root, 'escape'), process.platform === 'win32' ? 'junction' : 'dir')

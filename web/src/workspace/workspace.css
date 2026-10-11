@@ -175,8 +175,9 @@
 .workspace-picker-count { flex-shrink: 0; color: var(--app-hint); font-size: 12px; }
 .workspace-picker button:hover, .workspace-picker button[aria-current="page"] { background: var(--app-subtle-bg); }
 @media (max-width: 640px) {
-    .workspace-bottom { min-height: 36px; }
-    .workspace-bottom button { min-height: 35px; }
+    .workspace-bottom { min-height: 44px; }
+    .workspace-bottom button { min-height: 44px; min-width: 32px; }
+    .workspace-bottom .workspace-chat-actions .app-header-actions button { width: 32px !important; min-width: 32px !important; height: 44px !important; min-height: 44px !important; }
     .workspace-bottom { padding-inline: 4px; gap: 1px; }
     .workspace-bottom button { padding-inline: 6px; }
     .workspace-tab .workspace-tab-close { display: none; }
@@ -184,8 +185,8 @@
     .workspace-mobile-panes button { display: flex; gap: 3px; align-items: center; font: 11px ui-monospace, monospace; }
     .workspace-pane [data-workspace-composer]:not([data-expanded]) .workspace-composer-inputline :is(textarea, [data-testid="rich-composer-input"], [data-testid="rich-composer-placeholder"]) { font-size: 14px !important; line-height: 22px !important; padding: 11px 0 !important; }
     .workspace-pane [data-workspace-composer]:not([data-expanded]) .workspace-composer-inputline :is(textarea, [data-testid="rich-composer-input"]) { min-height: 44px !important; }
-    .workspace-pane [data-workspace-composer] .app-composer-toolbar { min-height: 28px !important; padding-inline: 6px !important; }
-    .workspace-pane [data-workspace-composer] :where(.workspace-composer-inputline, .app-composer-toolbar) button:not([role="menuitem"]) { min-height: 27px !important; height: 27px !important; }
+    .workspace-pane [data-workspace-composer] .app-composer-toolbar { min-height: 40px !important; padding-inline: 6px !important; }
+    .workspace-pane [data-workspace-composer] :where(.workspace-composer-inputline, .app-composer-toolbar) button:not([role="menuitem"]) { min-height: 40px !important; height: 40px !important; min-width: 32px !important; }
     .workspace-pane [data-workspace-composer]:not([data-expanded]) .workspace-composer-inputline { padding: 0 6px !important; }
     .workspace-pane [data-workspace-composer] :is(button.workspace-input-attachment, .workspace-primary-actions button) { width: 40px !important; height: 44px !important; min-height: 44px !important; }
     .workspace-pane [data-workspace-composer] .workspace-composer-inputline button svg { width: 20px; height: 20px; }

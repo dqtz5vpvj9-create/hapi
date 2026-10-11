@@ -1,4 +1,5 @@
-import type { ReadingAnchor } from '@/lib/reading-anchor'
+import { cancelQueuedStateRequest } from './queued-state-request-lifetime'
+import { refreshReadingAnchorCapture, type ReadingAnchor } from '@/lib/reading-anchor'
 import { getHistoryPageRepository, HistoryReadInvalidated, type HistoryPageRequest } from '@/lib/history-page-repository'
 import { getReasoningStreamId } from '@hapi/protocol/messages'
 import { ApiError, type ApiClient } from '@/api/client'
@@ -62,6 +63,7 @@ type MessagePosition = {
 }
 
 type InternalState = MessageWindowState & {
+    queuedMessageAuthority: WeakMap<DecryptedMessage, object>
     readingBookmark: SavedReadingAnchor | null
     readerAfter: MessagePosition | null
     tailSyncError: Error | null
@@ -103,6 +105,17 @@ const states = new Map<string, InternalState>()
 const listeners = new Map<string, Set<() => void>>()
 const tailSyncControllers = new Map<string, TailSyncController>()
 const appliedRewindLocalIds = new Map<string, Set<string>>()
+// No-op live events still advance authority without cloning visible rows.
+// Session-owned weak markers avoid retaining old IDs or leaking authority
+// across sessions that happen to share the same message object.
+export function getQueuedMessageAuthority(sessionId: string, message: DecryptedMessage): object {
+    const authority = getState(sessionId).queuedMessageAuthority
+    return authority.get(message) ?? authority
+}
+
+function advanceQueuedMessageAuthority(sessionId: string, message: DecryptedMessage): void {
+    getState(sessionId).queuedMessageAuthority.set(message, {})
+}
 
 const NOTIFY_THROTTLE_MS = 150
 const PERSIST_THROTTLE_MS = 200
@@ -346,6 +359,7 @@ function schedulePersist(sessionId: string): void {
 
 function createState(sessionId: string): InternalState {
     return {
+        queuedMessageAuthority: new WeakMap(),
         sessionId,
         messages: [],
         hasMore: false,
@@ -1305,6 +1319,21 @@ export function getMessageReadingAnchor(sessionId: string): ReadingAnchor | null
     return getState(sessionId).readingBookmark
 }
 
+function equalReadingBookmarks(left: SavedReadingAnchor | null, right: SavedReadingAnchor | null): boolean {
+    if (left === right) return true
+    if (!left || !right) return false
+    if (left.id !== right.id || left.topOffset !== right.topOffset || left.disclosure !== right.disclosure
+        || left.sourceMessageId !== right.sourceMessageId
+        || left.position?.at !== right.position?.at || left.position?.seq !== right.position?.seq) return false
+    const a = left.text, b = right.text
+    if (a !== b && (!a || !b || a.offset !== b.offset || a.quote !== b.quote
+        || a.quoteStart !== b.quoteStart || a.topOffset !== b.topOffset
+        || a.path.length !== b.path.length || a.path.some((part, index) => part !== b.path[index]))) return false
+    const c = left.code, d = right.code
+    return c === d || !!c && !!d && c.source === d.source && c.innerTopOffset === d.innerTopOffset
+        && c.position === d.position && c.quote === d.quote && c.quoteStart === d.quoteStart && c.topOffset === d.topOffset
+}
+
 /** Scrolling changes the bookmark, not the message projection. */
 export function saveMessageReadingAnchor(sessionId: string, anchor: ReadingAnchor | null, immediate = false): void {
     const state = getState(sessionId)
@@ -1315,6 +1344,10 @@ export function saveMessageReadingAnchor(sessionId: string, anchor: ReadingAncho
         readingBookmark = { ...anchor,
             sourceMessageId: source?.id ?? previous?.sourceMessageId,
             position: source?.seq != null ? { at: source.invokedAt ?? source.createdAt, seq: source.seq } : previous?.position }
+    }
+    if (equalReadingBookmarks(state.readingBookmark, readingBookmark)) {
+        if (state.readingBookmark && readingBookmark) refreshReadingAnchorCapture(state.readingBookmark, readingBookmark)
+        return
     }
     const next = { ...state, readingBookmark }
     states.set(sessionId, next)
@@ -1671,6 +1704,7 @@ export function subscribeMessageWindow(sessionId: string, listener: () => void):
 export function releaseMessageWindow(sessionId: string): void {
     const previous = states.get(sessionId)
     if (!previous || listeners.get(sessionId)?.size) return
+    cancelQueuedStateRequest(sessionId)
     const controller = tailSyncControllers.get(sessionId)
     controller?.abort?.abort()
     if (controller?.retryTimer) clearTimeout(controller.retryTimer)
@@ -1692,6 +1726,7 @@ export function releaseMessageWindow(sessionId: string): void {
 }
 
 export function clearMessageWindow(sessionId: string): void {
+    cancelQueuedStateRequest(sessionId)
     const api = tailSyncControllers.get(sessionId)?.api
     if (api) getHistoryPageRepository(api).invalidateSession(sessionId)
     const controller = tailSyncControllers.get(sessionId)
@@ -1709,6 +1744,7 @@ export function clearMessageWindow(sessionId: string): void {
 }
 
 function markMessageWindowForLatestReset(sessionId: string, messages: DecryptedMessage[]): void {
+    cancelQueuedStateRequest(sessionId)
     const previous = states.get(sessionId)
     if (!previous) return
 
@@ -1779,6 +1815,7 @@ export function rewindMessageWindow(sessionId: string, messageLocalId: string): 
 
 export function seedMessageWindowFromSession(fromSessionId: string, toSessionId: string): void {
     if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) return
+    cancelQueuedStateRequest(toSessionId)
     const source = getState(fromSessionId)
     const target = getState(toSessionId)
     const seeded = buildState(createState(toSessionId), {
@@ -1836,6 +1873,7 @@ export function reconcileQueuedLocalIds(
 }
 
 export function appendOptimisticMessage(sessionId: string, message: DecryptedMessage): void {
+    advanceQueuedMessageAuthority(sessionId, message)
     updateState(sessionId, (previous) => {
         return mergeIntoWindow(previous, [message], {
             mode: previous.viewMode === 'history' ? 'prepend' : 'append',
@@ -1849,7 +1887,9 @@ export function updateMessageStatus(sessionId: string, localId: string, status: 
     updateState(sessionId, (previous) => {
         let changed = false
         const messages = previous.messages.map((message) => {
-            if (message.localId !== localId || message.status === status) return message
+            if (message.localId !== localId) return message
+            advanceQueuedMessageAuthority(sessionId, message)
+            if (message.status === status) return message
             changed = true
             return { ...message, status }
         })
@@ -1883,8 +1923,9 @@ function markMessagesDeliveryState(sessionId: string, localIds: string[], delive
     updateState(sessionId, (previous) => {
         let changed = false
         const messages = previous.messages.map((message) => {
-            if (!message.localId || !idSet.has(message.localId)
-                || message.invokedAt != null
+            if (!message.localId || !idSet.has(message.localId)) return message
+            advanceQueuedMessageAuthority(sessionId, message)
+            if (message.invokedAt != null
                 || (message.deliveryState === deliveryState && message.status !== 'failed')) {
                 return message
             }
@@ -1905,12 +1946,10 @@ export function markMessagesRequeued(sessionId: string, localIds: string[]): voi
     updateState(sessionId, (previous) => {
         let changed = false
         const messages = previous.messages.map((message) => {
-            if (
-                !message.localId
-                || !idSet.has(message.localId)
-                || (message.deliveryState === undefined && message.queueDismissed !== true
-                    && !(optimisticMessage(message) && message.status === 'failed'))
-            ) {
+            if (!message.localId || !idSet.has(message.localId)) return message
+            advanceQueuedMessageAuthority(sessionId, message)
+            if (message.deliveryState === undefined && message.queueDismissed !== true
+                && !(optimisticMessage(message) && message.status === 'failed')) {
                 return message
             }
             changed = true
@@ -1940,6 +1979,7 @@ export function markMessagesConsumed(
                 || (message.status === 'failed' && !optimisticMessage(message))) {
                 return message
             }
+            advanceQueuedMessageAuthority(sessionId, message)
             const needsStatus = message.status !== 'sent'
             const needsInvokedAt = message.invokedAt === null
             const needsSteered = steered === true && message.steered !== true

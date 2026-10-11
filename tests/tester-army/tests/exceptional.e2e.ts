@@ -1,0 +1,45 @@
+import { test } from '@e2e-dev/web';
+import { expect } from 'e2e';
+
+test.beforeEach(async ({ browser: page, screen }) => {
+    await page.goto('/e2e-fixtures/exceptional-workflows-fixture.html')
+    await expect(screen.getByRole('button', { name: 'Fork conversation' })).toBeVisible()
+})
+    test(`scratchlist cleanup never resends after reopen (responsive)`, async ({ browser: page, screen }) => {
+        await screen.getByRole('button', { name: 'Send to queue', exact: true }).click()
+        await expect(screen.getByRole('alert')).toContainText('Already sent')
+        await screen.getByRole('button', { name: 'Toggle scratchlist' }).click()
+        await screen.getByRole('button', { name: 'Toggle scratchlist' }).click()
+        await expect(screen.getByRole('button', { name: 'Retry cleanup' })).toBeVisible()
+        await page.evaluate(() => { (window as any).exceptional.cleanupFails = false })
+        await screen.getByRole('button', { name: 'Retry cleanup' }).click()
+        await expect(screen.getByTestId('scratchlist-drawer')).toHaveCount(0)
+        expect(await page.evaluate(() => (window as any).exceptional.sends)).toBe(1)
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    })
+test('fork cancels safely and reopens the confirmed child after navigation failure', async ({ browser: page, screen }) => {
+    await screen.getByRole('button', { name: 'Fork conversation' }).click()
+    await screen.getByRole('button', { name: 'Cancel', exact: true }).click()
+    expect(await page.evaluate(() => (window as any).exceptional.forks)).toBe(0)
+    await screen.getByRole('button', { name: 'Fork conversation' }).click()
+    await screen.getByRole('button', { name: 'Create fork', exact: true }).click()
+    await expect(screen.getByRole('alert')).toContainText('Navigation failed')
+    await page.evaluate(() => { (window as any).exceptional.navigationFails = false })
+    await screen.getByRole('button', { name: 'Create fork', exact: true }).click()
+    await expect(screen.getByRole('dialog')).toHaveCount(0)
+    await expect(screen.getByTestId('destination')).toHaveText('forked-session')
+    expect(await page.evaluate(() => (window as any).exceptional.forks)).toBe(1)
+})
+test('steering recovers its visible status without any SSE event', async ({ browser: page, screen }) => {
+    await screen.getByRole('button', { name: 'Steer queued message' }).click()
+    await expect(screen.getByRole('list', { name: 'Queued messages' })).toHaveCount(0)
+    expect(await page.evaluate(() => (window as any).exceptional.steers)).toBe(1)
+    expect(await page.evaluate(() => (window as any).exceptional.reads)).toBeGreaterThan(0)
+})
+test('steering network failure preserves the queued message and does not resubmit', async ({ browser: page, screen }) => {
+    await page.evaluate(() => { (window as any).exceptional.steerFails = true })
+    await screen.getByRole('button', { name: 'Steer queued message' }).click()
+    await expect(screen.getByRole('alert')).toContainText('Steering not confirmed')
+    await expect(screen.getByText('Change the approach')).toBeVisible()
+    expect(await page.evaluate(() => (window as any).exceptional.steers)).toBe(1)
+})

@@ -1,6 +1,6 @@
 import type { MessageListNavigation } from '@/components/AssistantChat/VirtualMessageList'
 import { captureReadingAnchor, restoreReadingAnchor, CODE_READING_SOURCE_READY } from '@/lib/reading-anchor'
-import { ChatViewport, type ViewportLanding } from './dsh/use-chat-viewport'
+import { ChatViewport, type ViewportLanding, type ViewportMetrics } from './dsh/use-chat-viewport'
 import type { ChatScrollPosition } from './dsh/types'
 import type { ScrollFollow } from './dsh/use-scroll-follow'
 import type { NativeChatProjection } from './nativeProjection'
@@ -91,6 +91,12 @@ export class NativeChatViewport extends ChatViewport {
         }
         return scroll
     }
+    protected override write(target: number, metrics: ViewportMetrics, turn: number | null,
+        anchor?: { key: string | undefined; top: number }): ViewportLanding | null {
+        const landing = super.write(target, metrics, turn, anchor)
+        if (landing) this.navigation?.observeProgrammaticScroll(landing.metrics.top)
+        return landing
+    }
     override scrollToBottom(follow: ScrollFollow) {
         const elements = this.elements
         if (elements) {
@@ -103,7 +109,9 @@ export class NativeChatViewport extends ChatViewport {
             else elements.column.style.removeProperty('--native-reading-tail-room')
         }
         if (this.elements) this.elements.scroller.style.overflowAnchor = 'none'
-        return super.scrollToBottom(follow)
+        const landing = super.scrollToBottom(follow)
+        if (landing) this.navigation?.observeProgrammaticScroll(landing.metrics.top)
+        return landing
     }
     override capturePosition(): ChatScrollPosition | null {
         return this.captureReading(true)
@@ -187,7 +195,14 @@ export class NativeChatViewport extends ChatViewport {
                 this.codeRestore = task
                 restoreReadingAnchor(viewport, reading, {
                     isCurrent: () => !this.disposed && this.codeRestore === task,
-                    onScroll: () => { const metrics = this.metrics(); if (metrics) this.acknowledge(metrics) },
+                    onScroll: () => {
+                        if (this.disposed || this.codeRestore !== task) return
+                        const metrics = this.metrics()
+                        if (metrics) {
+                            this.acknowledge(metrics)
+                            this.navigation?.observeProgrammaticScroll(metrics.top)
+                        }
+                    },
                     onRestored: success => {
                         if (this.codeRestore !== task || this.disposed) return
                         if (success) { task.finished = true; this.layoutCommitted() }
@@ -202,6 +217,7 @@ export class NativeChatViewport extends ChatViewport {
         const landing = { metrics, position, turn: null }
         this.observation = { top: metrics.top, landing }
         if (this.retained) this.retainedDocumentTop = row.getBoundingClientRect().top - viewport.getBoundingClientRect().top + metrics.top
+        this.navigation?.observeProgrammaticScroll(metrics.top)
         return landing
     }
     // HAPI starts pagination during a gesture, unlike DSH's explicit button.

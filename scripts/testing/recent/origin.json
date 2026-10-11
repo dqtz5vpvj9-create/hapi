@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "origin": "Recovered Recent QA source, frozen 2026-10-11",
+  "archiveSha256": "bc3aec8c09e56ab5b86040f826d58e6ac332683b41001b5837fb1dea9c9b5a1a",
+  "sourceSha256": {
+    "probe.mjs": "f9f2ba1e33db090663ab0cb8c40cf7ca94c88f7939c66e24af15b73cb5f6d416",
+    "probe.test.mjs": "8fca84055a03a5e26f233ade001a81bede20a9c6cfc00663e65f63702b13a724",
+    "driver.mjs": "3ae65b639a62bc331a1411db440c3f8ca73624a12988f453c71073550cdd646c",
+    "fixture-transform.mjs": "7e634a2559338f4d7452e4344519d7c61ab173e6827cc1351c98af787bce8c94",
+    "fixture-transform.test.mjs": "716f6b5c81cc1af7f86c1ba6807e153f9acb0aee9ec8f67bc3eac72dfb3753f6",
+    "live-anchor-driver-v2.mjs": "3dcb30eb33cd0ad4d68d695fb660e9cee4d87aec859798c689e4a04f1ac4b1c4"
+  },
+  "verification": "Original probe helper checks passed; selector-retargeted browser rerun pending at capture. Portable integration is not browser-certified. Prior old-listener saved-entry lean results and cloned-native prepend claims are invalid. Genuine prepend was separately observed using the v2 synthetic emit adapter; this contribution moves that identity correction into the fixture itself."
+}
