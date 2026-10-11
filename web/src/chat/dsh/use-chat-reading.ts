@@ -1,6 +1,7 @@
 // Adapted from DeepSeek Harness 5badb150 (MIT); see ./LICENSE and README.md.
 /** Follow-tail ownership, saved-position restoration, and sampled reader movement. */
 import { useLayoutEffect, useState } from 'react'
+import { OpeningScrollIntent } from './opening-scroll-intent'
 import type { ChatScrollPosition, ChatViewSlotProps } from './types'
 import type { ChatViewport, ViewportLanding, ViewportScroll } from './use-chat-viewport'
 import { useScrollFollow, type ScrollFollow } from './use-scroll-follow'
@@ -26,6 +27,9 @@ type PositionStore = ChatViewSlotProps['chatScroll']
 
 /** Owns reading policy and its cancellable sampling work, without DOM access. */
 export class ChatReading {
+  private readonly openingIntent = new OpeningScrollIntent()
+  private openingReady = false
+  private openingEnabled = true
   private sampleTimer: number | null = null
   private probeFrame: number | null = null
   private sampled: ((sample: ReadingSample) => void) | null = null
@@ -50,6 +54,21 @@ export class ChatReading {
    */
   get followingTail(): boolean { return this.state.followingTail }
 
+  get openingPending(): boolean { return this.openingIntent.pending }
+  get openingInputActive(): boolean { return this.openingPending || (!this.openingReady && this.openingEnabled && this.followingTail) }
+  setOpeningReady(ready: boolean, enabled = true): void {
+    this.openingReady = ready
+    this.openingEnabled = enabled
+    if (!enabled) this.cancelOpeningScroll()
+  }
+  cancelOpeningScroll(): void { this.openingIntent.clear() }
+  /** Capture only input that could not move an unready, zero-range tail view. */
+  captureOpeningScroll(delta: number): void {
+    if (this.openingReady || !this.openingEnabled || !this.followingTail) return
+    const scroll = this.viewport.readScroll()
+    if (scroll && scroll.metrics.floor <= 0) this.openingIntent.append(delta)
+  }
+
   /**
    * Adopt the committed Session's scroll memory.
    * @param store - scroll memory for the current Session.
@@ -68,28 +87,45 @@ export class ChatReading {
 
   /** Cancel timers and animation frames and detach the sample listener. */
   dispose(): void {
+    this.cancelOpeningScroll()
     this.cancelPending()
     this.sampled = null
   }
 
   /** Release bottom follow and pending sampling for an explicit navigation. */
   pauseFollowing(): void {
+    this.cancelOpeningScroll()
     this.cancelPending()
     this.publish({ ...this.state, followingTail: false })
   }
 
   /** Land at the current floor and clear saved reader position. */
   followTail(): void {
-    const landing = this.viewport.scrollToBottom(this.follow)
+    let landing = this.viewport.scrollToBottom(this.follow)
     if (landing === null) return
+    let following = true
+    if (this.openingReady && this.openingIntent.pending && this.viewport.isOpeningLayoutReady()) {
+      const top = this.openingIntent.consume(landing.metrics.floor)
+      if (top !== landing.metrics.floor) landing = this.viewport.scrollOpeningOffset(top) ?? landing
+      following = this.follow.nearBottom(landing.metrics)
+      // Retain the existing near-tail policy, but complete its floor landing
+      // now: first presentation cannot depend on another resize/scroll event.
+      if (following && landing.metrics.top !== landing.metrics.floor) {
+        landing = this.viewport.scrollToBottom(this.follow) ?? landing
+      }
+    }
     this.cancelPending()
-    this.commit(landing, true, this.viewport.latestTurn)
+    this.commit(landing, following, following ? this.viewport.latestTurn : this.state.activeTurn)
+    // A large offset can require a new virtual mount before a semantic anchor
+    // exists. Use the normal reading sampler rather than replaying the offset.
+    if (!following && landing.position === null) this.onScroll({ metrics: landing.metrics, movedByReader: true })
   }
 
   /** Restore the Session's semantic position, or follow the tail when none is saved. */
   restore(): void {
     const saved = this.store.read()
     if (saved === null) { this.followTail(); return }
+    this.cancelOpeningScroll()
     const landing = this.viewport.restore(saved)
     if (landing === null) return
     this.cancelPending()
@@ -111,6 +147,7 @@ export class ChatReading {
    * @param landing - measured navigation result that replaces pending reader input.
    */
   acceptNavigation(landing: ViewportLanding): void {
+    this.cancelOpeningScroll()
     this.cancelPending()
     const following = this.follow.nearBottom(landing.metrics)
     this.commit(landing, following, landing.turn ?? (following ? this.viewport.latestTurn : this.state.activeTurn))
@@ -130,6 +167,9 @@ export class ChatReading {
    * @param scroll - attributed scroll delivery; other reader movement remains pending until sampled.
    */
   readonly onScroll = (scroll: ViewportScroll): void => {
+    // A newer real movement owns usable geometry; never replay opening input
+    // over it or keep first presentation waiting for a cancelled tail owner.
+    if (scroll.movedByReader) this.cancelOpeningScroll()
     // HAPI code bookmarks restore asynchronously. Their intermediate writes
     // are not reader input and must not replace the still-pending bookmark.
     if (!this.initialized && !scroll.movedByReader) return

@@ -24,6 +24,9 @@ interface ViewportEvents {
   scrollEnd: () => void
   resize: () => void
   interact: () => void
+  openingInput?: (delta: number | null) => void
+  hasOpeningInput?: () => boolean
+  openingInputActive?: () => boolean
 }
 
 interface ViewportElements {
@@ -390,6 +393,17 @@ export class ChatViewport {
     const top = row.getBoundingClientRect().top - elements.scroller.getBoundingClientRect().top
     const target = metrics.top + top - position.anchorTop
     return this.write(target, metrics, null, { key: position.anchorKey, top })
+  }
+
+  /** The native virtual adapter waits for measured first-tail geometry. */
+  isOpeningLayoutReady(): boolean { return true }
+
+  /** Resolve opening reader input through the same clamped write owner. */
+  scrollOpeningOffset(top: number): ViewportLanding | null {
+    const metrics = this.metrics()
+    if (metrics === null) return null
+    const landing = this.write(top, metrics, null)
+    return landing ? { ...landing, position: this.capturePosition() } : null
   }
 
   /**

@@ -139,6 +139,7 @@ export function NativeCodexThread(props: HappyThreadProps) {
     const lastKey = projection.order.at(-1) ?? null
     const scroll = useChatScroll({
         ready: windowState.messages.length > 0 || windowState.lastSyncedAt !== undefined,
+        openingInputEnabled: !props.messagesWarning || props.isSyncingTail,
         order: projection.order, firstSeq: windowState.oldestSeq,
         // A bounded window can end at an old user message after paging. Only
         // HAPI's accepted-submission token denotes the reader's own new input.
@@ -399,7 +400,7 @@ export function NativeCodexThread(props: HappyThreadProps) {
         if ((!state.messages.length && state.lastSyncedAt === undefined)
             || runtimeExtras?.messagesVersion !== props.messagesVersion
             || state.messagesVersion !== props.messagesVersion || !scroll.reading.initialized
-            || scroll.busy || initialCoverage.current.pending) return false
+            || scroll.busy || initialCoverage.current.pending || scroll.reading.openingPending) return false
         if (!viewport.navigation?.isLayoutReady(scroll.reading.followingTail)) return false
         if (!scroll.reading.followingTail) return true
         const element = scroll.listRef.current!

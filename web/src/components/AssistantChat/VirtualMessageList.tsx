@@ -161,7 +161,15 @@ export const WindowedMessageList = memo(function WindowedMessageList({ scrollEle
         measuredLayout.current = measured && Math.abs(list.getBoundingClientRect().height - virtualizer.getTotalSize()) <= 0.5
     })
     const geometry = rows.map(row => `${row.key}:${row.start}:${row.size}`).join('|')
-    useLayoutEffect(() => { onLayout?.() }, [geometry, onLayout])
+    const notifiedLayout = useRef<{ geometry: string; ready: boolean; callback: typeof onLayout } | null>(null)
+    useLayoutEffect(() => {
+        const previous = notifiedLayout.current, ready = measuredLayout.current
+        notifiedLayout.current = { geometry, ready, callback: onLayout }
+        // Measurements can settle without changing the virtual signature. An
+        // opening owner waiting for readiness still needs that final callback.
+        if (!previous || previous.geometry !== geometry || previous.callback !== onLayout
+            || (ready && !previous.ready)) onLayout?.()
+    })
 
     return (<VirtualLayoutCommit before={onBeforeLayout} after={onAfterLayout}>
         <div ref={listRef} data-hapi-list-count={ids.length} data-hapi-viewport-size={virtualizer.scrollRect?.height ?? 0} data-hapi-scroll-attached={Boolean(virtualizer.scrollElement)} className="relative w-full" style={{ height: virtualizer.getTotalSize() }}
