@@ -31,12 +31,15 @@ vi.mock('../codexAppServerClient', () => ({
         isInitialized() { return this.initialized; }
         async disconnect() { this.initialized = false; }
         async request(method: string, params: Record<string, unknown> = {}) {
-            if (method === 'thread/read' || method === 'thread/resume') return { ...this.settings, thread: structuredClone(this.thread) };
+            if (method === 'thread/read' || method === 'thread/resume') return { ...this.settings, thread: structuredClone({
+                ...this.thread, turns: params.excludeTurns === true || params.includeTurns === false ? [] : this.thread.turns
+            }) };
             if (method === 'thread/turns/list') return { data: this.thread.turns.slice(-1), nextCursor: null };
             if (method === 'thread/items/list') return { data: this.items, nextCursor: null };
             if (method === 'thread/list') return { data: [] };
             if (method === 'thread/goal/get') return { goal: null };
             if (method === 'thread/queue/list') return { data: this.queue };
+            if (method === 'turn/interrupt') return {};
             if (method === 'thread/settings/update') {
                 const updated = { ...this.settings, ...params,
                     ...('serviceTier' in params ? { serviceTier: params.serviceTier ?? 'default' } : {}) };
@@ -79,14 +82,14 @@ async function fixture(opts?: { fresh?: boolean; hubArchived?: boolean; external
         sessionId: 'sid', getMetadata: () => metadata,
         hubArchived: opts?.hubArchived ?? false,
         updateMetadata: (fn: (value: Metadata) => Metadata) => { metadata = fn(metadata); },
-        updateAgentState: updateState, keepAlive() {},
+        updateAgentState: updateState, keepAlive: vi.fn(),
         onUserMessage(handler: typeof userMessage) { userMessage = handler; }, onCancelQueuedMessage() {}, onRetryQueuedMessage() {},
         onReconnect: (fn: (() => void) | null) => { reconnect = fn; },
         on(event: string, listener: () => void) {
             if (event === 'hub-archived') hubArchivedListeners.push(listener);
         },
         rpcHandlerManager: { registerHandler: (name: string, handler: (raw: unknown) => Promise<unknown>) => rpc.set(name, handler) },
-        emitNativeHistoryChanged: vi.fn(), sendSessionEvent: vi.fn(), sendAgentMessage: send, emitSessionReady() {},
+        emitNativeHistoryChanged: vi.fn(), sendSessionEvent: vi.fn(), sendAgentMessage: send, emitSessionReady: vi.fn(),
         sendUserMessage() {}, emitMessagesConsumed: vi.fn(), emitSteerIndeterminate: vi.fn(), syncNativeQueuedMessage() {}, syncNativeQueueSnapshot: vi.fn(), setSteerDeliveryState: vi.fn(async () => true),
         sendSessionDeath() {}, async flush() {}, close() {}
     } as unknown as ApiSessionClient;
@@ -133,6 +136,36 @@ async function fixture(opts?: { fresh?: boolean; hubArchived?: boolean; external
         end,
     };
 }
+
+it.each([true, false])('restores current-turn controls and queue before ready with an initial subscription (external=%s)', async external => {
+    const f = await fixture({ external, subscribe: true, beforeBind(root) {
+        Object.assign((root.client as any).thread, {
+            status: { type: 'active', activeFlags: ['waitingOnApproval'] },
+            turns: [{ id: 'active-turn', status: 'inProgress', items: [] }]
+        });
+        (root.client as any).queue = [{ id: 'native-queued', clientUserMessageId: 'queued', input: [{ type: 'text', text: 'keep queued' }] }];
+        (root.client as any).settings = { model: 'mock', effort: 'high', serviceTier: 'priority',
+            approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite' }, collaborationMode: { mode: 'plan' } };
+    } });
+    expect(f.bindCalls.find(([method]) => method === 'thread/resume')).toEqual([
+        'thread/resume', { threadId: 'thread', ...(external ? { excludeTurns: true } : {}) }
+    ]);
+    if (external) expect(f.bindCalls).toContainEqual(['thread/turns/list', {
+        threadId: 'thread', limit: 1, sortDirection: 'desc', itemsView: 'full'
+    }]);
+    expect(f.root.session.emitSessionReady).not.toHaveBeenCalled();
+    expect(f.root.session.syncNativeQueueSnapshot).toHaveBeenCalledWith([{ localId: 'queued', text: 'keep queued' }]);
+    await f.root.activate();
+    expect(f.root.session.emitSessionReady).toHaveBeenCalledTimes(1);
+    expect(f.state().steeringActive).toBe(true);
+    expect(f.root.session.keepAlive).toHaveBeenLastCalledWith(true, undefined, expect.objectContaining({
+        model: 'mock', modelReasoningEffort: 'high', permissionMode: 'default', serviceTier: 'fast', collaborationMode: 'plan',
+        execution: expect.objectContaining({ status: 'active', waitingOn: ['approval'], turnId: 'active-turn' })
+    }));
+    const requests = vi.spyOn(f.root.client, 'request');
+    await f.rpc.get(RPC_METHODS.Abort)!({});
+    expect(requests).toHaveBeenCalledExactlyOnceWith('turn/interrupt', { threadId: 'thread', turnId: 'active-turn' });
+});
 
 it('resumes a saved native thread before accepting new messages on its existing binding', async () => {
     const f = await fixture({ external: true });

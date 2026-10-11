@@ -298,7 +298,11 @@ export class SharedCodexRoot {
         }));
         const turnRevision = this.turnRevision;
         const runtimeRevision = this.runtimeRevision;
-        if (subscribe) response = record(await this.measure('root.subscribe', () => this.client.request('thread/resume', { threadId })));
+        // External history is paged separately; refresh below recovers the
+        // current turn and queue without hydrating every inherited turn here.
+        if (subscribe) response = record(await this.measure('root.subscribe', () => this.client.request('thread/resume', {
+            threadId, ...(this.host.external ? { excludeTurns: true } : {})
+        })));
         this.acceptSettings(response); this.acceptSettings(this.host.settingsFor(threadId) ?? {});
         if (turnRevision === this.turnRevision) this.execution.snapshot(record(response.thread),
             (Array.isArray(record(response.thread).turns) ? record(response.thread).turns as unknown[] : []).map(record),

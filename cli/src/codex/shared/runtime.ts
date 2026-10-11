@@ -234,7 +234,10 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         let nativeSucceeded = false;
         try {
             runtime.pendingCreations = [...runtime.pendingCreations ?? [], root.session.sessionId]; await persist();
-            const response = record(await root.client.request(method, root.config({ ...params, ...(method === 'thread/fork' ? { deferGoalContinuation: true } : {}) })));
+            // External roots read native history on demand; fork only needs the
+            // new thread identity/settings, not a second full transcript.
+            const response = record(await root.client.request(method, root.config({ ...params, ...(method === 'thread/fork'
+                ? { deferGoalContinuation: true, ...(external ? { excludeTurns: true } : {}) } : {}) })));
             nativeSucceeded = true;
             await bind(root, response, true, initialOptions); return root;
         } catch (error) {
