@@ -1100,7 +1100,7 @@ function SessionItem(props: {
             <button
                 type="button"
                 {...longPressHandlers}
-                data-session-scroll-anchor
+                data-session-scroll-anchor={`session:${s.id}`}
                 draggable={Boolean(workspaceContext?.workspaceActive)}
                 onDragStart={event => {
                     if (!workspace) return
@@ -1290,6 +1290,7 @@ function NativeSubagentItem(props: {
     return (
         <div className="app-native-subagent-tree" data-native-subagent-id={props.agent.threadId} data-has-subagents={children.length > 0 || undefined}>
             <button type="button"
+                data-session-view-anchor={expansionKey}
                 className="app-native-subagent-row flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left hover:bg-[var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
                 title={[nativeSubagentTitle(props.agent), props.agent.role].filter(Boolean).join('\n')}
                 onClick={() => props.onOpen(props.parentSessionId, props.agent)}>
@@ -1814,7 +1815,7 @@ export function SessionList(props: {
             ? `${group.displayName} · ${resolveMachineLabel(group.machineId)}`
             : group.displayName
         return (
-            <div key={group.key} data-session-scroll-anchor>
+            <div key={group.key} data-session-scroll-anchor={`directory:${group.key}`}>
                 <div
                     className="app-session-group-heading group/project sticky top-0 z-10 flex items-center gap-2 bg-[var(--app-bg)] py-1.5 pl-2 pr-2 text-left rounded-lg transition-colors hover:bg-[var(--app-secondary-bg)] min-w-0 w-full select-none"
                     title={group.directory}
@@ -1868,7 +1869,7 @@ export function SessionList(props: {
             ? `${group.displayName} · ${resolveMachineLabel(group.machineId)}`
             : group.displayName
         return (
-            <div key={group.key} data-session-scroll-anchor>
+            <div key={group.key} data-session-scroll-anchor={`directory:${group.key}`}>
                 <div
                     className="app-session-group-heading group/project sticky top-0 z-10 flex items-center gap-2 bg-[var(--app-bg)] py-1.5 pl-2 pr-2 text-left rounded-lg transition-colors hover:bg-[var(--app-secondary-bg)] cursor-pointer min-w-0 w-full select-none"
                     onClick={() => toggleGroup(group.key, isCollapsed)}
@@ -2277,7 +2278,7 @@ export function SessionList(props: {
                 </div>
             ) : null}
             <div ref={attachScrollContainer} className="app-session-list-content app-scroll-y session-list-scrollbar-left scrollbar-auto-hide min-h-0 flex-1">
-            <SessionListScrollAnchor sessions={listView === 'recent' ? recentSessions : props.sessions} preferFirstVisible={listView === 'recent'} onScrollRestored={offset => recentScrollObserver.current?.observeScroll(offset)} className="mx-auto flex w-full max-w-content flex-col gap-1 pl-1.5 pr-2 pb-2">
+            <SessionListScrollAnchor view={listView} bookmarkScope={JSON.stringify([props.hub, normalizedQuery, customStart, customEnd, machineFilter, activeMachineFilter, showUnreadOnly, showRunningOnly, showActiveSessionsOnly])} hasSessions={machineFilteredSessions.length > 0} sessions={listView === 'recent' ? recentSessions : props.sessions} preferFirstVisible={listView === 'recent'} onScrollRestored={offset => recentScrollObserver.current?.observeScroll(offset)} className="mx-auto flex w-full max-w-content flex-col gap-1 pl-1.5 pr-2 pb-2">
                 {props.sessions.length === 0 && !props.isLoading ? (
                     <SessionsEmptyState
                         onNewSession={props.onNewSession}

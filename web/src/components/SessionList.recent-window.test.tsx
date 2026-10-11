@@ -74,11 +74,28 @@ describe('Recent bounded mounting', () => {
         expect(scroller.scrollTop).toBe(0)
         expect(rows(container).length).toBeLessThan(85)
     })
-    it('observes the actual offset when returning from Folders without a scroll event', () => {
+    it('restores the Recent window after a shorter Folders view clamps its shared scroller', () => {
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+            const scroller = document.querySelector('.app-session-list-content') as HTMLElement | null
+            const root = this.closest<HTMLElement>('[data-recent-root]')
+            const isScroller = this.classList.contains('app-session-list-content')
+            const isList = this.getAttribute('data-testid') === 'recent-session-list'
+            const top = root ? Number(root.dataset.index) * 36 - (scroller?.scrollTop ?? 0)
+                : isList ? -(scroller?.scrollTop ?? 0) : 0
+            const height = isScroller ? 680 : isList ? parseFloat(this.style.height) || 680 : 34
+            return { top, bottom: top + height, left: 0, right: 320, width: 320, height, x: 0, y: top, toJSON() {} }
+        })
+        vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(function (this: HTMLElement) {
+            return [this.getBoundingClientRect()] as unknown as DOMRectList
+        })
         const { container } = mount(sessions(1000))
-        scrollTo(container, 18000)
+        const scroller = scrollTo(container, 18000)
         fireEvent.click(screen.getByRole('button', { name: 'Folders' }))
+        // jsdom has no layout/end clamp. Model the actual browser landing;
+        // no scroll event is required for the restored virtual range.
+        scroller.scrollTop = 0
         fireEvent.click(screen.getByRole('button', { name: 'Recent' }))
+        expect(scroller.scrollTop).toBe(18000)
         expect(container.querySelector('[data-recent-root="row-500"]')).toBeTruthy()
         expect(container.querySelector('[data-recent-root="row-0"]')).toBeNull()
     })

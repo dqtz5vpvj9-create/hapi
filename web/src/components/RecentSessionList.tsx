@@ -3,6 +3,7 @@ import { defaultRangeExtractor, observeElementOffset, observeElementRect, useVir
 import type { SessionSummary } from '@/types/api'
 import { useTranslation } from '@/lib/use-translation'
 import { createProgrammaticScrollObserver } from './AssistantChat/programmaticScrollOffset'
+import { SessionListViewRestoration } from './sessionListViewBookmark'
 
 
 // Stable observers retain useful geometry while a split pane is hidden. A
@@ -91,6 +92,7 @@ export function RecentSessionList({ sessions, scrollElement, scrollObserverRef, 
     renderSession: (session: SessionSummary) => ReactNode
 }) {
     const listRef = useRef<HTMLDivElement>(null)
+    const restoration = useContext(SessionListViewRestoration)
     const [scrollObserver] = useState(() => createProgrammaticScrollObserver(observeRecentOffset, observeRecentRect))
     useImperativeHandle(scrollObserverRef, () => ({ observeScroll: scrollObserver.observeLanding }), [scrollObserver])
     const [focusedId, setFocusedId] = useState<string | null>(null)
@@ -108,7 +110,8 @@ export function RecentSessionList({ sessions, scrollElement, scrollObserverRef, 
             return next
         })
     }, [])
-    const pins = [...new Set([selectedRootId, focusedId, pressedId, draggedId, ...retained.values()])]
+    const pins = [...new Set([selectedRootId, focusedId, pressedId, draggedId, ...retained.values(),
+        ...(restoration?.bookmark.anchors.map(anchor => anchor.rootId) ?? [])])]
         .flatMap(id => id && indexes.has(id) ? [indexes.get(id)!] : [])
     const pinKey = pins.join(',')
     const rangeExtractor = useCallback((range: Parameters<typeof defaultRangeExtractor>[0]) => (
@@ -180,6 +183,17 @@ export function RecentSessionList({ sessions, scrollElement, scrollObserverRef, 
     const rootId = (target: EventTarget | null) => target instanceof Element
         ? target.closest<HTMLElement>('[data-recent-root]')?.dataset.recentRoot ?? null : null
     const rows = virtualizer.getVirtualItems()
+    useLayoutEffect(() => {
+        if (!restoration) return
+        // Ref measurements can update the virtualizer before React commits
+        // its next window. Only the owner may align a fully committed layout.
+        const measured = virtualizer.getVirtualItems()
+        const stable = listRef.current?.getClientRects().length !== 0 && (rows === measured || rows.length === measured.length && rows.every((row, index) => {
+            const next = measured[index]
+            return row.key === next.key && row.start === next.start && row.size === next.size
+        }))
+        restoration.onLayout(stable)
+    })
     return <div ref={listRef} data-testid="recent-session-list" data-recent-total={sessions.length}
         style={{ height: virtualizer.getTotalSize() }}
         onFocusCapture={event => setFocusedId(rootId(event.target))}
