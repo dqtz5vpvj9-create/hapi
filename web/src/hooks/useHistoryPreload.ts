@@ -28,6 +28,10 @@ export function useHistoryPreload(api: ApiClient, sessionId: string, viewportRef
         intent.frame = 0
         const viewport = viewportRef.current
         if (!viewport || !intent.direction || performance.now() - intent.inputAt > PRELOAD_INPUT_WINDOW_MS || intent.pending) return
+        // Retained readers have zero geometry while Terminal hides them.
+        // A store notification must not turn that geometry into edge demand.
+        // Explicit initial warm-up and already-started reads remain independent.
+        if (!viewport.getClientRects().length || viewport.clientHeight <= 0) return
         // Fast movement gets more lead distance, bounded by the loaded window.
         const lead = Math.max(viewport.clientHeight * 3, Math.min(viewport.scrollHeight * 0.75, intent.velocity * 800))
         if (intent.direction === 'before' ? viewport.scrollTop > lead
