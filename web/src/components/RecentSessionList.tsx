@@ -146,12 +146,25 @@ export function RecentSessionList({ sessions, scrollElement, scrollObserverRef, 
         },
     })
     virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false
-    useLayoutEffect(() => {
+    const measureMargin = useCallback(() => {
         const viewport = scrollElement, list = listRef.current
         if (!viewport || !list || list.getClientRects().length === 0) return
         const margin = list.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
-        if (Math.abs(margin - scrollMargin) > 0.5) setScrollMargin(margin)
-    })
+        setScrollMargin(previous => Math.abs(margin - previous) > 0.5 ? margin : previous)
+    }, [scrollElement])
+    // The parent passes a new renderer on its layout/content commits. Scroll
+    // range updates are local to this component and cannot move the list origin.
+    useLayoutEffect(measureMargin, [measureMargin, sessions, narrow, renderSession, timeFor])
+    useLayoutEffect(() => {
+        const ResizeObserverClass = scrollElement?.ownerDocument.defaultView?.ResizeObserver
+        if (!scrollElement || !ResizeObserverClass) return
+        let active = true
+        const observer = new ResizeObserverClass(() => { if (active) measureMargin() })
+        // Header resizing and pane reveal can change layout without a parent
+        // commit. Row/list height changes remain the virtualizer's concern.
+        observer.observe(scrollElement)
+        return () => { active = false; observer.disconnect() }
+    }, [scrollElement, measureMargin])
     useEffect(() => {
         if (!pressedId) return
         const release = () => setPressedId(null)
