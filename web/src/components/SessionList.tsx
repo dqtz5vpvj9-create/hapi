@@ -6,9 +6,10 @@ import { GlassScene, GlassSource } from '@/themes/glass/GlassScene'
 import { NewTaskInput } from './NewTaskInput'
 import { useNarrowViewport } from '@/hooks/useNarrowViewport'
 import { useSessionListOrder } from '@/hooks/useSessionListOrder'
-import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react'
 import { buildSessionHierarchy, hierarchyRootId, hierarchyContains, type SessionHierarchy } from '@/lib/sessionHierarchy'
 import { SessionListScrollAnchor } from './SessionListScrollAnchor'
+import { RecentSessionList, useRecentRowRetention, type RecentScrollObserver } from './RecentSessionList'
 import { CodexSubagentDialog } from './CodexSubagentDialog'
 import type { SessionSummary } from '@/types/api'
 import { SESSION_LIFECYCLE_IDLE } from '@hapi/protocol'
@@ -994,6 +995,7 @@ function SessionItem(props: {
     const [exportOpen, setExportOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
+    useRecentRowRetention(s.id, menuOpen || renameOpen || exportOpen || archiveOpen || deleteOpen)
     const {
         status: cursorChatStoreStatus,
         isApplicable: cursorChatStoreApplicable,
@@ -1267,9 +1269,16 @@ function NativeSubagentItem(props: {
     machineId?: string
     onOpen: OpenNativeSubagent
     revealChildren: boolean
+    expansionCache?: Map<string, boolean>
 }) {
     const { t } = useTranslation()
-    const [expanded, setExpanded] = useState(false)
+    const expansionKey = `native:${props.parentSessionId}:${props.agent.threadId}`
+    const [expanded, setExpandedState] = useState(() => props.expansionCache?.get(expansionKey) ?? false)
+    const setExpanded = (update: (value: boolean) => boolean) => {
+        const next = update(expanded)
+        props.expansionCache?.set(expansionKey, next)
+        setExpandedState(next)
+    }
     const children = props.agents.filter(agent => agent.parentThreadId === props.agent.threadId)
     const open = expanded || props.revealChildren
     return (
@@ -1309,8 +1318,9 @@ function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
     selectedSessionId?: string | null
     revealChildren: boolean
     onOpenNativeSubagent: OpenNativeSubagent
+    expansionCache?: Map<string, boolean>
 }) {
-    const { tree, selectedSessionId, revealChildren, onOpenNativeSubagent, ...rowProps } = props
+    const { tree, selectedSessionId, revealChildren, onOpenNativeSubagent, expansionCache, ...rowProps } = props
     const { t } = useTranslation()
     const children = tree.children.get(props.session.id) ?? []
     const agents = props.session.metadata?.codexSubagents ?? []
@@ -1318,10 +1328,18 @@ function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
         && !children.some(child => child.metadata?.agentSessionId === agent.threadId))
     const containsSelection = hierarchyContains(tree, props.session.id, selectedSessionId)
         && props.session.id !== selectedSessionId
-    const [expanded, setExpanded] = useState(containsSelection)
+    const [expanded, setExpandedState] = useState(() => expansionCache?.get(props.session.id) ?? containsSelection)
+    const setExpanded = (update: boolean | ((value: boolean) => boolean)) => {
+        const next = typeof update === 'function' ? update(expanded) : update
+        expansionCache?.set(props.session.id, next)
+        setExpandedState(next)
+    }
     useEffect(() => {
-        if (containsSelection) setExpanded(true)
-    }, [containsSelection, selectedSessionId])
+        if (containsSelection) {
+            expansionCache?.set(props.session.id, true)
+            setExpandedState(true)
+        }
+    }, [containsSelection, selectedSessionId, expansionCache, props.session.id])
     const pending = tree.pendingDescendants.get(props.session.id) ?? 0
     const open = expanded || revealChildren || pending > 0
     return (
@@ -1352,10 +1370,10 @@ function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
                                     selected={child.id === selectedSessionId} tree={tree}
                                     projectLabel={rowProps.projectLabel ? getPathDisplayName(child.metadata?.worktree?.basePath ?? child.metadata?.path ?? 'Other') : undefined}
                                     selectedSessionId={selectedSessionId} revealChildren={revealChildren}
-                                    onOpenNativeSubagent={onOpenNativeSubagent} />
+                                    onOpenNativeSubagent={onOpenNativeSubagent} expansionCache={expansionCache} />
                             ))}
                             {nativeChildren.map(agent => <NativeSubagentItem key={agent.threadId} agent={agent} agents={agents}
-                                parentSessionId={props.session.id} machineId={props.session.metadata?.machineId} onOpen={onOpenNativeSubagent} revealChildren={revealChildren} />)}
+                                parentSessionId={props.session.id} machineId={props.session.metadata?.machineId} onOpen={onOpenNativeSubagent} revealChildren={revealChildren} expansionCache={expansionCache} />)}
                         </div>
                     ) : null}
                 </>
@@ -1553,6 +1571,10 @@ export function SessionList(props: {
     const sessionHierarchy = useMemo(() => buildSessionHierarchy(scopedSessions, sidebarSessions), [scopedSessions, sidebarSessions])
     const machineFilteredSessions = sessionHierarchy.roots
     const selectedRootId = hierarchyRootId(sessionHierarchy, selectedSessionId)
+    const recentExpansionCache = useRef(new Map<string, boolean>())
+    const recentSessions = useMemo(() => listView !== 'recent' ? [] : [...machineFilteredSessions].sort(searchScoreIndex && hasTextQuery
+        ? (a, b) => compareSessionsBySearchRelevance(a, b, searchScoreIndex)
+        : compareListOrder), [listView, machineFilteredSessions, searchScoreIndex, hasTextQuery, compareListOrder])
     const globalPinnedSessions = useMemo(() => {
         const pinned = machineFilteredSessions.filter((session) => Boolean(session.globalPinned))
         if (searchScoreIndex && hasTextQuery) {
@@ -2012,7 +2034,13 @@ export function SessionList(props: {
     // Pull-to-refresh on the scrollable list. Touch-only gesture mirroring the
     // pull-to-load-older pattern in HappyThread; desktop has no overscroll
     // bounce to make a wheel pull feel right, so it stays on live updates.
+    const recentScrollObserver = useRef<RecentScrollObserver>(null)
     const scrollContainerRef = useRef<HTMLDivElement>(null)
+    const [scrollContainerElement, setScrollContainerElement] = useState<HTMLDivElement | null>(null)
+    const attachScrollContainer = useCallback((element: HTMLDivElement | null) => {
+        scrollContainerRef.current = element
+        setScrollContainerElement(element)
+    }, [])
     useTransientScrollbar(scrollContainerRef, 'left')
     const [pullState, setPullState] = useState<PullToRefreshState>('idle')
     const pullStateRef = useRef<PullToRefreshState>('idle')
@@ -2241,8 +2269,8 @@ export function SessionList(props: {
                     </span>
                 </div>
             ) : null}
-            <div ref={scrollContainerRef} className="app-session-list-content app-scroll-y session-list-scrollbar-left scrollbar-auto-hide min-h-0 flex-1">
-            <SessionListScrollAnchor sessions={props.sessions} className="mx-auto flex w-full max-w-content flex-col gap-1 pl-1.5 pr-2 pb-2">
+            <div ref={attachScrollContainer} className="app-session-list-content app-scroll-y session-list-scrollbar-left scrollbar-auto-hide min-h-0 flex-1">
+            <SessionListScrollAnchor sessions={props.sessions} onScrollRestored={offset => recentScrollObserver.current?.observeScroll(offset)} className="mx-auto flex w-full max-w-content flex-col gap-1 pl-1.5 pr-2 pb-2">
                 {props.sessions.length === 0 && !props.isLoading ? (
                     <SessionsEmptyState
                         onNewSession={props.onNewSession}
@@ -2257,28 +2285,14 @@ export function SessionList(props: {
                 ) : null}
 
                 {listView === 'recent' ? (
-                    <div data-testid="recent-session-list" className="flex flex-col gap-0.5">
-                        {[...machineFilteredSessions].sort(searchScoreIndex && hasTextQuery
-                            ? (a, b) => compareSessionsBySearchRelevance(a, b, searchScoreIndex)
-                            : compareListOrder).map((s, index, sorted) => {
-                            const date = new Date(listTimeFor(s))
-                            const previousDate = index > 0 ? new Date(listTimeFor(sorted[index - 1])) : null
-                            const newDay = !previousDate || previousDate.toDateString() !== date.toDateString()
-                            const today = new Date()
-                            const yesterday = new Date(today)
-                            yesterday.setDate(today.getDate() - 1)
-                            const dateLabel = date.toDateString() === today.toDateString() ? t('sessions.task.today')
-                                : date.toDateString() === yesterday.toDateString() ? t('sessions.task.yesterday')
-                                : date.toLocaleDateString(document.documentElement.lang || undefined, { month: 'short', day: 'numeric' })
-                            return <Fragment key={s.id}>
-                                {narrowViewport && newDay ? <div className="app-session-date-heading">{dateLabel}</div> : null}
-                                <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly} session={s} onSelect={props.onSelect} onOpenPane={props.onOpenPane} api={api}
-                                    titleSuggestionAvailable={titleSuggestionAvailable} selected={s.id === selectedSessionId}
-                                    showDetailedStatus={showDetailedStatus} lastSeenVersion={lastSeenVersion}
-                                    machineLabel={showMachineFilterBar && activeMachineFilter === null ? resolveMachineLabel(s.metadata?.machineId ?? null) : undefined} />
-                            </Fragment>
-                        })}
-                    </div>
+                    <RecentSessionList sessions={recentSessions} scrollElement={scrollContainerElement} scrollObserverRef={recentScrollObserver}
+                        selectedRootId={selectedRootId} narrow={narrowViewport} timeFor={listTimeFor}
+                        renderSession={s => <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy}
+                            expansionCache={recentExpansionCache.current} selectedSessionId={selectedSessionId}
+                            revealChildren={isFiltering || showUnreadOnly} session={s} onSelect={props.onSelect} onOpenPane={props.onOpenPane} api={api}
+                            titleSuggestionAvailable={titleSuggestionAvailable} selected={s.id === selectedSessionId}
+                            showDetailedStatus={showDetailedStatus} lastSeenVersion={lastSeenVersion}
+                            machineLabel={showMachineFilterBar && activeMachineFilter === null ? resolveMachineLabel(s.metadata?.machineId ?? null) : undefined} />} />
                 ) : <>
                 {globalPinnedSessions.length > 0 ? (
                     <div key="pinned-section">

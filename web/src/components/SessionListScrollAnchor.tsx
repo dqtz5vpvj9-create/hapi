@@ -1,7 +1,7 @@
 import { Component, createRef, type ReactNode } from 'react'
 import type { SessionSummary } from '@/types/api'
 
-type Props = { children: ReactNode; className: string; sessions: SessionSummary[] }
+type Props = { children: ReactNode; className: string; sessions: SessionSummary[]; onScrollRestored?: (offset: number) => void }
 type Snapshot = { scrollTop: number; anchors: { element: HTMLElement; top: number }[] }
 
 /** Read the old DOM at commit time, before rows move between pinned sections. */
@@ -49,6 +49,9 @@ export class SessionListScrollAnchor extends Component<Props, object, Snapshot |
         const anchor = candidates[0]
         const scrollTop = anchor ? snapshot.scrollTop + anchor.shift : snapshot.scrollTop
         if (Math.abs(container.scrollTop - scrollTop) > 0.5) container.scrollTop = scrollTop
+        // Publish the browser's actual landing, including native anchoring,
+        // before paint; the observer must never replay the scroll write.
+        this.props.onScrollRestored?.(container.scrollTop)
     }
 
     render() {
