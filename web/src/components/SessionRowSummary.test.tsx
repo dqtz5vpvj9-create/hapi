@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@/types/api'
 import { I18nProvider } from '@/lib/i18n-context'
 import { SessionRowSummary } from './SessionRowSummary'
@@ -166,5 +166,29 @@ describe('SessionRowSummary background status', () => {
         )
 
         expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('New activity')
+    })
+})
+
+
+describe('SessionRowSummary supplied read-state', () => {
+    it('uses parent primitives without reading storage, including explicit null manual unread', () => {
+        const session = makeSummary({ active: false, backgroundTaskCount: 0, updatedAt: 2000 })
+        localStorage.setItem('hapi.sessionManualUnread.v1', JSON.stringify({ [session.id]: 2000 }))
+        const reads = vi.spyOn(Storage.prototype, 'getItem')
+        const row = (lastSeenAt: number, manualUnreadAt: number | null) => <I18nProvider>
+            <SessionRowSummary session={session} selected showDetailedStatus lastSeenAt={lastSeenAt} manualUnreadAt={manualUnreadAt} />
+        </I18nProvider>
+        try {
+            const view = render(row(2000, null))
+            expect(view.container.querySelector('[data-session-status="unread"]')).toBeNull()
+            view.rerender(row(1999, 2000))
+            expect(view.container.querySelector('[data-session-status="unread"]')).toBeTruthy()
+            expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('New activity')
+            view.rerender(row(2000, null))
+            expect(view.container.querySelector('[data-session-status="unread"]')).toBeNull()
+            expect(reads.mock.calls.filter(([key]) => key === 'hapi.sessionLastSeen.v1' || key === 'hapi.sessionManualUnread.v1')).toHaveLength(0)
+        } finally {
+            reads.mockRestore()
+        }
     })
 })

@@ -47,9 +47,9 @@ import { useShowActiveSessionsOnly } from '@/hooks/useShowActiveSessionsOnly'
 import { usePinInProgressSessions } from '@/hooks/usePinInProgressSessions'
 import { classifySessionAttention, sessionIsUnread } from '@/lib/sessionAttention'
 import {
-    getSessionLastSeenAt,
+    getSessionReadStateSnapshot,
+    type SessionReadStateSnapshot,
     getSessionLastSeenSnapshot,
-    getSessionManualUnreadAt,
     getUnreadSessionCount,
     markAllSessionsSeen,
     markSessionUnread,
@@ -960,7 +960,8 @@ function SessionItem(props: {
     inRunningSection?: boolean
     projectLabel?: string
     machineLabel?: string
-    lastSeenVersion: number
+    lastSeenAt: number
+    manualUnreadAt: number | null
 }) {
     const workspaceContext = useOptionalAppContext()
     const workspace = workspaceContext?.workspace
@@ -986,7 +987,8 @@ function SessionItem(props: {
         inRunningSection = false,
         projectLabel,
         machineLabel,
-        lastSeenVersion
+        lastSeenAt,
+        manualUnreadAt
     } = props
     const { haptic } = usePlatform()
     const [menuOpen, setMenuOpen] = useState(false)
@@ -1079,11 +1081,11 @@ function SessionItem(props: {
         () => showDetailedStatus
             ? classifySessionAttention(s, {
                 selected,
-                lastSeenAt: getSessionLastSeenAt(s.id),
-                manualUnreadAt: getSessionManualUnreadAt(s.id)
+                lastSeenAt,
+                manualUnreadAt
             })
             : null,
-        [s, selected, showDetailedStatus, lastSeenVersion]
+        [s, selected, showDetailedStatus, lastSeenAt, manualUnreadAt]
     )
     const hasScheduleTooltip = showDetailedStatus && s.futureScheduledMessageCount > 0
     const { attentionId, scheduleId, describedBy } = useSessionRowTooltipIds(
@@ -1118,7 +1120,8 @@ function SessionItem(props: {
                     selected={selected}
                     nestedTooltips
                     attentionTooltipId={attentionId}
-                    lastSeenVersion={lastSeenVersion}
+                    lastSeenAt={lastSeenAt}
+                    manualUnreadAt={manualUnreadAt}
                     scheduleTooltipId={scheduleId}
                     inRunningSection={inRunningSection}
                     projectLabel={projectLabel}
@@ -1313,14 +1316,16 @@ function NativeSubagentItem(props: {
     )
 }
 
-function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
+function SessionTreeItem(props: Omit<ComponentProps<typeof SessionItem>, 'lastSeenAt' | 'manualUnreadAt'> & {
+    readState: SessionReadStateSnapshot
     tree: SessionHierarchy
     selectedSessionId?: string | null
     revealChildren: boolean
     onOpenNativeSubagent: OpenNativeSubagent
     expansionCache?: Map<string, boolean>
 }) {
-    const { tree, selectedSessionId, revealChildren, onOpenNativeSubagent, expansionCache, ...rowProps } = props
+    const { tree, selectedSessionId, revealChildren, onOpenNativeSubagent, expansionCache, readState, ...rowProps } = props
+    const manualUnreadAt = readState.manualUnreadById[props.session.id]
     const { t } = useTranslation()
     const children = tree.children.get(props.session.id) ?? []
     const agents = props.session.metadata?.codexSubagents ?? []
@@ -1351,7 +1356,8 @@ function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
                     {props.session.metadata.codexAgentRole ? ` · ${props.session.metadata.codexAgentRole}` : ''}
                 </div>
             ) : null}
-            <SessionItem {...rowProps} />
+            <SessionItem {...rowProps} lastSeenAt={readState.lastSeenById[props.session.id] ?? 0}
+                manualUnreadAt={typeof manualUnreadAt === 'number' && Number.isFinite(manualUnreadAt) ? manualUnreadAt : null} />
             {children.length + nativeChildren.length > 0 ? (
                 <>
                     <button type="button" aria-expanded={open}
@@ -1366,7 +1372,7 @@ function SessionTreeItem(props: ComponentProps<typeof SessionItem> & {
                     {open ? (
                         <div className="app-session-children ml-3 border-l border-[var(--app-border)] pl-2" data-subagent-parent={props.session.id}>
                             {children.map(child => (
-                                <SessionTreeItem {...rowProps} key={child.id} session={child}
+                                <SessionTreeItem {...rowProps} readState={readState} key={child.id} session={child}
                                     selected={child.id === selectedSessionId} tree={tree}
                                     projectLabel={rowProps.projectLabel ? getPathDisplayName(child.metadata?.worktree?.basePath ?? child.metadata?.path ?? 'Other') : undefined}
                                     selectedSessionId={selectedSessionId} revealChildren={revealChildren}
@@ -1415,6 +1421,8 @@ export function SessionList(props: {
     const { sessionListStatusMode } = useSessionListStatusMode()
     const { showActiveSessionsOnly } = useShowActiveSessionsOnly()
     const lastSeenVersion = useSessionLastSeenVersion()
+    // Snapshot per parent render: virtualized row mounts reuse these persisted values.
+    const readState = getSessionReadStateSnapshot()
     // Transient unread lens — not a Settings preference. Cleared on reload; rows drop as they're seen.
     const [showUnreadOnly, setShowUnreadOnly] = useState(false)
     const [showRunningOnly, setShowRunningOnly] = useState(false)
@@ -1787,7 +1795,7 @@ export function SessionList(props: {
                                             inRunningSection
                                             projectLabel={getPathDisplayName(s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')}
                                             machineLabel={resolveMachineLabel(s.metadata?.machineId ?? null)}
-                                            lastSeenVersion={lastSeenVersion}
+                                            readState={readState}
                                         />
                                     ))}
                                 </div>
@@ -1915,7 +1923,7 @@ export function SessionList(props: {
                                     titleSuggestionAvailable={titleSuggestionAvailable}
                                     selected={s.id === selectedSessionId}
                                     showDetailedStatus={showDetailedStatus}
-                                    lastSeenVersion={lastSeenVersion}
+                                    readState={readState}
                                 />
                             </div>
                         ))}
@@ -2291,7 +2299,7 @@ export function SessionList(props: {
                             expansionCache={recentExpansionCache.current} selectedSessionId={selectedSessionId}
                             revealChildren={isFiltering || showUnreadOnly} session={s} onSelect={props.onSelect} onOpenPane={props.onOpenPane} api={api}
                             titleSuggestionAvailable={titleSuggestionAvailable} selected={s.id === selectedSessionId}
-                            showDetailedStatus={showDetailedStatus} lastSeenVersion={lastSeenVersion}
+                            showDetailedStatus={showDetailedStatus} readState={readState}
                             machineLabel={showMachineFilterBar && activeMachineFilter === null ? resolveMachineLabel(s.metadata?.machineId ?? null) : undefined} />} />
                 ) : <>
                 {globalPinnedSessions.length > 0 ? (
@@ -2338,7 +2346,7 @@ export function SessionList(props: {
                                             inRunningSection
                                             projectLabel={getPathDisplayName(s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')}
                                             machineLabel={resolveMachineLabel(s.metadata?.machineId ?? null)}
-                                            lastSeenVersion={lastSeenVersion}
+                                            readState={readState}
                                         />
                                     ))}
                                 </div>

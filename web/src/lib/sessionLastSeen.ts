@@ -10,6 +10,11 @@ let changeVersion = 0
 type LastSeenStore = Record<string, number>
 type ManualUnreadStore = Record<string, number>
 
+export type SessionReadStateSnapshot = {
+    lastSeenById: Readonly<LastSeenStore>
+    manualUnreadById: Readonly<ManualUnreadStore>
+}
+
 function getLocalStorage(): Storage | null {
     if (typeof window === 'undefined') {
         return null
@@ -145,6 +150,11 @@ export function getSessionManualUnreadAt(sessionId: string): number | null {
 /** One localStorage read/parse for bulk filters (e.g. unread-only lens). */
 export function getSessionLastSeenSnapshot(): Readonly<Record<string, number>> {
     return readStore()
+}
+
+/** Read each persisted map once for a parent render and its descendant rows. */
+export function getSessionReadStateSnapshot(): SessionReadStateSnapshot {
+    return { lastSeenById: readStore(), manualUnreadById: readManualUnreadStore() }
 }
 
 type SessionReadStateInput = {

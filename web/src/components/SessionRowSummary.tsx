@@ -104,7 +104,10 @@ export function SessionRowSummary(props: {
     nestedTooltips?: boolean
     /** Pass from parent when the parent owns `aria-describedby` (session list). */
     attentionTooltipId?: string
-    /** Recompute local unread attention when the session-list watermark changes. */
+    /** Parent snapshot values; omitted values use the standalone storage fallback. */
+    lastSeenAt?: number
+    manualUnreadAt?: number | null
+    /** Recompute standalone unread attention when the local watermark changes. */
     lastSeenVersion?: number
     scheduleTooltipId?: string
     className?: string
@@ -125,6 +128,8 @@ export function SessionRowSummary(props: {
         nestedTooltips = true,
         attentionTooltipId: attentionTooltipIdProp,
         lastSeenVersion,
+        lastSeenAt,
+        manualUnreadAt,
         scheduleTooltipId: scheduleTooltipIdProp,
         className,
         inRunningSection = false,
@@ -141,11 +146,11 @@ export function SessionRowSummary(props: {
         () => showDetailedStatus
             ? classifySessionAttention(s, {
                 selected,
-                lastSeenAt: getSessionLastSeenAt(s.id),
-                manualUnreadAt: getSessionManualUnreadAt(s.id),
+                lastSeenAt: lastSeenAt ?? getSessionLastSeenAt(s.id),
+                manualUnreadAt: manualUnreadAt === undefined ? getSessionManualUnreadAt(s.id) : manualUnreadAt,
             })
             : null,
-        [s, selected, showDetailedStatus, lastSeenVersion]
+        [s, selected, showDetailedStatus, lastSeenVersion, lastSeenAt, manualUnreadAt]
     )
     const attentionLabel = attention ? getAttentionLabel(attention, t) : null
     const urgentAttention = attention !== null
