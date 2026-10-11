@@ -263,9 +263,6 @@ export function CodexSessionSyncDialog(props: {
                 <div className="flex shrink-0 flex-col items-start gap-3 sm:flex-row sm:justify-between" data-testid="codex-import-dialog-header">
                     <DialogHeader className="min-w-0 w-full flex-1 pr-10 text-left">
                         <DialogTitle>{t(mode === 'connect' ? 'codexConnect.title' : 'codexSync.confirm.title')}</DialogTitle>
-                        <DialogDescription className="mt-2">
-                            {t(mode === 'connect' ? 'codexConnect.description' : 'codexSync.confirm.description')}
-                        </DialogDescription>
                     </DialogHeader>
                     {mode === 'import' ? (
                     <Button
@@ -295,6 +292,11 @@ export function CodexSessionSyncDialog(props: {
                         }
                     }}
                 >
+                    {/* Keep explanatory copy scrollable so large text on a short
+                        viewport cannot push the fixed actions out of the dialog. */}
+                    <DialogDescription>
+                        {t(mode === 'connect' ? 'codexConnect.description' : 'codexSync.confirm.description')}
+                    </DialogDescription>
                     {archiveError ? (
                         <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600">
                             {archiveError}
