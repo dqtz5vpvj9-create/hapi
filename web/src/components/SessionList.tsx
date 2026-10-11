@@ -1572,7 +1572,10 @@ export function SessionList(props: {
             (session.metadata?.machineId ?? UNKNOWN_MACHINE_ID) === activeMachineFilter),
         [unreadFilteredSessions, activeMachineFilter]
     )
-    const runningCount = buildSessionHierarchy(machineScopedSessions.filter(session => session.active && (session.thinking || session.pendingRequestsCount > 0 || session.backgroundTaskCount > 0)), sidebarSessions).roots.length
+    const runningCount = useMemo(
+        () => buildSessionHierarchy(machineScopedSessions.filter(session => session.active && (session.thinking || session.pendingRequestsCount > 0 || session.backgroundTaskCount > 0)), sidebarSessions).roots.length,
+        [machineScopedSessions, sidebarSessions]
+    )
     const scopedSessions = useMemo(() => showRunningOnly
         ? machineScopedSessions.filter(session => session.active && (session.thinking || session.pendingRequestsCount > 0 || session.backgroundTaskCount > 0))
         : machineScopedSessions, [machineScopedSessions, showRunningOnly])

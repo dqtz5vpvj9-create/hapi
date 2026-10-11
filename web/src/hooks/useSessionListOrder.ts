@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { SessionSummary } from '@/types/api'
 
 /** Keep live output from moving rows under the user's pointer. Only a new
@@ -8,11 +8,16 @@ export function useSessionListOrder(sessions: SessionSummary[], hub?: string | n
         hub,
         times: new Map(sessions.map(session => [session.id, session.updatedAt]))
     }))
+    // An unchanged parent render must not rescan every session ID.
+    const hasNewSessions = useMemo(
+        () => sessions.some(session => !snapshot.times.has(session.id)),
+        [sessions, snapshot.times]
+    )
     let times = snapshot.times
     if (snapshot.hub !== hub) {
         times = new Map(sessions.map(session => [session.id, session.updatedAt]))
         setSnapshot({ hub, times })
-    } else if (sessions.some(session => !times.has(session.id))) {
+    } else if (hasNewSessions) {
         times = new Map(times)
         for (const session of sessions) {
             if (!times.has(session.id)) times.set(session.id, session.updatedAt)
