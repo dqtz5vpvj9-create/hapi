@@ -12,7 +12,7 @@ public static class HapiNativePipe {
  public static async Task Run(string socketPath) {
   Log("started");
   while(true) {
-   var pipe=new NamedPipeServerStream("hapi-native-preview-20261004",PipeDirection.InOut,20,PipeTransmissionMode.Byte,PipeOptions.Asynchronous|PipeOptions.CurrentUserOnly);
+   var pipe=new NamedPipeServerStream("hapi-native-preview-20261004",PipeDirection.InOut,NamedPipeServerStream.MaxAllowedServerInstances,PipeTransmissionMode.Byte,PipeOptions.Asynchronous|PipeOptions.CurrentUserOnly);
    await pipe.WaitForConnectionAsync();
    _=Relay(pipe,socketPath);
   }

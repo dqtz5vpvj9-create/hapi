@@ -1,6 +1,6 @@
 # 会话状态、活动时间与跨设备修复
 
-本文对应 [调查记录](2026-10-11-session-state-investigation.md)，记录工作树中的实现与本地验证。代码尚未提交或部署；测试没有重启生产 Hub、Runner 或用户正在使用的 Codex，也没有发送模型输入。
+本文对应 [调查记录](2026-10-11-session-state-investigation.md)，记录状态修复、与 fork/main 的合并及发布验收。状态实现已提交；发布结果以下面的发布记录为准。测试没有发送模型输入。
 
 ## 修复范围
 
@@ -52,3 +52,21 @@ Windows/Linux 使用相同状态适配代码，但本轮没有在 Lis-iMac 实�
 本机没有 Swift 工具链，且没有已缓存的 Swift Docker 镜像；iOS 协议变更完成源码对齐，但尚未编译和运行 Swift conformance。不能把 Android 通过当成 iOS 通过。
 
 部署需要协调 CLI、Hub、Web 版本。以上结论只覆盖当前工作树和明确列出的测试，不表示线上故障已经消失，也不包含现有其他 agent 的 Windows Rust supervisor、会话创建或文档工作区改动的上线。
+
+## fork main 合并与发布检查（2026-10-11）
+
+已合入 fork/main 的 22 个外部提交，最新外部提交为 `936a3ac7`。保留其 Recent 有界虚拟列表、批量阅读快照、原生聊天准备优化与首次加载期间的滚动意图处理；Running 筛选仍采用本次统一分类器。首次合并的实际浏览器测试发现手动未读与批量 seenAt 快照交互异常，已在 `1d577268` 修复并补充回归。
+
+完整类型检查通过。CLI 3117、Hub 1489、最终合并的 Web 3980 项测试通过，Web 另有 1 项跳过；Shared、Relay 和历史读取/依赖/谱系/搜索测试通过，32 项浏览器测试辅助程序单元测试通过。Android 协议测试已通过；iOS 仍没有编译环境。
+
+第一轮 Web 测试的一项 1000 行切换测试在共享主机负载下超时，单独复跑及降低并发的完整 Web 测试均通过。旧 `history-load.spec.ts` 有 13 项失败，其中包含已不适用于原生虚拟列表的直接 DOM 子节点数量断言；这些失败没有被删除或改成通过。新版原生历史预读、跨边界补页和反向复用使用独立测试验证，具体终态以浏览器日志为准，不把旧套件称作通过。
+
+正式构建的跨客户端未读同步测试通过。1000 行 Recent 的手机宽度完整滚动、锚点及桌面完整滚动测试通过，活动事件与新增原生根会话的锚点偏移均为 0px；这些是 Chromium 模拟，不是真机触摸证据。截图使用 webshot 并已查看。
+
+### Windows 管道代理连接上限
+
+发布前真实 Windows 检查暴露独立故障：`native-pipe.ps1` 使用 `maxNumberOfServerInstances=20`。每个已接入原生根会话使用一条客户端连接，另外还有发现、监督和桌面客户端。连接达到 20 后，创建下一监听实例抛出 IOException（所有管道实例都在使用中），使整个代理退出；已建立连接随之断开。日志中的代理重启、客户端 ENOENT 和首次初始化后重连失败相互对应，不能误诊为 Hub DNS 或原生引擎退出。
+
+将固定 20 改为 .NET 的 `NamedPipeServerStream.MaxAllowedServerInstances`，保留 `PipeOptions.CurrentUserOnly`。只重启代理，两个 Windows Codex PID 和启动时间保持不变。使用与正式 CLI 相同 Bun 1.4.0 的真实 CodexAppServerClient 验证 initialize、loaded-list、detach 和立即 reconnect，两次均成功。新增 `scripts/windows/tests/native-pipe-capacity.ps1` 保持 24 个初始化连接并验证旧连接仍能读取和新连接重连；测试只读取 loaded IDs，不打开新会话、不提交模型任务。此修复没有采用尚未完成的 Rust supervisor。
+
+本次发布目录：`/mnt/cache/build-cache/hapi-presence-release-20261011`。临时日志、部署前数据库在线备份及浏览器证据：`/mnt/cache/data-cache/hapi-release-20261011`。数据库升级只新增执行版本与阅读游标表；已在副本中验证恢复 user_version=29 后旧版 Store 可以打开兼容的附加表，回退不必用旧聊天库覆盖新数据。旧版本脚本资源保留，供发布时仍打开的浏览器使用。
