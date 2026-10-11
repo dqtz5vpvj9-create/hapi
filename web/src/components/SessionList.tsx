@@ -1483,7 +1483,7 @@ export function SessionList(props: {
         [sidebarSessions, selectedSessionId, showActiveSessionsOnly]
     )
     const unreadSessionCount = useMemo(
-        () => getUnreadSessionCount(readableSessions),
+        () => getUnreadSessionCount(readableSessions.filter(session => !session.metadata?.codexParentThreadId)),
         [lastSeenVersion, readableSessions]
     )
     const sessionActivityDates = useMemo(
@@ -1553,31 +1553,37 @@ export function SessionList(props: {
         && machineFilters.some(mg => (mg.machineId ?? UNKNOWN_MACHINE_ID) === machineFilter)
         ? machineFilter
         : null
-    // Unread after search/time, before machine scope — so machineFilters (from allSessions)
-    // stay stable. Filtering unread into allSessions would drop machines with zero unread
-    // and clear a persisted machine selection (showing other machines' unread instead).
-    const unreadFilteredSessions = useMemo(() => {
-        if (!showUnreadOnly) return visibleSessions
-        const lastSeenById = getSessionLastSeenSnapshot()
-        return filterUnreadSessionsOnly(
-            visibleSessions,
-            selectedSessionId,
-            id => lastSeenById[id] ?? 0
-        )
-    }, [lastSeenVersion, visibleSessions, selectedSessionId, showUnreadOnly])
     const machineScopedSessions = useMemo(
-        () => activeMachineFilter === null ? unreadFilteredSessions : unreadFilteredSessions.filter(session =>
+        () => activeMachineFilter === null ? visibleSessions : visibleSessions.filter(session =>
             (session.metadata?.machineId ?? UNKNOWN_MACHINE_ID) === activeMachineFilter),
-        [unreadFilteredSessions, activeMachineFilter]
+        [visibleSessions, activeMachineFilter]
     )
-    const runningCount = useMemo(
-        () => buildSessionHierarchy(machineScopedSessions.filter(session => classifySessionActivity(session).running), sidebarSessions).roots.length,
+    const scopedHierarchy = useMemo(
+        () => buildSessionHierarchy(machineScopedSessions, sidebarSessions),
         [machineScopedSessions, sidebarSessions]
     )
-    const scopedSessions = useMemo(() => showRunningOnly
-        ? machineScopedSessions.filter(session => classifySessionActivity(session).running)
-        : machineScopedSessions, [machineScopedSessions, showRunningOnly])
-    const sessionHierarchy = useMemo(() => buildSessionHierarchy(scopedSessions, sidebarSessions), [scopedSessions, sidebarSessions])
+    // Lenses classify main conversations, not their child agents. Keep the full
+    // child tree so manual expansion, search and pending interactions still work.
+    // Machine options remain based on allSessions, even when a lens has no matches.
+    const unreadFilteredRoots = useMemo(() => {
+        if (!showUnreadOnly) return scopedHierarchy.roots
+        const lastSeenById = getSessionLastSeenSnapshot()
+        return filterUnreadSessionsOnly(
+            scopedHierarchy.roots.filter(session => !session.metadata?.codexParentThreadId),
+            hierarchyRootId(scopedHierarchy, selectedSessionId),
+            id => lastSeenById[id] ?? 0
+        )
+    }, [lastSeenVersion, scopedHierarchy, selectedSessionId, showUnreadOnly])
+    const runningRoots = useMemo(
+        () => unreadFilteredRoots.filter(session => !session.metadata?.codexParentThreadId
+            && classifySessionActivity(session).running),
+        [unreadFilteredRoots]
+    )
+    const runningCount = runningRoots.length
+    const sessionHierarchy = useMemo(() => ({
+        ...scopedHierarchy,
+        roots: showRunningOnly ? runningRoots : unreadFilteredRoots
+    }), [scopedHierarchy, showRunningOnly, runningRoots, unreadFilteredRoots])
     const machineFilteredSessions = sessionHierarchy.roots
     const selectedRootId = hierarchyRootId(sessionHierarchy, selectedSessionId)
     const recentExpansionCache = useRef(new Map<string, boolean>())
@@ -1784,7 +1790,7 @@ export function SessionList(props: {
                                         {t(bucket.labelKey)} ({sessions.length})
                                     </div>
                                     {sessions.map((s) => (
-                                        <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly}
+                                        <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering}
                                             key={s.id}
                                             session={s}
                                             onSelect={props.onSelect} onOpenPane={props.onOpenPane}
@@ -1916,7 +1922,7 @@ export function SessionList(props: {
                                         aria-hidden="true"
                                     />
                                 ) : null}
-                                <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly}
+                                <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering}
                                     session={s}
                                     onSelect={props.onSelect} onOpenPane={props.onOpenPane}
                                     showPath={false}
@@ -2298,7 +2304,7 @@ export function SessionList(props: {
                         selectedRootId={selectedRootId} narrow={narrowViewport} timeFor={listTimeFor}
                         renderSession={s => <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy}
                             expansionCache={recentExpansionCache.current} selectedSessionId={selectedSessionId}
-                            revealChildren={isFiltering || showUnreadOnly} session={s} onSelect={props.onSelect} onOpenPane={props.onOpenPane} api={api}
+                            revealChildren={isFiltering} session={s} onSelect={props.onSelect} onOpenPane={props.onOpenPane} api={api}
                             titleSuggestionAvailable={titleSuggestionAvailable} selected={s.id === selectedSessionId}
                             showDetailedStatus={showDetailedStatus} readState={readState}
                             machineLabel={showMachineFilterBar && activeMachineFilter === null ? resolveMachineLabel(s.metadata?.machineId ?? null) : undefined} />} />
@@ -2335,7 +2341,7 @@ export function SessionList(props: {
                             <div className="collapsible-inner">
                                 <div className="flex flex-col gap-0.5 ml-3 pl-1 py-1">
                                     {globalPinnedSessions.map((s) => (
-                                        <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering || showUnreadOnly}
+                                        <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy} selectedSessionId={selectedSessionId} revealChildren={isFiltering}
                                             key={s.id}
                                             session={s}
                                             onSelect={props.onSelect} onOpenPane={props.onOpenPane}

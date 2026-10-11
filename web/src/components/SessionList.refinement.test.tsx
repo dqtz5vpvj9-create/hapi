@@ -33,7 +33,7 @@ describe('Refined phone list', () => {
         const native = { owner: 'machine', generation: 'g1', sequence: 1, waitingOn: [], turnId: 'turn', startedAt: 100, completedAt: null }
         const running = session('result', 'Result task', { active: true, thinking: true, execution: { ...native, status: 'active' } })
         const { container, updateSessions } = mount([running])
-        const row = screen.getByText('Result task').closest('.session-list-item')!
+        const row = screen.getByText('Result task').closest<HTMLElement>('.session-list-item')!
         expect(row.querySelector('[data-session-status="unread"]')).toBeNull()
         updateSessions([{ ...running, thinking: false, updatedAt: 200,
             execution: { ...native, status: 'idle', sequence: 2, completedAt: 200 } }])
@@ -139,6 +139,38 @@ describe('Refined phone list', () => {
         expect(container.querySelector('[data-subagent-parent="parent"] [data-session-tree-id="child"]')).toBeTruthy()
         fireEvent.mouseDown(screen.getByText('Child task'), { button: 0 }); fireEvent.mouseUp(screen.getByText('Child task'), { button: 0 })
         expect(onSelect).toHaveBeenCalledWith('child')
+    })
+    it('counts unread main sessions once and leaves child agents collapsed in Unread', () => {
+        const parent = session('parent', 'Parent task')
+        const child = session('child', 'Child task', { metadata: { ...parent.metadata, path: '/work/hapi',
+            name: 'Child task', agentSessionId: 'child', codexParentThreadId: 'parent' } })
+        const orphan = session('orphan', 'Orphan child', { metadata: { ...parent.metadata, path: '/work/hapi',
+            name: 'Orphan child', agentSessionId: 'orphan', codexParentThreadId: 'missing-parent' } })
+        const { container } = mount([parent, child, orphan])
+        fireEvent.click(tabs(container).getByRole('button', { name: 'Unread 1' }))
+        expect(screen.getByText('Parent task')).toBeTruthy()
+        expect(screen.queryByText('Child task')).toBeNull()
+        expect(screen.queryByText('Orphan child')).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Subagents (1)' }))
+        expect(screen.getByText('Child task')).toBeTruthy()
+        act(() => markSessionSeen('parent', 100))
+        expect(tabs(container).getByRole('button', { name: 'Unread 0' })).toBeTruthy()
+        expect(screen.queryByText('Parent task')).toBeNull()
+        expect(screen.queryByText('Child task')).toBeNull()
+    })
+    it('does not promote an idle main session into Running because its child is running', () => {
+        const idle = session('idle', 'Idle parent')
+        const working = session('working', 'Working parent', { active: true, thinking: true })
+        const child = (parent: SessionSummary) => session(`${parent.id}-child`, `${parent.id} child`, {
+            active: true, thinking: true, metadata: { ...parent.metadata, path: '/work/hapi',
+                name: `${parent.id} child`, agentSessionId: `${parent.id}-child`, codexParentThreadId: parent.id } })
+        const { container } = mount([idle, child(idle), working, child(working)])
+        fireEvent.click(tabs(container).getByRole('button', { name: 'Running 1' }))
+        expect(screen.queryByText('Idle parent')).toBeNull()
+        expect(screen.getByText('Working parent')).toBeTruthy()
+        expect(screen.queryByText('working child')).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Subagents (1)' }))
+        expect(screen.getByText('working child')).toBeTruthy()
     })
     it('uses the explicit selected machine for task options and keeps the typed draft', () => {
         localStorage.setItem('hapi-session-list-machine-filter', 'm2')
