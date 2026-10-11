@@ -1,3 +1,4 @@
+import { cancelQueuedStateRequest } from './queued-state-request-lifetime'
 import type { ReadingAnchor } from '@/lib/reading-anchor'
 import { getHistoryPageRepository, HistoryReadInvalidated, type HistoryPageRequest } from '@/lib/history-page-repository'
 import { getReasoningStreamId } from '@hapi/protocol/messages'
@@ -1684,6 +1685,7 @@ export function subscribeMessageWindow(sessionId: string, listener: () => void):
 export function releaseMessageWindow(sessionId: string): void {
     const previous = states.get(sessionId)
     if (!previous || listeners.get(sessionId)?.size) return
+    cancelQueuedStateRequest(sessionId)
     const controller = tailSyncControllers.get(sessionId)
     controller?.abort?.abort()
     if (controller?.retryTimer) clearTimeout(controller.retryTimer)
@@ -1705,6 +1707,7 @@ export function releaseMessageWindow(sessionId: string): void {
 }
 
 export function clearMessageWindow(sessionId: string): void {
+    cancelQueuedStateRequest(sessionId)
     const api = tailSyncControllers.get(sessionId)?.api
     if (api) getHistoryPageRepository(api).invalidateSession(sessionId)
     const controller = tailSyncControllers.get(sessionId)
@@ -1722,6 +1725,7 @@ export function clearMessageWindow(sessionId: string): void {
 }
 
 function markMessageWindowForLatestReset(sessionId: string, messages: DecryptedMessage[]): void {
+    cancelQueuedStateRequest(sessionId)
     const previous = states.get(sessionId)
     if (!previous) return
 
@@ -1792,6 +1796,7 @@ export function rewindMessageWindow(sessionId: string, messageLocalId: string): 
 
 export function seedMessageWindowFromSession(fromSessionId: string, toSessionId: string): void {
     if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) return
+    cancelQueuedStateRequest(toSessionId)
     const source = getState(fromSessionId)
     const target = getState(toSessionId)
     const seeded = buildState(createState(toSessionId), {

@@ -7,6 +7,7 @@ import { useHubScratchlist } from '@/lib/use-hub-scratchlist'
 import { queryKeys } from '@/lib/query-keys'
 import { queryClient as productionClient } from '@/lib/query-client'
 import type { ApiClient } from '@/api/client'
+import { ownQueuedStateRequest } from '@/lib/queued-state-request-lifetime'
 
 const fixture = vi.hoisted(() => ({
     api: null as ApiClient | null, startSync: vi.fn(), endSync: vi.fn(), reportConnect: vi.fn(), reportDisconnect: vi.fn(),
@@ -124,5 +125,14 @@ describe('App reconnect ownership and scratchlist repair', () => {
         const { hooks, getScratchlist } = await setup(true)
         act(() => FakeEventSource.instances[0].emit({ type: 'connection-changed', data: { subscriptionId: 'first', resume: 'ok' } })); await settle()
         expect(hooks.result.current.a.entries[0]?.text).toBe('new'); expect(getScratchlist).toHaveBeenCalledTimes(2)
+    })
+    it('aborts outgoing API ownership on replacement and current ownership on unmount', async () => {
+        const { app, api } = await setup(), old = ownQueuedStateRequest(api, 'outgoing')
+        const nextApi = { ...api } as ApiClient, next = ownQueuedStateRequest(nextApi, 'incoming')
+        try {
+            fixture.api = nextApi; app.rerender(createElement(App))
+            expect(old.signal.aborted).toBe(true); expect(next.signal.aborted).toBe(false)
+            app.unmount(); expect(next.signal.aborted).toBe(true)
+        } finally { old.finish(); next.finish() }
     })
 })

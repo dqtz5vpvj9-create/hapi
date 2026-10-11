@@ -202,6 +202,7 @@ export class ApiClient {
         onDownload?: (progress: MessageDownloadProgress) => void,
         responseType: 'json' | 'blob' = 'json'
     ): Promise<T> {
+        init?.signal?.throwIfAborted()
         const headers = new Headers(init?.headers)
         const liveToken = this.getToken ? this.getToken() : null
         const authToken = overrideToken !== undefined
@@ -220,9 +221,11 @@ export class ApiClient {
             signal: init?.signal ?? (!init?.method || init.method === 'GET' ? AbortSignal.timeout(30_000) : undefined)
         })
 
+        init?.signal?.throwIfAborted()
         if (res.status === 401) {
             if (attempt === 0 && this.onUnauthorized) {
                 const refreshed = await this.onUnauthorized()
+                init?.signal?.throwIfAborted()
                 if (refreshed) {
                     this.token = refreshed
                     return await this.request<T>(path, init, attempt + 1, refreshed, onDownload, responseType)
@@ -720,12 +723,13 @@ export class ApiClient {
         })
     }
 
-    async getQueuedState(sessionId: string, localIds: string[]): Promise<QueuedStateResponse> {
+    async getQueuedState(sessionId: string, localIds: string[], signal?: AbortSignal): Promise<QueuedStateResponse> {
         return await this.request<QueuedStateResponse>(
             `/api/sessions/${encodeURIComponent(sessionId)}/messages/queued-state`,
             {
                 method: 'POST',
-                body: JSON.stringify({ localIds })
+                body: JSON.stringify({ localIds }),
+                signal
             }
         )
     }

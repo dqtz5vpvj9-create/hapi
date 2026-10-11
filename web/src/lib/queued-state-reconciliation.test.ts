@@ -98,7 +98,7 @@ describe('reconcileQueuedStateAfterConnect', () => {
             'session-A',
             { ensureAfterCurrent: true }
         )
-        expect(getQueuedState).toHaveBeenCalledWith('session-A', ['local-1'])
+        expect(getQueuedState).toHaveBeenCalledWith('session-A', ['local-1'], expect.any(AbortSignal))
     })
 
     it('passes the exact candidate snapshot to the endpoint and reconciliation', async () => {
@@ -111,7 +111,7 @@ describe('reconcileQueuedStateAfterConnect', () => {
 
         await reconcileQueuedStateAfterConnect(createMockApi(getQueuedState), 'session-B')
 
-        expect(getQueuedState).toHaveBeenCalledWith('session-B', candidateLocalIds)
+        expect(getQueuedState).toHaveBeenCalledWith('session-B', candidateLocalIds, expect.any(AbortSignal))
         expect(mockMarkMessagesRequeued).toHaveBeenCalledWith('session-B', ['local-2'])
         expect(mockReconcileQueuedLocalIds).toHaveBeenCalledWith(
             'session-B',
