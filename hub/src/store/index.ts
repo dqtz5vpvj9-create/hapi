@@ -1,3 +1,4 @@
+import { ForkOperationStore, createForkOperationSchema } from './forkOperationStore'
 import { SessionPresenceStore, createSessionPresenceSchema } from './sessionPresenceStore'
 import { Database } from 'bun:sqlite'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
@@ -46,8 +47,10 @@ export {
     WorkGraphValidationError
 } from './workGraph'
 
-const SCHEMA_VERSION: number = 30
+const SCHEMA_VERSION: number = 31
 const REQUIRED_TABLES = [
+    'fork_operations',
+    'fork_sources',
     'session_execution_versions',
     'session_read_states',
     'sessions',
@@ -74,6 +77,7 @@ export class Store {
     private readonly _dbPath: string
     private closed: boolean = false
 
+    readonly forkOperations: ForkOperationStore
     readonly presence: SessionPresenceStore
     readonly sessions: SessionStore
     readonly machines: MachineStore
@@ -130,6 +134,8 @@ export class Store {
             }
         }
 
+        this.forkOperations = new ForkOperationStore(this.db)
+        this.forkOperations.recoverInterrupted()
         this.presence = new SessionPresenceStore(this.db)
         this.sessions = new SessionStore(this.db)
         this.machines = new MachineStore(this.db)
@@ -367,6 +373,7 @@ export class Store {
             27: () => createMessageOutlineSchema(this.db),
             28: () => createWorkspaceSchema(this.db),
             29: () => createSessionPresenceSchema(this.db),
+            30: () => createForkOperationSchema(this.db),
         })
 
         if (currentVersion === 0) {
@@ -621,6 +628,7 @@ export class Store {
         createMessageDependencySchema(this.db)
         createMessageOutlineSchema(this.db)
         createSessionPresenceSchema(this.db)
+        createForkOperationSchema(this.db)
         createWorkspaceSchema(this.db)
     }
 

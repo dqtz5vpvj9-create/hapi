@@ -43,6 +43,9 @@ export function HappyUserMessage() {
     const steered = useAuiState(({ message }) => (
         message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
     )?.steered === true)
+    const nativeNode = useAuiState(({ message }) => (
+        message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+    )?.nativeNode)
     const cliText = useAuiState((s) => {
         const custom = s.message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
         if (custom?.kind !== 'cli-output') return ''
@@ -56,9 +59,22 @@ export function HappyUserMessage() {
     const showStatus = shouldShowMessageStatus(status)
 
     const history = ctx.metadata?.capabilities?.conversationHistory
-    const hasNativePoint = typeof localId === 'string'
+    const hasManagedPoint = typeof localId === 'string'
         && localId.length > 0
         && ctx.metadata?.conversationHistoryPoints?.[localId] === true
+    const execution = nativeNode?.execution
+    // This is only an affordance. The server resolves the native boundary and
+    // validates that it is the turn's first root user input before forking.
+    const nativeBoundary = nativeNode?.kind === 'user-text'
+        && execution?.threadId === ctx.metadata?.codexSessionId
+        && execution?.threadId?.trim()
+        && execution.turnId?.trim()
+        && execution.itemId?.trim()
+        && !steered
+        && (status === undefined || status === 'sent')
+        ? { threadId: execution.threadId, turnId: execution.turnId, itemId: execution.itemId }
+        : undefined
+    const historicalBoundary = nativeNode ? nativeBoundary : hasManagedPoint ? localId! : undefined
     const isLatestBoundary = ctx.isLatestCompletedBoundary?.(messageId) === true
     const showCurrentFork = Boolean(
         history?.forkCurrent
@@ -68,7 +84,7 @@ export function HappyUserMessage() {
     )
     const showHistoricalFork = Boolean(
         history?.forkAtMessage
-        && hasNativePoint
+        && historicalBoundary !== undefined
         && !isLatestBoundary
         && !ctx.disabled
         && ctx.onForkConversation
@@ -76,7 +92,7 @@ export function HappyUserMessage() {
     const showFork = showCurrentFork || showHistoricalFork
     const showRewind = Boolean(
         history?.rewindToMessage
-        && hasNativePoint
+        && hasManagedPoint
         && !ctx.disabled
         && ctx.onRewindConversation
     )
@@ -137,8 +153,8 @@ export function HappyUserMessage() {
                 historyActionPending={ctx.historyActionPending}
                 onFork={showCurrentFork
                     ? () => ctx.onForkConversation!()
-                    : showHistoricalFork && localId
-                        ? () => ctx.onForkConversation!(localId)
+                    : showHistoricalFork && historicalBoundary !== undefined
+                        ? () => ctx.onForkConversation!(historicalBoundary)
                         : undefined}
                 onRewind={showRewind && localId
                     ? () => ctx.onRewindConversation!(localId)

@@ -136,6 +136,71 @@ across different HAPI homes). Unix sockets live in a short private temporary
 directory. Windows uses bearer-authenticated loopback WebSockets. App-server
 endpoints/tokens never go into HAPI session metadata or SSE.
 
+### Fork recovery
+
+Shared Codex forks have a durable request ID. HAPI records the request before
+sending it to the native app-server. A timeout, disconnection, or native error
+can leave the result **unconfirmed**: the native conversation may already exist.
+The original conversation remains usable. Reloading, reconnecting, or checking
+the result does not silently create another fork.
+
+The Web recovery banner separates these actions:
+
+- **Check result** reads the existing request. An exact late native reply can
+  recover its child identity while the bounded reply observer is still alive.
+- **Recover conversation binding** reuses a saved native child and its reserved
+  HAPI identity. It does not send another native fork.
+- **Open fork** opens the confirmed, bound child.
+- **Send original request** is available after the server has not yet reported
+  a locally saved request. It resends the same request ID and selection. A
+  missing receipt does not prove the earlier request cannot still arrive.
+- **Create another fork anyway** requires a separate duplicate-risk confirmation.
+  It creates a new request linked to the exact unconfirmed request and keeps
+  that request's original message boundary. The previous request is retained
+  and is not canceled; another native conversation may be created. A changed
+  source revision or resolved original result requires review before continuing.
+  This is not an unconditional bypass: missing or inconsistent journal evidence
+  still blocks dispatch.
+- **Close request if it has not started** has its own confirmation. It can prevent
+  an original request still in transit from starting. The source runtime checks
+  its durable journal and closes only a request it has never accepted; it does
+  not cancel accepted or dispatched work. A durable rejection also blocks a
+  delayed copy of that same request. If the request was already accepted, the
+  banner explicitly says it was not closed. If closure restores an earlier
+  unconfirmed request, review it and make a separate duplicate-risk confirmation
+  before creating another fork. Nothing is created automatically.
+
+This closure action covers the crash window where Hub recorded a request but
+never delivered it to the CLI. It requires the original exact native-store
+identity. If that identity is unavailable, the runtime is offline, or journal
+evidence conflicts, HAPI keeps the result unconfirmed and reports why it could
+not close it. A missing receipt or failed request alone is never proof of closure.
+
+Another tab or HAPI alias of the same native source shares its admission fence.
+An alias directs you to the original HAPI conversation for recovery. A late
+result from an older request does not replace the current request or navigate
+a view after you leave it.
+
+The duplicate-risk Web action applies to requests for which the Hub holds the
+original selection. An unconfirmed fork from the native terminal or legacy CLI
+may exist only in the local CLI journal. In that case Web reports its source and
+original request ID when authorized, explains that the attempted Web request
+created nothing, and cannot release that earlier operation. There is currently
+no CLI recovery command or Web import flow for that case. Other native sources
+remain usable. Direct native tools outside HAPI are not protected by this fence.
+
+While the same native store contains any fork receipt with an unknown child
+identity, automatic discovery conservatively pauses adoption of previously
+unknown native roots. This includes an older unknown receipt retained after a
+duplicate-risk fork. Already connected sources remain usable, and exact known
+children can still recover their bindings.
+
+HAPI never guesses an unknown child's identity from timestamps, titles, or
+nearby conversations. Keep the local journal when diagnosing an unconfirmed
+result; deleting it removes the evidence needed to prevent duplicate dispatch.
+This protocol prevents redispatch of the same durable request ID, but does not
+promise exactly-once native creation across arbitrary native failures.
+
 ## Current boundaries
 
 - Cold resume accepts root threads only. To revisit a child agent, resume its
@@ -153,6 +218,15 @@ endpoints/tokens never go into HAPI session metadata or SSE.
   sessions: a native mutation plus hub transcript truncation needs a commit
   barrier across every sender. Use **Fork at message** instead. Cuts inside a
   steered turn are rejected; select its first user message.
+  For an attached native daemon, that message is resolved from its native
+  thread/turn/item identity and read-only sparse metadata, including inherited
+  `history_base` ranges. No duplicate Hub transcript or full-history replay is
+  required. Missing or unsynchronized metadata, compressed-only ancestry, or
+  lineage beyond the bounded lookup budget fails explicitly; HAPI never changes
+  the selected cut into a current-state fork. This requires a supported paginated
+  native history index. Native snapshot/context construction and a queued-input
+  check can still be expensive; this does not make the entire native fork
+  constant-time.
 - `--worktree` and unsupported launch flags fail explicitly; create/select the
   working directory before launch. `--oss` requires an explicit
   `--local-provider`. Bare resume pickers use `hapi resume` or the attached TUI.

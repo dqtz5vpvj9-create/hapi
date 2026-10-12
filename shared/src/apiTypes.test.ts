@@ -2,11 +2,44 @@ import { describe, expect, it } from 'vitest'
 import {
     ClearOpencodeSessionCallbackRequestSchema,
     ClearOpencodeSessionResponseSchema,
+    ForkConversationRequestSchema,
     ListCodexSessionsRpcResponseSchema,
     ListPiSessionsRpcResponseSchema,
     MessagesQuerySchema,
     SendMessageRequestSchema
 } from './apiTypes'
+
+describe('ForkConversationRequestSchema', () => {
+    const nativeBoundary = { threadId: 'thread', turnId: 'turn', itemId: 'item' }
+
+    it.each([
+        ['current', {}], ['managed', { messageLocalId: 'local' }], ['native', { nativeBoundary }],
+    ])('preserves %s fork selectors', (_kind, request) => {
+        expect(ForkConversationRequestSchema.parse(request)).toEqual(request)
+    })
+
+    it('does not normalize opaque boundary identities', () => {
+        for (const request of [
+            { messageLocalId: ' local ' },
+            { nativeBoundary: { threadId: ' thread ', turnId: ' turn ', itemId: ' item ' } },
+        ]) expect(ForkConversationRequestSchema.parse(request)).toEqual(request)
+    })
+
+    it.each([
+        { messageLocalId: 'local', nativeBoundary },
+        { messageLocalId: '' },
+        { messageLocalId: ' ' },
+        { nativeBoundary: { ...nativeBoundary, threadId: '' } },
+        { nativeBoundary: { ...nativeBoundary, turnId: ' ' } },
+        { nativeBoundary: { ...nativeBoundary, itemId: '' } },
+        { nativeBoundary: { threadId: 'thread', turnId: 'turn' } },
+        { nativeBoundary: { ...nativeBoundary, kind: 'user' } },
+        { nativeBoundary: null },
+        { turnId: 'turn' },
+    ])('rejects malformed, mixed or unknown selectors: %j', (request) => {
+        expect(ForkConversationRequestSchema.safeParse(request).success).toBe(false)
+    })
+})
 
 describe('ListCodexSessionsRpcResponseSchema', () => {
     it('preserves Codex session messages when parsing runner RPC responses', () => {

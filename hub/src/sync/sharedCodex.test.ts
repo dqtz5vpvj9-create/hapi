@@ -10,8 +10,8 @@ function fixture() {
     const engine = new SyncEngine(store, {} as never, new RpcRegistry(), { broadcast() {} } as never)
     const metadata: Metadata = { path: '/tmp/work', host: 'test', machineId: 'machine', hostPid: 42, flavor: 'codex',
         capabilities: { concurrentClients: true, conversationHistory: { forkCurrent: true, forkAtMessage: true } } }
-    const create = (name: string, more: Partial<Metadata> = {}) => {
-        const session = engine.getOrCreateSession(name, { ...metadata, codexSessionId: `native-${name}`, ...more }, { controlledByUser: false }, 'default')
+    const create = (name: string, more: Partial<Metadata> = {}, requestedId?: string) => {
+        const session = engine.getOrCreateSession(name, { ...metadata, codexSessionId: `native-${name}`, ...more }, { controlledByUser: false }, 'default', undefined, undefined, undefined, requestedId)
         engine.handleSessionAlive({ sid: session.id, time: Date.now() })
         engine.handleSessionReady({ sid: session.id, time: Date.now() })
         return session
@@ -39,9 +39,15 @@ describe('shared Codex hub binding', () => {
     it('uses the already-bound fork child without spawning a second engine', async () => {
         const { engine, create, rpc } = fixture()
         try {
-            const source = create('source'); const child = create('child', { forkedFrom: source.id })
-            rpc.forkConversation = async () => ({ nativeSessionId: 'native-child', sessionId: child.id })
-            expect(await engine.forkConversation(source.id, 'default')).toEqual({ type: 'success', sessionId: child.id })
+            const source = create('source'); let childId = ''
+            rpc.forkOperation = async (_id, request) => {
+                childId = create('child', { forkedFrom: source.id }, request.childSessionId).id
+                return { operation: { operationId: request.operationId, sourceSessionId: source.id, childSessionId: childId,
+                    sourceRevision: request.sourceRevision, status: 'created', nativeThreadId: 'native-child', binding: 'ready',
+                    message: 'Created', updatedAt: Date.now() } }
+            }
+            const result = await engine.forkConversation(source.id, 'default')
+            expect(result).toEqual({ type: 'success', sessionId: childId })
             expect(engine.getSession(source.id)?.metadata?.codexSessionId).toBe('native-source')
         } finally { engine.stop() }
     })

@@ -1,4 +1,5 @@
 import { configureSessionReadSync, hydrateSessionReadStates } from '@/lib/sessionLastSeen'
+import { ForkOperationCloseResponseSchema, ForkOperationResponseSchema, ForkSourceStateSchema, type ForkOperationCloseResponse, type ForkOperationResponse, type ForkSourceState } from '@hapi/protocol/forkOperations'
 import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
 import type {
     AttachmentMetadata,
@@ -53,6 +54,7 @@ import type {
     MessageContextResponse,
     MessageOutlineResponse,
     MessageDependenciesResponse,
+    NativeForkBoundary,
     MachineListDirectoryResponse,
     MachinePathsExistsResponse,
     OpencodeModelsResponse,
@@ -195,6 +197,23 @@ export class ApiClient {
             }))
     }
 
+    /** Stable, non-secret identity. Never reuse a fork receipt across Hubs/accounts. */
+    getForkOperationScope(): string | null {
+        try {
+            const token = this.getToken ? this.getToken() : this.token
+            if (!token) return null
+            const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+            if (typeof payload.ns !== 'string' || typeof payload.uid !== 'number') return null
+            const origin = typeof location === 'undefined' ? null : location.origin
+            if (!origin) return null
+            const base = new URL(this.baseUrl ?? origin, origin)
+            base.search = ''; base.hash = ''; base.username = ''; base.password = ''
+            base.pathname = base.pathname.replace(/\/+$/, '') || '/'
+            // Partition configured Hub paths conservatively, even when a deployment routes /api at the origin.
+            return JSON.stringify([origin, base.toString(), payload.ns, payload.uid])
+        } catch { return null }
+    }
+
     private buildUrl(path: string): string {
         if (!this.baseUrl) {
             return path
@@ -212,7 +231,8 @@ export class ApiClient {
         attempt: number = 0,
         overrideToken?: string | null,
         onDownload?: (progress: MessageDownloadProgress) => void,
-        responseType: 'json' | 'blob' = 'json'
+        responseType: 'json' | 'blob' = 'json',
+        retryUnauthorized = true
     ): Promise<T> {
         init?.signal?.throwIfAborted()
         const headers = new Headers(init?.headers)
@@ -235,7 +255,7 @@ export class ApiClient {
 
         init?.signal?.throwIfAborted()
         if (res.status === 401) {
-            if (attempt === 0 && this.onUnauthorized) {
+            if (retryUnauthorized && attempt === 0 && this.onUnauthorized) {
                 const refreshed = await this.onUnauthorized()
                 init?.signal?.throwIfAborted()
                 if (refreshed) {
@@ -794,14 +814,86 @@ export class ApiClient {
         })
     }
 
-    async forkConversation(sessionId: string, messageLocalId?: string): Promise<{ sessionId: string }> {
-        return await this.request<{ sessionId: string }>(
-            `/api/sessions/${encodeURIComponent(sessionId)}/fork`,
-            {
-                method: 'POST',
-                body: JSON.stringify(messageLocalId ? { messageLocalId } : {})
+    async getForkSourceState(sessionId: string): Promise<ForkSourceState> {
+        return ForkSourceStateSchema.parse(await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/fork-operations`))
+    }
+
+    async getForkOperation(sessionId: string, operationId: string): Promise<ForkOperationResponse> {
+        return ForkOperationResponseSchema.parse(await this.request(
+            `/api/sessions/${encodeURIComponent(sessionId)}/fork-operations/${encodeURIComponent(operationId)}`
+        ))
+    }
+
+    async reconcileForkOperation(sessionId: string, operationId: string): Promise<ForkOperationResponse> {
+        return ForkOperationResponseSchema.parse(await this.forkOperationMutation(
+            `/api/sessions/${encodeURIComponent(sessionId)}/fork-operations/${encodeURIComponent(operationId)}/reconcile`, {}
+        ))
+    }
+
+    async closeUnadmittedForkOperation(sessionId: string, operationId: string, expectedForkRevision: number): Promise<ForkOperationCloseResponse> {
+        // This response also carries the authoritative source head, which the ordinary receipt parser would strip.
+        return ForkOperationCloseResponseSchema.parse(await this.forkOperationMutation(
+            `/api/sessions/${encodeURIComponent(sessionId)}/fork-operations/${encodeURIComponent(operationId)}/close-unadmitted`,
+            { expectedForkRevision }
+        ))
+    }
+
+    async startForkOperation(sessionId: string, operationId: string, expectedForkRevision: number,
+        boundary?: string | NativeForkBoundary, duplicateRiskOf?: string): Promise<ForkOperationResponse> {
+        if (duplicateRiskOf && boundary !== undefined) throw new Error('A duplicate-risk fork must preserve the original server-side boundary.')
+        return ForkOperationResponseSchema.parse(await this.forkOperationMutation(`/api/sessions/${encodeURIComponent(sessionId)}/fork`, {
+            operationId, expectedForkRevision,
+            ...(duplicateRiskOf ? { duplicateRiskOf } : {}),
+            ...(duplicateRiskOf || boundary === undefined ? {} : typeof boundary === 'string'
+                ? { messageLocalId: boundary } : { nativeBoundary: boundary })
+        }))
+    }
+
+    private async forkOperationMutation(path: string, body: unknown): Promise<unknown> {
+        try {
+            // Never replay a tracked mutation, including after auth refresh. Recovery reads the same ID.
+            return await this.request(path, {
+                method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(30_000)
+            }, 0, undefined, undefined, 'json', false)
+        } catch (error) {
+            if (error instanceof ApiError && error.body) {
+                let detail: unknown
+                try { detail = JSON.parse(error.body) } catch { throw error }
+                if (detail && typeof detail === 'object' && 'error' in detail
+                    && typeof detail.error === 'string' && detail.error.trim()) {
+                    throw new ApiError(detail.error, error.status, error.code, error.body)
+                }
             }
-        )
+            throw error
+        }
+    }
+
+    async forkConversation(sessionId: string, boundary?: string | NativeForkBoundary): Promise<{ sessionId: string }> {
+        try {
+            return await this.request<{ sessionId: string }>(
+                `/api/sessions/${encodeURIComponent(sessionId)}/fork`,
+                {
+                    method: 'POST',
+                    body: JSON.stringify(boundary === undefined ? {} : typeof boundary === 'string'
+                        ? { messageLocalId: boundary }
+                        : { nativeBoundary: boundary })
+                }
+            )
+        } catch (error) {
+            if (error instanceof ApiError && error.body) {
+                let detail: unknown
+                try {
+                    detail = JSON.parse(error.body)
+                } catch {
+                    throw error
+                }
+                if (detail !== null && typeof detail === 'object' && 'error' in detail
+                    && typeof detail.error === 'string' && detail.error.trim().length > 0) {
+                    throw new ApiError(detail.error, error.status, error.code, error.body)
+                }
+            }
+            throw error
+        }
     }
 
     async rewindConversation(sessionId: string, messageLocalId: string): Promise<{ success: true }> {

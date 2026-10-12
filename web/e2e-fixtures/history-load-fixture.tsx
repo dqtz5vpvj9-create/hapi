@@ -6,7 +6,7 @@ import ReactDOM from 'react-dom/client'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import '../src/index.css'
-import { ApiError, type ApiClient } from '../src/api/client'
+import { ApiError, ApiClient } from '../src/api/client'
 import type { DecryptedMessage, MessagesResponse, Session } from '../src/types/api'
 import { I18nProvider } from '../src/lib/i18n-context'
 import { useMessages } from '../src/hooks/queries/useMessages'
@@ -24,6 +24,7 @@ import { getHistoryPageRepository } from '../src/lib/history-page-repository'
 import { captureReadingAnchor, type ReadingAnchor } from '../src/lib/reading-anchor'
 import { buildConversationOutline } from '../src/chat/outline'
 import { extractConversationOutlineLabel } from '@hapi/protocol/conversationOutline'
+import { createForkNavigator } from '../src/lib/fork-navigation'
 
 // Drives the real message-window store + chat pipeline + HappyThread against a
 // fake paginated message API, so e2e tests can exercise older-history loading
@@ -36,6 +37,9 @@ const TOTAL_MESSAGES = 1200
 const BASE_AT = 1_700_000_000_000
 
 type Probe = {
+    forkDestination: string | null
+    forkNavigations: number
+    failForkNavigation: boolean
     evictHistoryPayloads: () => void
     holdContext: () => void
     releaseContext: () => void
@@ -95,6 +99,9 @@ let beforeResponseGate: Promise<void> | null = null
 let releaseBeforeResponse = () => {}
 
 window.__probe = {
+    forkDestination: null,
+    forkNavigations: 0,
+    failForkNavigation: false,
     mediaReads: 0,
     holdMedia: () => { mediaResponseGate = new Promise<void>(resolve => { releaseMediaResponse = resolve }) },
     releaseMedia: () => { mediaResponseGate = null; releaseMediaResponse() },
@@ -188,6 +195,7 @@ const readingAnchorTasks = fixtureParams.has('readingAnchor')
 const readingPending = fixtureParams.has('readingPending')
 const outlineArchive = fixtureParams.has('outlineArchive')
 const threadHeader = fixtureParams.has('threadHeader')
+const nativeFork = fixtureParams.has('nativeFork')
 let remoteRewindSeq = TOTAL_MESSAGES
 let remoteEpoch = 1
 if (holdLatest) {
@@ -233,6 +241,13 @@ if (fixtureParams.has('nativeReplay')) {
         const answer = allMessages[TOTAL_MESSAGES - 13].content as { content: { data: { message: string } } }
         answer.content.data.message = '```typescript\n' + Array.from({ length: 1200 }, (_, index) =>
             `const nativeLine${String(index + 1).padStart(4, '0')} = "source identity retained across the history window";`).join('\n') + '\n```'
+    }
+}
+if (nativeFork) {
+    allMessages.splice(0, allMessages.length, ...nativeReplayRows(1, 'completed'))
+    if (fixtureParams.has('steeredFork')) {
+        allMessages[0].steered = true
+        allMessages.splice(1)
     }
 }
 
@@ -377,7 +392,10 @@ function pageFrom(messages: DecryptedMessage[], overrides: Partial<MessagesRespo
 
 let outlineReads = 0
 let outlineFailures = Number(fixtureParams.get('failOutline') ?? '0')
+// Real HTTP serialization, intercepted by Playwright. No hub or model starts.
+const forkApi = new ApiClient('native-fork-fixture-token')
 const fakeApi = {
+    forkConversation: forkApi.forkConversation.bind(forkApi),
     approvePermission: async (session: string, request: string, answers: unknown) => {
         window.__probe.answers.push({ session, request, answers })
     },
@@ -564,7 +582,10 @@ const fakeSession = {
     agentState: fixtureParams.has('question') ? { requests: { 'native-question': {
         tool: 'request_user_input', toolCallId: 'native-tool-a', arguments: nativeReplayQuestion, createdAt: BASE_AT,
     } } } : null,
-    metadata: { path: '/tmp/fixture', host: 'fixture' }
+    metadata: { path: '/tmp/fixture', host: 'fixture', ...(nativeFork ? {
+        flavor: 'codex', codexSessionId: 'fixture-native-thread',
+        capabilities: { conversationHistory: { forkCurrent: true, forkAtMessage: true } },
+    } : {}) }
 } as unknown as Session
 
 const noopSend = () => {}
@@ -576,8 +597,16 @@ function FixtureThread() {
     activeSessionId = sessionId
     const session = useMemo(() => ({ ...fakeSession, id: sessionId }), [sessionId])
     const [outlineOpen, setOutlineOpen] = useState(false)
+    const forkConversation = useMemo(() => createForkNavigator(
+        boundary => fakeApi.forkConversation(sessionId, boundary),
+        async destination => {
+            window.__probe.forkNavigations++
+            if (window.__probe.failForkNavigation) throw new Error('Fixture navigation failed')
+            window.__probe.forkDestination = destination
+        },
+    ), [sessionId])
     window.__nativeReplay = { apply(status, text) {
-        const rows = nativeReplayRows(TOTAL_MESSAGES - 19, status, text, fixtureParams.has('question'))
+        const rows = nativeReplayRows(nativeFork ? 1 : TOTAL_MESSAGES - 19, status, text, fixtureParams.has('question'))
         allMessages.splice(-20, 20, ...rows)
         ingestIncomingMessages(sessionId, rows)
     } }
@@ -672,7 +701,10 @@ function FixtureThread() {
                     api={fakeApi}
                     session={session}
                     sessionId={sessionId}
-                    metadata={null}
+                    metadata={nativeFork ? session.metadata : null}
+                    onForkConversation={nativeFork ? forkConversation : undefined}
+                    isLatestCompletedBoundary={nativeFork && fixtureParams.has('currentFork')
+                        ? messageId => messageId === runtime.thread.getState().messages.at(-1)?.id : undefined}
                     disabled={false}
                     onRefresh={() => {}}
                     onViewModeChange={setViewMode}

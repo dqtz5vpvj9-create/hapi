@@ -60,7 +60,7 @@ Source: `hub/src/web/routes/sessions.ts`; request schemas in `shared/src/apiType
 Both endpoints return the id of the session that now carries the conversation — which **may differ from the id you called them on** (fresh spawn under a new id; the old row is superseded). Clients must migrate composer drafts and replace navigation to the returned id. Reference: `web/src/routes/sessions/followSupersedingSession.ts`; the durable link also appears as `metadata.supersededBySessionId` on the old session.
 :::
 
-Additional session APIs without a current native UI: `POST /api/sessions/:id/fork` `{messageLocalId?}` → `{sessionId}`, `POST /api/sessions/:id/rewind` `{messageLocalId}` → `{success: true}`, `GET /api/sessions/:id/export` (413 when too large). Availability also depends on session history capabilities.
+Additional session APIs without a current native UI: `POST /api/sessions/:id/fork` `{}` (current), `{messageLocalId}` (managed history), or `{nativeBoundary: {threadId, turnId, itemId}}` (attached native history) → `{sessionId}`, `POST /api/sessions/:id/rewind` `{messageLocalId}` → `{success: true}`, `GET /api/sessions/:id/export` (413 when too large). Availability also depends on session history capabilities. Shared Codex also supports the durable [fork operation workflow](./fork-operations.md), including source revision CAS, status reads and binding-only reconciliation.
 
 ### Messages
 
@@ -313,3 +313,11 @@ internal and must never be used by clients.
 ### Shared read state
 
 `GET /api/sessions` includes `readStates`, keyed by HAPI session ID and scoped to the authenticated user/namespace. `PUT /api/sessions/:id/read-state` accepts `{expectedVersion, seenAt, manualUnreadAt}` and returns `{applied, state}`. A version conflict returns HTTP 200 with `applied:false` and the current state; it does not clear a newer manual unread action. The normal session authorization guard applies. Clients persist offline intents under the Hub/account scope and reconcile after reconnect.
+
+Native fork selectors come from the loaded user message's `meta.nativeExecution`.
+They are mutually exclusive with `messageLocalId`; unknown request fields and
+empty IDs are rejected. The authenticated source session fixes the namespace,
+native thread and store. The CLI verifies the selected first user item against
+native source-turn metadata before sending an exclusive `beforeTurnId` cut.
+A missing, stale, steered or unsupported boundary returns an error rather than
+forking the current conversation state. Current forks keep the empty request.

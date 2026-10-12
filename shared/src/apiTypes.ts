@@ -653,9 +653,35 @@ export const SendMessageRequestSchema = z.object({
 
 export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>
 
+const ForkBoundaryIdSchema = z.string().min(1).refine(value => value.trim().length > 0, 'Boundary IDs must not be blank')
+
+export const NativeForkBoundarySchema = z.object({
+    threadId: ForkBoundaryIdSchema,
+    turnId: ForkBoundaryIdSchema,
+    itemId: ForkBoundaryIdSchema
+}).strict()
+
+export type NativeForkBoundary = z.infer<typeof NativeForkBoundarySchema>
+
 export const ForkConversationRequestSchema = z.object({
-    messageLocalId: z.string().min(1).optional()
-})
+    operationId: z.string().uuid().optional(),
+    expectedForkRevision: z.number().int().nonnegative().optional(),
+    duplicateRiskOf: z.string().uuid().optional(),
+    messageLocalId: ForkBoundaryIdSchema.optional(),
+    nativeBoundary: NativeForkBoundarySchema.optional()
+}).strict().refine(
+    (data) => data.messageLocalId === undefined || data.nativeBoundary === undefined,
+    { message: 'messageLocalId and nativeBoundary are mutually exclusive', path: ['nativeBoundary'] }
+).refine(
+    data => (data.operationId === undefined) === (data.expectedForkRevision === undefined),
+    { message: 'operationId and expectedForkRevision must be supplied together', path: ['operationId'] }
+).refine(
+    data => data.duplicateRiskOf === undefined || (data.operationId !== undefined && data.operationId !== data.duplicateRiskOf),
+    { message: 'duplicateRiskOf requires a different modern operationId and expectedForkRevision', path: ['duplicateRiskOf'] }
+).refine(
+    data => data.duplicateRiskOf === undefined || (data.messageLocalId === undefined && data.nativeBoundary === undefined),
+    { message: 'A duplicate-risk fork inherits its original boundary from the server', path: ['duplicateRiskOf'] }
+)
 
 export type ForkConversationRequest = z.infer<typeof ForkConversationRequestSchema>
 

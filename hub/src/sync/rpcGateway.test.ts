@@ -209,3 +209,25 @@ describe('RpcGateway permission RPC error surfacing (tiann/hapi#1735)', () => {
         await expect(gateway.approvePermission('session-1', 'request-1')).resolves.toBeUndefined()
     })
 })
+
+describe('durable fork RPC', () => {
+    it('uses typed receipts and bounded observation timeouts without untracked fallback', async () => {
+        const timeouts: number[] = []; const methods: string[] = []
+        const request = { action: 'read' as const, operationId: '00000000-0000-4000-8000-000000000001', sourceSessionId: 'source', childSessionId: 'child',
+            sourceMachineId: 'machine', sourceNativeThreadId: 'native-source', sourceStoreId: '/native/store',
+            sourceRevision: 1, fingerprint: 'request' }
+        let response: unknown = { operation: { ...request, status: 'indeterminate', message: 'Unknown', updatedAt: 1 } }
+        const socket = { timeout(ms: number) { timeouts.push(ms); return { emitWithAck: async (_event: string, payload: { method: string }) => {
+            methods.push(payload.method); return JSON.stringify(response)
+        } } } }
+        const gateway = new RpcGateway({ of: () => ({ sockets: { get: () => socket } }) } as unknown as Server,
+            { getSocketIdForMethod: () => 'socket' } as unknown as RpcRegistry)
+        expect(await gateway.forkOperation('source', request)).toMatchObject({ operation: { status: 'indeterminate' } })
+        response = { error: 'Native error after possible create' }
+        await expect(gateway.forkOperation('source', { ...request, action: 'start' })).rejects.toThrow('Native error after possible create')
+        response = { operation: { ...request, status: 'rejected', message: 'Unsafe rejection without proof', updatedAt: 1 } }
+        await expect(gateway.forkOperation('source', request)).rejects.toThrow()
+        expect(timeouts).toEqual([5_000, 30_000, 5_000])
+        expect(methods).toEqual(['source:fork-operation', 'source:fork-operation', 'source:fork-operation'])
+    })
+})

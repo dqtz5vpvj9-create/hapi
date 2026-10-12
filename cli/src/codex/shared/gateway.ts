@@ -52,6 +52,8 @@ export async function startCodexGateway(options: {
         });
         connections.set(downstream, upstream);
         const pending = new Map<string | number, Envelope>();
+        const forkTimers = new Map<string | number, ReturnType<typeof setTimeout>>();
+        const forget = (id: string | number) => { pending.delete(id); clearTimeout(forkTimers.get(id)); forkTimers.delete(id); };
         const ready = new Promise<void>((resolve, reject) => { upstream.once('open', resolve); upstream.once('error', reject); });
         void ready.catch(() => downstream.close(1011, 'Codex unavailable'));
         let detached = false;
@@ -63,6 +65,8 @@ export async function startCodexGateway(options: {
         const finish = () => {
             if (finished) return;
             finished = true; clearTimeout(drainTimer);
+            for (const timer of forkTimers.values()) clearTimeout(timer);
+            forkTimers.clear(); pending.clear();
             connections.delete(downstream); upstream.close();
             options.hooks.disconnected?.(connectionId);
         };
@@ -84,9 +88,20 @@ export async function startCodexGateway(options: {
                         send(downstream, { id: message.id, result: await options.hooks.control(message.method, message.params) });
                         return;
                     }
+                    if (message.id !== undefined && pending.has(message.id)) throw new Error('JSON-RPC request ID is already in flight');
                     const transformed = await options.hooks.before(message, connectionId);
                     if (transformed.id !== undefined && ['thread/start', 'thread/resume', 'thread/fork', 'thread/archive', 'thread/revert', 'thread/rollback', 'thread/queue/delete'].includes(transformed.method ?? '')) {
                         pending.set(transformed.id, transformed);
+                        if (transformed.method === 'thread/fork') {
+                            const requestId = transformed.id;
+                            // Match the runtime's bounded observer. The durable source fence outlives this map.
+                            const timer = setTimeout(() => {
+                                forget(requestId);
+                                // A peer may reuse numeric IDs. Retire this transport before forgetting correlation.
+                                downstream.close(1011, 'Native fork outcome remains unknown'); finish();
+                            }, 320_000);
+                            timer.unref(); forkTimers.set(requestId, timer);
+                        }
                     }
                     send(upstream, transformed);
                 } catch (error) {
@@ -104,7 +119,7 @@ export async function startCodexGateway(options: {
                     catch (error) {
                         send(downstream, { id: message.id, error: { code: -32603, message: error instanceof Error ? error.message : String(error) } });
                         return;
-                    } finally { pending.delete(message.id!); drained(); }
+                    } finally { forget(message.id!); drained(); }
                 }
                 send(downstream, message);
                 for (const notification of replay ?? []) send(downstream, notification);

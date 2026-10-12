@@ -1,3 +1,6 @@
+import { ForkOperationRpcRequestSchema, type ForkOperationRpcRequest, type ForkOperationRpcResponse } from '@hapi/protocol/forkOperations';
+import type { ForkPlan, ForkOperationOrigin } from './forkJournal';
+import { resolveNativeForkBoundary } from './nativeForkBoundary';
 import { NativeRuntimeStateTracker } from './execution';
 import { SessionStartupTrace } from './startupTrace';
 import { SharedCodexAsyncQuestions } from './asyncQuestions';
@@ -16,7 +19,7 @@ import { normalizeCodexModel } from '@/modules/common/codexModels';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods';
 import { ThreadGoalSchema } from '@hapi/protocol/schemas';
-import { CodexGoalRequestSchema, CodexGoalResponseSchema, ImplementCodexPlanRequestSchema, type ImplementCodexPlanResult } from '@hapi/protocol/apiTypes';
+import { ForkConversationRequestSchema, CodexGoalRequestSchema, CodexGoalResponseSchema, ImplementCodexPlanRequestSchema, type ImplementCodexPlanResult } from '@hapi/protocol/apiTypes';
 import { CodexAppServerClient, isIndeterminateError } from '../codexAppServerClient';
 import { buildHapiMcpBridge, type HapiMcpBridge } from '../utils/buildHapiMcpBridge';
 import { buildUserInputFromMessage } from '../utils/appServerConfig';
@@ -41,6 +44,7 @@ export type RootHost = {
     settingsFor(threadId: string): Record<string, unknown> | undefined;
     create(method: 'thread/start' | 'thread/fork', params: Record<string, unknown>, parent?: SharedCodexRoot): Promise<SharedCodexRoot>;
     end(root: SharedCodexRoot, nativeArchive?: boolean): Promise<void>;
+    forkOperation?(root: SharedCodexRoot, request: ForkOperationRpcRequest, preflight: () => Promise<ForkPlan>, origin?: ForkOperationOrigin): Promise<ForkOperationRpcResponse>;
 };
 const SettingsSchema = z.object({
     permissionMode: z.enum(['default', 'read-only', 'safe-yolo', 'yolo']).optional(),
@@ -77,6 +81,7 @@ export class SharedCodexRoot {
     private latestTurn?: { id: string; status: string; planId?: string };
     private publishedPlanId: string | null | undefined;
     private submittingPlan = false;
+    private forking = false;
     private fresh = false;
     private steeringActive: boolean | undefined;
     private turnRevision = 0;
@@ -325,6 +330,7 @@ export class SharedCodexRoot {
         if (!this.host.external) await this.initialSettings(options);
         if (this.stopping) throw new Error('Codex execution is stopping');
         this.registerControls(); this.ready();
+        clearInterval(this.heartbeat);
         this.heartbeat = setInterval(() => this.alive(), 2_000); this.alive(); this.session.emitSessionReady();
         if (this.fresh) {
             this.fresh = false;
@@ -648,7 +654,7 @@ export class SharedCodexRoot {
         const rpc = { registerHandler: (method: string, handler: (raw: unknown) => Promise<unknown>) => {
             this.session.rpcHandlerManager.registerHandler(method, async (raw: unknown) => {
                 if (this.stopping) throw new Error('Codex execution is stopping; resume when inactive');
-                if (this.session.getMetadata()?.codexNativeConnection === 'history' && ![RPC_METHODS.ReadCodexHistory, RPC_METHODS.ListCodexModels].includes(method as typeof RPC_METHODS.ReadCodexHistory)) throw new Error('This native Codex thread is open for history only');
+                if (this.session.getMetadata()?.codexNativeConnection === 'history' && ![RPC_METHODS.ReadCodexHistory, RPC_METHODS.ListCodexModels, RPC_METHODS.ForkOperation].includes(method as typeof RPC_METHODS.ReadCodexHistory)) throw new Error('This native Codex thread is open for history only');
                 const pending = handler(raw); this.controls.add(pending);
                 try { return await pending; } finally { this.controls.delete(pending); }
             });
@@ -719,20 +725,109 @@ export class SharedCodexRoot {
         rpc.registerHandler(RPC_METHODS.ClearConversation, async () => {
             const child = await this.newConversation(); return { sessionId: child.session.sessionId };
         });
+        if (this.host.forkOperation) rpc.registerHandler(RPC_METHODS.ForkOperation, async raw => {
+            const request = ForkOperationRpcRequestSchema.parse(raw);
+            if (request.sourceSessionId !== this.session.sessionId) throw new Error('Fork source does not match the authenticated session');
+            if (request.action !== 'start') return this.host.forkOperation!(this, request, () => this.forkPlan(request));
+            const work = this.work.catch(() => {}).then(() => this.host.forkOperation!(this, request, () => this.forkPlan(request)));
+            this.work = work;
+            return work;
+        });
         rpc.registerHandler(RPC_METHODS.ForkConversation, async raw => {
-            const { messageLocalId } = z.object({ messageLocalId: z.string().optional() }).parse(raw);
-            if (this.currentTurn) throw new Error('Session is busy');
-            const beforeTurnId = messageLocalId ? this.projection.turnFor(messageLocalId) : undefined;
-            if (messageLocalId && !beforeTurnId) throw new Error('No native history point for this message');
-            if (messageLocalId) await this.assertBoundary(messageLocalId, beforeTurnId!);
-            const child = await this.host.create('thread/fork', { ...this.freshParams(), threadId: this.threadId,
-                ...(beforeTurnId ? { beforeTurnId } : {}) }, this);
-            await child.initialSettings({ collaborationMode: this.settings.collaborationMode });
-            return { nativeSessionId: child.threadId, sessionId: child.session.sessionId };
+            if (this.host.forkOperation) {
+                const boundary = ForkConversationRequestSchema.parse(raw);
+                const request: ForkOperationRpcRequest = { action: 'start', operationId: randomUUID(), sourceSessionId: this.session.sessionId,
+                    childSessionId: randomUUID(), sourceRevision: 1, fingerprint: JSON.stringify(boundary),
+                    sourceNativeThreadId: this.threadId, sourceMachineId: this.bootstrap.machineId, sourceStoreId: this.host.codexHome,
+                    messageLocalId: boundary.messageLocalId, nativeBoundary: boundary.nativeBoundary };
+                const work = this.work.catch(() => {}).then(() => this.host.forkOperation!(this, request, () => this.forkPlan(request), 'legacy-root'));
+                this.work = work;
+                const response = await work;
+                if (response.operation.status === 'created' && response.operation.binding === 'ready')
+                    return { nativeSessionId: response.operation.nativeThreadId, sessionId: response.operation.childSessionId };
+                throw new Error(`${response.operation.message} (operation ${response.operation.operationId}; do not blindly repeat /fork)`);
+            }
+
+            const { messageLocalId, nativeBoundary } = ForkConversationRequestSchema.parse(raw);
+            if (this.forking) throw new Error('Conversation history action already in progress');
+            const assertReady = () => {
+                if (this.closed || this.stopping || this.reconnecting || !this.client.isInitialized()) throw new Error('Native connection is unavailable; reconnect before forking');
+                if (this.currentTurn || this.execution.running) throw new Error('Session is busy');
+                if (this.session.getMetadata()?.codexNativeConnection === 'history') throw new Error('This native Codex thread is open for history only');
+            };
+            assertReady();
+            if (nativeBoundary && (!this.host.external || nativeBoundary.threadId !== this.threadId)) throw new Error('Native fork boundary does not belong to this session');
+            if (this.host.external && messageLocalId) throw new Error('Native historical fork requires a native message boundary; reload the message');
+            this.forking = true;
+            const work = this.work.catch(() => {}).then(async () => {
+                try {
+                    assertReady();
+                    let beforeTurnId: string | undefined;
+                    if (nativeBoundary) {
+                        const turnRevision = this.turnRevision;
+                        const settingsRevision = this.settingsRevision;
+                        const thread = record(record(await this.client.request('thread/read', { threadId: this.threadId, includeTurns: false })).thread);
+                        if (record(thread.status).type === 'active') throw new Error('Session is busy');
+                        if (record(thread.status).type === 'notLoaded') throw new Error('Native thread is not loaded; reconnect before forking');
+                        const queued = record(await this.client.request('thread/queue/list', { threadId: this.threadId, limit: 1 }));
+                        if (!Array.isArray(queued.data)) throw new Error('Native queue state is unavailable');
+                        if (queued.data.length || queued.nextCursor) throw new Error('Session has queued messages');
+                        beforeTurnId = resolveNativeForkBoundary(this.host.codexHome ?? '', thread, nativeBoundary);
+                        assertReady();
+                        if (this.turnRevision !== turnRevision || this.settingsRevision !== settingsRevision) throw new Error('Native state changed during fork validation; retry the selected boundary');
+                    } else if (messageLocalId) {
+                        beforeTurnId = this.projection.turnFor(messageLocalId);
+                        if (!beforeTurnId) throw new Error('No native history point for this message');
+                        await this.assertBoundary(messageLocalId, beforeTurnId);
+                        assertReady();
+                    }
+                    const child = await this.host.create('thread/fork', { ...this.freshParams(), threadId: this.threadId,
+                        ...(beforeTurnId ? { beforeTurnId } : {}) }, this);
+                    await child.initialSettings({ collaborationMode: this.settings.collaborationMode });
+                    return { nativeSessionId: child.threadId, sessionId: child.session.sessionId };
+                } finally { this.forking = false; }
+            });
+            this.work = work;
+            return work;
         });
         rpc.registerHandler(RPC_METHODS.RewindConversation, async () => {
             throw new Error('In-place rewind is not supported for concurrent Codex clients; fork at the message instead');
         });
+    }
+    private async forkPlan(request: Pick<ForkOperationRpcRequest, 'messageLocalId' | 'nativeBoundary'>): Promise<ForkPlan> {
+        const { messageLocalId, nativeBoundary } = request;
+        const assertReady = () => {
+            if (this.closed || this.stopping || this.reconnecting || !this.client.isInitialized()) throw new Error('Native connection is unavailable; reconnect before forking');
+            if (this.currentTurn || this.execution.running) throw new Error('Session is busy');
+            if (this.session.getMetadata()?.codexNativeConnection === 'history') throw new Error('This native Codex thread is open for history only');
+        };
+        assertReady();
+        if (nativeBoundary && (!this.host.external || nativeBoundary.threadId !== this.threadId)) throw new Error('Native fork boundary does not belong to this session');
+        if (this.host.external && messageLocalId) throw new Error('Native historical fork requires a native message boundary; reload the message');
+        let beforeTurnId: string | undefined;
+        if (nativeBoundary) {
+            const turnRevision = this.turnRevision;
+            const settingsRevision = this.settingsRevision;
+            const thread = record(record(await this.client.request('thread/read', { threadId: this.threadId, includeTurns: false })).thread);
+            if (record(thread.status).type === 'active') throw new Error('Session is busy');
+            if (record(thread.status).type === 'notLoaded') throw new Error('Native thread is not loaded; reconnect before forking');
+            const queued = record(await this.client.request('thread/queue/list', { threadId: this.threadId, limit: 1 }));
+            if (!Array.isArray(queued.data)) throw new Error('Native queue state is unavailable');
+            if (queued.data.length || queued.nextCursor) throw new Error('Session has queued messages');
+            beforeTurnId = resolveNativeForkBoundary(this.host.codexHome ?? '', thread, nativeBoundary);
+            assertReady();
+            if (this.turnRevision !== turnRevision || this.settingsRevision !== settingsRevision) throw new Error('Native state changed during fork validation; retry the selected boundary');
+        } else if (messageLocalId) {
+            beforeTurnId = this.projection.turnFor(messageLocalId);
+            if (!beforeTurnId) throw new Error('No native history point for this message');
+            await this.assertBoundary(messageLocalId, beforeTurnId); assertReady();
+        }
+        return { params: { ...this.freshParams(), threadId: this.threadId, ...(beforeTurnId ? { beforeTurnId } : {}) },
+            settings: { collaborationMode: this.settings.collaborationMode } };
+    }
+    async applyForkSettings(settings: Record<string, unknown>): Promise<void> {
+        const value = SettingsSchema.parse(settings);
+        await this.initialSettings({ collaborationMode: value.collaborationMode });
     }
     private async assertBoundary(localId: string, turnId: string): Promise<Record<string, unknown>> {
         const thread = await this.readThread();

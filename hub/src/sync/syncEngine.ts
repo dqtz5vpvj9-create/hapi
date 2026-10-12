@@ -1,6 +1,10 @@
+import { SessionSchema } from '@hapi/protocol/schemas'
+import { ForkOperationService, isSharedCodexForkSource, type StartForkOperationResult } from './forkOperations'
+import type { ForkOperationCloseRequest } from '@hapi/protocol/forkOperations'
+import type { ForkConversationRequest } from '@hapi/protocol/apiTypes'
 import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
 import { CODEX_ARTIFACT_PREFIX, type ArtifactReadResponse } from '@hapi/protocol/artifacts'
-import type { CodexGoalRequest, CodexGoalResponse } from '@hapi/protocol/apiTypes'
+import type { CodexGoalRequest, CodexGoalResponse, NativeForkBoundary } from '@hapi/protocol/apiTypes'
 /**
  * Sync Engine for HAPI Telegram Bot (Direct Connect)
  *
@@ -213,6 +217,7 @@ export class SyncEngine {
     private readonly opencodeClearTails = new Map<string, Promise<ClearOpencodeSessionResult>>()
     /** Serialize fork/rewind per session so concurrent native rollbacks cannot stack. */
     private readonly historyActionsInFlight = new Set<string>()
+    private readonly forkOperations: ForkOperationService
     /** History, outline and context can all open the same cold native thread. */
     private readonly nativeConnectionsInFlight = new Map<string, Promise<void>>()
     /**
@@ -250,6 +255,29 @@ export class SyncEngine {
         this.messageDependencyBackfill = new MessageDependencyBackfill(store)
         this.messageOutlineBackfill = new MessageOutlineBackfill(store)
         this.rpcGateway = new RpcGateway(io, rpcRegistry)
+        this.forkOperations = new ForkOperationService(store, this.rpcGateway, {
+            source: (id, namespace) => this.readForkSessionMetadata(id, namespace),
+            preflight: (source, localId, boundary) => this.assertSharedForkPreflight(source, localId, boundary),
+            begin: id => { this.historyActionsInFlight.add(id) },
+            end: id => { this.historyActionsInFlight.delete(id) },
+            validateChild: async (source, operation) => {
+                // The authenticated current source and child must belong to the same live
+                // wrapper generation. An original admission PID is not a lifetime identity.
+                const current = this.readForkSessionMetadata(source.id, source.namespace)
+                if (!current || current.namespace !== source.namespace || !current.active
+                    || current.metadata?.machineId !== source.metadata?.machineId
+                    || current.metadata?.codexStoreId !== source.metadata?.codexStoreId
+                    || current.metadata?.codexSessionId !== source.metadata?.codexSessionId) return false
+                const child = await this.validateSharedChild(current, operation.childSessionId, operation.nativeThreadId, true)
+                const after = this.readForkSessionMetadata(source.id, source.namespace)
+                return Boolean(child && after?.active && after.metadata?.hostPid === current.metadata?.hostPid
+                    && after.metadata?.machineId === current.metadata?.machineId
+                    && after.metadata?.codexStoreId === current.metadata?.codexStoreId
+                    && after.metadata?.codexSessionId === current.metadata?.codexSessionId
+                    && child.metadata?.forkedFrom === source.id
+                    && child.metadata?.codexStoreId === current.metadata?.codexStoreId)
+            }
+        })
         this.reloadAll()
         this.inactivityTimer = setInterval(() => this.expireInactive(), 5_000)
     }
@@ -1444,17 +1472,74 @@ export class SyncEngine {
         }
     }
 
+    /** Receipt/status paths must never trigger transcript backfill or content scans. */
+    private readForkSessionMetadata(id: string, namespace: string): Session | undefined {
+        const stored = this.store.sessions.getSessionByNamespace(id, namespace)
+        if (!stored) return undefined
+        const cached = this.sessionCache.getSession(id)
+        return SessionSchema.parse({ ...stored, ...cached,
+            metadata: stored.metadata, metadataVersion: stored.metadataVersion,
+            agentState: stored.agentState, agentStateVersion: stored.agentStateVersion,
+            active: cached?.active ?? stored.active, activeAt: cached?.activeAt ?? stored.activeAt ?? 0,
+            thinking: cached?.thinking ?? false, thinkingAt: cached?.thinkingAt ?? 0,
+            todos: cached?.todos, teamState: cached?.teamState,
+            todosUpdatedAt: stored.todosUpdatedAt ?? undefined, teamStateUpdatedAt: stored.teamStateUpdatedAt ?? undefined
+        })
+    }
+
+    getForkSourceState(sessionId: string, namespace: string) {
+        return this.forkOperations.sourceState(sessionId, namespace)
+    }
+
+    startForkOperation(sessionId: string, namespace: string, request: ForkConversationRequest): Promise<StartForkOperationResult> {
+        return this.forkOperations.start(sessionId, namespace, request)
+    }
+
+    getForkOperation(sessionId: string, namespace: string, operationId: string, reconcile = false) {
+        return this.forkOperations.read(sessionId, namespace, operationId, reconcile)
+    }
+
+    closeUnadmittedForkOperation(sessionId: string, namespace: string, operationId: string,
+        request: ForkOperationCloseRequest) {
+        return this.forkOperations.closeUnadmitted(sessionId, namespace, operationId, request)
+    }
+
+    private assertSharedForkPreflight(source: Session, messageLocalId?: string, nativeBoundary?: NativeForkBoundary): void {
+        if (this.historyActionsInFlight.has(source.id)) throw new Error('Conversation history action already in progress')
+        this.assertConversationHistoryIdle(source)
+        const metadata = source.metadata
+        const history = metadata?.capabilities?.conversationHistory
+        if (!metadata?.machineId || !metadata.path) throw new Error('Session is missing machine or path metadata')
+        if (nativeBoundary && (messageLocalId || !metadata.codexNativeSession || nativeBoundary.threadId !== metadata.codexSessionId)) {
+            throw new Error('Native fork boundary does not belong to this session')
+        }
+        if (messageLocalId || nativeBoundary) {
+            if (!history?.forkAtMessage) throw new Error('Historical fork is not supported for this session')
+            if (metadata.codexNativeSession && !nativeBoundary) throw new Error('Native historical fork requires a native message boundary; reload the message')
+            if (messageLocalId) this.assertInvokedHistoryBoundary(source.id, messageLocalId)
+        } else if (!history?.forkCurrent) throw new Error('Fork current is not supported for this session')
+        if (metadata.codexNativeConnection === 'history') throw new Error('This native Codex thread is open for history only')
+    }
+
     async forkConversation(
         sessionId: string,
         namespace: string,
-        messageLocalId?: string
+        messageLocalId?: string,
+        nativeBoundary?: NativeForkBoundary
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
+        const access = this.resolveSessionAccess(sessionId, namespace)
+        if (access.ok && isSharedCodexForkSource(access.session)) {
+            const result = await this.startForkOperation(access.sessionId, namespace, { messageLocalId, nativeBoundary })
+            return result.type === 'operation' && result.sessionId
+                ? { type: 'success', sessionId: result.sessionId }
+                : { type: 'error', message: result.type === 'conflict' ? result.message : result.operation.message }
+        }
         if (this.historyActionsInFlight.has(sessionId)) {
             return { type: 'error', message: 'Conversation history action already in progress' }
         }
         this.historyActionsInFlight.add(sessionId)
         try {
-            return await this.forkConversationUnlocked(sessionId, namespace, messageLocalId)
+            return await this.forkConversationUnlocked(sessionId, namespace, messageLocalId, nativeBoundary)
         } finally {
             this.historyActionsInFlight.delete(sessionId)
         }
@@ -1463,7 +1548,8 @@ export class SyncEngine {
     private async forkConversationUnlocked(
         sessionId: string,
         namespace: string,
-        messageLocalId?: string
+        messageLocalId?: string,
+        nativeBoundary?: NativeForkBoundary
     ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
         const access = this.resolveSessionAccess(sessionId, namespace)
         if (!access.ok) {
@@ -1477,17 +1563,30 @@ export class SyncEngine {
         }
 
         const history = source.metadata?.capabilities?.conversationHistory
-        if (messageLocalId) {
+        if (nativeBoundary && (messageLocalId || this.resolveFlavor(source) !== 'codex'
+            || source.metadata?.codexNativeSession !== true || !source.metadata.capabilities?.concurrentClients
+            || nativeBoundary.threadId !== source.metadata.codexSessionId)) {
+            return { type: 'error', message: 'Native fork boundary does not belong to this session' }
+        }
+        if (messageLocalId || nativeBoundary) {
             if (history?.forkAtMessage !== true) {
                 return { type: 'error', message: 'Historical fork is not supported for this session' }
             }
-            try {
-                this.assertInvokedHistoryBoundary(sessionId, messageLocalId)
-            } catch (error) {
-                return { type: 'error', message: error instanceof Error ? error.message : String(error) }
+            if (source.metadata?.codexNativeSession && !nativeBoundary) {
+                return { type: 'error', message: 'Native historical fork requires a native message boundary; reload the message' }
+            }
+            if (messageLocalId) {
+                try {
+                    this.assertInvokedHistoryBoundary(sessionId, messageLocalId)
+                } catch (error) {
+                    return { type: 'error', message: error instanceof Error ? error.message : String(error) }
+                }
             }
         } else if (history?.forkCurrent !== true) {
             return { type: 'error', message: 'Fork current is not supported for this session' }
+        }
+        if (nativeBoundary && source.metadata?.codexNativeConnection === 'history') {
+            return { type: 'error', message: 'This native Codex thread is open for history only' }
         }
 
         const machineId = source.metadata?.machineId
@@ -1500,7 +1599,7 @@ export class SyncEngine {
         try {
             rpcResult = await this.rpcGateway.forkConversation(
                 sessionId,
-                messageLocalId ? { messageLocalId } : {}
+                nativeBoundary ? { nativeBoundary } : messageLocalId ? { messageLocalId } : {}
             )
         } catch (error) {
             return { type: 'error', message: error instanceof Error ? error.message : String(error) }
@@ -1510,10 +1609,22 @@ export class SyncEngine {
             return { type: 'error', message: 'Native fork did not return a session id' }
         }
         if (rpcResult.sessionId) {
+            const refreshed = this.sessionCache.refreshSession(sessionId)
+            if (!refreshed || refreshed.namespace !== namespace || refreshed.metadata?.machineId !== machineId
+                || refreshed.metadata?.codexSessionId !== source.metadata?.codexSessionId
+                || refreshed.metadata?.codexStoreId !== source.metadata?.codexStoreId
+                || refreshed.metadata?.hostPid !== source.metadata?.hostPid) {
+                return { type: 'error', message: 'Source binding changed after native fork; inspect the created child before retrying' }
+            }
+            source = refreshed
+            if (rpcResult.nativeSessionId === source.metadata?.codexSessionId) return { type: 'error', message: 'Invalid shared-runtime fork binding' }
             const child = await this.validateSharedChild(source, rpcResult.sessionId, rpcResult.nativeSessionId)
-            if (!child || child.metadata?.forkedFrom !== sessionId) return { type: 'error', message: 'Invalid shared-runtime fork binding' }
+            if (!child || child.metadata?.forkedFrom !== sessionId
+                || nativeBoundary && child.metadata?.codexStoreId !== source.metadata?.codexStoreId) return { type: 'error', message: 'Invalid shared-runtime fork binding' }
             return { type: 'success', sessionId: child.id }
         }
+
+        if (nativeBoundary) return { type: 'error', message: 'Native fork did not return a shared-runtime child binding' }
 
         // Native fork RPC can race CLI metadata/transcript updates. Construct
         // the child only from a fresh source snapshot, never the pre-RPC row.
@@ -2103,11 +2214,11 @@ export class SyncEngine {
         })
     }
 
-    private async validateSharedChild(source: Session, id: string, nativeId?: string): Promise<Session | null> {
+    private async validateSharedChild(source: Session, id: string, nativeId?: string, metadataOnly = false): Promise<Session | null> {
         if (!source.metadata?.capabilities?.concurrentClients || id === source.id) return null
         const deadline = Date.now() + 5_000
         do {
-            const child = this.sessionCache.refreshSession(id)
+            const child = metadataOnly ? this.readForkSessionMetadata(id, source.namespace) : this.sessionCache.refreshSession(id)
             if (child && child.namespace === source.namespace
                 && child.metadata?.machineId === source.metadata.machineId
                 && child.metadata?.hostPid === source.metadata.hostPid

@@ -1794,3 +1794,25 @@ describe('Native goal controls', () => {
         }
     })
 })
+
+describe('native historical fork request', () => {
+    it('passes stable native identity unchanged to the authorized session and rejects ambiguous input', async () => {
+        const calls: unknown[][] = []
+        const session = createSession({ metadata: { path: '/tmp/project', host: 'localhost', flavor: 'codex' } })
+        const { app } = createApp(session, {
+            forkConversation: async (...args) => { calls.push(args); return { type: 'success', sessionId: 'native-child' } }
+        })
+        const nativeBoundary = { threadId: 'native-thread', turnId: 'native-turn', itemId: 'native-item' }
+        const request = (body: unknown) => app.request('/api/sessions/session-1/fork', {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+        })
+        const response = await request({ nativeBoundary })
+        expect(response.status).toBe(200)
+        expect(calls).toEqual([['session-1', 'default', undefined, nativeBoundary]])
+        for (const body of [{ nativeBoundary, messageLocalId: 'local' }, { nativeBoundary: { ...nativeBoundary, itemId: '' } },
+            { nativeBoundary: { ...nativeBoundary, path: '/foreign/store' } }, { nativeBoundary, namespace: 'foreign' }]) {
+            expect((await request(body)).status).toBe(400)
+        }
+        expect(calls).toHaveLength(1)
+    })
+})

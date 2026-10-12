@@ -1,3 +1,6 @@
+import { ForkOperationRpcRequestSchema, type ForkOperationRpcRequest, type ForkOperationRpcResponse } from '@hapi/protocol/forkOperations';
+import { ForkJournal, type ForkPlan, type ForkJournalEntry, type ForkOperationOrigin } from './forkJournal';
+import { SharedForkOperations } from './forkOperations';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdir, mkdtemp, chmod, rm, realpath } from 'node:fs/promises';
@@ -17,7 +20,7 @@ import { SharedCodexRoot } from './root';
 import { listLoadedNativeThreads, requireLoadedNativeThread, readResumableNativeRoot } from './nativeDiscovery';
 
 export type RuntimeReady = { sessionId: string; runtime: CodexRuntimeRecord };
-type Reservation = { root: SharedCodexRoot; resumeId?: string };
+type Reservation = { root: SharedCodexRoot; resumeId?: string; fork?: { journal: ForkJournal; request: ForkOperationRpcRequest; sourceThreadId: string } };
 
 function gitInfo(cwd: string): { sha: string | null; branch: string | null; originUrl: string | null } {
     const git = (...args: string[]) => {
@@ -77,6 +80,17 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
     const roots = new Map<string, SharedCodexRoot>();
     const prepared = new Set<SharedCodexRoot>();
     const reservations = new Map<string, Reservation>();
+    const forkObservers = new Map<string, ReturnType<typeof setTimeout>>();
+    const clearForkObserver = (key: string) => { clearTimeout(forkObservers.get(key)); forkObservers.delete(key); };
+    const observeFork = (key: string, root: SharedCodexRoot, expire?: () => void) => {
+        if (forkObservers.size >= 256) throw new Error('Too many unresolved native fork observers; wait for existing operations');
+        const timer = setTimeout(() => {
+            forkObservers.delete(key); expire?.();
+            // Keep durable identity/source fences. Only release the transient observer socket.
+            if (!root.threadId) { prepared.delete(root); void root.close(false).catch(error => logger.debug('[Codex shared] fork observer cleanup', error)); }
+        }, 320_000);
+        timer.unref(); forkObservers.set(key, timer);
+    };
     const runtime: CodexRuntimeRecord = { id, pid: process.pid, marker: getProcessStartMarker(process.pid) ?? '',
         ...(options.nativeEndpoint ? { nativeEndpoint: options.nativeEndpoint } : {}),
         endpoint: '', command: command.command, args: command.args, codexHome: home, hub: configuration.apiUrl, authHash: runtimeAuthHash(), sessions: {} };
@@ -125,6 +139,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
     const shutdown = (error?: unknown): Promise<void> => {
         if (shutdownPromise) return shutdownPromise;
         stopping = true; failure = error; clearInterval(discoveryTimer);
+        for (const key of forkObservers.keys()) clearForkObserver(key);
         if (error) logger.debug('[Codex shared] runtime stopped', error);
         control.setTransportAbandonedHandler(null);
         for (const root of prepared) root.stopAccepting();
@@ -175,15 +190,15 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             }).catch(error => logger.debug('[Codex shared] root cleanup', error));
         }, 100);
     };
-    const prepare = async (cwd: string, existingSessionId?: string, parent?: SharedCodexRoot, nativeThread?: Record<string, unknown>): Promise<SharedCodexRoot> => {
+    const prepare = async (cwd: string, existingSessionId?: string, parent?: SharedCodexRoot, nativeThread?: Record<string, unknown>, operationSessionId?: string, forkedFromSessionId?: string): Promise<SharedCodexRoot> => {
         assertRunning();
         const shared = { flavor: 'codex', startedBy: options.startedBy ?? 'terminal', workingDirectory: cwd,
             exportSessionEnv: false, reportStarted: false, metadataOverrides: { ...(external ? { codexNativeSession: true } : {}),
                 ...(!existingSessionId && nativeThread ? { name: string(nativeThread.name) ?? string(nativeThread.preview)?.slice(0, 120) } : {}), capabilities: { terminal: true, concurrentClients: true },
-                ...(parent ? { forkedFrom: parent.session.sessionId } : {}) } } as const;
+                ...(parent || forkedFromSessionId ? { forkedFrom: parent?.session.sessionId ?? forkedFromSessionId } : {}) } } as const;
         // reservedSessionId names one preallocated hub row — single-use. A second
         // create()/fork must mint a fresh row, not re-adopt (#1911 Opus Major).
-        const reservedSessionId = takeReservedSessionId(options);
+        const reservedSessionId = operationSessionId ?? (existingSessionId ? undefined : takeReservedSessionId(options));
         const bootstrap = existingSessionId
             ? await bootstrapExistingSession({ ...shared, sessionId: existingSessionId })
             : await bootstrapSession({
@@ -193,7 +208,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                 agentState: { controlledByUser: false },
             });
         const root = new SharedCodexRoot(bootstrap, { directory: join(runtimeDirectory(), 'queues'), generation: id, endpoint: upstream, token: upstreamToken, external, codexHome: home,
-            settingsFor: threadId => nativeSettings.get(threadId), create, end });
+            settingsFor: threadId => nativeSettings.get(threadId), create, end, forkOperation });
         prepared.add(root);
         try { assertRunning(); await root.prepare(); assertRunning(); return root; }
         catch (error) { await root.close(!stopping && !existingSessionId); prepared.delete(root); throw error; }
@@ -207,7 +222,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         runtime.pendingCreations = runtime.pendingCreations?.filter(sid => sid !== root.session.sessionId); await persist();
     };
     const reserve = async (root: SharedCodexRoot, threadId: string) => withThreadOwnership(home, threadId, id, () => reserveRecord(root, threadId), 'created');
-    const bind = async (root: SharedCodexRoot, response: Record<string, unknown>, subscribe: boolean, initialOptions?: SharedLaunchOptions) => {
+    const bind = async (root: SharedCodexRoot, response: Record<string, unknown>, subscribe: boolean, initialOptions?: SharedLaunchOptions, requireAcknowledgement = false) => {
         assertRunning();
         const threadId = string(record(response.thread).id);
         if (!threadId) throw new Error('Codex lifecycle response has no thread ID');
@@ -225,19 +240,22 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         if (!external || root.session.getMetadata()?.codexNativeConnection === 'attached')
             await control.request('thread/resume', { threadId, ...(external ? { excludeTurns: true } : {}) });
         await root.activate(initialOptions);
-        await root.session.flush();
+        const flushed = await root.session.flush();
+        if (requireAcknowledgement && flushed !== true) throw new Error('HAPI child metadata acknowledgement is pending');
         await persist();
-        await notifyRunnerSessionStarted(root.session.sessionId, root.session.getMetadata() ?? root.bootstrap.metadata);
+        // Runner notification is advisory; failure must never erase a ready native child.
+        await notifyRunnerSessionStarted(root.session.sessionId, root.session.getMetadata() ?? root.bootstrap.metadata)
+            .catch(error => logger.debug('[Codex shared] runner notification', error));
     };
     const create = (method: 'thread/start' | 'thread/fork', params: Record<string, unknown>, parent?: SharedCodexRoot, initialOptions?: SharedLaunchOptions): Promise<SharedCodexRoot> => operation(async () => {
+        if (method === 'thread/fork') throw new Error('Shared native forks require a durable fork operation');
         const root = await prepare(string(params.cwd) ?? launch.cwd, undefined, parent);
         let nativeSucceeded = false;
         try {
             runtime.pendingCreations = [...runtime.pendingCreations ?? [], root.session.sessionId]; await persist();
             // External roots read native history on demand; fork only needs the
             // new thread identity/settings, not a second full transcript.
-            const response = record(await root.client.request(method, root.config({ ...params, ...(method === 'thread/fork'
-                ? { deferGoalContinuation: true, ...(external ? { excludeTurns: true } : {}) } : {}) })));
+            const response = record(await root.client.request(method, root.config(params)));
             nativeSucceeded = true;
             await bind(root, response, true, initialOptions); return root;
         } catch (error) {
@@ -250,6 +268,94 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             throw error;
         }
     });
+    const journals = new Map<string, Promise<{ journal: ForkJournal; service: SharedForkOperations }>>();
+    const journalFor = (namespace: string) => {
+        let value = journals.get(namespace);
+        if (!value) {
+            value = ForkJournal.open(home, { namespace, hub: runtime.hub, authHash: runtime.authHash, owner: id })
+                .then(journal => ({ journal, service: new SharedForkOperations(journal) }));
+            journals.set(namespace, value);
+        }
+        return value;
+    };
+    const coldBinding = async (threadId: string, requestedSessionId?: string) => {
+        const { journal } = await journalFor('');
+        const known = await journal.knownChild(threadId);
+        const existing = await findColdBinding(home, threadId);
+        if (!known) return { existingSessionId: requestedSessionId ?? existing };
+        if (known.operation.status !== 'created' || known.operation.binding !== 'ready')
+            throw new Error(`Native fork child binding is pending (operation ${known.operation.operationId}); recover its exact reserved child from the source session`);
+        const reserved = known.operation.childSessionId;
+        if (requestedSessionId && requestedSessionId !== reserved || existing && existing !== reserved)
+            throw new Error('Native fork child does not match its reserved HAPI binding');
+        // A ready receipt proves this exact Hub row was acknowledged. Missing registry mirrors
+        // do not authorize a replacement row or restoring a user-deleted row. Reopen only this ID.
+        return { existingSessionId: reserved, forkedFromSessionId: known.claim.request.sourceSessionId };
+    };
+    const bindFork = async (parent: SharedCodexRoot, entry: ForkJournalEntry, candidate?: SharedCodexRoot, nativeResponse?: unknown) => {
+        if (entry.operation.status !== 'created' || !entry.dispatch) throw new Error('Fork has no exact native child');
+        const threadId = entry.operation.nativeThreadId;
+        const childSessionId = entry.operation.childSessionId;
+        const existing = roots.get(threadId);
+        if (existing && existing.session.sessionId !== childSessionId) throw new Error('Native child is bound to another HAPI session');
+        let child = existing ?? candidate ?? [...prepared].find(root => root.session.sessionId === childSessionId);
+        // The ownership lock precedes bootstrap, including when a previous wrapper died.
+        if (!child) child = await withThreadOwnership(home, threadId, id, async () => {
+            const header = await readResumableNativeRoot(control, threadId);
+            const root = await prepare(string(header.cwd) ?? parent.bootstrap.workingDirectory, childSessionId, parent);
+            await reserveRecord(root, threadId); return root;
+        }, 'created');
+        try {
+            const response = nativeResponse === undefined
+                ? record(await child.client.request('thread/resume', { threadId, ...(external ? { excludeTurns: true } : {}) }))
+                : record(nativeResponse);
+            if (string(record(response.thread).id) !== threadId) throw new Error('Fork recovery returned a different native child');
+            await bind(child, response, true, undefined, true);
+            await child.applyForkSettings(entry.dispatch.plan.settings);
+            if (await child.session.flush() !== true) throw new Error('HAPI child settings acknowledgement is pending');
+        } catch (error) {
+            roots.delete(threadId); prepared.delete(child);
+            const reservation = runtime.sessions[childSessionId]; if (reservation) reservation.active = false;
+            await persist(); await child.close(false); throw error;
+        }
+    };
+    const forkOperation = (parent: SharedCodexRoot, raw: ForkOperationRpcRequest, preflight: () => Promise<ForkPlan>, origin: ForkOperationOrigin = 'hub'): Promise<ForkOperationRpcResponse> => operation(async () => {
+        const request = ForkOperationRpcRequestSchema.parse(raw);
+        if (request.sourceSessionId !== parent.session.sessionId || !parent.threadId) throw new Error('Fork operation source mismatch');
+        const assertSource = () => {
+            if (request.sourceNativeThreadId !== parent.threadId || request.sourceMachineId !== parent.bootstrap.machineId
+                || request.action === 'close-unadmitted' && request.sourceStoreId === undefined
+                || request.sourceStoreId !== undefined && request.sourceStoreId !== home) throw new Error('Fork source identity changed; reconnect and refresh the source before a new operation');
+        };
+        if (request.action !== 'start') assertSource();
+        const { journal, service } = await journalFor(parent.bootstrap.sessionInfo.namespace);
+        if (request.action !== 'start') assertSource();
+        let child: SharedCodexRoot | undefined;
+        const result = await service.handle(request, parent.threadId, {
+            preflight: async () => { assertSource(); return preflight(); },
+            prepare: async (plan, sessionId) => {
+                child = await prepare(string(plan.params.cwd) ?? parent.bootstrap.workingDirectory, undefined, parent, undefined, sessionId);
+                if (child.session.sessionId !== sessionId) throw new Error('Hub did not preserve the reserved fork child identity');
+                // Freeze the actual transport payload after per-child security configuration.
+                plan.params = child.config({ ...plan.params, deferGoalContinuation: true, ...(external ? { excludeTurns: true } : {}) });
+                runtime.pendingCreations = [...runtime.pendingCreations ?? [], sessionId]; await persist();
+            },
+            send: (plan, hooks) => {
+                observeFork(request.operationId, child!);
+                return child!.client.requestTracked('thread/fork', plan.params, { ...hooks,
+                    onLateResult: async result => { await hooks.onLateResult(result); clearForkObserver(request.operationId); } });
+            },
+            nativeId: value => string(record(record(value).thread).id),
+            bind: (entry, response) => bindFork(parent, entry, child, response),
+        }, origin);
+        if (result.operation.status === 'created' || result.operation.status === 'rejected') clearForkObserver(request.operationId);
+        if (result.operation.status === 'rejected' && child) {
+            runtime.pendingCreations = runtime.pendingCreations?.filter(sid => sid !== child!.session.sessionId);
+            await persist(); prepared.delete(child); await child.close(true);
+        }
+        // Reading/reconciling never prepares a new native child or calls thread/fork.
+        return result;
+    });
     const connectNativeThread = (threadId: string) => operation(async () => {
         const existingRoot = roots.get(threadId);
         if (existingRoot) {
@@ -257,9 +363,10 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             return { sessionId: existingRoot.session.sessionId, threadId, connectionState: 'attached' };
         }
         const root = await withThreadOwnership(home, threadId, id, async () => {
+            const binding = await coldBinding(threadId);
             const thread = await readResumableNativeRoot(control, threadId);
-            const existing = await findColdBinding(home, threadId);
-            const root = await prepare(string(thread.cwd) ?? launch.cwd, existing, undefined, thread);
+            const root = await prepare(string(thread.cwd) ?? launch.cwd, binding.existingSessionId, undefined, thread,
+                undefined, binding.forkedFromSessionId);
             await reserveRecord(root, threadId);
             return root;
         });
@@ -284,6 +391,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         if (['thread/revert', 'thread/rollback'].includes(request.method ?? '')) {
             throw new Error('In-place rewind is unavailable with concurrent HAPI clients. Use /fork or Fork at message instead.');
         }
+        if (request.method === 'thread/fork' && params.ephemeral === true) throw new Error('Ephemeral native forks are not supported through the durable HAPI bridge');
         if (!['thread/start', 'thread/resume', 'thread/fork'].includes(request.method ?? '') || params.ephemeral === true) return request;
         if (request.id === undefined) throw new Error('Lifecycle operations require a JSON-RPC request ID');
         if (params.history || params.path) throw new Error('Use a native thread ID to resume through HAPI');
@@ -306,22 +414,90 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         if (request.method === 'thread/resume' && existing) return { ...request, params: existing.config(params) };
         if (threadId) await withThreadOwnership(home, threadId, id, async () => {});
         const cwd = string(params.cwd) ?? existing?.bootstrap.workingDirectory ?? launch.cwd;
+        if (request.method === 'thread/fork') {
+            if (!existing || existing.threadId !== threadId) throw new Error('Connect the source root in HAPI before using native /fork');
+            const { journal } = await journalFor(existing.bootstrap.sessionInfo.namespace);
+            const forkRequest: ForkOperationRpcRequest = { action: 'start', operationId: randomUUID(), sourceSessionId: existing.session.sessionId,
+                childSessionId: randomUUID(), sourceRevision: 1, fingerprint: JSON.stringify(params),
+                sourceNativeThreadId: threadId!, sourceMachineId: existing.bootstrap.machineId, sourceStoreId: home };
+            const admission = await journal.admit(forkRequest, threadId!, 'native-gateway');
+            if (!admission.admitted) throw new Error(admission.entry.operation.message);
+            let root: SharedCodexRoot | undefined;
+            try {
+                root = await prepare(cwd, undefined, existing, undefined, forkRequest.childSessionId);
+                if (root.session.sessionId !== forkRequest.childSessionId) throw new Error('Hub did not preserve the reserved native fork child identity');
+                const frozen = root.config({ ...params, deferGoalContinuation: true });
+                runtime.pendingCreations = [...runtime.pendingCreations ?? [], root.session.sessionId]; await persist();
+                observeFork(key(connection, request), root, () => {
+                    reservations.delete(key(connection, request));
+                    void journal.unknown(forkRequest, threadId!, 'Native fork observation window ended; result remains unknown')
+                        .catch(error => logger.debug('[Codex shared] fork observer expiry', error));
+                });
+                // Gateway invokes this hook before its one upstream write. A gap/crash remains unknown.
+                await journal.dispatch(forkRequest, threadId!, { requestId: request.id!, transportGeneration: connection, plan: { params: frozen, settings: {} } });
+                reservations.set(key(connection, request), { root, fork: { journal, request: forkRequest, sourceThreadId: threadId! } });
+                existing.session.sendSessionEvent({ type: 'message', message: `Native /fork operation ${forkRequest.operationId}; reserved HAPI child ${forkRequest.childSessionId}. If the reply is lost, this source stays fenced. Native-origin operations currently require runtime diagnostics for recovery.` });
+                return { ...request, params: frozen };
+            } catch (error) {
+                const entry = await journal.read(forkRequest, threadId!);
+                if (entry?.dispatch) await journal.unknown(forkRequest, threadId!, error);
+                else {
+                    await journal.reject(forkRequest, threadId!, 'fork_preflight_rejected', error instanceof Error ? error.message : String(error));
+                    if (root) {
+                        runtime.pendingCreations = runtime.pendingCreations?.filter(sid => sid !== root!.session.sessionId);
+                        await persist(); prepared.delete(root); await root.close(true); root = undefined;
+                    }
+                }
+                clearForkObserver(key(connection, request));
+                if (root) { prepared.delete(root); await root.close(false); }
+                throw error;
+            }
+        }
+
         const root = request.method === 'thread/resume' && threadId
             ? await withThreadOwnership(home, threadId, id, async () => {
-                const root = await prepare(cwd, await findColdBinding(home, threadId));
+                const binding = await coldBinding(threadId);
+                const root = await prepare(cwd, binding.existingSessionId, undefined, undefined, undefined, binding.forkedFromSessionId);
                 await reserveRecord(root, threadId); return root;
-            }) : await prepare(cwd, undefined, request.method === 'thread/fork' ? existing : undefined);
+            }) : await prepare(cwd, undefined, undefined);
         try {
             if (request.method !== 'thread/resume') {
                 runtime.pendingCreations = [...runtime.pendingCreations ?? [], root.session.sessionId]; await persist();
             }
             reservations.set(key(connection, request), { root, resumeId: request.method === 'thread/resume' ? threadId : undefined });
-            return { ...request, params: root.config({ ...params, ...(request.method === 'thread/fork' ? { deferGoalContinuation: true } : {}) }) };
+            return { ...request, params: root.config(params) };
         } catch (error) { prepared.delete(root); await root.close(true); throw error; }
     });
     const after = (request: Envelope, response: Envelope, connection: string): Promise<void | Envelope[]> => operation(async () => {
         const reservation = reservations.get(key(connection, request)); reservations.delete(key(connection, request));
-        if (reservation) {
+        if (reservation?.fork) {
+            clearForkObserver(key(connection, request));
+            const { journal, request: forkRequest, sourceThreadId } = reservation.fork;
+            if (response.error) {
+                await journal.unknown(forkRequest, sourceThreadId, string(record(response.error).message) ?? 'Native fork returned an error after dispatch; child identity is unknown');
+                const explanation = `Native fork outcome is unconfirmed after dispatch (operation ${forkRequest.operationId}). Do not repeat /fork: ${string(record(response.error).message) ?? 'native error'}`;
+                response.error = { ...record(response.error), message: explanation };
+                roots.get(sourceThreadId)?.session.sendSessionEvent({ type: 'message', message: explanation });
+                prepared.delete(reservation.root); await reservation.root.close(false);
+                return;
+            }
+            const nativeId = string(record(record(response.result).thread).id);
+            if (!nativeId) {
+                await journal.unknown(forkRequest, sourceThreadId, 'Native fork reply did not contain a child identity');
+                prepared.delete(reservation.root); await reservation.root.close(false); return;
+            }
+            await journal.created(forkRequest, sourceThreadId, nativeId);
+            try {
+                const parent = roots.get(sourceThreadId);
+                const entry = await journal.read(forkRequest, sourceThreadId);
+                if (!parent || !entry) throw new Error('Source runtime became unavailable before fork binding');
+                await bindFork(parent, entry, reservation.root, response.result);
+                await journal.bound(forkRequest, sourceThreadId);
+            } catch (error) {
+                await journal.bound(forkRequest, sourceThreadId, error);
+                throw new Error(`Native child ${nativeId} exists, but HAPI binding is blocked (operation ${forkRequest.operationId}): ${error instanceof Error ? error.message : String(error)}`);
+            }
+        } else if (reservation) {
             if (response.error) {
                 const binding = runtime.sessions[reservation.root.session.sessionId]; if (binding) binding.active = false;
                 runtime.pendingCreations = runtime.pendingCreations?.filter(sid => sid !== reservation.root.session.sessionId);
@@ -375,8 +551,15 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             hooks: { before, after, disconnected: connection => {
                 for (const [key, reservation] of reservations) {
                     if (!key.startsWith(`${connection}:`)) continue;
+                    if (reservation.fork) {
+                        const { journal, request, sourceThreadId } = reservation.fork;
+                        void journal.unknown(request, sourceThreadId, 'Native fork transport closed; creation will not be sent again')
+                            .catch(error => logger.debug('[Codex shared] fork journal transport loss', error));
+                    }
                     reservation.root.session.sendSessionEvent({ type: 'message', message: 'Native lifecycle outcome is unknown after transport loss. Do not retry blindly; inspect the shared runtime log.' });
                     logger.debug('[Codex shared] quarantined lifecycle reservation', { runtimeId: id, sessionId: reservation.root.session.sessionId });
+                    reservations.delete(key); clearForkObserver(key);
+                    if (!reservation.root.threadId) { prepared.delete(reservation.root); void reservation.root.close(false).catch(error => logger.debug('[Codex shared] detached fork cleanup', error)); }
                 }
             }, control: (method, params) => operation(async () => {
                 if (method === 'hapi/listThreads') {
@@ -408,6 +591,12 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                         if (stopping) return;
                         if (roots.get(threadId)?.session.getMetadata()?.codexNativeConnection === 'attached' || [...ending].some(root => root.threadId === threadId)) continue;
                         try {
+                            const { journal } = await journalFor('');
+                            if (!roots.has(threadId)) {
+                                const guard = await journal.discoveryGuard(threadId);
+                                if (guard === 'unknown') continue;
+                                if (guard === 'reserved' && (await journal.knownChild(threadId))?.operation.status !== 'created') continue;
+                            }
                             await connectNativeThread(threadId);
                         } catch (error) { logger.debug('[Codex native] attach failed', { threadId, error: error instanceof Error ? error.message : String(error) }); }
                     }
@@ -435,8 +624,8 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             // Prove ownership before bootstrap can alter an existing HAPI
             // row's hostPid/metadata. Hold the lock until the reservation is durable.
             root = await withThreadOwnership(home, threadId, id, async () => {
-                const existing = options.existingSessionId ?? await findColdBinding(home, threadId);
-                const root = await prepare(launch.cwd, existing);
+                const binding = await coldBinding(threadId, options.existingSessionId);
+                const root = await prepare(launch.cwd, binding.existingSessionId, undefined, undefined, undefined, binding.forkedFromSessionId);
                 await reserveRecord(root, threadId); return root;
             });
             const params = root.config({ ...launch.threadParams, threadId });

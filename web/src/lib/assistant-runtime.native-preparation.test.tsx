@@ -11,7 +11,8 @@ const session = { id: 'native-preparation', active: true, thinking: false } as S
 const execution: NativeExecution = { threadId: 'thread', turnId: 'turn', itemId: 'answer', phase: 'final_answer' }
 function blocks(): VisibleChatBlock[] {
     return [
-        { kind: 'user-text', id: 'user', localId: 'local-user', text: 'Question', createdAt: 100, invokedAt: 90, steered: true },
+        { kind: 'user-text', id: 'user', localId: 'local-user', text: 'Question', createdAt: 100, invokedAt: 90, steered: true,
+            meta: { nativeExecution: { threadId: 'thread', turnId: 'turn', itemId: 'input' } } },
         { kind: 'agent-text', id: 'commentary', localId: null, text: 'Working', createdAt: 200,
             meta: { nativeExecution: { ...execution, itemId: 'commentary', phase: 'commentary' } } },
         { kind: 'agent-text', id: 'answer', localId: null, text: 'Answer', createdAt: 300,
@@ -42,7 +43,8 @@ describe('native runtime preparation', () => {
         expect(native.map(message => message.content)).toMatchObject([
             [{ type: 'text', text: 'Question' }], [{ type: 'text', text: 'Working' }], [{ type: 'text', text: 'Answer' }],
         ])
-        expect(native[0].metadata.custom).toMatchObject({ localId: 'local-user', steered: true })
+        expect(native[0].metadata.custom).toMatchObject({ localId: 'local-user', steered: true,
+            nativeNode: { kind: 'user-text', execution: { threadId: 'thread', turnId: 'turn', itemId: 'input' } } })
         expect(native[2].metadata.custom).toMatchObject({ nativeNode: { execution, kind: 'agent-text' } })
         expect(native[2].status).toEqual({ type: 'complete', reason: 'unknown' })
         expect(getExternalStoreMessages(native[2])).toEqual([source[2]])

@@ -304,3 +304,32 @@ Android's `-PhapiVersionName` override is preserved.
 ### Offline test portability
 
 Tests create isolated fixtures with `join(tmpdir(), prefix)` and remove them after each test; they do not depend on a developer's `/mnt/cache` directory. The real native-name integration suite is opt-in via `HAPI_RUN_NATIVE_CODEX_TESTS=true` and requires a locally installed compatible Codex CLI. Default test runs skip it. It must not be enabled when native CLI execution is prohibited.
+
+### Native historical fork regression
+
+`bun run test:native-fork` exercises the real Hub, RPC serialization/error
+handling, bound CLI fork control, and read-only SQLite boundary resolver without
+starting a native daemon or model. The CLI `nativeForkBoundary.test.ts` suite
+covers inherited/replacement source-turn semantics, first-user cuts, malformed
+selectors, missing metadata, lookup budgets, and 100k-row histories. Web tests
+and `e2e/native-history-fork.spec.ts` cover native message action payloads and
+navigation retries alongside existing current/managed forks.
+
+### Durable fork-operation regression
+
+Shared Codex tracks fork admission, dispatch and known-child binding in a local
+SQLite journal, separate from the Hub receipt store. The same operation ID is
+never dispatched again after an uncertain outcome. Explicit duplicate-risk
+requests have a new ID and retained ancestry; known children recover binding
+under the originally reserved HAPI ID. An explicit Hub request can close only
+a request the runtime has never accepted, recording a durable rejection that
+blocks delayed starts of the same UUID. It does not cancel admitted work or
+authorize another fork automatically. See [Fork recovery](../docs/guide/codex-shared-sessions.md#fork-recovery)
+for user-visible actions and the terminal-origin recovery boundary.
+
+Focused suites cover the journal/lifecycle, transport late replies, Hub receipt
+transactions and Web recovery controls. `e2e/fork-operations.spec.ts` exercises
+the actual App and SessionChat with a simulated backend on desktop and mobile.
+These default suites do not prove a real native daemon mutation succeeded and
+do not need a model turn. Keep native/model-consuming opt-in suites disabled
+when those actions are outside the test authorization.

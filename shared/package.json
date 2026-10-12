@@ -10,6 +10,7 @@
         "./nativeExecution": "./src/nativeExecution.ts",
         "./artifacts": "./src/artifacts.ts",
         "./apiTypes": "./src/apiTypes.ts",
+        "./forkOperations": "./src/forkOperations.ts",
         "./messages": "./src/messages.ts",
         "./slashCommands": "./src/slashCommands.ts",
         "./buildInfo": "./src/buildInfo.ts",

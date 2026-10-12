@@ -1,4 +1,6 @@
-import { createForkNavigator } from '@/lib/fork-navigation'
+import { useForkOperation } from '@/hooks/useForkOperation'
+import { ForkOperationBanner } from '@/components/ForkOperationBanner'
+import { createForkNavigator, type ForkBoundary } from '@/lib/fork-navigation'
 import { WorkspaceActivity } from '@/workspace/WorkspaceActivity'
 import { computePendingRequestKinds } from '@hapi/protocol'
 import { useLayoutEffect, useSyncExternalStore } from 'react'
@@ -675,14 +677,21 @@ function SessionChatInner(props: SessionChatProps) {
             ...PRESERVE_SESSION_SIDEBAR_SCROLL,
         }),
     ), [navigate, props.api, props.session.id])
-    const onForkConversation = useCallback(async (messageLocalId?: string) => {
+    const sharedCodexFork = props.session.metadata?.flavor === 'codex'
+        && props.session.metadata.capabilities?.concurrentClients === true
+    const { controller: forkOperation, view: forkOperationView } = useForkOperation(
+        props.api, props.session.id, sharedCodexFork,
+        sessionId => navigate({ to: '/sessions/$sessionId', params: { sessionId }, ...PRESERVE_SESSION_SIDEBAR_SCROLL }),
+    )
+    const onForkConversation = useCallback(async (boundary?: ForkBoundary) => {
         setHistoryActionPending(true)
         try {
-            await forkNavigator(messageLocalId)
+            if (forkOperation) await forkOperation.start(boundary)
+            else await forkNavigator(boundary)
         } finally {
             setHistoryActionPending(false)
         }
-    }, [forkNavigator])
+    }, [forkNavigator, forkOperation])
 
     const onRewindConversation = useCallback(async (messageLocalId: string) => {
         setHistoryActionPending(true)
@@ -1921,6 +1930,7 @@ function SessionChatInner(props: SessionChatProps) {
             <div className="app-chat-content flex flex-col min-h-0 flex-1">
             <GlassChrome role="notices" className="app-chat-notices">
             <CursorMigrationBanner metadata={props.session.metadata} />
+            {forkOperation ? <ForkOperationBanner controller={forkOperation} view={forkOperationView} sourceActive={props.session.active} /> : null}
             {props.session.teamState && (
                 <TeamPanel teamState={props.session.teamState} />
             )}
@@ -1973,7 +1983,7 @@ function SessionChatInner(props: SessionChatProps) {
                         onRetryMessage={props.onRetryMessage}
                         onDiscardFailedMessage={props.onDiscardFailedMessage}
                         onContinuePlan={focusComposer}
-                        historyActionPending={historyActionPending}
+                        historyActionPending={historyActionPending || forkOperationView.busy}
                         onForkConversation={controlledByUser ? undefined : onForkConversation}
                         onRewindConversation={controlledByUser ? undefined : onRewindConversation}
                         isLatestCompletedBoundary={isLatestCompletedBoundary}

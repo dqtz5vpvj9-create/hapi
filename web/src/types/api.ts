@@ -98,6 +98,7 @@ export type SessionMetadataSummary = {
     machineId?: string
     tools?: string[]
     flavor?: string | null
+    codexSessionId?: string
     startingMode?: 'local' | 'remote' | 'pty' | null
     capabilities?: {
         terminal?: boolean

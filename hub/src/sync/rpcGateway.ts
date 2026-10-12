@@ -1,3 +1,4 @@
+import { ForkOperationResponseSchema, type ForkOperationRpcRequest, type ForkOperationRpcResponse } from '@hapi/protocol/forkOperations'
 import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
 import type { ArtifactReadResponse } from '@hapi/protocol/artifacts'
 import type { CodexGoalRequest, CodexGoalResponse } from '@hapi/protocol/apiTypes'
@@ -587,16 +588,27 @@ export class RpcGateway {
         }
     }
 
+    async forkOperation(sessionId: string, request: ForkOperationRpcRequest): Promise<ForkOperationRpcResponse> {
+        const result = await this.sessionRpc(sessionId, RPC_METHODS.ForkOperation, request,
+            request.action === 'read' ? 5_000 : 30_000)
+        if (result && typeof result === 'object' && 'error' in result && typeof result.error === 'string') {
+            throw new Error(result.error)
+        }
+        return ForkOperationResponseSchema.parse(result)
+    }
+
     async forkConversation(
         sessionId: string,
-        params: { messageLocalId?: string }
+        params: import('@hapi/protocol/apiTypes').ForkConversationRequest
     ): Promise<import('@hapi/protocol/apiTypes').ForkConversationRpcResult> {
-        return await this.sessionRpc(
+        const result = await this.sessionRpc(
             sessionId,
             RPC_METHODS.ForkConversation,
             params,
             120_000
-        ) as import('@hapi/protocol/apiTypes').ForkConversationRpcResult
+        ) as import('@hapi/protocol/apiTypes').ForkConversationRpcResult | { error: string }
+        if (result && 'error' in result && typeof result.error === 'string') throw new Error(result.error)
+        return result as import('@hapi/protocol/apiTypes').ForkConversationRpcResult
     }
 
     async clearConversation(sessionId: string): Promise<{ sessionId: string }> {

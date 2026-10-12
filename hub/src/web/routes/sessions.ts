@@ -1,3 +1,5 @@
+import { ForkOperationCloseRequestSchema, ForkOperationIdSchema } from '@hapi/protocol/forkOperations'
+import { ForkOperationAccessError, isSharedCodexForkSource } from '../../sync/forkOperations'
 import {
     CursorMigrateToAcpRequestSchema,
     DeleteUploadRequestSchema,
@@ -378,39 +380,102 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         return c.json({ ok: true })
     })
 
+    app.get('/sessions/:id/fork-operations', (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const source = requireSessionFromParam(c, engine)
+        if (source instanceof Response) return source
+        try {
+            return c.json(engine.getForkSourceState(source.sessionId, c.get('namespace')))
+        } catch (error) {
+            if (error instanceof ForkOperationAccessError) return c.json({ error: error.message, code: error.code }, error.status)
+            throw error
+        }
+    })
+
+    for (const action of ['read', 'reconcile'] as const) {
+        const path = `/sessions/:id/fork-operations/:operationId${action === 'reconcile' ? '/reconcile' : ''}`
+        const handler = async (c: Context<WebAppEnv>) => {
+            const engine = requireSyncEngine(c, getSyncEngine)
+            if (engine instanceof Response) return engine
+            const source = requireSessionFromParam(c, engine)
+            if (source instanceof Response) return source
+            const parsed = ForkOperationIdSchema.safeParse(c.req.param('operationId'))
+            if (!parsed.success) return c.json({ error: 'Invalid operation ID' }, 400)
+            try {
+                const result = await engine.getForkOperation(source.sessionId, c.get('namespace'), parsed.data, action === 'reconcile')
+                const terminal = result.operation.status === 'rejected'
+                    || result.operation.status === 'created' && result.operation.binding === 'ready'
+                return c.json(result, terminal ? 200 : 202)
+            } catch (error) {
+                if (error instanceof ForkOperationAccessError) return c.json({ error: error.message, code: error.code }, error.status)
+                throw error
+            }
+        }
+        if (action === 'read') app.get(path, handler)
+        else app.post(path, handler)
+    }
+
+    app.post('/sessions/:id/fork-operations/:operationId/close-unadmitted', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const source = requireSessionFromParam(c, engine)
+        if (source instanceof Response) return source
+        const operationId = ForkOperationIdSchema.safeParse(c.req.param('operationId'))
+        if (!operationId.success) return c.json({ error: 'Invalid operation ID' }, 400)
+        let body: unknown
+        try { body = await c.req.json() }
+        catch { return c.json({ error: 'Invalid JSON body' }, 400) }
+        const parsed = ForkOperationCloseRequestSchema.safeParse(body)
+        if (!parsed.success) return c.json({ error: 'Invalid body' }, 400)
+        try {
+            const result = await engine.closeUnadmittedForkOperation(source.sessionId, c.get('namespace'), operationId.data, parsed.data)
+            if (result.type === 'conflict') return c.json({ error: result.message, code: result.code,
+                ...result.sourceState, sourceState: result.sourceState }, 409)
+            const { type: _, ...response } = result
+            return c.json(response, result.closure === 'closed' || result.closure === 'already_resolved' ? 200 : 202)
+        } catch (error) {
+            if (error instanceof ForkOperationAccessError) return c.json({ error: error.message, code: error.code }, error.status)
+            throw error
+        }
+    })
+
     app.post('/sessions/:id/fork', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
-        if (engine instanceof Response) {
-            return engine
-        }
-
-        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
-        if (sessionResult instanceof Response) {
-            return sessionResult
-        }
-
+        if (engine instanceof Response) return engine
+        // Receipt replay is available after the source becomes inactive.
+        const source = requireSessionFromParam(c, engine)
+        if (source instanceof Response) return source
         const rawBody = await c.req.text()
         let body: unknown = {}
         if (rawBody.trim()) {
-            try {
-                body = JSON.parse(rawBody)
-            } catch {
-                return c.json({ error: 'Invalid JSON body' }, 400)
-            }
+            try { body = JSON.parse(rawBody) }
+            catch { return c.json({ error: 'Invalid JSON body' }, 400) }
         }
         const parsed = ForkConversationRequestSchema.safeParse(body)
-        if (!parsed.success) {
-            return c.json({ error: 'Invalid body' }, 400)
+        if (!parsed.success) return c.json({ error: 'Invalid body' }, 400)
+        const tracked = parsed.data.operationId !== undefined
+        if (tracked || isSharedCodexForkSource(source.session)) {
+            try {
+                const result = await engine.startForkOperation(source.sessionId, c.get('namespace'), parsed.data)
+                if (result.type === 'conflict') return c.json({ error: result.message, code: result.code,
+                    revision: result.revision, ...(result.operation ? { operation: result.operation } : {}),
+                    ...(result.blockingSourceSessionId ? { blockingSourceSessionId: result.blockingSourceSessionId, message: result.message } : {}) }, 409)
+                if (!tracked) {
+                    if (result.sessionId) return c.json({ sessionId: result.sessionId })
+                    return c.json({ error: result.operation.message, code: result.operation.code ?? 'fork_pending', operation: result.operation }, 409)
+                }
+                const terminal = result.operation.status === 'rejected'
+                    || result.operation.status === 'created' && result.operation.binding === 'ready'
+                return c.json({ operation: result.operation, ...(result.sessionId ? { sessionId: result.sessionId } : {}) }, terminal ? 200 : 202)
+            } catch (error) {
+                if (error instanceof ForkOperationAccessError) return c.json({ error: error.message, code: error.code }, error.status)
+                throw error
+            }
         }
-
-        const result = await engine.forkConversation(
-            sessionResult.sessionId,
-            c.get('namespace'),
-            parsed.data.messageLocalId
-        )
-        if (result.type === 'error') {
-            return c.json({ error: result.message }, 409)
-        }
+        if (!source.session.active) return c.json({ error: 'Session is inactive', code: 'session_inactive' }, 409)
+        const result = await engine.forkConversation(source.sessionId, c.get('namespace'), parsed.data.messageLocalId, parsed.data.nativeBoundary)
+        if (result.type === 'error') return c.json({ error: result.message }, 409)
         return c.json({ sessionId: result.sessionId })
     })
 

@@ -73,6 +73,25 @@ type PendingRequest = {
     cleanup: () => void;
 };
 
+export type TrackedForkRequestIdentity = Readonly<{
+    requestId: number;
+    transportGeneration: number;
+}>;
+
+export type TrackedForkRequestOptions = {
+    /** Must durably fence this exact request before resolving. No write precedes this hook. */
+    beforeSend: (identity: TrackedForkRequestIdentity) => Promise<void> | void;
+    onLateResult?: (result: unknown, identity: TrackedForkRequestIdentity) => Promise<void> | void;
+    onLateError?: (error: Error, identity: TrackedForkRequestIdentity) => Promise<void> | void;
+    /** The user wait is always finite and cannot exceed the normal 20-second deadline. */
+    timeoutMs?: number;
+};
+
+type TrackedForkRequest = {
+    response: (response: JsonRpcLiteResponse) => void;
+    abandon: (error: Error) => void;
+};
+
 /** Marks transport-level failures whose steer outcome is unknown. */
 export const INDETERMINATE_SYMBOL = Symbol('codex-app-server-indeterminate');
 
@@ -197,7 +216,9 @@ export class CodexAppServerClient extends JsonLineParser {
         return this.initialized;
     }
     private nextId = 1;
+    private transportGeneration = 0;
     private readonly pending = new Map<number, PendingRequest>();
+    private readonly trackedForkRequests = new Map<string, TrackedForkRequest>();
     private readonly requestHandlers = new Map<string, RequestHandler>();
     private notificationHandler: ((method: string, params: unknown) => void) | null = null;
     private transportAbandonedHandler: (() => void) | null = null;
@@ -205,6 +226,9 @@ export class CodexAppServerClient extends JsonLineParser {
     private protocolError: Error | null = null;
 
     static readonly DEFAULT_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000;
+    static readonly TRACKED_FORK_TIMEOUT_MS = 20_000;
+    static readonly TRACKED_FORK_RECOVERY_MS = 5 * 60_000;
+    static readonly MAX_TRACKED_FORK_REQUESTS = 256;
 
     constructor(private readonly options: CodexAppServerClientOptions = {}) {
         super();
@@ -224,6 +248,7 @@ export class CodexAppServerClient extends JsonLineParser {
         if (this.connected) {
             return;
         }
+        const transportGeneration = ++this.transportGeneration;
 
         if (this.options.endpoint) {
             const endpoint = this.options.endpoint;
@@ -236,7 +261,7 @@ export class CodexAppServerClient extends JsonLineParser {
             });
             this.socket = socket;
             socket.on('message', data => {
-                if (this.socket === socket) this.handleLine(data.toString());
+                if (this.socket === socket) this.handleLine(data.toString(), transportGeneration);
             });
             socket.on('error', error => logger.debug('[CodexAppServer] WebSocket error', error));
             socket.on('close', () => {
@@ -277,7 +302,7 @@ export class CodexAppServerClient extends JsonLineParser {
 
         child.stdout.setEncoding('utf8');
         child.stdout.on('data', (chunk) => {
-            if (this.process === child) this.feed(chunk);
+            if (this.process === child && this.transportGeneration === transportGeneration) this.feed(chunk);
         });
 
         child.stderr.setEncoding('utf8');
@@ -342,6 +367,134 @@ export class CodexAppServerClient extends JsonLineParser {
 
     async request<T = unknown>(method: string, params?: unknown): Promise<T> {
         return await this.sendRequest(method, params, { timeoutMs: 20_000 }) as T;
+    }
+
+    /**
+     * Fork-only write-ahead dispatch with a bounded late-response observer.
+     * This method never retries or moves a request to a replacement transport.
+     * An explicit native fork error can follow creation; its caller must retain
+     * the durable uncertainty fence, just as for a timeout or disconnect.
+     */
+    async requestTracked<T = unknown>(
+        method: 'thread/fork',
+        params: unknown,
+        options: TrackedForkRequestOptions
+    ): Promise<T> {
+        if (method !== 'thread/fork') throw new Error('Tracked requests are only supported for thread/fork');
+        const timeoutMs = options.timeoutMs ?? CodexAppServerClient.TRACKED_FORK_TIMEOUT_MS;
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > CodexAppServerClient.TRACKED_FORK_TIMEOUT_MS) {
+            throw new Error('Tracked fork timeout must be between 0 and 20000ms');
+        }
+        if (!this.connected) {
+            if (this.options.endpoint) {
+                throw new Error('Shared Codex client disconnected; reconnect and initialize before sending');
+            }
+            await this.connect();
+        }
+        if (this.options.endpoint && !this.initialized) throw new Error('Shared Codex client is not initialized');
+        if (this.protocolError) throw this.protocolError;
+        if (this.trackedForkRequests.size >= CodexAppServerClient.MAX_TRACKED_FORK_REQUESTS) {
+            // Do not evict a live observer to make room for another native mutation.
+            throw new Error('Tracked fork response capacity reached; wait for existing observations to finish');
+        }
+
+        const identity: TrackedForkRequestIdentity = Object.freeze({
+            requestId: this.nextId++,
+            transportGeneration: this.transportGeneration
+        });
+        const key = `${identity.transportGeneration}:${identity.requestId}`;
+        const serialized = JSON.stringify({ id: identity.requestId, method, params } satisfies JsonRpcLiteRequest);
+        const socket = this.socket;
+        const child = this.process;
+        let writeAttempted = false;
+        let settled = false;
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        let expiry: ReturnType<typeof setTimeout> | undefined;
+        let resolveCompleted!: (result: unknown) => void;
+        let rejectCompleted!: (error: Error) => void;
+        const completed = new Promise<unknown>((resolve, reject) => {
+            resolveCompleted = resolve;
+            rejectCompleted = reject;
+        });
+        const dispose = () => {
+            clearTimeout(timeout);
+            clearTimeout(expiry);
+            this.trackedForkRequests.delete(key);
+        };
+        const fail = (error: Error, observeLateResponse: boolean) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            if (observeLateResponse) {
+                expiry = setTimeout(dispose, CodexAppServerClient.TRACKED_FORK_RECOVERY_MS);
+                expiry.unref();
+            } else {
+                dispose();
+            }
+            rejectCompleted(error);
+        };
+        const tracked: TrackedForkRequest = {
+            response: (response) => {
+                // An ID is reserved before the hook; no response is evidence until a write was attempted.
+                if (!writeAttempted) return;
+                dispose();
+                const error = response.error
+                    ? Object.assign(new Error(response.error.message), {
+                        code: response.error.code,
+                        data: response.error.data
+                    })
+                    : undefined;
+                if (!settled) {
+                    settled = true;
+                    if (error) rejectCompleted(error);
+                    else resolveCompleted(response.result);
+                    return;
+                }
+                // Catch both synchronous throws and asynchronous journal/bind failures.
+                void Promise.resolve().then(() => error
+                    ? options.onLateError?.(error, identity)
+                    : options.onLateResult?.(response.result, identity)
+                ).catch((callbackError) => {
+                    logger.debug('[CodexAppServer] Late fork response handler failed', { identity, error: callbackError });
+                });
+            },
+            abandon: (error) => {
+                dispose();
+                if (!settled) {
+                    settled = true;
+                    rejectCompleted(error);
+                }
+            }
+        };
+        this.trackedForkRequests.set(key, tracked);
+        timeout = setTimeout(() => {
+            fail(this.markIndeterminate(new Error(`Codex app-server request '${method}' timed out after ${timeoutMs}ms`)), writeAttempted);
+        }, timeoutMs);
+        timeout.unref();
+
+        // The hook is inside the finite deadline. If it completes after expiry,
+        // disconnect, or replacement, its durable fence stays but no write occurs.
+        void (async () => {
+            try {
+                await options.beforeSend(identity);
+                if (settled || this.trackedForkRequests.get(key) !== tracked) return;
+                if (!this.connected || this.transportGeneration !== identity.transportGeneration
+                    || this.socket !== socket || this.process !== child || (!socket && !child)) {
+                    fail(this.markIndeterminate(new Error('Codex transport changed before tracked fork dispatch')), false);
+                    return;
+                }
+                writeAttempted = true;
+                const onWrite = (error?: Error | null) => {
+                    if (error) fail(this.markIndeterminate(error), true);
+                };
+                if (socket) socket.send(serialized, onWrite);
+                else child!.stdin.write(`${serialized}\n`, onWrite);
+            } catch (error) {
+                const failure = error instanceof Error ? error : new Error(String(error));
+                fail(writeAttempted ? this.markIndeterminate(failure) : failure, writeAttempted);
+            }
+        })();
+        return await completed as T;
     }
 
     async initialize(params: InitializeParams): Promise<InitializeResponse> {
@@ -738,7 +891,8 @@ export class CodexAppServerClient extends JsonLineParser {
         this.writePayload(payload);
     }
 
-    protected handleLine(line: string): void {
+    protected handleLine(line: string, transportGeneration = this.transportGeneration): void {
+        if (transportGeneration !== this.transportGeneration) return;
         if (this.protocolError) {
             return;
         }
@@ -791,7 +945,7 @@ export class CodexAppServerClient extends JsonLineParser {
         }
 
         if ('id' in message) {
-            this.handleResponse(message as JsonRpcLiteResponse);
+            this.handleResponse(message as JsonRpcLiteResponse, transportGeneration);
         }
     }
 
@@ -832,7 +986,8 @@ export class CodexAppServerClient extends JsonLineParser {
         }
     }
 
-    private handleResponse(response: JsonRpcLiteResponse): void {
+    private handleResponse(response: JsonRpcLiteResponse, transportGeneration = this.transportGeneration): void {
+        if (transportGeneration !== this.transportGeneration) return;
         if (response.id === null || response.id === undefined) {
             logger.debug('[CodexAppServer] Received response without id');
             return;
@@ -843,6 +998,11 @@ export class CodexAppServerClient extends JsonLineParser {
             return;
         }
 
+        const tracked = this.trackedForkRequests.get(`${transportGeneration}:${response.id}`);
+        if (tracked) {
+            tracked.response(response);
+            return;
+        }
         const pending = this.pending.get(response.id);
         if (!pending) {
             logger.debug('[CodexAppServer] Received response with no pending request', response.id);
@@ -909,5 +1069,6 @@ export class CodexAppServerClient extends JsonLineParser {
             reject(error);
         }
         this.pending.clear();
+        for (const tracked of this.trackedForkRequests.values()) tracked.abandon(error);
     }
 }

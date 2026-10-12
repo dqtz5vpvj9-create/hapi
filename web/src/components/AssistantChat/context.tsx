@@ -3,6 +3,7 @@ import { createContext, useContext, useMemo, useState, type Dispatch, type SetSt
 import type { ApiClient } from '@/api/client'
 import type { TerminalToolDisplayMode } from '@/hooks/useTerminalToolDisplayMode'
 import type { SessionMetadataSummary } from '@/types/api'
+import type { ForkBoundary } from '@/lib/fork-navigation'
 
 export type OlderHistoryLoadResult = 'loaded' | 'transient-stop' | 'terminal-stop'
 
@@ -23,7 +24,7 @@ export type HappyChatContextValue = {
     onRetryMessage?: (localId: string) => void
     onDiscardFailedMessage?: (localId: string) => void
     historyActionPending?: boolean
-    onForkConversation?: (messageLocalId?: string) => Promise<void>
+    onForkConversation?: (boundary?: ForkBoundary) => Promise<void>
     onRewindConversation?: (messageLocalId: string) => Promise<void>
     isLatestCompletedBoundary?: (messageId: string) => boolean
     onShareTurn?: (

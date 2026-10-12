@@ -17,6 +17,7 @@ does not imply that both apps expose a corresponding UI.
 | [SSE](./sse.md) | `GET /api/events` stream: subscription modes, resume handshake, event ids, reconnect policy |
 | [Pagination](./pagination.md) | Message window: composite cursors, epoch reset, optimistic-send reconciliation |
 | [Messages](./messages.md) | `DecryptedMessage.content` decoding tree (`codex` / `output` / `event` families) |
+| [Fork operations](./fork-operations.md) | Durable shared-Codex fork admission, receipts, reconciliation and compatibility |
 | [Errors](./errors.md) | `{status, code}` table, error body shapes, RPC-wrapped failure modes |
 
 ## Versioning
