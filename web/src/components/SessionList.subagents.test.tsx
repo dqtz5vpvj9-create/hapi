@@ -112,7 +112,7 @@ describe('SessionList native subagents', () => {
         expect(toggle.getAttribute('aria-expanded')).toBe('false')
         fireEvent.click(toggle)
         expect(screen.getByText('Inspect layout')).toBeTruthy()
-        expect(container.querySelector('[data-subagent-parent="parent"] [data-session-tree-id="child"]')).toBeTruthy()
+        expect(container.querySelector(view === 'Recent' ? '[data-session-tree-depth="1"] [data-session-tree-id="child"]' : '[data-subagent-parent="parent"] [data-session-tree-id="child"]')).toBeTruthy()
         fireEvent.mouseDown(screen.getByText('Inspect layout'), { button: 0 })
         fireEvent.mouseUp(screen.getByText('Inspect layout'), { button: 0 })
         expect(onSelect).toHaveBeenLastCalledWith('child')

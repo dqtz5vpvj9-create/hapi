@@ -1,10 +1,9 @@
 import { Component, createRef, type ReactNode } from 'react'
-import type { SessionSummary } from '@/types/api'
 import { captureSessionListViewBookmark, resolveSessionListViewBookmark, SessionListViewRestoration, type SessionListViewBookmark } from './sessionListViewBookmark'
 
 type View = 'recent' | 'directory'
-type Props = { children: ReactNode; className: string; sessions: SessionSummary[]; preferFirstVisible?: boolean; onScrollRestored?: (offset: number) => void; view?: View; bookmarkScope?: string; hasSessions?: boolean }
-type ContentSnapshot = { kind: 'content'; scrollTop: number; anchors: { element: HTMLElement; top: number }[] }
+type Props = { children: ReactNode; className: string; sessions: readonly { id: string }[]; preferFirstVisible?: boolean; onScrollRestored?: (offset: number) => void; view?: View; bookmarkScope?: string; hasSessions?: boolean }
+type ContentSnapshot = { kind: 'content'; scrollTop: number; anchors: { element: HTMLElement; top: number }[]; bookmark: SessionListViewBookmark }
 type Snapshot = ContentSnapshot | { kind: 'view'; bookmark?: SessionListViewBookmark }
 
 /** Read the old DOM at commit time, before rows move between pinned sections. */
@@ -61,6 +60,29 @@ export class SessionListScrollAnchor extends Component<Props, object, Snapshot |
         if (stable) this.restoreBookmark()
     }
 
+    private startRestoration = (bookmark: SessionListViewBookmark, stable: boolean) => {
+        this.pending = { bookmark, stable }
+        const container = this.contentRef.current?.parentElement
+        if (!container) return
+        const cancel = () => this.cancelRestoration()
+        const events = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
+        for (const event of events) container.addEventListener(event, cancel, { capture: true, passive: true })
+        this.removeInputListeners = () => {
+            for (const event of events) container.removeEventListener(event, cancel, true)
+        }
+        const ResizeObserverClass = container.ownerDocument.defaultView?.ResizeObserver
+        if (ResizeObserverClass) {
+            const pending = this.pending
+            this.restoreResizeObserver = new ResizeObserverClass(() => {
+                if (this.pending !== pending) return
+                // A hidden pane can reveal without changing its virtual range.
+                if (!pending.stable && container.getBoundingClientRect().height > 0) this.forceUpdate()
+                else this.restoreBookmark()
+            })
+            this.restoreResizeObserver.observe(container)
+        }
+    }
+
     componentWillUnmount() { this.cancelRestoration(false) }
 
     getSnapshotBeforeUpdate(previousProps: Props): Snapshot | null {
@@ -79,28 +101,7 @@ export class SessionListScrollAnchor extends Component<Props, object, Snapshot |
                 this.bookmarks[previousProps.view] = captureSessionListViewBookmark(content, container)
             }
             const bookmark = this.props.view ? this.bookmarks[this.props.view] : undefined
-            this.pending = bookmark ? { bookmark, stable: this.props.view !== 'recent' } : null
-            if (this.pending && container) {
-                const cancel = () => this.cancelRestoration()
-                const events = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
-                for (const event of events) container.addEventListener(event, cancel, { capture: true, passive: true })
-                this.removeInputListeners = () => {
-                    for (const event of events) container.removeEventListener(event, cancel, true)
-                }
-                const ResizeObserverClass = container.ownerDocument.defaultView?.ResizeObserver
-                if (ResizeObserverClass) {
-                    const pending = this.pending
-                    this.restoreResizeObserver = new ResizeObserverClass(() => {
-                        if (this.pending !== pending) return
-                        // Revealing an estimate-sized viewport need not change
-                        // the virtual range. Recheck its committed geometry
-                        // even when no ordinary child render was scheduled.
-                        if (!pending.stable && container.getBoundingClientRect().height > 0) this.forceUpdate()
-                        else this.restoreBookmark()
-                    })
-                    this.restoreResizeObserver.observe(container)
-                }
-            }
+            if (bookmark) this.startRestoration(bookmark, this.props.view !== 'recent')
             return { kind: 'view', bookmark }
         }
         if (previousProps.sessions === this.props.sessions) return null
@@ -108,17 +109,17 @@ export class SessionListScrollAnchor extends Component<Props, object, Snapshot |
         if (!content || !container || container.scrollTop <= 0) return null
         const viewport = container.getBoundingClientRect()
         const anchors: ContentSnapshot['anchors'] = []
-        for (const element of content.querySelectorAll<HTMLElement>('[data-session-scroll-anchor]')) {
+        for (const element of content.querySelectorAll<HTMLElement>('[data-session-scroll-anchor], [data-session-view-anchor]')) {
             if (element.closest('.collapsible-panel:not([data-open])')) continue
             const rect = element.getBoundingClientRect()
             if (rect.top >= viewport.bottom) break
             // A project's box can span the whole viewport; only anchor its visible header.
-            const isRow = element.classList.contains('session-list-item')
+            const isRow = element.classList.contains('session-list-item') || element.hasAttribute('data-session-view-anchor')
             if (rect.height > 0 && rect.bottom > viewport.top && (isRow || rect.top >= viewport.top)) {
                 anchors.push({ element, top: rect.top - viewport.top })
             }
         }
-        return { kind: 'content', scrollTop: container.scrollTop, anchors }
+        return { kind: 'content', scrollTop: container.scrollTop, anchors, bookmark: scopeChanged ? { scrollTop: container.scrollTop, anchors: [] } : captureSessionListViewBookmark(content, container) }
     }
 
     componentDidUpdate(_previousProps: Props, _previousState: object, snapshot: Snapshot | null) {
@@ -152,6 +153,19 @@ export class SessionListScrollAnchor extends Component<Props, object, Snapshot |
             }))
         const anchor = this.props.preferFirstVisible ? candidates[0]
             : candidates.sort((a, b) => Math.abs(a.shift) - Math.abs(b.shift))[0]
+        if (!anchor && this.props.view === 'recent' && snapshot.bookmark.anchors.length) {
+            // A large insertion above the reader can move every surviving row
+            // outside the next virtual range. Restore at most eight identities,
+            // before paint, instead of keeping an entire subtree mounted.
+            const ids = new Set(this.props.sessions.map(session => session.id))
+            const surviving = snapshot.bookmark.anchors.filter(item => item.rootId && ids.has(item.rootId))
+            if (surviving.length) {
+                this.startRestoration({ ...snapshot.bookmark, anchors: surviving }, false)
+                this.forceUpdate()
+                return
+            }
+            // Actual deletion/filtering keeps the existing numeric fallback.
+        }
         const scrollTop = anchor ? snapshot.scrollTop + anchor.shift : snapshot.scrollTop
         if (Math.abs(container.scrollTop - scrollTop) > 0.5) container.scrollTop = scrollTop
         // Publish the browser's actual landing, including native anchoring,

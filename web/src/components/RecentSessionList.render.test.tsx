@@ -2,6 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@/types/api'
+import { I18nProvider } from '@/lib/i18n-context'
 import { RecentSessionList, useRecentRowRetention } from './RecentSessionList'
 
 afterEach(cleanup)
@@ -19,17 +20,17 @@ function sessions(count: number): SessionSummary[] {
 const timeFor = (session: SessionSummary) => session.updatedAt
 const Presentation = createContext('initial')
 
-function mount(items: SessionSummary[], renderSession: (session: SessionSummary) => ReactNode, selectedRootId?: string) {
+function mount(items: SessionSummary[], renderSession: (session: SessionSummary) => ReactNode, selectedRootId?: string, options: { narrow?: boolean; fillEdgeWindow?: boolean; timeFor?: typeof timeFor } = {}) {
     const scroller = document.createElement('div')
     Object.defineProperties(scroller, {
         clientHeight: { value: 360 }, offsetHeight: { value: 360 }, offsetWidth: { value: 320 },
     })
     document.body.append(scroller)
     const view = (nextItems = items, nextRender = renderSession, presentation = 'initial') => (
-        <Presentation.Provider value={presentation}>
-            <RecentSessionList sessions={nextItems} scrollElement={scroller} narrow={false}
-                selectedRootId={selectedRootId} timeFor={timeFor} renderSession={nextRender} />
-        </Presentation.Provider>
+        <I18nProvider><Presentation.Provider value={presentation}>
+            <RecentSessionList sessions={nextItems} scrollElement={scroller} narrow={options.narrow ?? false} fillEdgeWindow={options.fillEdgeWindow}
+                selectedRootId={selectedRootId} timeFor={options.timeFor ?? timeFor} renderSession={nextRender} />
+        </Presentation.Provider></I18nProvider>
     )
     const result = render(view(), { container: scroller })
     return {
@@ -59,6 +60,26 @@ describe('Recent stable row content', () => {
             expect(new Set(rendered)).toEqual(new Set(entering))
             expect(rendered).toHaveLength(entering.length)
         }
+    })
+
+    it('reuses wrappers while scrolling within an unchanged edge window', () => {
+        const items = sessions(20)
+        const dateFor = vi.fn(timeFor)
+        const renderSession = vi.fn((session: SessionSummary) => <span>{session.metadata?.name}</span>)
+        const list = mount(items, renderSession, undefined, { narrow: true, fillEdgeWindow: true, timeFor: dateFor })
+        const before = list.mountedIds()
+        expect(before.size).toBe(items.length)
+        dateFor.mockClear()
+        renderSession.mockClear()
+        for (const offset of [72, 144, 72, 0]) list.scroll(offset)
+        expect(list.mountedIds()).toEqual(before)
+        expect(dateFor).not.toHaveBeenCalled()
+        expect(renderSession).not.toHaveBeenCalled()
+
+        const changed = items.map((session, index) => index === 1 ? { ...session, updatedAt: 1 } : session)
+        list.update(changed)
+        expect(dateFor).toHaveBeenCalled()
+        expect(renderSession.mock.calls.map(([session]) => session.id)).toEqual(['row-1'])
     })
 
     it('refreshes changed session data without remounting its row', () => {

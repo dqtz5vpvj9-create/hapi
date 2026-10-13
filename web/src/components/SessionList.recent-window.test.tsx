@@ -141,9 +141,12 @@ describe('Recent bounded mounting', () => {
         expect(container.querySelector('[data-recent-root="row-0"]')).toBe(root)
         updateSessions([...items, { ...child, pendingRequestsCount: 2 }])
         expect(container.querySelector('[data-recent-root="row-0"]')).toBe(root)
-        expect(screen.getByText('Child needing approval')).toBeTruthy()
+        // Only the selected row is pinned; its offscreen descendants use the same bounded window.
+        expect(screen.queryByText('Child needing approval')).toBeNull()
         expect(screen.getByRole('button', { name: /Subagents \(1\) 2 awaiting approval/ })).toHaveAttribute('aria-expanded', 'true')
         expect((container.querySelector('.app-session-list-content') as HTMLElement).scrollTop).toBe(18000)
+        scrollTo(container, 0)
+        expect(screen.getByText('Child needing approval')).toBeTruthy()
     })
     it('restores expanded children when their root remounts', () => {
         const items = sessions(1000)

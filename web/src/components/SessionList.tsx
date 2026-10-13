@@ -9,6 +9,7 @@ import { useNarrowViewport } from '@/hooks/useNarrowViewport'
 import { useSessionListOrder } from '@/hooks/useSessionListOrder'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react'
 import { buildSessionHierarchy, hierarchyRootId, hierarchyContains, type SessionHierarchy } from '@/lib/sessionHierarchy'
+import { projectSessionTreeRows, selectedSessionAncestors } from '@/lib/sessionTreeRows'
 import { SessionListScrollAnchor } from './SessionListScrollAnchor'
 import { RecentSessionList, useRecentRowRetention, type RecentScrollObserver } from './RecentSessionList'
 import { CodexSubagentDialog } from './CodexSubagentDialog'
@@ -1264,6 +1265,7 @@ function PullRefreshIcon(props: { rotation: number }) {
 
 type NativeSubagent = NonNullable<NonNullable<SessionSummary['metadata']>['codexSubagents']>[number]
 type OpenNativeSubagent = (parentSessionId: string, agent: NativeSubagent) => void
+type FlatTreeRowControl = { expanded: boolean; childCount: number; onToggle: () => void }
 
 function nativeSubagentTitle(agent: NativeSubagent): string {
     return agent.nickname || agent.role || agent.threadId.slice(0, 8)
@@ -1277,6 +1279,7 @@ function NativeSubagentItem(props: {
     onOpen: OpenNativeSubagent
     revealChildren: boolean
     expansionCache?: Map<string, boolean>
+    flatRow?: FlatTreeRowControl
 }) {
     const { t } = useTranslation()
     const expansionKey = `native:${props.parentSessionId}:${props.agent.threadId}`
@@ -1286,10 +1289,11 @@ function NativeSubagentItem(props: {
         props.expansionCache?.set(expansionKey, next)
         setExpandedState(next)
     }
-    const children = props.agents.filter(agent => agent.parentThreadId === props.agent.threadId)
-    const open = expanded || props.revealChildren
+    const children = props.flatRow ? [] : props.agents.filter(agent => agent.parentThreadId === props.agent.threadId)
+    const childCount = props.flatRow?.childCount ?? children.length
+    const open = props.flatRow?.expanded ?? (expanded || props.revealChildren)
     return (
-        <div className="app-native-subagent-tree" data-native-subagent-id={props.agent.threadId} data-has-subagents={children.length > 0 || undefined}>
+        <div className="app-native-subagent-tree" data-native-subagent-id={props.agent.threadId} data-has-subagents={childCount > 0 || undefined}>
             <button type="button"
                 data-session-view-anchor={expansionKey}
                 className="app-native-subagent-row flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left hover:bg-[var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
@@ -1304,16 +1308,16 @@ function NativeSubagentItem(props: {
                     {t('sessions.subagent')}{props.agent.role && props.agent.role !== props.agent.nickname ? ` · ${props.agent.role}` : ''}
                 </span>
             </button>
-            {children.length > 0 ? <>
+            {childCount > 0 ? <>
                 <button type="button" aria-expanded={open}
-                    aria-label={t('sessions.subagents', { n: children.length })}
-                    title={t('sessions.subagents', { n: children.length })}
+                    aria-label={t('sessions.subagents', { n: childCount })}
+                    title={t('sessions.subagents', { n: childCount })}
                     className="app-session-subagent-toggle ml-2.5 flex items-center gap-1 rounded px-1 py-1 text-[11px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
-                    onClick={() => setExpanded(value => !value)}>
+                    onClick={() => props.flatRow ? props.flatRow.onToggle() : setExpanded(value => !value)}>
                     <ChevronIcon className="h-3 w-3" collapsed={!open} />
-                    <span className="app-session-subagent-label">{t('sessions.subagents', { n: children.length })}</span>
+                    <span className="app-session-subagent-label">{t('sessions.subagents', { n: childCount })}</span>
                 </button>
-                {open ? <div className="app-session-children ml-3 border-l border-[var(--app-border)] pl-2">
+                {open && !props.flatRow ? <div className="app-session-children ml-3 border-l border-[var(--app-border)] pl-2">
                     {children.map(agent => <NativeSubagentItem {...props} key={agent.threadId} agent={agent} />)}
                 </div> : null}
             </> : null}
@@ -1328,15 +1332,17 @@ function SessionTreeItem(props: Omit<ComponentProps<typeof SessionItem>, 'lastSe
     revealChildren: boolean
     onOpenNativeSubagent: OpenNativeSubagent
     expansionCache?: Map<string, boolean>
+    flatRow?: FlatTreeRowControl
 }) {
-    const { tree, selectedSessionId, revealChildren, onOpenNativeSubagent, expansionCache, readState, ...rowProps } = props
+    const { tree, selectedSessionId, revealChildren, onOpenNativeSubagent, expansionCache, readState, flatRow, ...rowProps } = props
     const manualUnreadAt = readState.manualUnreadById[props.session.id]
     const { t } = useTranslation()
     const children = tree.children.get(props.session.id) ?? []
     const agents = props.session.metadata?.codexSubagents ?? []
-    const nativeChildren = agents.filter(agent => agent.parentThreadId === props.session.metadata?.agentSessionId
+    const nativeChildren = flatRow ? [] : agents.filter(agent => agent.parentThreadId === props.session.metadata?.agentSessionId
         && !children.some(child => child.metadata?.agentSessionId === agent.threadId))
-    const containsSelection = hierarchyContains(tree, props.session.id, selectedSessionId)
+    const childCount = flatRow?.childCount ?? children.length + nativeChildren.length
+    const containsSelection = !flatRow && hierarchyContains(tree, props.session.id, selectedSessionId)
         && props.session.id !== selectedSessionId
     const [expanded, setExpandedState] = useState(() => expansionCache?.get(props.session.id) ?? containsSelection)
     const setExpanded = (update: boolean | ((value: boolean) => boolean)) => {
@@ -1345,15 +1351,15 @@ function SessionTreeItem(props: Omit<ComponentProps<typeof SessionItem>, 'lastSe
         setExpandedState(next)
     }
     useEffect(() => {
-        if (containsSelection) {
+        if (containsSelection && !flatRow) {
             expansionCache?.set(props.session.id, true)
             setExpandedState(true)
         }
-    }, [containsSelection, selectedSessionId, expansionCache, props.session.id])
+    }, [containsSelection, selectedSessionId, expansionCache, props.session.id, flatRow])
     const pending = tree.pendingDescendants.get(props.session.id) ?? 0
-    const open = expanded || revealChildren || pending > 0
+    const open = flatRow?.expanded ?? (expanded || revealChildren || pending > 0)
     return (
-        <div className="app-session-tree-item" data-session-tree-id={props.session.id} data-has-subagents={children.length + nativeChildren.length > 0 || undefined}>
+        <div className="app-session-tree-item" data-session-tree-id={props.session.id} data-has-subagents={childCount > 0 || undefined}>
             {props.session.metadata?.codexParentThreadId ? (
                 <div className="app-session-subagent-meta px-2.5 pt-1 text-[10px] text-[var(--app-hint)]">
                     {t('sessions.subagent')}
@@ -1363,18 +1369,18 @@ function SessionTreeItem(props: Omit<ComponentProps<typeof SessionItem>, 'lastSe
             ) : null}
             <SessionItem {...rowProps} lastSeenAt={readState.lastSeenById[props.session.id] ?? 0}
                 manualUnreadAt={typeof manualUnreadAt === 'number' && Number.isFinite(manualUnreadAt) ? manualUnreadAt : null} />
-            {children.length + nativeChildren.length > 0 ? (
+            {childCount > 0 ? (
                 <>
                     <button type="button" aria-expanded={open}
-                        aria-label={[t('sessions.subagents', { n: children.length + nativeChildren.length }), pending > 0 ? t('sessions.subagentsPending', { n: pending }) : null].filter(Boolean).join(' ')}
-                        title={t('sessions.subagents', { n: children.length + nativeChildren.length })}
+                        aria-label={[t('sessions.subagents', { n: childCount }), pending > 0 ? t('sessions.subagentsPending', { n: pending }) : null].filter(Boolean).join(' ')}
+                        title={t('sessions.subagents', { n: childCount })}
                         className="app-session-subagent-toggle ml-2.5 flex items-center gap-1 rounded px-1 py-1 text-[11px] text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]"
-                        onClick={() => setExpanded(value => !value)}>
+                        onClick={() => flatRow ? flatRow.onToggle() : setExpanded(value => !value)}>
                         <ChevronIcon className="h-3 w-3" collapsed={!open} />
-                        <span className="app-session-subagent-label">{t('sessions.subagents', { n: children.length + nativeChildren.length })}</span>
+                        <span className="app-session-subagent-label">{t('sessions.subagents', { n: childCount })}</span>
                         {pending > 0 ? <span className="app-session-subagent-pending text-[var(--app-badge-warning-text)]">{t('sessions.subagentsPending', { n: pending })}</span> : null}
                     </button>
-                    {open ? (
+                    {open && !flatRow ? (
                         <div className="app-session-children ml-3 border-l border-[var(--app-border)] pl-2" data-subagent-parent={props.session.id}>
                             {children.map(child => (
                                 <SessionTreeItem {...rowProps} readState={readState} key={child.id} session={child}
@@ -1590,6 +1596,28 @@ export function SessionList(props: {
     const recentSessions = useMemo(() => listView !== 'recent' ? [] : [...machineFilteredSessions].sort(searchScoreIndex && hasTextQuery
         ? (a, b) => compareSessionsBySearchRelevance(a, b, searchScoreIndex)
         : compareListOrder), [listView, machineFilteredSessions, searchScoreIndex, hasTextQuery, compareListOrder])
+    const [recentExpansionVersion, setRecentExpansionVersion] = useState(0)
+    const toggleRecentRow = useCallback((id: string) => {
+        const cache = recentExpansionCache.current
+        cache.set(id, !cache.get(id))
+        setRecentExpansionVersion(version => version + 1)
+    }, [])
+    const recentSelectedAncestors = useMemo(() => selectedSessionAncestors(sessionHierarchy, selectedSessionId), [sessionHierarchy, selectedSessionId])
+    const recentSelectedPath = JSON.stringify([...recentSelectedAncestors])
+    useEffect(() => {
+        let changed = false
+        for (const id of recentSelectedAncestors) {
+            if (recentExpansionCache.current.get(id) !== true) {
+                recentExpansionCache.current.set(id, true)
+                changed = true
+            }
+        }
+        if (changed) setRecentExpansionVersion(version => version + 1)
+    }, [recentSelectedPath, selectedSessionId]) // eslint-disable-line react-hooks/exhaustive-deps
+    const recentTreeRows = useMemo(() => projectSessionTreeRows(
+        recentSessions, sessionHierarchy, recentExpansionCache.current, isFiltering, selectedSessionId,
+    ), [recentSessions, sessionHierarchy, recentExpansionVersion, isFiltering, selectedSessionId])
+    const recentTreeHasChildren = useMemo(() => recentTreeRows.some(row => row.depth > 0), [recentTreeRows])
     const globalPinnedSessions = useMemo(() => {
         const pinned = machineFilteredSessions.filter((session) => Boolean(session.globalPinned))
         if (searchScoreIndex && hasTextQuery) {
@@ -2285,7 +2313,7 @@ export function SessionList(props: {
                 </div>
             ) : null}
             <div ref={attachScrollContainer} className="app-session-list-content app-scroll-y session-list-scrollbar-left scrollbar-auto-hide min-h-0 flex-1">
-            <SessionListScrollAnchor view={listView} bookmarkScope={JSON.stringify([props.hub, normalizedQuery, customStart, customEnd, machineFilter, activeMachineFilter, showUnreadOnly, showRunningOnly, showActiveSessionsOnly])} hasSessions={machineFilteredSessions.length > 0} sessions={listView === 'recent' ? recentSessions : props.sessions} preferFirstVisible={listView === 'recent'} onScrollRestored={offset => recentScrollObserver.current?.observeScroll(offset)} className="mx-auto flex w-full max-w-content flex-col gap-1 pl-1.5 pr-2 pb-2">
+            <SessionListScrollAnchor view={listView} bookmarkScope={JSON.stringify([props.hub, normalizedQuery, customStart, customEnd, machineFilter, activeMachineFilter, showUnreadOnly, showRunningOnly, showActiveSessionsOnly])} hasSessions={machineFilteredSessions.length > 0} sessions={listView === 'recent' ? recentTreeRows : props.sessions} preferFirstVisible={listView === 'recent'} onScrollRestored={offset => recentScrollObserver.current?.observeScroll(offset)} className="mx-auto flex w-full max-w-content flex-col gap-1 pl-1.5 pr-2 pb-2">
                 {props.sessions.length === 0 && !props.isLoading ? (
                     <SessionsEmptyState
                         onNewSession={props.onNewSession}
@@ -2300,14 +2328,28 @@ export function SessionList(props: {
                 ) : null}
 
                 {listView === 'recent' ? (
-                    <RecentSessionList sessions={recentSessions} scrollElement={scrollContainerElement} scrollObserverRef={recentScrollObserver}
-                        selectedRootId={selectedRootId} narrow={narrowViewport} timeFor={listTimeFor}
-                        renderSession={s => <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy}
-                            expansionCache={recentExpansionCache.current} selectedSessionId={selectedSessionId}
-                            revealChildren={isFiltering} session={s} onSelect={props.onSelect} onOpenPane={props.onOpenPane} api={api}
-                            titleSuggestionAvailable={titleSuggestionAvailable} selected={s.id === selectedSessionId}
-                            showDetailedStatus={showDetailedStatus} readState={readState}
-                            machineLabel={showMachineFilterBar && activeMachineFilter === null ? resolveMachineLabel(s.metadata?.machineId ?? null) : undefined} />} />
+                    <RecentSessionList sessions={recentTreeRows} scrollElement={scrollContainerElement} scrollObserverRef={recentScrollObserver}
+                        selectedRootId={selectedSessionId ?? selectedRootId} narrow={narrowViewport} gap={0} fillEdgeWindow={recentTreeHasChildren} timeFor={row => listTimeFor(row.root)}
+                        estimateRowSize={(row, index, base) => base + (row.depth === 0 && index > 0 ? 2 : 0)}
+                        renderSession={row => <div data-session-tree-depth={row.depth}
+                            style={{
+                                paddingTop: row.depth === 0 && row.id !== recentTreeRows[0]?.id ? 2 : undefined,
+                                paddingLeft: row.depth ? row.depth * (narrowViewport ? 21 : 15) : undefined,
+                                backgroundImage: row.depth ? `repeating-linear-gradient(to right, transparent 0 ${narrowViewport ? 12 : 10}px, var(--app-border) ${narrowViewport ? 12 : 10}px ${narrowViewport ? 13 : 11}px, transparent ${narrowViewport ? 13 : 11}px ${narrowViewport ? 21 : 15}px)` : undefined,
+                                backgroundSize: row.depth ? `${row.depth * (narrowViewport ? 21 : 15)}px 100%` : undefined,
+                                backgroundRepeat: 'no-repeat',
+                            }}>
+                            {row.kind === 'session' ? <SessionTreeItem onOpenNativeSubagent={openNativeSubagent} tree={sessionHierarchy}
+                                flatRow={{ expanded: row.expanded, childCount: row.childCount, onToggle: () => toggleRecentRow(row.id) }}
+                                selectedSessionId={selectedSessionId} revealChildren={isFiltering} session={row.session}
+                                onSelect={props.onSelect} onOpenPane={props.onOpenPane} api={api}
+                                titleSuggestionAvailable={titleSuggestionAvailable} selected={row.id === selectedSessionId}
+                                showDetailedStatus={showDetailedStatus} readState={readState}
+                                machineLabel={showMachineFilterBar && activeMachineFilter === null ? resolveMachineLabel(row.session.metadata?.machineId ?? null) : undefined} />
+                                : <NativeSubagentItem agent={row.agent} agents={row.agents} parentSessionId={row.session.id}
+                                    machineId={row.session.metadata?.machineId} onOpen={openNativeSubagent} revealChildren={isFiltering}
+                                    flatRow={{ expanded: row.expanded, childCount: row.childCount, onToggle: () => toggleRecentRow(row.id) }} />}
+                        </div>} />
                 ) : <>
                 {globalPinnedSessions.length > 0 ? (
                     <div key="pinned-section">

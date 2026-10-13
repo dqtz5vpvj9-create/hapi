@@ -241,3 +241,59 @@ describe('Session list per-view bookmarks', () => {
         expect(bookmark.anchors[0]).toEqual({ id: 'row-0', rootId: 'row-0', top: 0 })
     })
 })
+
+function ContentWindow({ revision, available, stable }: { revision: number; available: boolean; stable: boolean }) {
+    const restoration = useContext(SessionListViewRestoration)
+    useLayoutEffect(() => { restoration?.onLayout(stable) })
+    // Simulate a real window: insertion temporarily evicts the previous reader,
+    // but a restoration pin can make its surviving identity measurable again.
+    return <div data-restoring={restoration !== null}>
+        {(revision === 0 || available && restoration?.bookmark.anchors.some(anchor => anchor.rootId === 'reader')) ?
+            <div key={`reader-${revision}`} data-recent-root="reader"><button className="session-list-item"
+                data-session-scroll-anchor="session:reader" data-y={revision === 0 ? 1400 : 4800}>Reader</button></div> :
+            <div data-recent-root="inserted"><button className="session-list-item" data-session-scroll-anchor="session:inserted" data-y="1400">Inserted</button></div>}
+    </div>
+}
+function contentWindowFixture() {
+    let revision = 0, available = true, stable = true
+    let projection = [{ id: 'reader' }]
+    const restored = vi.fn()
+    const ui = () => <div data-testid="scroller"><SessionListScrollAnchor sessions={projection} view="recent" className="" onScrollRestored={restored}>
+        <ContentWindow revision={revision} available={available} stable={stable} />
+    </SessionListScrollAnchor></div>
+    const result = render(ui()), scroller = result.getByTestId('scroller')
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const top = this.dataset.y ? Number(this.dataset.y) - scroller.scrollTop : 0
+        const height = this === scroller ? 680 : this.hasAttribute('data-y') ? 34 : 0
+        return { top, bottom: top + height, left: 0, right: 320, width: 320, height, x: 0, y: top, toJSON() {} }
+    })
+    scroller.scrollTop = 1410
+    return { ...result, scroller, restored,
+        insert: (retain = true, ready = true) => { revision++; available = retain; stable = ready; projection = retain ? [{ id: 'inserted' }, { id: 'reader' }] : [{ id: 'inserted' }]; result.rerender(ui()) },
+        settle: () => { stable = true; result.rerender(ui()) },
+    }
+}
+describe('Recent structural eviction bookmarks', () => {
+    it('restores a surviving semantic row evicted by an above-viewport insertion', () => {
+        const list = contentWindowFixture()
+        list.insert()
+        expect(list.scroller.scrollTop).toBe(4810)
+        expect(list.restored).toHaveBeenLastCalledWith(4810)
+    })
+    it('keeps the numeric fallback when all prior identities were actually removed', () => {
+        const list = contentWindowFixture()
+        list.insert(false)
+        expect(list.scroller.scrollTop).toBe(1410)
+        expect(list.container.querySelector('[data-restoring="true"]')).toBeNull()
+    })
+    it('cancels a pending structural restoration on user wheel input', () => {
+        const list = contentWindowFixture()
+        list.insert(true, false)
+        expect(list.container.querySelector('[data-restoring="true"]')).toBeTruthy()
+        fireEvent.wheel(list.scroller)
+        list.scroller.scrollTop = 1550
+        list.settle()
+        expect(list.scroller.scrollTop).toBe(1550)
+        expect(list.container.querySelector('[data-restoring="true"]')).toBeNull()
+    })
+})
