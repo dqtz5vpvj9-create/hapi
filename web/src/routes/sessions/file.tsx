@@ -30,6 +30,9 @@ import { resolveAbsoluteFilePath } from '@/lib/file-path'
 import { useDocumentLabels } from '@/documents/labels'
 
 const MAX_COPYABLE_FILE_BYTES = 1_000_000
+const MAX_SOURCE_HIGHLIGHT_CHARS = 8 * 1024
+const MAX_SOURCE_HIGHLIGHT_LINES = 200
+const MAX_HIGHLIGHT_LINE_CHARS = 1000
 const FILE_SCROLL_KEY_PREFIX = 'hapi-file-scroll-'
 
 function getFileScrollStorageKey(sessionId: string, filePath: string, staged: boolean | undefined): string {
@@ -129,6 +132,26 @@ function DiffDisplay(props: { diffContent: string }) {
             })}
         </div>
     )
+}
+
+function needsPlainSource(code: string): boolean {
+    // Conservative file-preview budgets, not a grammar execution-time guarantee.
+    // Whole-file tokenization is synchronous, including a single long token.
+    if (code.length >= MAX_SOURCE_HIGHLIGHT_CHARS) return true
+    let lines = 1
+    let lineLength = 0
+    for (let index = 0; index < code.length; index++) {
+        if (code.charCodeAt(index) === 10) {
+            if (++lines >= MAX_SOURCE_HIGHLIGHT_LINES) return true
+            lineLength = 0
+        } else if (++lineLength >= MAX_HIGHLIGHT_LINE_CHARS) return true
+    }
+    return false
+}
+
+function HighlightedFileCode(props: { content: string; language: string | undefined }) {
+    const highlighted = useShikiHighlighter(props.content, props.language)
+    return <>{highlighted ?? props.content}</>
 }
 
 function FileContentSkeleton(props: { label: string }) {
@@ -319,10 +342,6 @@ export function SessionFile(props: { sessionId: string; search: { path?: string;
     const language = useMemo(() => imageMimeType ? undefined : resolveLanguage(filePath), [filePath, imageMimeType])
     const [markdownMode, setMarkdownMode] = useState<MarkdownPreviewMode>(getInitialMarkdownPreviewMode)
     const showMarkdownSource = !markdownFile || markdownMode === 'source'
-    const highlighted = useShikiHighlighter(
-        imageMimeType || (markdownFile && !showMarkdownSource) ? '' : decodedContent,
-        language
-    )
     const contentSizeBytes = useMemo(
         () => (decodedContent ? getUtf8ByteLength(decodedContent) : 0),
         [decodedContent]
@@ -342,6 +361,7 @@ export function SessionFile(props: { sessionId: string; search: { path?: string;
         : 'file'
     const setDisplayMode = (mode: 'diff' | 'file') => setViewSelection({ key: viewKey, mode })
     const loading = displayMode === 'diff' ? diffQuery.isLoading : fileQuery.isLoading
+    const plainSource = displayMode === 'file' && needsPlainSource(decodedContent)
     const { codeWrap, setCodeWrap } = useCodeWrap()
     const fileScrollRef = useRef<HTMLDivElement>(null)
     const restoredScrollKeyRef = useRef<string | null>(null)
@@ -554,7 +574,13 @@ export function SessionFile(props: { sessionId: string; search: { path?: string;
                                                 ...(codeWrap ? { wordBreak: 'break-word' as const } : {})
                                             }}
                                         >
-                                            <code>{highlighted ?? decodedContent}</code>
+                                            <code key={viewKey} data-hapi-source-highlighting={plainSource ? 'plain-large' : 'auto'}>
+                                                {/* Over-budget documents or lines keep the complete plaintext,
+                                                    avoiding synchronous full-file tokenization.
+                                                    Only smaller visible sources mount the highlighter; changed
+                                                    content starts with its own plaintext, never old tokens. */}
+                                                {plainSource ? decodedContent : <HighlightedFileCode key={fileContentResult?.content} content={decodedContent} language={language} />}
+                                            </code>
                                         </pre>
                                     </div>
                                 )
