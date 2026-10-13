@@ -4,6 +4,7 @@ import type { DecryptedMessage } from '@/types/api'
 import type { CancelMessageResponse } from '@hapi/protocol/schemas'
 import {
     appendOptimisticMessage,
+    confirmQueuedMessageCancelled,
     markMessagesConsumed,
     markMessagesRequeued,
     removeOptimisticMessage,
@@ -26,7 +27,8 @@ type CancelQueuedMessageInput = {
  * Optimistic flow:
  *  1. Remove message from store immediately (floating bar clears).
  *  2. Fire DELETE /sessions/:id/messages/:messageId.
- *  3a. On success with status='cancelled': nothing to do (SSE `message-cancelled` confirms server side).
+ *  3a. On success with status='cancelled': confirm removal and invalidate older
+ *      history reads, including across remounts when cancellation SSE was missed.
  *  3b. On success with status='invoked': the CLI beat us to it.
  *      Restore using the server-validated row (with authoritative invokedAt), NOT the stale
  *      client snapshot (invokedAt: null / status: queued). The `messages-consumed` SSE may
@@ -52,6 +54,11 @@ export function useCancelQueuedMessage(api: ApiClient | null) {
                 throw new Error('API unavailable')
             }
             const result = await api.cancelMessage(input.sessionId, input.messageId)
+            if (result.status === 'cancelled') {
+                // Use the API that issued this DELETE, even if navigation or
+                // reconnect replaces the hook's API before its ACK arrives.
+                confirmQueuedMessageCancelled(api, input.sessionId, input.localId)
+            }
             // Force-dismiss (#1839): learn whether the steer already landed before
             // callers (Edit) decide to prefill. Returning synthetic `invoked` keeps
             // the existing Edit toast path and avoids a duplicate composer send.
@@ -137,7 +144,6 @@ export function useCancelQueuedMessage(api: ApiClient | null) {
                     status: 'sent',
                 })
             }
-            // status === 'cancelled': optimistic removal stands — nothing extra to do.
         },
         onError: (_error, input) => {
             // Revert: put the message back so it re-appears in the bar.

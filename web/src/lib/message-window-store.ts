@@ -1909,6 +1909,34 @@ export function removeOptimisticMessage(sessionId: string, localId: string): voi
     }, true)
 }
 
+/** Apply a confirmed queue deletion without letting pre-ACK history reads revive it.
+ * Unlike optimistic removal this invalidates only this session's read generation
+ * and page cache. It keeps the current transcript, reader position, other queued
+ * rows and future identities; no permanent cancellation IDs are retained. */
+export function confirmQueuedMessageCancelled(api: ApiClient, sessionId: string, localId: string): void {
+    if (!localId) return
+    getHistoryPageRepository(api).invalidateSession(sessionId)
+    const previous = getState(sessionId)
+    const controller = tailSyncControllers.get(sessionId)
+    const resumeTail = previous.isSyncingTail || Boolean(controller?.running || controller?.retryTimer)
+    controller?.abort?.abort()
+    if (controller?.retryTimer) clearTimeout(controller.retryTimer)
+    tailSyncControllers.delete(sessionId)
+    setState(sessionId, buildState(previous, {
+        messages: previous.messages.filter(message => message.localId !== localId && message.id !== localId),
+        syncGeneration: previous.syncGeneration + 1,
+        olderGeneration: previous.olderGeneration + 1,
+        isSyncingTail: false,
+        isLoadingMore: false,
+        tailSyncProgress: undefined,
+        tailSyncError: null,
+    }), true)
+    // A cancelled in-flight tail may also have contained new neighboring rows.
+    // Replace that read so they still arrive. The old controller's identity
+    // guard prevents its late finally from clearing this new request.
+    if (resumeTail) void syncTailMessages(api, sessionId)
+}
+
 export function markMessagesDispatching(sessionId: string, localIds: string[]): void {
     markMessagesDeliveryState(sessionId, localIds, 'dispatching')
 }

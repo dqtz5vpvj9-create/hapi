@@ -8,6 +8,7 @@ import { useCancelQueuedMessage } from './useCancelQueuedMessage'
 
 const storeMocks = vi.hoisted(() => ({
     appendOptimisticMessage: vi.fn(),
+    confirmQueuedMessageCancelled: vi.fn(),
     removeOptimisticMessage: vi.fn(),
     markMessagesConsumed: vi.fn(),
     markMessagesRequeued: vi.fn(),
@@ -15,6 +16,7 @@ const storeMocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/message-window-store', () => ({
     appendOptimisticMessage: storeMocks.appendOptimisticMessage,
+    confirmQueuedMessageCancelled: storeMocks.confirmQueuedMessageCancelled,
     removeOptimisticMessage: storeMocks.removeOptimisticMessage,
     markMessagesConsumed: storeMocks.markMessagesConsumed,
     markMessagesRequeued: storeMocks.markMessagesRequeued,
