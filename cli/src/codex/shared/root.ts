@@ -91,6 +91,7 @@ export class SharedCodexRoot {
     private resumedGoalKey?: string;
     private goalControlRevision = 0;
     private capacityIntentRevision = 0;
+    private pendingCapacityInput?: string;
     private goalRevision = 0;
     private goalMutations: Promise<unknown> = Promise.resolve();
     private latestTurn?: { id: string; status: string; planId?: string };
@@ -228,9 +229,23 @@ export class SharedCodexRoot {
                     }
                     this.execution.error(p); this.alive();
                 }
-                if (method === 'thread/queue/changed') { this.stoppedGoalResume = undefined; this.cancelCapacityIntent(); }
+                if (method === 'thread/queue/changed') {
+                    // Native consumption and user edits have the same notification shape.
+                    // Invalidate this plan, not the active turn's future recovery eligibility.
+                    this.stoppedGoalResume = undefined; this.cancelCapacityIntent(false);
+                }
                 const appliesToLatest = !record(params).turnId || record(params).turnId === this.currentTurn || record(params).turnId === this.latestTurn?.id;
-                if (appliesToLatest && method.startsWith('item/') && record(record(params).item).type === 'userMessage') this.capacityRecovery.cancel();
+                if (this.currentTurn && this.execution.running && (!record(params).turnId || record(params).turnId === this.currentTurn)
+                    && (method === 'item/started' || method === 'item/completed') && record(record(params).item).type === 'userMessage') {
+                    const item = record(record(params).item);
+                    const clientId = string(item.clientId ?? item.clientUserMessageId);
+                    if (clientId && clientId === this.pendingCapacityInput && record(params).turnId === this.currentTurn && this.execution.running) {
+                        // A queued/steered message is now part of this same live turn.
+                        // Stop, newer input and settings changes clear this exact-ID proof.
+                        this.pendingCapacityInput = undefined;
+                        this.capacityRecovery.acceptedInput(this.currentTurn!);
+                    } else this.capacityRecovery.cancel();
+                }
                 if (appliesToLatest && method === 'model/rerouted') this.cancelCapacityIntent();
                 if (method.startsWith('item/') || method === 'model/rerouted') {
                     this.execution.progress(record(params).turnId);
@@ -301,6 +316,7 @@ export class SharedCodexRoot {
             }).catch(error => logger.debug('[Codex shared] projection', error));
         });
         this.client.setTransportAbandonedHandler(() => {
+            this.pendingCapacityInput = undefined;
             this.capacityRecovery.cancel();
             this.execution.disconnected(); this.alive();
             this.publishSteering(); this.publishPlan();
@@ -308,14 +324,18 @@ export class SharedCodexRoot {
                 .then(() => this.reconnect());
         });
         this.session.onUserMessage((message, localId) => {
-            this.cancelCapacityIntent();
-            this.recoveryUncertain = false;
-            this.stoppedGoalResume = undefined;
+            const id = localId ?? randomUUID();
+            // Hub replay of an already committed input is not a new user intent.
+            if (this.queue?.state(id) !== 'consumed') {
+                this.cancelCapacityIntent();
+                this.pendingCapacityInput = id;
+                this.recoveryUncertain = false;
+                this.stoppedGoalResume = undefined;
+            }
             this.work = this.work.catch(() => {}).then(async () => {
                 await this.bound;
                 if (this.closed || this.stopping) return;
                 if (this.session.getMetadata()?.codexNativeConnection === 'history') throw new Error('This native Codex thread is open for history only');
-                const id = localId ?? randomUUID();
                 const text = formatMessageWithAttachments(message.content.text, message.content.attachments);
                 const resolved = text.trim().startsWith('/') ? await this.queue.command(id, () => this.command(text)) : text;
                 if (resolved === null) { this.session.emitMessagesConsumed([id], { clearQueuedThinkingGrace: true }); return; }
@@ -358,7 +378,7 @@ export class SharedCodexRoot {
     }
 
     async setNativeConnection(loaded: boolean): Promise<void> {
-        if (!loaded) this.capacityRecovery.cancel();
+        if (!loaded) { this.pendingCapacityInput = undefined; this.capacityRecovery.cancel(); }
         if (loaded && this.threadId) {
             const response = record(await this.client.request('thread/resume', { threadId: this.threadId, excludeTurns: true }));
             this.acceptSettings(response);
@@ -1013,11 +1033,13 @@ export class SharedCodexRoot {
         this.turnGoals.set(turnId, key);
         if (this.turnGoals.size > 64) this.turnGoals.delete(this.turnGoals.keys().next().value!);
     }
-    private cancelCapacityIntent(): void {
+    private cancelCapacityIntent(suppressTurn = true): void {
         this.capacityIntentRevision++;
+        if (suppressTurn) this.pendingCapacityInput = undefined;
         if (this.resumingGoalKey) this.recoveryUncertain = true;
         const id = this.currentTurn ?? this.latestTurn?.id;
-        this.capacityRecovery.suppress(id);
+        if (suppressTurn) this.capacityRecovery.suppress(id);
+        else this.capacityRecovery.cancel();
         this.resumedGoalKey = undefined;
     }
     private serializeGoal<T>(work: () => Promise<T>): Promise<T> {
@@ -1098,6 +1120,7 @@ export class SharedCodexRoot {
         return slash.kind === 'replace' ? slash.text : null;
     }
     stopAccepting(): void {
+        this.pendingCapacityInput = undefined;
         this.capacityRecovery.cancel();
         this.stopping = true; this.ready();
         this.publishSteering();

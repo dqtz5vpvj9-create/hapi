@@ -242,4 +242,15 @@ describe('observed native capacity state', () => {
         t.error({ turnId: 'second', error, willRetry: true }); expect(t.report(false).capacityRecovery).toBeNull();
         t.disconnected(); expect(t.report(true).capacityRecovery).toBeNull();
     });
+    it.each(['unverified', 'unconfirmed', 'exhausted'] as const)('retains %s across duplicate terminal and authoritative snapshot', reason => {
+        const t = new NativeRuntimeStateTracker('owner', 'generation'); const error = { codexErrorInfo: 'serverOverloaded' };
+        const turn = { id: 'failed', status: 'failed', error };
+        t.started({ id: turn.id }); t.completed(turn);
+        t.recovery({ turnId: turn.id, phase: 'failed', reason });
+        t.completed(turn); t.snapshot({ status: { type: 'systemError' } }, [turn]);
+        expect(t.report(true).capacityRecovery).toEqual({ turnId: turn.id, phase: 'failed', reason });
+        t.completed({ ...turn, error: { codexErrorInfo: 'usageLimitExceeded' } });
+        expect(t.report(true).capacityRecovery).toBeNull();
+    });
+
 });

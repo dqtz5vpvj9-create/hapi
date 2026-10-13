@@ -40,6 +40,11 @@ export class CapacityRecovery {
         if (turnId) this.remember(this.suppressed, turnId);
         this.cancel();
     }
+    /** The root must prove a fresh local input was committed to this still-active turn. */
+    acceptedInput(turnId: string): void {
+        this.suppressed.delete(turnId);
+        this.cancel();
+    }
     started(turnId?: string, goalContinuation = false): void {
         if (turnId && turnId === this.continuationTurn) return;
         if (this.dispatching) {

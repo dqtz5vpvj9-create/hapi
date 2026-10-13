@@ -1169,4 +1169,118 @@ describe('capacity continuation through the shared native bridge', () => {
         } finally { vi.useRealTimers(); }
     });
 
+    it('does not suppress a newly started task when native queue consumption empties the queue', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture(); const original = f.root.client.request.bind(f.root.client);
+            const calls = vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) =>
+                method === 'turn/start' ? { turn: { id: 'queue-retry' } } : original(method, params));
+            f.native.notify('thread/queue/changed', { threadId: 'thread' });
+            await vi.advanceTimersByTimeAsync(0);
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery?.phase).toBe('waiting');
+            await vi.advanceTimersByTimeAsync(36_000);
+            expect(calls.mock.calls.filter(([method]) => method === 'turn/start')).toEqual([['turn/start', { threadId: 'thread', input: [] }]]);
+        } finally { vi.useRealTimers(); }
+    });
+    it('preserves the precise blocked recovery reason when authoritative history is refreshed', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture(); f.turn.items = [];
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery?.reason).toBe('unverified');
+            await f.root.refresh();
+            expect(vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery?.reason).toBe('unverified');
+        } finally { vi.useRealTimers(); }
+    });
+
+    it.each(['before', 'after'] as const)('allows recovery after same-turn acceptance with queue changes %s the item', async order => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture(); const original = f.root.client.request.bind(f.root.client);
+            const calls = vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) =>
+                method === 'turn/start' ? { turn: { id: 'steer-retry' } } : original(method, params));
+            f.userMessage({ role: 'user', content: { type: 'text', text: 'continue with this fresh intent' } }, 'accepted-new-intent');
+            await (f.root as any).work;
+            f.native.queue = [];
+            if (order === 'before') {
+                f.native.notify('thread/queue/changed', { threadId: 'thread' });
+                f.native.notify('thread/queue/changed', { threadId: 'thread' });
+            }
+            const item = { id: 'new-user-item', type: 'userMessage', clientId: 'accepted-new-intent', content: [{ type: 'text', text: 'continue with this fresh intent' }] };
+            f.turn.items.push(item);
+            f.native.notify('item/completed', { threadId: 'thread', turnId: f.turn.id, item });
+            if (order === 'after') f.native.notify('thread/queue/changed', { threadId: 'thread' });
+            f.native.notify('thread/status/changed', { threadId: 'thread', status: { type: 'systemError' } });
+            f.native.notify('error', { threadId: 'thread', turnId: f.turn.id, error: capacityError, willRetry: false });
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery?.phase).toBe('waiting');
+            await vi.advanceTimersByTimeAsync(36_000);
+            expect(calls.mock.calls.filter(([method]) => method === 'turn/start')).toEqual([['turn/start', { threadId: 'thread', input: [] }]]);
+        } finally { vi.useRealTimers(); }
+    });
+
+    it.each(['stop-before-accept', 'stop-between-items', 'newer-message', 'settings'] as const)('does not let stale acceptance undo %s', async action => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture(); const calls = vi.spyOn(f.root.client, 'request');
+            f.userMessage({ role: 'user', content: { type: 'text', text: 'first changed intent' } }, 'old-pending-intent');
+            await (f.root as any).work;
+            const item = { id: 'late-user-item', type: 'userMessage', clientId: 'old-pending-intent', content: [{ type: 'text', text: 'first changed intent' }] };
+            if (action === 'stop-between-items') f.native.notify('item/started', { threadId: 'thread', turnId: f.turn.id, item });
+            if (action.startsWith('stop')) await f.rpc.get(RPC_METHODS.Abort)!({});
+            if (action === 'settings') f.root.acceptSettings({ model: 'different' });
+            if (action === 'newer-message') {
+                f.userMessage({ role: 'user', content: { type: 'text', text: 'newer unaccepted intent' } }, 'new-pending-intent');
+                await (f.root as any).work;
+            }
+            f.native.queue = []; f.turn.items.push(item);
+            f.native.notify('item/completed', { threadId: 'thread', turnId: f.turn.id, item });
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(calls.mock.calls.some(([method]) => method === 'turn/start')).toBe(false);
+        } finally { vi.useRealTimers(); }
+    });
+    it('does not continue the failed old task while a newer native queue item remains unaccepted', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture(); const calls = vi.spyOn(f.root.client, 'request');
+            f.native.queue = [{ id: 'external-queue', clientUserMessageId: 'external-intent', input: [{ type: 'text', text: 'new external task' }] }];
+            f.native.notify('thread/queue/changed', { threadId: 'thread' });
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(calls.mock.calls.some(([method]) => method === 'turn/start')).toBe(false);
+            f.native.queue = []; f.native.notify('thread/queue/changed', { threadId: 'thread' });
+            await f.root.refresh();
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(calls.mock.calls.some(([method]) => method === 'turn/start')).toBe(false);
+        } finally { vi.useRealTimers(); }
+    });
+
+    it('retains a scheduled retry across duplicate accepted-item and committed hub-message replay', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture();
+            const message = { role: 'user', content: { type: 'text', text: 'accepted task' } } as UserMessage;
+            f.userMessage(message, 'stable-accepted-id'); await (f.root as any).work;
+            f.native.queue = [];
+            const item = { id: 'accepted-stable-item', type: 'userMessage', clientId: 'stable-accepted-id', content: [{ type: 'text', text: 'accepted task' }] };
+            f.turn.items.push(item);
+            f.native.notify('item/completed', { threadId: 'thread', turnId: f.turn.id, item });
+            await (f.root as any).notifications;
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(0);
+            const waiting = vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery;
+            expect(waiting?.phase).toBe('waiting');
+            f.native.notify('item/completed', { threadId: 'thread', turnId: f.turn.id, item });
+            f.userMessage(message, 'stable-accepted-id'); await (f.root as any).work;
+            await vi.advanceTimersByTimeAsync(0);
+            expect(vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery).toEqual(waiting);
+        } finally { vi.useRealTimers(); }
+    });
+
 });

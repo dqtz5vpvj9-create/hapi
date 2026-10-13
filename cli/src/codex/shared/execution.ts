@@ -44,7 +44,7 @@ export class NativeRuntimeStateTracker {
         this.status = turn.status === 'failed' ? 'systemError' : 'idle';
         this.capacityRecovery = turn.status === 'failed' && (isCapacityError(turn.error)
             || turn.error == null && this.capacityRecovery?.turnId === id)
-            ? this.capacityRecovery?.turnId === id && ['waiting', 'continuing'].includes(this.capacityRecovery.phase)
+            ? this.capacityRecovery?.turnId === id && this.capacityRecovery.phase !== 'retrying'
                 ? this.capacityRecovery : { turnId: id, phase: 'failed' } : null;
         this.waitingOn = [];
         this.completedAt = nativeTime(turn.completedAt ?? turn.completed_at);
