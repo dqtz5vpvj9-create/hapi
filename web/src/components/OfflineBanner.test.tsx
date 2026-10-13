@@ -20,6 +20,8 @@ describe('OfflineBanner', () => {
         render(<I18nProvider><OfflineBanner isHubConnected={false} isReconnecting={false} /></I18nProvider>)
 
         expect(screen.getByText(/currently offline/i)).toBeInTheDocument()
+        expect(screen.getByText(/currently offline/i)).toHaveClass('shrink-0')
+        expect(screen.getByText(/currently offline/i)).not.toHaveClass('fixed')
     })
 
     it('ignores navigator.onLine when the hub is connected', () => {

@@ -46,7 +46,7 @@ vi.mock('@/lib/toast-context', () => ({ ToastProvider: ({ children }: { children
 vi.mock('@/components/LoginPrompt', () => ({ LoginPrompt: () => null }))
 vi.mock('@/components/InstallPrompt', () => ({ InstallPrompt: () => null }))
 vi.mock('@/components/OfflineBanner', () => ({ OfflineBanner: () => null }))
-vi.mock('@/components/PwaUpdateBanner', () => ({ PwaUpdateBanner: () => null, PwaUpdateBannerWithStatusOffset: () => null }))
+vi.mock('@/components/PwaUpdateBanner', () => ({ hasNetworkStatusBanner: () => false, PwaUpdateBanner: () => null, PwaUpdateBannerWithStatusOffset: () => null }))
 vi.mock('@/components/SyncingBanner', () => ({ SyncingBanner: () => null }))
 vi.mock('@/components/ReconnectingBanner', () => ({ ReconnectingBanner: () => null }))
 vi.mock('@/components/VoiceErrorBanner', () => ({ VoiceErrorBanner: () => null }))

@@ -8,6 +8,8 @@ describe('ReconnectingBanner', () => {
         render(<I18nProvider><ReconnectingBanner isReconnecting reason="error" /></I18nProvider>)
 
         expect(screen.getByText(/reconnecting/i)).toBeInTheDocument()
+        expect(screen.getByText(/reconnecting/i)).toHaveClass('shrink-0')
+        expect(screen.getByText(/reconnecting/i)).not.toHaveClass('fixed')
     })
 
     it('stays hidden while connected', () => {

@@ -1,10 +1,11 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/lib/i18n-context'
-import { PwaUpdateBanner, PwaUpdateBannerWithStatusOffset } from '@/components/PwaUpdateBanner'
+import { hasNetworkStatusBanner, PwaUpdateBanner, PwaUpdateBannerWithStatusOffset } from '@/components/PwaUpdateBanner'
 
 const usePwaUpdateMock = vi.fn()
 const useVoiceOptionalMock = vi.fn()
+const useOnlineStatusMock = vi.fn(() => true)
 
 vi.mock('@/lib/pwa-update-context', () => ({
     usePwaUpdateContext: () => usePwaUpdateMock(),
@@ -15,7 +16,7 @@ vi.mock('@/lib/voice-context', () => ({
 }))
 
 vi.mock('@/hooks/useOnlineStatus', () => ({
-    useOnlineStatus: () => true,
+    useOnlineStatus: () => useOnlineStatusMock(),
 }))
 
 vi.mock('@/hooks/usePlatform', () => ({
@@ -39,6 +40,7 @@ describe('PwaUpdateBanner', () => {
     beforeEach(() => {
         vi.clearAllMocks()
         useVoiceOptionalMock.mockReturnValue(null)
+        useOnlineStatusMock.mockReturnValue(true)
         Object.defineProperty(window, 'localStorage', {
             value: {
                 getItem: vi.fn(() => 'en'),
@@ -137,5 +139,33 @@ describe('PwaUpdateBanner', () => {
 
         expect(screen.getByText(/agent running/i)).toBeVisible()
         expect(screen.getByText(/finish what you are doing first/i)).toBeVisible()
+    })
+
+    it.each([true, false])('does not add a second network offset inside content (online=%s)', (online) => {
+        const reload = vi.fn()
+        useOnlineStatusMock.mockReturnValue(online)
+        usePwaUpdateMock.mockReturnValue({ needRefresh: true, reload })
+        render(<I18nProvider><PwaUpdateBannerWithStatusOffset isSyncing isReconnecting withinContent networkStatusVisible /></I18nProvider>)
+        const banner = screen.getByTestId('pwa-update-banner')
+        expect(banner).toHaveClass('absolute', 'top-2')
+        expect(banner).not.toHaveClass('fixed', 'top-[calc(env(safe-area-inset-top)+3rem)]')
+        fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+        expect(reload).toHaveBeenCalledOnce()
+    })
+
+    it('retains voice-overlay clearance inside content', () => {
+        usePwaUpdateMock.mockReturnValue({ needRefresh: true, reload: vi.fn() })
+        useVoiceOptionalMock.mockReturnValue({ status: 'error', errorMessage: 'Mic failed' })
+        render(<I18nProvider><PwaUpdateBannerWithStatusOffset isSyncing={false} isReconnecting={false} withinContent /></I18nProvider>)
+        expect(screen.getByTestId('pwa-update-banner')).toHaveClass('absolute', 'top-[calc(env(safe-area-inset-top)+3rem)]')
+    })
+
+    it.each([false, true])('preserves safe-area clearance offline when hub is connected (syncing=%s)', (syncing) => {
+        usePwaUpdateMock.mockReturnValue({ needRefresh: true, reload: vi.fn() })
+        useOnlineStatusMock.mockReturnValue(false)
+        const visible = hasNetworkStatusBanner({ online: false, hubConnected: true, syncing, reconnecting: false })
+        expect(visible).toBe(false)
+        render(<I18nProvider><PwaUpdateBannerWithStatusOffset isSyncing={syncing} isReconnecting={false} withinContent networkStatusVisible={visible} /></I18nProvider>)
+        expect(screen.getByTestId('pwa-update-banner')).toHaveClass('top-[calc(env(safe-area-inset-top)+0.5rem)]')
     })
 })

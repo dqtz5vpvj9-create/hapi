@@ -4,7 +4,12 @@ import { usePwaUpdateContext } from '@/lib/pwa-update-context'
 import { useTranslation } from '@/lib/use-translation'
 import { useVoiceOptional } from '@/lib/voice-context'
 
-export function PwaUpdateBanner({ topClassName }: { topClassName?: string } = {}) {
+/** Mirrors the existing three banner predicates, for positioning only. */
+export function hasNetworkStatusBanner(state: { online: boolean; hubConnected: boolean; syncing: boolean; reconnecting: boolean }): boolean {
+    return (state.online && state.syncing) || state.reconnecting || (!state.online && !state.hubConnected)
+}
+
+export function PwaUpdateBanner({ topClassName, withinContent = false }: { topClassName?: string; withinContent?: boolean } = {}) {
     const { t } = useTranslation()
     const { needRefresh, reload } = usePwaUpdateContext()
     const isOnline = useOnlineStatus()
@@ -14,14 +19,14 @@ export function PwaUpdateBanner({ topClassName }: { topClassName?: string } = {}
         return null
     }
 
-    const topClass = topClassName ?? (isOnline
+    const topClass = topClassName ?? (withinContent || isOnline
         ? 'top-[calc(env(safe-area-inset-top)+0.5rem)]'
         : 'top-[calc(env(safe-area-inset-top)+2.5rem)]')
 
     return (
         <div
             data-testid="pwa-update-banner"
-            className={`fixed left-4 right-4 bg-[var(--app-secondary-bg)] border border-[var(--app-border)] rounded-lg p-4 shadow-lg z-50 ${topClass}`}
+            className={`${withinContent ? 'absolute' : 'fixed'} left-4 right-4 bg-[var(--app-secondary-bg)] border border-[var(--app-border)] rounded-lg p-4 shadow-lg z-50 ${topClass}`}
         >
             <div className="flex items-center justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -59,21 +64,27 @@ export function PwaUpdateBanner({ topClassName }: { topClassName?: string } = {}
 export function PwaUpdateBannerWithStatusOffset({
     isSyncing,
     isReconnecting,
+    withinContent = false,
+    networkStatusVisible = false,
 }: {
     isSyncing: boolean
     isReconnecting: boolean
+    withinContent?: boolean
+    networkStatusVisible?: boolean
 }) {
     const voice = useVoiceOptional()
+    // The authenticated content area already starts below network banners.
+    // Voice errors remain a viewport overlay; retain their existing clearance.
     const hasTopStatusBanner =
-        isSyncing ||
-        isReconnecting ||
+        (!withinContent && (isSyncing || isReconnecting)) ||
         Boolean(voice && voice.status === 'error' && voice.errorMessage)
 
     return (
         <PwaUpdateBanner
+            withinContent={withinContent}
             topClassName={hasTopStatusBanner
                 ? 'top-[calc(env(safe-area-inset-top)+3rem)]'
-                : undefined}
+                : withinContent && networkStatusVisible ? 'top-2' : undefined}
         />
     )
 }

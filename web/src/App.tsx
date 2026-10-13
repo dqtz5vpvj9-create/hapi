@@ -41,7 +41,7 @@ import { cancelQueuedStateRequestsForApi } from '@/lib/queued-state-request-life
 import { LoginPrompt } from '@/components/LoginPrompt'
 import { InstallPrompt } from '@/components/InstallPrompt'
 import { OfflineBanner } from '@/components/OfflineBanner'
-import { PwaUpdateBanner, PwaUpdateBannerWithStatusOffset } from '@/components/PwaUpdateBanner'
+import { hasNetworkStatusBanner, PwaUpdateBanner, PwaUpdateBannerWithStatusOffset } from '@/components/PwaUpdateBanner'
 import { SyncingBanner } from '@/components/SyncingBanner'
 import { ReconnectingBanner } from '@/components/ReconnectingBanner'
 import { VoiceErrorBanner } from '@/components/VoiceErrorBanner'
@@ -587,23 +587,32 @@ function AppInner() {
     return (
         <AppContextProvider value={{ api, token, baseUrl, workspace, workspaceActive, titleSuggestionAvailable, executionConnected: executionOnline && Boolean(workspaceActive ? globalSubscriptionId : sessionSubscriptionId) }}>
             <VoiceProvider>
-                <PwaUpdateBannerWithStatusOffset
-                    isSyncing={isSyncing}
-                    isReconnecting={showReconnectingBanner}
-                />
-                <SyncingBanner isSyncing={isSyncing} />
-                <ReconnectingBanner
-                    isReconnecting={showReconnectingBanner}
-                    reason={sseDisconnected ? sseDisconnectReason : sessionConnection.reason}
-                />
                 <VoiceErrorBanner />
-                <OfflineBanner
-                    isHubConnected={globalSubscriptionId !== null}
-                    isReconnecting={showReconnectingBanner}
-                />
                 <RunnerVersionSkewBanner />
-                <div className="h-full min-h-0 flex flex-col">
-                    <Outlet />
+                <div className="h-full min-h-0 flex flex-col" data-testid="app-status-layout">
+                    <SyncingBanner isSyncing={isSyncing} />
+                    <ReconnectingBanner
+                        isReconnecting={showReconnectingBanner}
+                        reason={sseDisconnected ? sseDisconnectReason : sessionConnection.reason}
+                    />
+                    <OfflineBanner
+                        isHubConnected={globalSubscriptionId !== null}
+                        isReconnecting={showReconnectingBanner}
+                    />
+                    <div className="relative flex-1 min-h-0 flex flex-col" data-testid="app-status-content">
+                        <PwaUpdateBannerWithStatusOffset
+                            isSyncing={isSyncing}
+                            isReconnecting={showReconnectingBanner}
+                            withinContent
+                            networkStatusVisible={hasNetworkStatusBanner({
+                                online: executionOnline,
+                                hubConnected: globalSubscriptionId !== null,
+                                syncing: isSyncing,
+                                reconnecting: showReconnectingBanner,
+                            })}
+                        />
+                        <Outlet />
+                    </div>
                 </div>
                 <ToastContainer />
                 <InstallPrompt />
