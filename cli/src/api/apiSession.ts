@@ -281,6 +281,7 @@ export class ApiSessionClient extends EventEmitter {
     private metadataLock = new AsyncLock()
     private state: ApiSessionClientState
     private lastReportedThinking: boolean | undefined
+    private lastReportedCapacityRecovery: string | undefined
     private readonly materializer?: ApiSessionClientOptions['materialize']
     private readonly onMaterialized?: ApiSessionClientOptions['onMaterialized']
     private materializationTask: Promise<boolean> | null = null
@@ -1311,7 +1312,10 @@ export class ApiSessionClient extends EventEmitter {
         }
         // Turn transitions must survive an occupied transport. Routine
         // heartbeats may be dropped; a stop must not wait for the next one.
-        const transport = this.lastReportedThinking === thinking ? this.socket.volatile : this.socket
+        const capacityRecovery = JSON.stringify(runtime?.execution?.capacityRecovery ?? null)
+        const transport = this.lastReportedThinking === thinking && this.lastReportedCapacityRecovery === capacityRecovery
+            ? this.socket.volatile : this.socket
+        this.lastReportedCapacityRecovery = capacityRecovery
         this.lastReportedThinking = thinking
         transport.emit('session-alive', {
             sid: this.sessionId,

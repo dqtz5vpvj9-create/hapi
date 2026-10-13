@@ -1,3 +1,4 @@
+import { CapacityNotice } from './CapacityNotice'
 import { DocumentReferenceDrafts } from '@/documents/DocumentReferenceDrafts'
 import { useSelectionDrafts } from '@/documents/useSelectionDrafts'
 import { usePane, usePaneEditing } from '@/workspace/PaneContext'
@@ -311,6 +312,7 @@ export function HappyComposer(props: {
     allowSendWhenInactive?: boolean
     execution?: import('@hapi/protocol/schemas').NativeRuntimeState | null
     thinking?: boolean
+    onCancelCapacityRecovery?: () => Promise<void>
     abortError?: Error | null
     agentState?: AgentState | null
     backgroundTaskCount?: number
@@ -581,6 +583,8 @@ export function HappyComposer(props: {
     // own section; the gear (null) opens the full sheet.
     const [settingsSection, setSettingsSection] = useState<'model' | 'effort' | 'permission' | null>(null)
     const [isAborting, setIsAborting] = useState(false)
+    const [isCancelingCapacity, setIsCancelingCapacity] = useState(false)
+    const cancelingCapacityRef = useRef(false)
     const [isSwitching, setIsSwitching] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
     // pendingSchedule is controlled externally when onSchedule prop is provided; otherwise local state
@@ -2371,6 +2375,17 @@ export function HappyComposer(props: {
                     {overlays}
 
                     {!glassLayout ? statusBar : null}
+                    {agentFlavor === 'codex' ? <CapacityNotice active={active && !disabled} execution={props.execution}
+                        cancelDisabled={controlsDisabled || isAborting || isCancelingCapacity}
+                        onCancel={props.onCancelCapacityRecovery ? () => {
+                            if (cancelingCapacityRef.current) return
+                            cancelingCapacityRef.current = true
+                            setIsCancelingCapacity(true)
+                            void props.onCancelCapacityRecovery!().catch(() => {}).finally(() => {
+                                cancelingCapacityRef.current = false
+                                setIsCancelingCapacity(false)
+                            })
+                        } : undefined} /> : null}
 
                     {dictationActive && dictation.partialTranscript ? (
                         <div

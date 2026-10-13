@@ -1,3 +1,4 @@
+import { isCapacityError } from './capacityRecovery';
 import type { NativeRuntimeState } from '@hapi/protocol/schemas';
 import { record, string } from './gateway';
 
@@ -14,6 +15,7 @@ export class NativeRuntimeStateTracker {
     private startedAt: number | null = null;
     private completedAt: number | null = null;
     private sequence = 0;
+    private capacityRecovery: NativeRuntimeState['capacityRecovery'] = null;
     private readonly terminal = new Set<string>();
     constructor(private readonly owner: string, private readonly generation: string) {}
 
@@ -27,6 +29,7 @@ export class NativeRuntimeStateTracker {
         if (id !== this.turnId) {
             this.startedAt = nativeTime(turn.startedAt ?? turn.started_at);
             this.completedAt = null;
+            this.capacityRecovery = null;
         } else this.startedAt ??= nativeTime(turn.startedAt ?? turn.started_at);
         this.turnId = id; this.status = 'active'; this.waitingOn = [];
         return true;
@@ -39,13 +42,33 @@ export class NativeRuntimeStateTracker {
         if (this.turnId && this.turnId !== id) return;
         this.turnId = id;
         this.status = turn.status === 'failed' ? 'systemError' : 'idle';
+        this.capacityRecovery = turn.status === 'failed' && (isCapacityError(turn.error)
+            || turn.error == null && this.capacityRecovery?.turnId === id)
+            ? this.capacityRecovery?.turnId === id && ['waiting', 'continuing'].includes(this.capacityRecovery.phase)
+                ? this.capacityRecovery : { turnId: id, phase: 'failed' } : null;
         this.waitingOn = [];
         this.completedAt = nativeTime(turn.completedAt ?? turn.completed_at);
     }
+    /** Notifications are scoped by the root and must match its live turn. */
+    error(params: Record<string, unknown>): void {
+        const id = string(params.turnId);
+        if (!id || id !== this.turnId || this.terminal.has(id) || this.status !== 'active') return;
+        this.capacityRecovery = isCapacityError(params.error) && typeof params.willRetry === 'boolean'
+            ? { turnId: id, phase: params.willRetry ? 'retrying' : 'failed' } : null;
+    }
+    progress(turnId: unknown): void {
+        if (turnId === this.turnId && this.status === 'active' && !this.terminal.has(String(turnId))) this.capacityRecovery = null;
+    }
+    clearCapacity(): void { this.capacityRecovery = null; }
+    recovery(state: NativeRuntimeState['capacityRecovery']): void { this.capacityRecovery = state; }
     acceptStatus(raw: unknown): void {
         const status = record(raw);
         if (!['active', 'idle', 'notLoaded', 'systemError'].includes(String(status.type))) return;
         this.status = status.type as NativeRuntimeState['status'];
+        if (this.capacityRecovery?.phase === 'retrying' && this.status !== 'active') {
+            this.capacityRecovery = this.status === 'systemError'
+                ? { ...this.capacityRecovery, phase: 'failed' } : null;
+        }
         const flags = Array.isArray(status.activeFlags) ? status.activeFlags : [];
         this.waitingOn = [];
         if (flags.includes('waitingOnApproval')) this.waitingOn.push('approval');
@@ -56,16 +79,18 @@ export class NativeRuntimeStateTracker {
         const latest = turns.at(-1);
         if (latest?.status === 'inProgress') this.started(latest);
         else if (latest) this.completed(latest);
-        else { this.status = 'idle'; this.waitingOn = []; }
+        else { this.status = 'idle'; this.waitingOn = []; this.capacityRecovery = null; }
         // History can retain inProgress after unloading. Runtime status wins.
         if (acceptStatus) this.acceptStatus(thread.status);
         else { this.status = priorStatus; this.waitingOn = priorWaiting; }
     }
-    disconnected(): void { this.status = 'disconnected'; this.waitingOn = []; }
+    disconnected(): void { this.status = 'disconnected'; this.waitingOn = []; this.capacityRecovery = null; }
+    get canContinue(): boolean { return this.status === 'idle' || this.status === 'systemError'; }
     get running(): boolean { return this.status === 'active'; }
     report(connected: boolean): NativeRuntimeState {
         return { owner: this.owner, generation: this.generation, sequence: ++this.sequence,
             status: connected ? this.status : 'disconnected', waitingOn: connected ? this.waitingOn : [],
-            turnId: this.turnId, startedAt: this.startedAt, completedAt: this.completedAt };
+            turnId: this.turnId, startedAt: this.startedAt, completedAt: this.completedAt,
+            capacityRecovery: connected ? this.capacityRecovery : null };
     }
 }

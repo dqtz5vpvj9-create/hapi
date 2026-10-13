@@ -998,3 +998,17 @@ describe('ApiSessionClient turn state delivery', () => {
         client.close()
     })
 })
+
+it('reliably delivers capacity transitions even when unchanged-thinking heartbeats are dropped', () => {
+    socketHarness.sockets.length = 0
+    const client = new ApiSessionClient('token', createSession({ namespace: 'default' }))
+    const socket = socketHarness.sockets[0]!
+    socket.dropVolatile = true; socket.emitted.length = 0
+    const execution = { owner: 'owner', generation: 'generation', sequence: 1, status: 'systemError' as const,
+        waitingOn: [], turnId: 'turn', startedAt: null, completedAt: null }
+    client.keepAlive(false, 'remote', { execution })
+    client.keepAlive(false, 'remote', { execution: { ...execution, capacityRecovery: { turnId: 'turn', phase: 'waiting', retryAt: 100_000 } } })
+    client.keepAlive(false, 'remote', { execution: { ...execution, capacityRecovery: null } })
+    expect(socket.emitted.filter(e => e.event === 'session-alive')).toHaveLength(3)
+    client.close()
+})

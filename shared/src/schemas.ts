@@ -380,7 +380,16 @@ export const NativeRuntimeStateSchema = z.object({
     waitingOn: z.array(z.enum(['approval', 'input'])),
     turnId: z.string().nullable(),
     startedAt: z.number().nullable(),
-    completedAt: z.number().nullable()
+    completedAt: z.number().nullable(),
+    // Native retry observations and bridge-owned continuation plans. Older runtimes omit this; null clears it.
+    capacityRecovery: z.object({
+        turnId: z.string(),
+        phase: z.enum(['retrying', 'failed', 'waiting', 'continuing']),
+        retryAt: z.number().finite().optional(),
+        attempt: z.number().int().positive().optional(),
+        maxAttempts: z.number().int().positive().optional(),
+        reason: z.enum(['exhausted', 'unverified', 'unconfirmed']).optional()
+    }).nullable().optional()
 })
 export type NativeRuntimeState = z.infer<typeof NativeRuntimeStateSchema>
 

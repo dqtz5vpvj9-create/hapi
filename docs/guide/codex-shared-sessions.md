@@ -260,3 +260,16 @@ not a fake Codex executable. Coverage includes keyboard/Web answers, sibling
 question isolation, native queue editing/deletion, fork, primary-terminal exit,
 secondary attachment/detachment, Web→Runner resume with the same HAPI/native
 identity, and safe pending-message recovery.
+
+
+### Temporary model capacity
+
+When the official Codex runtime says it is retrying a capacity error, HAPI shows that native state and lets Codex finish its own retries. HAPI does not create a competing retry while the original turn is running.
+
+After a confirmed terminal capacity failure, the bridge can continue the same conversation with an empty-input **new turn**, preserving the recorded user message and tool results. It checks that the failed turn is still latest, recent original user input was recorded in the same conversation, the runtime is idle and attached, and the native queue is empty. HAPI never resends the original prompt or forks the conversation.
+
+For an autonomous goal, HAPI instead resumes the same goal through the official goal API. It must have observed that goal active on the failed turn and now blocked by the capacity failure, with the same objective, creation identity and token budget. It does not also start an empty turn. Paused, completed, usage-limited, changed, or pre-existing blocked goals are never automatically revived.
+
+The bridge schedules at most five continuation attempts: approximately 30, 60, 120, 240 and 300 seconds, with positive jitter capped at five minutes. The countdown is HAPI's plan, not a server-provided deadline: Codex 0.162 does not expose its private `Retry-After` deadline in app-server error notifications. Native automatic retries take priority.
+
+Cancel automatic continuation, send new input, change the model/settings, start another turn, or disconnect/unload the bridge to cancel a waiting plan. Browser tabs only display the bridge's deadline; reopening a tab cannot dispatch another attempt. Plans are not restored after a bridge restart. If the latest state or input cannot be verified, or a continuation request has an uncertain outcome, HAPI stops automatic continuation rather than replaying a possibly accepted request.

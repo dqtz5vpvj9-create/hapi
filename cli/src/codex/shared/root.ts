@@ -1,3 +1,4 @@
+import { CapacityRecovery, isCapacityError } from './capacityRecovery';
 import { ForkOperationRpcRequestSchema, type ForkOperationRpcRequest, type ForkOperationRpcResponse } from '@hapi/protocol/forkOperations';
 import type { ForkPlan, ForkOperationOrigin } from './forkJournal';
 import { resolveNativeForkBoundary } from './nativeForkBoundary';
@@ -18,7 +19,7 @@ import { listSlashCommands } from '@/modules/common/slashCommands';
 import { normalizeCodexModel } from '@/modules/common/codexModels';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods';
-import { ThreadGoalSchema } from '@hapi/protocol/schemas';
+import { ThreadGoalSchema, type ThreadGoal } from '@hapi/protocol/schemas';
 import { ForkConversationRequestSchema, CodexGoalRequestSchema, CodexGoalResponseSchema, ImplementCodexPlanRequestSchema, type ImplementCodexPlanResult } from '@hapi/protocol/apiTypes';
 import { CodexAppServerClient, isIndeterminateError } from '../codexAppServerClient';
 import { buildHapiMcpBridge, type HapiMcpBridge } from '../utils/buildHapiMcpBridge';
@@ -78,6 +79,20 @@ export class SharedCodexRoot {
     private notifications = Promise.resolve();
     private currentTurn: string | undefined;
     private readonly execution: NativeRuntimeStateTracker;
+    private readonly capacityRecovery: CapacityRecovery;
+    private recoveryGoal: ThreadGoal | null | undefined;
+    private readonly turnGoals = new Map<string, string>();
+    private recoveryGoalAction?: { key: string; controlRevision: number };
+    private resumingGoalKey?: string;
+    private resumingGoalIntent?: number;
+    private goalResumeDispatched = false;
+    private recoveryUncertain = false;
+    private stoppedGoalResume?: { key: string; controlRevision: number; settingsRevision: number; pausedConfirmed?: boolean };
+    private resumedGoalKey?: string;
+    private goalControlRevision = 0;
+    private capacityIntentRevision = 0;
+    private goalRevision = 0;
+    private goalMutations: Promise<unknown> = Promise.resolve();
     private latestTurn?: { id: string; status: string; planId?: string };
     private publishedPlanId: string | null | undefined;
     private submittingPlan = false;
@@ -105,6 +120,92 @@ export class SharedCodexRoot {
         this.session = bootstrap.session;
         this.execution = new NativeRuntimeStateTracker(host.generation, randomUUID());
         this.client = new CodexAppServerClient({ endpoint: host.endpoint, token: host.token, cwd: bootstrap.workingDirectory });
+        this.capacityRecovery = new CapacityRecovery({
+            inspect: async (turnId, continuation) => {
+                if (this.recoveryUncertain || this.closed || this.stopping || this.reconnecting || !this.client.isInitialized()
+                    || !this.execution.canContinue || this.session.getMetadata()?.codexNativeConnection === 'history'
+                    || this.currentTurn || this.latestTurn?.id !== turnId || this.latestTurn.status !== 'failed') return false;
+                const revision = this.turnRevision, settingsRevision = this.settingsRevision, goalRevision = this.goalRevision;
+                const page = record(await this.client.request('thread/turns/list', {
+                    threadId: this.threadId, limit: 1, sortDirection: 'desc', itemsView: 'full'
+                }));
+                const latest = record(Array.isArray(page.data) ? page.data[0] : undefined);
+                if (latest.id !== turnId || latest.status !== 'failed' || !isCapacityError(latest.error)) return false;
+                const rawGoal = record(await this.client.request('thread/goal/get', { threadId: this.threadId })).goal;
+                const goal = rawGoal == null ? null : ThreadGoalSchema.parse(rawGoal);
+                this.recoveryGoalAction = undefined;
+                const explicitUser = Array.isArray(latest.items) && latest.items.some(item => record(item).type === 'userMessage');
+                const ordinaryWithInactiveGoal = goal && (goal.status === 'paused' || goal.status === 'complete')
+                    && !this.turnGoals.has(turnId) && (explicitUser || continuation);
+                if (goal && !ordinaryWithInactiveGoal) {
+                    // Only a goal observed Active on this failing turn may be resumed.
+                    // Blocked snapshots from before attachment, paused goals and exhausted budgets stay stopped.
+                    const key = this.goalKey(goal);
+                    if (goal.status !== 'blocked' || this.turnGoals.get(turnId) !== key
+                        || goal.tokenBudget != null && goal.tokensUsed >= goal.tokenBudget) return false;
+                    this.recoveryGoalAction = { key, controlRevision: this.goalControlRevision };
+                } else if (!continuation) {
+                    const hasUser = (turn: unknown) => Array.isArray(record(turn).items)
+                        && (record(turn).items as unknown[]).some(item => record(item).type === 'userMessage');
+                    if (!hasUser(latest)) {
+                        // An autonomous/empty turn can legitimately follow committed input in this thread.
+                        // Bound history reads; absence of proof fails closed rather than replaying a prompt.
+                        const history = record(await this.client.request('thread/turns/list', {
+                            threadId: this.threadId, limit: 8, sortDirection: 'desc', itemsView: 'full'
+                        }));
+                        if (!Array.isArray(history.data) || !history.data.some(hasUser)) return false;
+                    }
+                }
+                const queued = await this.queue.list();
+                return !queued.length && revision === this.turnRevision && settingsRevision === this.settingsRevision && goalRevision === this.goalRevision
+                    && !this.currentTurn && !this.closed && !this.stopping && !this.reconnecting && this.client.isInitialized()
+                    && this.execution.canContinue && this.session.getMetadata()?.codexNativeConnection !== 'history';
+            },
+            continue: async () => {
+                const action = this.recoveryGoalAction;
+                if (action) {
+                    this.resumingGoalKey = action.key;
+                    const goalRevision = this.goalRevision;
+                    const intentRevision = this.capacityIntentRevision;
+                    this.resumingGoalIntent = intentRevision;
+                    try {
+                        const response = record(await this.serializeGoal(() => {
+                            if (intentRevision !== this.capacityIntentRevision || action.controlRevision !== this.goalControlRevision)
+                                throw new Error('Capacity goal recovery was cancelled before dispatch');
+                            this.goalResumeDispatched = true;
+                            return this.client.request('thread/goal/set', { threadId: this.threadId, status: 'active' });
+                        }));
+                        const goal = ThreadGoalSchema.parse(response.goal);
+                        if (this.goalKey(goal) !== action.key) throw new Error('Goal changed during capacity recovery');
+                        if (goalRevision === this.goalRevision) this.publishGoal(goal);
+                        this.resumedGoalKey = action.key;
+                        return { goal: true as const, cancel: () => this.pauseRecoveredGoal(action) };
+                    } catch (error) {
+                        this.recoveryUncertain = true;
+                        await this.refreshGoal().catch(() => {});
+                        await this.refresh().catch(() => {});
+                        if (intentRevision !== this.capacityIntentRevision) await this.pauseRecoveredGoal(action).catch(() => {});
+                        throw error;
+                    } finally { this.resumingGoalKey = undefined; this.resumingGoalIntent = undefined; this.goalResumeDispatched = false; }
+                }
+                let response: Record<string, unknown>;
+                try { response = record(await this.client.request('turn/start', { threadId: this.threadId, input: [] })); }
+                catch (error) {
+                    // Lost ACKs are ambiguous. Read the native result once, never replay the mutation.
+                    this.recoveryUncertain = true;
+                    await this.refresh().catch(() => {});
+                    throw error;
+                }
+                const id = string(record(response.turn).id);
+                if (!id) {
+                    this.recoveryUncertain = true;
+                    throw new Error('Capacity continuation has no confirmed turn ID');
+                }
+                return id;
+            },
+            interrupt: async turnId => { await this.client.request('turn/interrupt', { threadId: this.threadId, turnId }); },
+            publish: state => { this.execution.recovery(state); this.alive(); }
+        });
         this.client.setNotificationHandler((method, params) => {
             if (method === 'thread/name/updated' && record(params).threadId === this.threadId) {
                 // Capture before queued history/queue work, so an older in-flight read cannot win.
@@ -117,14 +218,45 @@ export class SharedCodexRoot {
             }
             if (method === 'thread/settings/updated' && record(params).threadId === this.threadId) this.acceptSettings(record(record(params).threadSettings));
             if (record(params).threadId === this.threadId) {
+                if (method === 'thread/goal/updated') this.publishGoal(record(params).goal);
+                if (method === 'thread/goal/cleared') this.publishGoal(null);
+                if (method === 'error') {
+                    const p = record(params);
+                    if (p.turnId === this.currentTurn) {
+                        if (p.willRetry === true) this.capacityRecovery.nativeRetry();
+                        else if (!isCapacityError(p.error)) this.capacityRecovery.cancel();
+                    }
+                    this.execution.error(p); this.alive();
+                }
+                if (method === 'thread/queue/changed') { this.stoppedGoalResume = undefined; this.cancelCapacityIntent(); }
+                const appliesToLatest = !record(params).turnId || record(params).turnId === this.currentTurn || record(params).turnId === this.latestTurn?.id;
+                if (appliesToLatest && method.startsWith('item/') && record(record(params).item).type === 'userMessage') this.capacityRecovery.cancel();
+                if (appliesToLatest && method === 'model/rerouted') this.cancelCapacityIntent();
+                if (method.startsWith('item/') || method === 'model/rerouted') {
+                    this.execution.progress(record(params).turnId);
+                }
                 if (method === 'thread/status/changed') {
+                    if (record(record(params).status).type === 'notLoaded') this.capacityRecovery.cancel();
                     this.runtimeRevision++; this.execution.acceptStatus(record(params).status);
                     this.publishSteering(); this.alive();
                 }
                 if (method === 'turn/started') {
                     if (!this.execution.started(record(record(params).turn))) return;
+                    if (record(record(params).turn).id !== this.currentTurn) this.capacityRecovery.started(string(record(record(params).turn).id),
+                        !this.recoveryUncertain && this.recoveryGoal?.status === 'active' && this.goalKey(this.recoveryGoal) ===
+                            (this.resumingGoalKey ?? (this.capacityRecovery.ownsGoalResume ? this.resumedGoalKey : undefined)));
                     this.turnRevision++; this.currentTurn = string(record(record(params).turn).id); this.interrupted = false;
-                    if (this.currentTurn) this.latestTurn = { id: this.currentTurn, status: 'inProgress' };
+                    if (this.currentTurn) {
+                        const stopped = this.stoppedGoalResume;
+                        if (stopped && stopped.controlRevision === this.goalControlRevision && stopped.settingsRevision === this.settingsRevision
+                            && this.recoveryGoal && this.goalKey(this.recoveryGoal) === stopped.key) {
+                            this.stoppedGoalResume = undefined;
+                            this.capacityRecovery.suppress(this.currentTurn);
+                            void this.client.request('turn/interrupt', { threadId: this.threadId, turnId: this.currentTurn }).catch(() => {});
+                        }
+                        this.latestTurn = { id: this.currentTurn, status: 'inProgress' };
+                        if (!this.recoveryUncertain && this.recoveryGoal?.status === 'active') this.rememberTurnGoal(this.currentTurn, this.goalKey(this.recoveryGoal));
+                    }
                     this.asyncQuestions?.setTurn(this.currentTurn);
                     this.publishSteering(); this.alive();
                 }
@@ -147,6 +279,13 @@ export class SharedCodexRoot {
                             planId: planProposalForTurn(this.threadId, turn) ?? this.latestTurn?.planId };
                     }
                 }
+                if (method === 'turn/completed') {
+                    const turn = record(p.turn);
+                    if (turn.id === this.latestTurn?.id) {
+                        if (turn.status === 'failed' && isCapacityError(turn.error)) void this.capacityRecovery.failed(String(turn.id));
+                        else this.capacityRecovery.cancel();
+                    }
+                }
                 this.publishPlan();
             }
             const modelAtReceipt = record(params).threadId === this.threadId ? this.settings.model ?? undefined : undefined;
@@ -162,12 +301,16 @@ export class SharedCodexRoot {
             }).catch(error => logger.debug('[Codex shared] projection', error));
         });
         this.client.setTransportAbandonedHandler(() => {
+            this.capacityRecovery.cancel();
             this.execution.disconnected(); this.alive();
             this.publishSteering(); this.publishPlan();
             void (this.queue?.transportLost() ?? Promise.resolve()).catch(error => logger.debug('[Codex shared] lost queue confirmation', error))
                 .then(() => this.reconnect());
         });
         this.session.onUserMessage((message, localId) => {
+            this.cancelCapacityIntent();
+            this.recoveryUncertain = false;
+            this.stoppedGoalResume = undefined;
             this.work = this.work.catch(() => {}).then(async () => {
                 await this.bound;
                 if (this.closed || this.stopping) return;
@@ -215,6 +358,7 @@ export class SharedCodexRoot {
     }
 
     async setNativeConnection(loaded: boolean): Promise<void> {
+        if (!loaded) this.capacityRecovery.cancel();
         if (loaded && this.threadId) {
             const response = record(await this.client.request('thread/resume', { threadId: this.threadId, excludeTurns: true }));
             this.acceptSettings(response);
@@ -382,6 +526,8 @@ export class SharedCodexRoot {
     }
     acceptSettings(value: Record<string, unknown>): void {
         if (typeof value.model !== 'string') return;
+        if (['model', 'effort', 'reasoningEffort', 'serviceTier', 'collaborationMode'].some(key =>
+            key in value && JSON.stringify(value[key]) !== JSON.stringify(this.settingsNative[key]))) this.cancelCapacityIntent();
         this.settingsRevision++;
         if ('collaborationMode' in value && 'sandboxPolicy' in value) this.settingsNotification = value;
         this.settingsNative = { ...this.settingsNative, ...value };
@@ -428,8 +574,6 @@ export class SharedCodexRoot {
         if (method === 'thread/queue/changed') await this.queue.reconcile();
         if (this.host.external) {
             // Goal state is outside the paged transcript; never use its updates as history cursors.
-            if (method === 'thread/goal/updated') this.publishGoal(p.goal);
-            if (method === 'thread/goal/cleared') this.publishGoal(null);
             if (method === 'turn/completed') this.nativeHistory?.terminal(record(record(params).turn));
             this.nativeHistory?.invalidate(/revert|rollback|rolledback|truncat/i.test(method)); this.session.emitNativeHistoryChanged();
         }
@@ -572,6 +716,9 @@ export class SharedCodexRoot {
     }
     async applySettings(raw: unknown): Promise<{ applied: RuntimeSettings }> {
         const config = SettingsSchema.parse(raw);
+        this.cancelCapacityIntent();
+        this.recoveryUncertain = false;
+        this.stoppedGoalResume = undefined;
         if (config.permissionMode === 'safe-yolo') throw new Error('safe-yolo is not a native shared permission mode; choose default, read-only, or yolo');
         if (Object.keys(config).length === 0) return { applied: this.settings };
         if (typeof config.modelReasoningEffort === 'string') config.modelReasoningEffort = parseReasoningEffortValue(config.modelReasoningEffort);
@@ -683,6 +830,10 @@ export class SharedCodexRoot {
         rpc.registerHandler(RPC_METHODS.HandoffLocal, async () => { throw new Error('control_mode_not_applicable'); });
         rpc.registerHandler(RPC_METHODS.Abort, async () => {
             const turnId = this.currentTurn;
+            const pendingGoalKey = (this.goalResumeDispatched ? this.resumingGoalKey : undefined) ?? (this.capacityRecovery.ownsGoalResume ? this.resumedGoalKey : undefined);
+            this.cancelCapacityIntent();
+            if (pendingGoalKey && !turnId) this.stoppedGoalResume = { key: pendingGoalKey, controlRevision: this.goalControlRevision, settingsRevision: this.settingsRevision };
+            if (this.recoveryGoal?.status === 'active') await this.pauseRecoveredGoal({ key: this.goalKey(this.recoveryGoal), controlRevision: this.goalControlRevision });
             if (turnId) await this.client.request('turn/interrupt', { threadId: this.threadId, turnId });
         });
         rpc.registerHandler(RPC_METHODS.KillSession, async () => { await this.host.end(this); return { success: true }; });
@@ -700,10 +851,11 @@ export class SharedCodexRoot {
         this.session.on('hub-archived', exitFromHubArchive);
         rpc.registerHandler(RPC_METHODS.CodexGoal, async raw => {
             const request = CodexGoalRequestSchema.parse(raw);
+            if (request.action !== 'get') { this.goalControlRevision++; this.cancelCapacityIntent(); this.recoveryUncertain = false; this.stoppedGoalResume = undefined; }
             const params = { threadId: this.threadId };
             const response = request.action === 'get' ? await this.client.request('thread/goal/get', params)
-                : request.action === 'clear' ? await this.client.request('thread/goal/clear', params)
-                : await this.client.request('thread/goal/set', { ...params, ...(request.action === 'set'
+                : request.action === 'clear' ? await this.mutateGoal('thread/goal/clear', params)
+                : await this.mutateGoal('thread/goal/set', { ...params, ...(request.action === 'set'
                     ? { objective: request.objective } : { status: request.action === 'pause' ? 'paused' : 'active' }) });
             const result = CodexGoalResponseSchema.parse({ goal: request.action === 'clear' ? null : record(response).goal });
             this.publishGoal(result.goal);
@@ -854,8 +1006,62 @@ export class SharedCodexRoot {
             logger.debug('[Codex shared] goal snapshot unavailable', error);
         }
     }
+    private goalKey(goal: ThreadGoal): string {
+        return JSON.stringify([goal.threadId, goal.objective, goal.createdAt, goal.tokenBudget ?? null]);
+    }
+    private rememberTurnGoal(turnId: string, key: string): void {
+        this.turnGoals.set(turnId, key);
+        if (this.turnGoals.size > 64) this.turnGoals.delete(this.turnGoals.keys().next().value!);
+    }
+    private cancelCapacityIntent(): void {
+        this.capacityIntentRevision++;
+        if (this.resumingGoalKey) this.recoveryUncertain = true;
+        const id = this.currentTurn ?? this.latestTurn?.id;
+        this.capacityRecovery.suppress(id);
+        this.resumedGoalKey = undefined;
+    }
+    private serializeGoal<T>(work: () => Promise<T>): Promise<T> {
+        const result = this.goalMutations.catch(() => {}).then(work);
+        this.goalMutations = result;
+        return result;
+    }
+    private mutateGoal(method: string, params: Record<string, unknown>): Promise<unknown> {
+        return this.serializeGoal(() => this.client.request(method, params));
+    }
+    private pauseRecoveredGoal(action: { key: string; controlRevision: number }): Promise<void> {
+        return this.serializeGoal(async () => {
+            if (action.controlRevision !== this.goalControlRevision) return;
+            const response = record(await this.client.request('thread/goal/get', { threadId: this.threadId }));
+            const goal = response.goal == null ? null : ThreadGoalSchema.parse(response.goal);
+            if (action.controlRevision !== this.goalControlRevision || !goal || this.goalKey(goal) !== action.key) return;
+            if (goal.status !== 'active') {
+                if (this.stoppedGoalResume?.key === action.key) this.stoppedGoalResume = undefined;
+                return;
+            }
+            const paused = record(await this.client.request('thread/goal/set', { threadId: this.threadId, status: 'paused' }));
+            this.publishGoal(paused.goal);
+            if (this.stoppedGoalResume?.key === action.key) this.stoppedGoalResume.pausedConfirmed = true;
+        });
+    }
     private publishGoal(value: unknown): void {
         const threadGoal = value == null ? null : ThreadGoalSchema.parse(value);
+        const previous = this.recoveryGoal;
+        const key = threadGoal ? this.goalKey(threadGoal) : undefined;
+        const previousKey = previous ? this.goalKey(previous) : undefined;
+        if (this.stoppedGoalResume && (key !== this.stoppedGoalResume.key
+            || this.stoppedGoalResume.pausedConfirmed && threadGoal?.status === 'active' && previous?.status === 'paused')) this.stoppedGoalResume = undefined;
+        if (previous !== undefined && (key !== previousKey || threadGoal?.status !== previous?.status)) {
+            this.goalRevision++;
+            const nativeBlock = key === previousKey && previous?.status === 'active' && threadGoal?.status === 'blocked';
+            const ownResume = !this.recoveryUncertain && (this.resumingGoalIntent == null || this.resumingGoalIntent === this.capacityIntentRevision)
+                && key === (this.resumingGoalKey ?? (this.capacityRecovery.ownsGoalResume ? this.resumedGoalKey : undefined)) && threadGoal?.status === 'active';
+            if (!nativeBlock && !ownResume) {
+                if (previous == null && threadGoal?.status === 'active') this.capacityRecovery.cancel();
+                else this.cancelCapacityIntent();
+            }
+        }
+        this.recoveryGoal = threadGoal;
+        if (!this.recoveryUncertain && this.currentTurn && threadGoal?.status === 'active') this.rememberTurnGoal(this.currentTurn, key!);
         this.session.updateAgentState(state => ({ ...state, threadGoal }));
     }
     private notice(message: string): void { this.session.sendSessionEvent({ type: 'message', message }); }
@@ -877,10 +1083,11 @@ export class SharedCodexRoot {
             modelReasoningEffort: parseReasoningEffortValue(this.settings.modelReasoningEffort), serviceTier: this.settings.serviceTier });
         if (slash.kind === 'passthrough') return text;
         if (slash.kind === 'goal') {
+            if (slash.action !== 'show') { this.goalControlRevision++; this.cancelCapacityIntent(); this.recoveryUncertain = false; this.stoppedGoalResume = undefined; }
             const params = { threadId: this.threadId };
             const response = slash.action === 'show' ? await this.client.request('thread/goal/get', params)
-                : slash.action === 'clear' ? await this.client.request('thread/goal/clear', params)
-                : await this.client.request('thread/goal/set', { ...params, ...(slash.action === 'set' ? { objective: slash.objective } : { status: slash.action === 'pause' ? 'paused' : 'active' }) });
+                : slash.action === 'clear' ? await this.mutateGoal('thread/goal/clear', params)
+                : await this.mutateGoal('thread/goal/set', { ...params, ...(slash.action === 'set' ? { objective: slash.objective } : { status: slash.action === 'pause' ? 'paused' : 'active' }) });
             this.publishGoal(slash.action === 'clear' ? null : record(response).goal);
             return null;
         }
@@ -891,6 +1098,7 @@ export class SharedCodexRoot {
         return slash.kind === 'replace' ? slash.text : null;
     }
     stopAccepting(): void {
+        this.capacityRecovery.cancel();
         this.stopping = true; this.ready();
         this.publishSteering();
         this.publishPlan();

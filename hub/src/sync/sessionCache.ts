@@ -528,6 +528,7 @@ export class SessionCache {
             || previousExecution?.status !== session.execution?.status
             || previousExecution?.turnId !== session.execution?.turnId
             || previousExecution?.generation !== session.execution?.generation
+            || JSON.stringify(previousExecution?.capacityRecovery) !== JSON.stringify(session.execution?.capacityRecovery)
             || previousExecution?.waitingOn.join(',') !== session.execution?.waitingOn.join(',')
             || modeChanged
             || (now - lastBroadcastAt > 10_000)

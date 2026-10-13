@@ -34,7 +34,7 @@ vi.mock('../codexAppServerClient', () => ({
             if (method === 'thread/read' || method === 'thread/resume') return { ...this.settings, thread: structuredClone({
                 ...this.thread, turns: params.excludeTurns === true || params.includeTurns === false ? [] : this.thread.turns
             }) };
-            if (method === 'thread/turns/list') return { data: this.thread.turns.slice(-1), nextCursor: null };
+            if (method === 'thread/turns/list') return { data: this.thread.turns.slice(-Number(params.limit ?? 1)).reverse(), nextCursor: null };
             if (method === 'thread/items/list') return { data: this.items, nextCursor: null };
             if (method === 'thread/list') return { data: [] };
             if (method === 'thread/goal/get') return { goal: null };
@@ -873,4 +873,300 @@ describe('authoritative native runtime state', () => {
         expect(alive.mock.lastCall?.[0]).toBe(false);
         expect(alive.mock.lastCall?.[2]?.execution?.status).toBe('disconnected');
     });
+});
+
+describe('capacity continuation through the shared native bridge', () => {
+    const capacityError = { message: 'Selected model is at capacity. Please try a different model.', codexErrorInfo: 'serverOverloaded' };
+    async function capacityFixture() {
+        const f = await fixture(); await f.root.activate();
+        const turn = { id: 'capacity-turn', status: 'failed', error: capacityError,
+            items: [{ id: 'user-item', type: 'userMessage', content: [{ type: 'text', text: 'original task' }], clientId: 'user-1' }] };
+        f.native.thread.turns = [turn as NativeTurn];
+        f.native.notify('turn/started', { threadId: 'thread', turn: { id: turn.id } });
+        return { ...f, turn };
+    }
+    it('publishes native retries, then starts one empty continuation after terminal capacity and the bridge delay', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture(); const original = f.root.client.request.bind(f.root.client);
+            const calls = vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+                if (method === 'turn/start') {
+                    f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'continued' } });
+                    return { turn: { id: 'continued' } };
+                }
+                return original(method, params);
+            });
+            f.native.notify('error', { threadId: 'thread', turnId: f.turn.id, error: capacityError, willRetry: true });
+            expect(vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery?.phase).toBe('retrying');
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(calls.mock.calls.some(([method]) => method === 'turn/start')).toBe(false);
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(0);
+            const state = vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery;
+            expect(state?.phase).toBe('waiting');
+            await vi.advanceTimersByTimeAsync(36_000);
+            expect(calls.mock.calls.filter(([method]) => method === 'turn/start')).toEqual([
+                ['turn/start', { threadId: 'thread', input: [] }]
+            ]);
+            expect(calls.mock.calls.some(([method]) => method === 'thread/queue/add')).toBe(false);
+            expect(f.native.thread.turns[0]!.items).toHaveLength(1);
+        } finally { vi.useRealTimers(); }
+    });
+    it.each(['stop', 'new-message', 'model', 'queue', 'new-turn', 'history', 'notLoaded'] as const)('cancels the scheduled continuation on %s', async action => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture(); const calls = vi.spyOn(f.root.client, 'request');
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(0);
+            if (action === 'stop') await f.rpc.get(RPC_METHODS.Abort)!({});
+            if (action === 'new-message') f.userMessage({ role: 'user', content: { type: 'text', text: 'new intent' } }, 'new-1');
+            if (action === 'model') f.root.acceptSettings({ model: 'other' });
+            if (action === 'queue') f.native.notify('thread/queue/changed', { threadId: 'thread' });
+            if (action === 'history') await f.root.setNativeConnection(false);
+            if (action === 'notLoaded') f.native.notify('thread/status/changed', { threadId: 'thread', status: { type: 'notLoaded' } });
+            if (action === 'new-turn') f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'other-client' } });
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(calls.mock.calls.some(([method]) => method === 'turn/start')).toBe(false);
+            if (action === 'stop') expect(calls.mock.calls.some(([method]) => method === 'turn/interrupt')).toBe(false);
+        } finally { vi.useRealTimers(); }
+    });
+    it('ignores late user-item and model events belonging to an older turn', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture();
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(0);
+            const before = vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery;
+            expect(before?.phase).toBe('waiting');
+            f.native.notify('item/completed', { threadId: 'thread', turnId: 'old-turn', item: { id: 'old-user', type: 'userMessage', clientId: 'old-client', content: [] } });
+            f.native.notify('model/rerouted', { threadId: 'thread', turnId: 'old-turn', fromModel: 'old', toModel: 'other' });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery).toEqual(before);
+        } finally { vi.useRealTimers(); }
+    });
+    it('does not auto-continue without evidence the original user input was recorded', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture(); f.turn.items = [];
+            const calls = vi.spyOn(f.root.client, 'request');
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(calls.mock.calls.some(([method]) => method === 'turn/start')).toBe(false);
+            expect(vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery?.reason).toBe('unverified');
+        } finally { vi.useRealTimers(); }
+    });
+    it('continues an empty failed turn using a recent committed same-thread user anchor', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture();
+            f.native.thread.turns.unshift({ id: 'earlier-user-turn', status: 'completed', items: [...f.turn.items] });
+            f.turn.items = [];
+            const original = f.root.client.request.bind(f.root.client);
+            const calls = vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) =>
+                method === 'turn/start' ? { turn: { id: 'continued' } } : original(method, params));
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(36_000);
+            expect(calls.mock.calls.filter(([method]) => method === 'turn/start')).toEqual([['turn/start', { threadId: 'thread', input: [] }]]);
+        } finally { vi.useRealTimers(); }
+    });
+    it('does not revive a stopped turn when its terminal capacity event arrives late', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture(); const calls = vi.spyOn(f.root.client, 'request');
+            await f.rpc.get(RPC_METHODS.Abort)!({});
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(calls.mock.calls.some(([method]) => method === 'turn/start')).toBe(false);
+        } finally { vi.useRealTimers(); }
+    });
+    async function goalFixture(order: 'before-ack' | 'after-ack' = 'before-ack') {
+        const f = await capacityFixture(); f.turn.items = [];
+        let goal = { threadId: 'thread', objective: 'Finish the synthetic task', status: 'active', tokenBudget: 1000, tokensUsed: 5, timeUsedSeconds: 1, createdAt: 1, updatedAt: 2 };
+        const updateGoal = (changes: Partial<typeof goal> | null) => {
+            if (changes === null) { f.native.notify('thread/goal/cleared', { threadId: 'thread' }); return; }
+            goal = { ...goal, ...changes };
+            f.native.notify('thread/goal/updated', { threadId: 'thread', goal });
+        };
+        const original = f.root.client.request.bind(f.root.client);
+        const calls = vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+            if (method === 'thread/goal/get') return { goal };
+            if (method === 'thread/goal/set') {
+                updateGoal({ status: String((params as Record<string, unknown>)?.status) });
+                if ((params as Record<string, unknown>)?.status === 'active' && order === 'before-ack') f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'goal-retry' } });
+                return { goal };
+            }
+            return original(method, params);
+        });
+        updateGoal({ status: 'active' });
+        updateGoal({ status: 'blocked' });
+        f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+        await vi.advanceTimersByTimeAsync(0);
+        return { ...f, calls, updateGoal };
+    }
+    it.each(['before-ack', 'after-ack'] as const)('resumes the same capacity-blocked goal without turn/start (%s)', async order => {
+        vi.useFakeTimers();
+        try {
+            const f = await goalFixture(order);
+            expect(vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery?.phase).toBe('waiting');
+            await vi.advanceTimersByTimeAsync(36_000);
+            if (order === 'after-ack') f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'goal-retry' } });
+            expect(f.calls.mock.calls.filter(([method]) => method === 'thread/goal/set')).toEqual([['thread/goal/set', { threadId: 'thread', status: 'active' }]]);
+            expect(f.calls.mock.calls.some(([method]) => method === 'turn/start' || method === 'thread/queue/add')).toBe(false);
+            const retry = { id: 'goal-retry', status: 'failed', error: capacityError, items: [] };
+            f.native.thread.turns.push(retry);
+            f.updateGoal({ status: 'blocked' });
+            f.native.notify('turn/completed', { threadId: 'thread', turn: retry });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery?.attempt).toBe(2);
+        } finally { vi.useRealTimers(); }
+    });
+    it.each(['paused', 'clear', 'objective', 'budget', 'usageLimited', 'complete', 'stop'] as const)('cancels goal recovery on %s', async action => {
+        vi.useFakeTimers();
+        try {
+            const f = await goalFixture();
+            if (action === 'clear') f.updateGoal(null);
+            else if (action === 'objective') f.updateGoal({ objective: 'Different task' });
+            else if (action === 'budget') f.updateGoal({ tokenBudget: 10 });
+            else if (action === 'stop') await f.rpc.get(RPC_METHODS.Abort)!({});
+            else f.updateGoal({ status: action });
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(f.calls.mock.calls.some(([method]) => method === 'thread/goal/set' || method === 'turn/start')).toBe(false);
+        } finally { vi.useRealTimers(); }
+    });
+
+    it.each(['before-ack', 'after-ack'] as const)('Stop interrupts a goal turn first observed after cancellation (%s)', async order => {
+        vi.useFakeTimers();
+        try {
+            const f = await goalFixture('after-ack');
+            let release!: () => void;
+            const ack = new Promise<void>(resolve => { release = resolve; });
+            const implementation = f.calls.getMockImplementation()!;
+            f.calls.mockImplementation(async (method, params) => {
+                const result = await implementation(method, params);
+                if (method === 'thread/goal/set' && (params as Record<string, unknown>)?.status === 'active' && order === 'before-ack') await ack;
+                return result;
+            });
+            await vi.advanceTimersByTimeAsync(36_000);
+            const stopped = f.rpc.get(RPC_METHODS.Abort)!({});
+            f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'late-goal-turn' } });
+            release(); await stopped; await vi.advanceTimersByTimeAsync(0);
+            expect(f.calls.mock.calls).toContainEqual(['turn/interrupt', { threadId: 'thread', turnId: 'late-goal-turn' }]);
+            const late = { id: 'late-goal-turn', status: 'failed', error: capacityError, items: [] };
+            f.native.thread.turns.push(late); f.updateGoal({ status: 'blocked' });
+            f.native.notify('turn/completed', { threadId: 'thread', turn: late });
+            await vi.advanceTimersByTimeAsync(300_000);
+            expect(f.calls.mock.calls.filter(([method, params]) => method === 'thread/goal/set' && (params as Record<string, unknown>)?.status === 'active')).toHaveLength(1);
+        } finally { vi.useRealTimers(); }
+    });
+    it('does not automatically retry a later goal failure after an unknown goal ACK', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await goalFixture('after-ack');
+            const implementation = f.calls.getMockImplementation()!;
+            f.calls.mockImplementation(async (method, params) => {
+                const result = await implementation(method, params);
+                if (method === 'thread/goal/set' && (params as Record<string, unknown>)?.status === 'active') throw new Error('ACK lost');
+                return result;
+            });
+            await vi.advanceTimersByTimeAsync(36_000);
+            f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'unknown-goal-turn' } });
+            const late = { id: 'unknown-goal-turn', status: 'failed', error: capacityError, items: [] };
+            f.native.thread.turns.push(late); f.updateGoal({ status: 'blocked' });
+            f.native.notify('turn/completed', { threadId: 'thread', turn: late });
+            await vi.advanceTimersByTimeAsync(300_000);
+            expect(f.calls.mock.calls.filter(([method, params]) => method === 'thread/goal/set' && (params as Record<string, unknown>)?.status === 'active')).toHaveLength(1);
+        } finally { vi.useRealTimers(); }
+    });
+
+    it.each(['paused', 'complete'] as const)('continues a new explicit user turn without reviving its older %s goal', async status => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture(); const original = f.root.client.request.bind(f.root.client);
+            const calls = vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+                if (method === 'thread/goal/get') return { goal: { threadId: 'thread', objective: 'Old task', status, createdAt: 1 } };
+                if (method === 'turn/start') return { turn: { id: 'ordinary-retry' } };
+                return original(method, params);
+            });
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(36_000);
+            expect(calls.mock.calls).toContainEqual(['turn/start', { threadId: 'thread', input: [] }]);
+            expect(calls.mock.calls.some(([method]) => method === 'thread/goal/set')).toBe(false);
+            f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'ordinary-retry' } });
+            const again = { id: 'ordinary-retry', status: 'failed', error: capacityError, items: [] };
+            f.native.thread.turns.push(again);
+            f.native.notify('turn/completed', { threadId: 'thread', turn: again });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(vi.mocked(f.root.session.keepAlive).mock.lastCall?.[2]?.execution?.capacityRecovery?.attempt).toBe(2);
+        } finally { vi.useRealTimers(); }
+    });
+    it('serializes a newer manual pause behind an in-flight goal recovery', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await goalFixture('after-ack');
+            let release!: () => void;
+            const ack = new Promise<void>(resolve => { release = resolve; });
+            const implementation = f.calls.getMockImplementation()!;
+            f.calls.mockImplementation(async (method, params) => {
+                const result = await implementation(method, params);
+                if (method === 'thread/goal/set' && (params as Record<string, unknown>)?.status === 'active') await ack;
+                return result;
+            });
+            await vi.advanceTimersByTimeAsync(36_000);
+            const pause = f.rpc.get(RPC_METHODS.CodexGoal)!({ action: 'pause' });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(f.calls.mock.calls.filter(([method]) => method === 'thread/goal/set')).toHaveLength(1);
+            release(); await pause; await vi.advanceTimersByTimeAsync(0);
+            expect(f.calls.mock.calls.filter(([method]) => method === 'thread/goal/set')).toEqual([
+                ['thread/goal/set', { threadId: 'thread', status: 'active' }],
+                ['thread/goal/set', { threadId: 'thread', status: 'paused' }]
+            ]);
+        } finally { vi.useRealTimers(); }
+    });
+
+    it('does not leave a Stop latch when recovery was cancelled before its queued RPC dispatched', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await goalFixture('after-ack');
+            let release!: () => void;
+            const barrier = new Promise<void>(resolve => { release = resolve; });
+            const queued = (f.root as unknown as { serializeGoal(work: () => Promise<void>): Promise<void> }).serializeGoal(() => barrier);
+            await vi.advanceTimersByTimeAsync(36_000);
+            await f.rpc.get(RPC_METHODS.Abort)!({});
+            release(); await queued; await vi.advanceTimersByTimeAsync(0);
+            f.updateGoal({ status: 'active' });
+            f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'external-resume' } });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(f.calls.mock.calls.some(([method]) => method === 'turn/interrupt' || method === 'thread/goal/set')).toBe(false);
+        } finally { vi.useRealTimers(); }
+    });
+    it('releases a settled Stop latch when another client explicitly reactivates the same paused goal', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await goalFixture('after-ack');
+            await vi.advanceTimersByTimeAsync(36_000);
+            await f.rpc.get(RPC_METHODS.Abort)!({});
+            f.updateGoal({ status: 'active' });
+            f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'external-resume' } });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(f.calls.mock.calls.some(([method]) => method === 'turn/interrupt')).toBe(false);
+        } finally { vi.useRealTimers(); }
+    });
+
+    it('fences a malformed ordinary ACK against a later terminal failure', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = await capacityFixture(); const original = f.root.client.request.bind(f.root.client);
+            const calls = vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) =>
+                method === 'turn/start' ? {} : original(method, params));
+            f.native.notify('turn/completed', { threadId: 'thread', turn: f.turn });
+            await vi.advanceTimersByTimeAsync(36_000);
+            f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'unknown-ordinary-turn' } });
+            const late = { id: 'unknown-ordinary-turn', status: 'failed', error: capacityError, items: [] };
+            f.native.thread.turns.push(late);
+            f.native.notify('turn/completed', { threadId: 'thread', turn: late });
+            await vi.advanceTimersByTimeAsync(300_000);
+            expect(calls.mock.calls.filter(([method]) => method === 'turn/start')).toHaveLength(1);
+        } finally { vi.useRealTimers(); }
+    });
+
 });

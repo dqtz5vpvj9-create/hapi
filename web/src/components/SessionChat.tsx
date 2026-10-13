@@ -2156,6 +2156,7 @@ function SessionChatInner(props: SessionChatProps) {
                         onResumeStoredDraft={() => handleSend('', undefined, null)}
                         thinking={props.session.thinking}
                         execution={props.session.execution}
+                        onCancelCapacityRecovery={handleAbort}
                         abortError={abortError}
                         agentState={props.session.agentState}
                         backgroundTaskCount={props.session.backgroundTaskCount}

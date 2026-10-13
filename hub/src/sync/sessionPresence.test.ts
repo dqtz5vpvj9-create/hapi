@@ -96,3 +96,19 @@ it('keeps an old socket end from disconnecting a replacement and measures livene
     expect(f.session.execution?.status).toBe('disconnected')
     f.store.close()
 })
+
+it('broadcasts capacity state and cancellation immediately, rejecting stale countdown resurrection', () => {
+    const f = fixture(); const time = Date.now();
+    const send = (sequence: number, capacityRecovery: NativeRuntimeState['capacityRecovery']) =>
+        f.cache.handleSessionAlive({ sid: f.session.id, time, thinking: false,
+            execution: { ...f.execution(sequence, 'systemError'), capacityRecovery }, sourceConnection: 1 });
+    send(1, null); const count = f.events.length;
+    send(2, { turnId: 'turn-A', phase: 'waiting', retryAt: time + 30_000, attempt: 1, maxAttempts: 5 });
+    expect(f.events.length).toBe(count + 1);
+    expect(f.events.at(-1)).toMatchObject({ type: 'session-updated', data: { execution: { capacityRecovery: { phase: 'waiting' } } } });
+    send(3, null); expect(f.events.at(-1)).toMatchObject({ type: 'session-updated', data: { execution: { capacityRecovery: null } } });
+    const canceled = f.events.length;
+    send(2, { turnId: 'turn-A', phase: 'waiting', retryAt: time + 30_000 });
+    expect(f.events.length).toBe(canceled); expect(f.session.execution?.capacityRecovery).toBeNull();
+    f.store.close();
+});
