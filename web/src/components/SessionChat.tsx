@@ -1,3 +1,4 @@
+import { reconcilePermissionActions } from '@/components/ToolCard/permissionAction'
 import { useForkOperation } from '@/hooks/useForkOperation'
 import { ForkOperationBanner } from '@/components/ForkOperationBanner'
 import { createForkNavigator, type ForkBoundary } from '@/lib/fork-navigation'
@@ -659,6 +660,9 @@ export function SessionChat(props: SessionChatProps) {
 }
 
 function SessionChatInner(props: SessionChatProps) {
+    useEffect(() => {
+        reconcilePermissionActions(props.api, props.session.id, props.session.agentState)
+    }, [props.api, props.session.id, props.session.agentState, props.session.agentStateVersion])
     const executionConnected = useOptionalAppContext()?.executionConnected === true
 
     const { haptic } = usePlatform()
