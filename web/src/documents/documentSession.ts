@@ -64,7 +64,9 @@ export class DocumentSession {
     touched = Date.now()
     private listeners = new Set<() => void>()
     private loading?: Promise<void>
+    private loadingSavedRevision = 0
     private saving?: Promise<boolean>
+    private savedRevision = 0
     private persistence?: Promise<void>
     private persistencePending = false
     private metadata?: string
@@ -82,10 +84,12 @@ export class DocumentSession {
     get key() { return `${this.registry.scope}:${documentKey(this.resource)}` }
     get bytes() { return (this.state.blob?.size ?? 0) + (this.state.text.length + this.state.baseText.length) * 2 + (this.htmlPreview?.bytes ?? 0) }
     async load(api: ApiClient, refresh = false): Promise<void> {
-        if (this.loading) return this.loading
+        if (this.loading && this.loadingSavedRevision === this.savedRevision) return this.loading
         if (!refresh && this.state.phase === 'ready') return
+        const savedRevision = this.savedRevision
         this.patch({ phase: this.state.phase === 'ready' ? 'ready' : 'loading', error: undefined })
-        this.loading = (async () => {
+        this.loadingSavedRevision = savedRevision
+        const loading = (async () => {
             try {
                 const ref = this.resource.document
                 if (/\.(pptx?|docx?|od[tp])$/i.test(documentName(ref))) {
@@ -108,6 +112,9 @@ export class DocumentSession {
                 if (result && (!result.success || result.content === undefined)) throw new Error(result.error ?? 'Unable to read file')
                 const blob = result ? new Blob([base64Bytes(result.content!) as Uint8Array<ArrayBuffer>]) : await api.getArtifactBlob(this.resource.sessionId, ref.kind === 'artifact' ? ref.artifactId : '')
                 const decoded = blob.size <= MAX_EDITABLE_FILE_BYTES || /\.html?$/i.test(documentName(ref)) ? decodeDocumentText(new Uint8Array(await blob.arrayBuffer())) : null
+                // A reload may have read its bytes before a concurrent save committed.
+                // Its late response cannot replace the acknowledged text/hash baseline.
+                if (savedRevision !== this.savedRevision) return
                 const text = decoded?.text ?? ''
                 const hash = result?.hash ?? ''
                 this.metadata = result?.modified === undefined ? undefined : `${result.size}:${result.modified}`
@@ -126,9 +133,13 @@ export class DocumentSession {
                 if (settled) await this.persist()
                 if (draft && this.state.dirty) this.persistedDraft = true
                 this.registry.trim()
-            } catch (error) { this.patch({ phase: this.state.phase === 'ready' || this.state.dirty ? 'ready' : 'error', error: String(error) }) }
-        })().finally(() => { this.loading = undefined })
-        return this.loading
+            } catch (error) {
+                if (savedRevision !== this.savedRevision) return
+                this.patch({ phase: this.state.phase === 'ready' || this.state.dirty ? 'ready' : 'error', error: String(error) })
+            }
+        })().finally(() => { if (this.loading === loading) this.loading = undefined })
+        this.loading = loading
+        return loading
     }
     edit(text: string, editorState?: EditorState) {
         this.persistedDraft = false
@@ -182,8 +193,9 @@ export class DocumentSession {
                 const bytes = encodeDocumentText(state.text, state.format)
                 const response = await api.writeSessionFile(this.resource.sessionId, { path: ref.path, content: bytesBase64(bytes), expectedHash: state.hash })
                 if (!response.success || !response.hash) { this.patch({ error: response.error ?? 'Save failed', conflict: response.code === 'conflict' }); return false }
+                this.savedRevision++
                 this.metadata = response.modified === undefined ? undefined : `${bytes.length}:${response.modified}`
-                this.patch({ hash: response.hash, baseText: state.text, dirty: this.state.text !== state.text, conflict: false,
+                this.patch({ phase: 'ready', hash: response.hash, baseText: state.text, dirty: this.state.text !== state.text, conflict: false,
                     blob: new Blob([bytes as Uint8Array<ArrayBuffer>]), changedOnDisk: false })
                 await this.persist()
                 return true

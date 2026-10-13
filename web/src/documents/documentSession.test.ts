@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Blob as NodeBlob } from 'node:buffer'
+import { EditorState } from '@codemirror/state'
 import type { ApiClient } from '@/api/client'
 import { bytesBase64, decodeDocumentText, encodeDocumentText, DocumentRegistry } from './documentSession'
 import { documentKey, type DocumentResource } from '@hapi/protocol/documents'
@@ -122,4 +123,128 @@ describe('document ownership', () => {
             expect(api.readSessionFile).not.toHaveBeenCalled()
         } finally { vi.useRealTimers() }
     })
+    describe('reload and save ordering', () => {
+        const read = (text: string, hash: string) => ({ success: true, content: bytesBase64(new TextEncoder().encode(text)), hash, writable: true })
+        const deferred = <T,>() => {
+            let resolve!: (value: T) => void, reject!: (error: Error) => void
+            const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
+            return { promise, resolve, reject }
+        }
+        const ready = (path = '/project/notes.md', registry = new DocumentRegistry(crypto.randomUUID())) => {
+            const session = registry.get(file(path))
+            session.patch({ phase: 'ready', textual: true, writable: true, text: 'draft', baseText: 'original', hash: 'old', dirty: true })
+            vi.spyOn(session, 'persist').mockResolvedValue(undefined)
+            return session
+        }
+        it('does not let a pre-save reload replace acknowledged text, hash, or a newer edit', async () => {
+            vi.stubGlobal('Blob', NodeBlob)
+            try {
+                for (const editAfterSave of [false, true]) {
+                    const session = ready()
+                    const pendingRead = deferred<ReturnType<typeof read>>()
+                    const api = { readSessionFile: vi.fn(() => pendingRead.promise), writeSessionFile: vi.fn().mockResolvedValue({ success: true, hash: 'saved' }) } as unknown as ApiClient
+                    const reload = session.load(api, true)
+                    expect(await session.save(api)).toBe(true)
+                    if (editAfterSave) session.edit('newer edit')
+                    const editor = EditorState.create({ doc: session.state.text })
+                    session.editorState = editor
+                    const selection = { kind: 'text' as const, from: 0, to: 5, lineStart: 1, lineEnd: 1, quote: session.state.text.slice(0, 5) }
+                    session.patch({ selection })
+                    const contentRevision = session.state.contentRevision
+                    pendingRead.resolve(read('original', 'old'))
+                    await reload
+                    expect(session.state).toMatchObject({ phase: 'ready', text: editAfterSave ? 'newer edit' : 'draft', baseText: 'draft', hash: 'saved', dirty: editAfterSave, conflict: false })
+                    expect(session.editorState).toBe(editor)
+                    expect(session.state.selection).toBe(selection)
+                    expect(session.state.contentRevision).toBe(contentRevision)
+                    expect(await session.state.blob!.text()).toBe('draft')
+                }
+            } finally { vi.unstubAllGlobals() }
+        })
+        it('ignores a superseded read error but accepts a subsequent reload generation', async () => {
+            vi.stubGlobal('Blob', NodeBlob)
+            try {
+                const session = ready()
+                const pendingRead = deferred<ReturnType<typeof read>>()
+                const readFile = vi.fn().mockImplementationOnce(() => pendingRead.promise).mockResolvedValueOnce(read('external later revision', 'later'))
+                const api = { readSessionFile: readFile, writeSessionFile: vi.fn().mockResolvedValue({ success: true, hash: 'saved' }) } as unknown as ApiClient
+                const reload = session.load(api, true)
+                await session.save(api)
+                pendingRead.reject(new Error('late read transport error'))
+                await reload
+                expect(session.state.error).toBeUndefined()
+                expect(session.state).toMatchObject({ text: 'draft', hash: 'saved', dirty: false })
+                await session.load(api, true)
+                expect(session.state).toMatchObject({ text: 'external later revision', baseText: 'external later revision', hash: 'later', dirty: false })
+                expect(readFile).toHaveBeenCalledTimes(2)
+            } finally { vi.unstubAllGlobals() }
+        })
+        it('starts a genuinely new reload after save and does not let old cleanup clear it', async () => {
+            vi.stubGlobal('Blob', NodeBlob)
+            try {
+                const session = ready()
+                const older = deferred<ReturnType<typeof read>>(), newer = deferred<ReturnType<typeof read>>()
+                const readFile = vi.fn().mockImplementationOnce(() => older.promise).mockImplementationOnce(() => newer.promise)
+                const api = { readSessionFile: readFile, writeSessionFile: vi.fn().mockResolvedValue({ success: true, hash: 'saved' }) } as unknown as ApiClient
+                const oldReload = session.load(api, true)
+                await session.save(api)
+                const newReload = session.load(api, true)
+                expect(readFile).toHaveBeenCalledTimes(2)
+                older.resolve(read('original', 'old'))
+                await oldReload
+                const deduplicated = session.load(api, true)
+                expect(readFile).toHaveBeenCalledTimes(2)
+                newer.resolve(read('fresh post-save bytes', 'fresh'))
+                await Promise.all([newReload, deduplicated])
+                expect(session.state).toMatchObject({ text: 'fresh post-save bytes', hash: 'fresh', dirty: false })
+            } finally { vi.unstubAllGlobals() }
+        })
+        it.each(['conflict', 'denied', 'throw'] as const)('keeps dirty reload conflict detection when save returns %s', async code => {
+            vi.stubGlobal('Blob', NodeBlob)
+            try {
+                const session = ready()
+                const pendingRead = deferred<ReturnType<typeof read>>()
+                const write = code === 'throw' ? vi.fn().mockRejectedValue(new Error('offline')) : vi.fn().mockResolvedValue({ success: false, code, error: code })
+                const api = { readSessionFile: vi.fn(() => pendingRead.promise), writeSessionFile: write } as unknown as ApiClient
+                const reload = session.load(api, true)
+                expect(await session.save(api)).toBe(false)
+                pendingRead.resolve(read('changed externally', 'changed'))
+                await reload
+                expect(session.state).toMatchObject({ text: 'draft', baseText: 'original', hash: 'old', dirty: true, conflict: true })
+                expect(await session.state.blob!.text()).toBe('changed externally')
+            } finally { vi.unstubAllGlobals() }
+        })
+        it('scopes save generations to a file while another file has a pending read', async () => {
+            vi.stubGlobal('Blob', NodeBlob)
+            try {
+                const registry = new DocumentRegistry(crypto.randomUUID())
+                const first = ready('/project/first.md', registry), second = ready('/project/second.md', registry)
+                second.patch({ text: 'original', dirty: false })
+                const pendingRead = deferred<ReturnType<typeof read>>()
+                const api = { readSessionFile: vi.fn(() => pendingRead.promise), writeSessionFile: vi.fn().mockResolvedValue({ success: true, hash: 'saved' }) } as unknown as ApiClient
+                const reload = second.load(api, true)
+                await first.save(api)
+                pendingRead.resolve(read('second file refreshed', 'second-new'))
+                await reload
+                expect(second.state).toMatchObject({ text: 'second file refreshed', hash: 'second-new', dirty: false })
+                expect(first.state).toMatchObject({ text: 'draft', hash: 'saved', dirty: false })
+            } finally { vi.unstubAllGlobals() }
+        })
+        it('settles loading when a restored draft is saved before its initial read returns', async () => {
+            vi.stubGlobal('Blob', NodeBlob)
+            try {
+                const session = ready()
+                const pendingRead = deferred<ReturnType<typeof read>>()
+                const api = { readSessionFile: vi.fn(() => pendingRead.promise), writeSessionFile: vi.fn().mockResolvedValue({ success: true, hash: 'saved' }) } as unknown as ApiClient
+                const reload = session.load(api, true)
+                // Draft recovery makes the save action available before the remote read finishes.
+                session.patch({ phase: 'loading' })
+                await session.save(api)
+                pendingRead.resolve(read('original', 'old'))
+                await reload
+                expect(session.state).toMatchObject({ phase: 'ready', text: 'draft', hash: 'saved', dirty: false })
+            } finally { vi.unstubAllGlobals() }
+        })
+    })
+
 })
