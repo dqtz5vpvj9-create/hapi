@@ -66,7 +66,7 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
         if (!parsed.success) {
             return
         }
-        if (forwardTerminalEvent('terminal:ready', parsed.data)) {
+        if (forwardTerminalEvent('terminal:ready', { ...parsed.data, replayProtocol: 1 })) {
             terminalRegistry.markActivity(parsed.data.terminalId)
         }
     })
@@ -81,8 +81,9 @@ export function registerTerminalHandlers(socket: CliSocketWithData, deps: Termin
         terminalRegistry.markActivity(parsed.data.terminalId)
         // Keep buffering while the web socket is detached so its replacement
         // can replay everything the still-running PTY emitted in the gap.
-        appendUserTerminalOutput(parsed.data.sessionId, parsed.data.terminalId, parsed.data.data)
-        terminalNamespace.sockets.get(entry.socketId)?.emit('terminal:output', parsed.data)
+        const stream = appendUserTerminalOutput(parsed.data.sessionId, parsed.data.terminalId, parsed.data.data)
+        // The Hub is authoritative even when an old/new runner sends metadata.
+        terminalNamespace.sockets.get(entry.socketId)?.emit('terminal:output', { ...parsed.data, stream })
     })
 
     socket.on('agent-terminal:output', (data: unknown) => {

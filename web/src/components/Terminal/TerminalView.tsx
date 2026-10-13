@@ -18,6 +18,7 @@ function resolveThemeColors(): { background: string; foreground: string; selecti
 
 export function TerminalView(props: {
     onMount?: (terminal: Terminal) => void
+    onUnmount?: (terminal: Terminal) => void
     onResize?: (cols: number, rows: number) => void
     className?: string
     disableStdin?: boolean
@@ -28,6 +29,7 @@ export function TerminalView(props: {
     const terminalRef = useRef<Terminal | null>(null)
     const onMountRef = useRef(props.onMount)
     const onResizeRef = useRef(props.onResize)
+    const onUnmountRef = useRef(props.onUnmount)
 
     useEffect(() => {
         onMountRef.current = props.onMount
@@ -35,7 +37,8 @@ export function TerminalView(props: {
 
     useEffect(() => {
         onResizeRef.current = props.onResize
-    }, [props.onResize])
+        onUnmountRef.current = props.onUnmount
+    }, [props.onResize, props.onUnmount])
 
     useEffect(() => {
         const terminal = terminalRef.current
@@ -133,6 +136,7 @@ export function TerminalView(props: {
         // Cleanup on abort
         abortController.signal.addEventListener('abort', () => {
             observer.disconnect()
+            onUnmountRef.current?.(terminal)
             removeGestures()
             fitRef.current = null
             fitAddon.dispose()

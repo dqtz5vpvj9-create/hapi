@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { appendUserTerminalOutput, getUserTerminalBuffer, clearUserTerminalBuffer } from './userTerminalBuffer'
+import { appendUserTerminalOutput, getUserTerminalBuffer, clearUserTerminalBuffer, getUserTerminalReplay, MAX_TERMINAL_BUFFER_UNITS } from './userTerminalBuffer'
 
 describe('userTerminalBuffer', () => {
     it('stores and retrieves output per terminal', () => {
@@ -59,5 +59,42 @@ describe('userTerminalBuffer', () => {
         expect(buf.length).toBeLessThanOrEqual(MAX)
         // Should contain the most recent data (tail preserved)
         expect(buf.endsWith(small)).toBe(true)
+    })
+})
+
+describe('userTerminalBuffer output cursors', () => {
+    it('establishes an empty epoch and returns only the missing range', () => {
+        const first = getUserTerminalReplay('cursor', 't1')
+        expect(first.data).toBe(''); expect(first.stream.endOffset).toBe(0)
+        const live = appendUserTerminalOutput('cursor', 't1', 'AAAA')
+        expect(live.epoch).toBe(first.stream.epoch)
+        expect(getUserTerminalReplay('cursor', 't1', { epoch: live.epoch, offset: 2 }).data).toBe('AA')
+        expect(getUserTerminalReplay('cursor', 't1', { epoch: live.epoch, offset: 4 }).data).toBe('')
+        clearUserTerminalBuffer('cursor', 't1')
+    })
+    it('reports bounded history gaps and epoch changes without pretending they are snapshots', () => {
+        const first = appendUserTerminalOutput('cursor-gap', 't1', 'old')
+        appendUserTerminalOutput('cursor-gap', 't1', 'x'.repeat(MAX_TERMINAL_BUFFER_UNITS + 5))
+        const replay = getUserTerminalReplay('cursor-gap', 't1', { epoch: first.epoch, offset: 3 })
+        expect(replay.stream.gap).toBe('history-truncated'); expect(replay.data).toBe('')
+        expect(getUserTerminalReplay('cursor-gap', 't1').stream.truncated).toBe(true)
+        clearUserTerminalBuffer('cursor-gap', 't1')
+        expect(getUserTerminalReplay('cursor-gap', 't1', { epoch: first.epoch, offset: 3 }).stream.gap).toBe('epoch-changed')
+        clearUserTerminalBuffer('cursor-gap', 't1')
+    })
+    it('does not leave a low surrogate at the trimmed replay head', () => {
+        const text = '😀' + 'x'.repeat(MAX_TERMINAL_BUFFER_UNITS - 1)
+        appendUserTerminalOutput('unicode', 't1', text)
+        const replay = getUserTerminalReplay('unicode', 't1')
+        expect(replay.stream.startOffset).toBe(2)
+        expect(replay.stream.endOffset).toBe(text.length)
+        expect(replay.data).toBe('x'.repeat(MAX_TERMINAL_BUFFER_UNITS - 1))
+        clearUserTerminalBuffer('unicode', 't1')
+    })
+    it('retained cursors preserve surrogate and ANSI continuations across frames', () => {
+        const first = appendUserTerminalOutput('unicode-split', 't1', '\x1b[3\uD83D')
+        appendUserTerminalOutput('unicode-split', 't1', '\uDE001m')
+        expect(getUserTerminalReplay('unicode-split', 't1', { epoch: first.epoch, offset: first.endOffset }).data).toBe('\uDE001m')
+        clearUserTerminalBuffer('unicode-split', 't1')
     })
 })

@@ -269,6 +269,7 @@ export function SessionTerminal(props: { sessionId: string; terminalId?: string;
     const { t } = useTranslation()
     const compactControls = useCompactTerminalControls()
     const { sessionId } = props
+    const [outputReceiverVersion, setOutputReceiverVersion] = useState(0)
     const { api, token, baseUrl } = useAppContext()
     const goBack = props.onBack
     const { session } = useSession(api, sessionId)
@@ -310,6 +311,8 @@ export function SessionTerminal(props: { sessionId: string; terminalId?: string;
         resize,
         disconnect,
         onOutput,
+        resetOutputReceiver,
+        outputIssue,
         onExit,
     } = useTerminalSocket({
         token,
@@ -320,7 +323,10 @@ export function SessionTerminal(props: { sessionId: string; terminalId?: string;
 
     useEffect(() => {
         onOutput((data) => {
-            terminalRef.current?.write(data)
+            const terminal = terminalRef.current
+            if (!terminal) return false
+            terminal.write(data)
+            return true
         })
     }, [onOutput])
 
@@ -347,6 +353,7 @@ export function SessionTerminal(props: { sessionId: string; terminalId?: string;
     const handleTerminalMount = useCallback(
         (terminal: Terminal) => {
             terminalRef.current = terminal
+            resetOutputReceiver()
             inputDisposableRef.current?.dispose()
             inputDisposableRef.current = terminal.onData((data) => {
                 dispatch(data)
@@ -355,7 +362,7 @@ export function SessionTerminal(props: { sessionId: string; terminalId?: string;
                 terminal.focus()
             }
         },
-        [compactControls, inputMode, dispatch, props.terminalId]
+        [compactControls, inputMode, dispatch, props.terminalId, resetOutputReceiver]
     )
 
     const handleResize = useCallback(
@@ -435,7 +442,8 @@ export function SessionTerminal(props: { sessionId: string; terminalId?: string;
         }
     }, [terminalState.status])
 
-    const quickInputDisabled = !session?.active || terminalState.status !== 'connected'
+    const outputBlocked = outputIssue === 'gap' || outputIssue === 'legacy'
+    const quickInputDisabled = !session?.active || terminalState.status !== 'connected' || outputBlocked
     const commandSubmitDisabled = quickInputDisabled || commandDraft.trim().length === 0
     const writePlainInput = useCallback(
         (text: string) => {
@@ -591,7 +599,7 @@ export function SessionTerminal(props: { sessionId: string; terminalId?: string;
     }
 
     const subtitle = session.metadata?.path ?? sessionId
-    const status = terminalState.status
+    const status = outputBlocked ? 'error' : terminalState.status
     const errorMessage = !terminalSupported
         ? t('terminal.unsupportedWindows')
         : terminalState.status === 'error'
@@ -641,6 +649,14 @@ export function SessionTerminal(props: { sessionId: string; terminalId?: string;
                 </div>
             ) : null}
 
+            {outputIssue ? (
+                <div role="alert" className="mx-auto w-full max-w-content px-3 pt-3 text-xs">
+                    <p>{t(outputIssue === 'truncated' ? 'terminal.outputTruncated' : outputIssue === 'legacy' ? 'terminal.outputLegacy' : 'terminal.outputGap')}</p>
+                    {outputBlocked ? <button type="button" className="mt-2 rounded-md border border-current px-2 py-1"
+                        onClick={() => setOutputReceiverVersion(value => value + 1)}>{t('terminal.reopenView')}</button> : null}
+                </div>
+            ) : null}
+
             {exitInfo ? (
                 <div className="mx-auto w-full max-w-content px-3 pt-3">
                     <div className="rounded-md border border-[var(--app-border)] bg-[var(--app-subtle-bg)] p-3 text-xs text-[var(--app-hint)]">
@@ -655,9 +671,11 @@ export function SessionTerminal(props: { sessionId: string; terminalId?: string;
                 <div className="mx-auto h-full w-full max-w-content px-2 py-2 sm:p-3">
                     {terminalSupported ? (
                         <TerminalView
+                            key={`${sessionId}:${terminalId}:${outputReceiverVersion}`}
                             onMount={handleTerminalMount}
+                            onUnmount={terminal => { if (terminalRef.current === terminal) terminalRef.current = null }}
                             onResize={handleResize}
-                            disableStdin={compactControls && inputMode === 'command'}
+                            disableStdin={outputBlocked || (compactControls && inputMode === 'command')}
                             className="h-full w-full"
                         />
                     ) : (

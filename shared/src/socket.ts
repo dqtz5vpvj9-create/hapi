@@ -6,11 +6,30 @@ export { SessionEndReasonSchema, type SessionEndReason } from './schemas'
 
 export type SocketErrorReason = 'namespace-missing' | 'access-denied' | 'not-found'
 
+export const TerminalOutputCursorSchema = z.object({
+    epoch: z.string().min(1),
+    offset: z.number().int().nonnegative()
+})
+export type TerminalOutputCursor = z.infer<typeof TerminalOutputCursorSchema>
+
+export const TerminalOutputStreamSchema = z.object({
+    version: z.literal(1),
+    epoch: z.string().min(1),
+    startOffset: z.number().int().nonnegative(),
+    endOffset: z.number().int().nonnegative(),
+    replay: z.boolean(),
+    truncated: z.boolean().optional(),
+    gap: z.enum(['history-truncated', 'epoch-changed', 'cursor-ahead']).optional()
+})
+export type TerminalOutputStream = z.infer<typeof TerminalOutputStreamSchema>
+
 export const TerminalOpenPayloadSchema = z.object({
     sessionId: z.string().min(1),
     terminalId: z.string().min(1),
     cols: z.number().int().positive(),
-    rows: z.number().int().positive()
+    rows: z.number().int().positive(),
+    replayProtocol: z.literal(1).optional(),
+    outputCursor: TerminalOutputCursorSchema.optional()
 })
 
 export type TerminalOpenPayload = z.infer<typeof TerminalOpenPayloadSchema>
@@ -70,7 +89,8 @@ export type TerminalClosePayload = z.infer<typeof TerminalClosePayloadSchema>
 
 export const TerminalReadyPayloadSchema = z.object({
     sessionId: z.string().min(1),
-    terminalId: z.string().min(1)
+    terminalId: z.string().min(1),
+    replayProtocol: z.literal(1).optional()
 })
 
 export type TerminalReadyPayload = z.infer<typeof TerminalReadyPayloadSchema>
@@ -78,7 +98,8 @@ export type TerminalReadyPayload = z.infer<typeof TerminalReadyPayloadSchema>
 export const TerminalOutputPayloadSchema = z.object({
     sessionId: z.string().min(1),
     terminalId: z.string().min(1),
-    data: z.string()
+    data: z.string(),
+    stream: TerminalOutputStreamSchema.optional()
 })
 
 export type TerminalOutputPayload = z.infer<typeof TerminalOutputPayloadSchema>

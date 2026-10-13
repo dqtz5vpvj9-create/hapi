@@ -1,35 +1,49 @@
-// Per-terminal scrollback buffer for the user (remote) terminal output.
-//
-// A web client whose socket drops and reconnects re-subscribes with the SAME
-// terminalId (held in a ref across transient reconnects), so we keep a rolling
-// buffer per terminal to replay the current content immediately instead of
-// showing a black screen until the next keystroke or output.
-//
-// The buffer is keyed by sessionId + terminalId (not sessionId alone): a session
-// may have several independent terminals open at once (each a separate shell
-// PTY, up to maxTerminalsPerSession), so keying by session alone would mix one
-// shell's output into another and replay it into a terminal that never ran it.
+import type { TerminalOutputCursor, TerminalOutputStream } from '@hapi/protocol'
 
-const MAX_BUFFER_BYTES = 256 * 1024
+// Offsets and the bounded tail use UTF-16 code units, matching String.slice.
+// Each real removal discards the epoch; a detached/rebound viewer keeps it.
+export const MAX_TERMINAL_BUFFER_UNITS = 256 * 1024
 
-const buffers = new Map<string, string>()
-
+type BufferState = { epoch: string; data: string; start: number; end: number }
+const buffers = new Map<string, BufferState>()
 const keyFor = (sessionId: string, terminalId: string): string => `${sessionId}:${terminalId}`
-
-export function appendUserTerminalOutput(sessionId: string, terminalId: string, data: string): void {
-    if (!data) return
+function bufferFor(sessionId: string, terminalId: string): BufferState {
     const key = keyFor(sessionId, terminalId)
-    const next = (buffers.get(key) ?? '') + data
-    buffers.set(
-        key,
-        next.length > MAX_BUFFER_BYTES ? next.slice(next.length - MAX_BUFFER_BYTES) : next
-    )
+    let buffer = buffers.get(key)
+    if (!buffer) {
+        buffer = { epoch: crypto.randomUUID(), data: '', start: 0, end: 0 }
+        buffers.set(key, buffer)
+    }
+    return buffer
+}
+
+export function appendUserTerminalOutput(sessionId: string, terminalId: string, data: string): TerminalOutputStream {
+    const buffer = bufferFor(sessionId, terminalId)
+    const startOffset = buffer.end
+    buffer.end += data.length
+    const next = buffer.data + data
+    let trim = Math.max(0, next.length - MAX_TERMINAL_BUFFER_UNITS)
+    // A new viewer must not begin with the low half of a retained surrogate pair.
+    if (trim > 0 && /[\uDC00-\uDFFF]/.test(next[trim] ?? '') && /[\uD800-\uDBFF]/.test(next[trim - 1])) trim++
+    buffer.data = next.slice(trim)
+    buffer.start += trim
+    return { version: 1, epoch: buffer.epoch, startOffset, endOffset: buffer.end, replay: false }
+}
+
+export function getUserTerminalReplay(sessionId: string, terminalId: string, cursor?: TerminalOutputCursor): { data: string; stream: TerminalOutputStream } {
+    const buffer = bufferFor(sessionId, terminalId)
+    const gap = cursor && (cursor.epoch !== buffer.epoch ? 'epoch-changed' : cursor.offset < buffer.start ? 'history-truncated' : cursor.offset > buffer.end ? 'cursor-ahead' : undefined)
+    const startOffset = gap || !cursor ? buffer.start : cursor.offset
+    return {
+        data: gap ? '' : buffer.data.slice(startOffset - buffer.start),
+        stream: { version: 1, epoch: buffer.epoch, startOffset, endOffset: buffer.end, replay: true,
+            ...(buffer.start > 0 && !cursor ? { truncated: true } : {}), ...(gap ? { gap } : {}) }
+    }
 }
 
 export function getUserTerminalBuffer(sessionId: string, terminalId: string): string {
-    return buffers.get(keyFor(sessionId, terminalId)) ?? ''
+    return buffers.get(keyFor(sessionId, terminalId))?.data ?? ''
 }
-
 export function clearUserTerminalBuffer(sessionId: string, terminalId: string): void {
     buffers.delete(keyFor(sessionId, terminalId))
 }

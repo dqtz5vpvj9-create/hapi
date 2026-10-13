@@ -39,6 +39,8 @@ const terminalSocketState = {
     resize: resizeMock,
     disconnect: disconnectMock,
     onOutput: onOutputMock,
+    resetOutputReceiver: vi.fn(),
+    outputIssue: null,
     onExit: onExitRegister
 }
 

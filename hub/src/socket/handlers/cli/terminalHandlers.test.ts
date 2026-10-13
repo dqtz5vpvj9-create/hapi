@@ -256,3 +256,21 @@ describe('cli terminal handlers', () => {
         })
     })
 })
+
+describe('Hub-owned terminal output positions', () => {
+    it('overrides runner output metadata and tags ready with replay capability', () => {
+        const cli = new FakeSocket('owner-cli'), viewer = new FakeSocket('viewer')
+        const namespace = new FakeNamespace(), registry = new TerminalRegistry({ idleTimeoutMs: 0 })
+        namespace.sockets.set(viewer.id, viewer)
+        registry.register('position-terminal', 'position-session', viewer.id, cli.id)
+        registerTerminalHandlers(cli as never, { terminalRegistry: registry, terminalNamespace: namespace as never,
+            resolveSessionAccess: () => ({ ok: true, value: {} as StoredSession }), emitAccessError: () => { throw new Error('unexpected access error') } })
+        cli.trigger('terminal:output', { sessionId: 'position-session', terminalId: 'position-terminal', data: 'A', stream: { version: 1, epoch: 'untrusted-runner', startOffset: 999, endOffset: 1000, replay: true } })
+        const output = lastEmit(viewer, 'terminal:output')?.data as any
+        expect(output.stream.epoch).not.toBe('untrusted-runner')
+        expect(output.stream).toMatchObject({ version: 1, startOffset: 0, endOffset: 1, replay: false })
+        cli.trigger('terminal:ready', { sessionId: 'position-session', terminalId: 'position-terminal' })
+        expect(lastEmit(viewer, 'terminal:ready')?.data).toMatchObject({ replayProtocol: 1 })
+        registry.remove('position-terminal'); clearUserTerminalBuffer('position-session', 'position-terminal')
+    })
+})

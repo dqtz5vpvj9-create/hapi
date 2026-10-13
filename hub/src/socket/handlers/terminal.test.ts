@@ -521,3 +521,27 @@ describe('terminal socket handlers', () => {
         })
     })
 })
+
+describe('terminal cursor replay contract', () => {
+    it('v1 empty create returns a handshake before runner output and every retry is cursor-based', () => {
+        const h = createHarness(), cli = new FakeSocket('cursor-cli')
+        connectCliSocket(h.cliNamespace, cli, 'cursor-session')
+        h.terminalSocket.trigger('terminal:create', { sessionId: 'cursor-session', terminalId: 'cursor-id', cols: 80, rows: 24, replayProtocol: 1 })
+        const first = lastEmit(h.terminalSocket, 'terminal:output')?.data as any
+        expect(first.data).toBe(''); expect(first.stream).toMatchObject({ version: 1, startOffset: 0, endOffset: 0, replay: true })
+        appendUserTerminalOutput('cursor-session', 'cursor-id', 'AB')
+        h.terminalSocket.trigger('terminal:create', { sessionId: 'cursor-session', terminalId: 'cursor-id', cols: 80, rows: 24, replayProtocol: 1, outputCursor: { epoch: first.stream.epoch, offset: 1 } })
+        expect(lastEmit(h.terminalSocket, 'terminal:output')?.data).toMatchObject({ data: 'B', stream: { startOffset: 1, endOffset: 2 } })
+        h.terminalRegistry.remove('cursor-id'); clearUserTerminalBuffer('cursor-session', 'cursor-id')
+    })
+    it('legacy same-socket repeated create still does not replay existing output', () => {
+        const h = createHarness(), cli = new FakeSocket('legacy-cli')
+        connectCliSocket(h.cliNamespace, cli, 'legacy-session')
+        const create = { sessionId: 'legacy-session', terminalId: 'legacy-id', cols: 80, rows: 24 }
+        h.terminalSocket.trigger('terminal:create', create)
+        appendUserTerminalOutput('legacy-session', 'legacy-id', 'not duplicated')
+        h.terminalSocket.trigger('terminal:create', create)
+        expect(h.terminalSocket.emitted.filter(x => x.event === 'terminal:output')).toHaveLength(0)
+        h.terminalRegistry.remove('legacy-id'); clearUserTerminalBuffer('legacy-session', 'legacy-id')
+    })
+})

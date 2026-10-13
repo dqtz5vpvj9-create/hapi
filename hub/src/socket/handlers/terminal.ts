@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { TerminalRegistry, TerminalRegistryEntry } from '../terminalRegistry'
 import type { SocketServer, SocketWithData } from '../socketTypes'
 import { getAgentTerminalReplay } from '../agentTerminalBuffer'
-import { getUserTerminalBuffer } from '../userTerminalBuffer'
+import { getUserTerminalBuffer, getUserTerminalReplay } from '../userTerminalBuffer'
 
 const terminalCreateSchema = TerminalOpenPayloadSchema
 
@@ -90,7 +90,7 @@ export function registerTerminalHandlers(socket: SocketWithData, deps: TerminalH
             return
         }
 
-        const { sessionId, terminalId, cols, rows } = parsed.data
+        const { sessionId, terminalId, cols, rows, replayProtocol, outputCursor } = parsed.data
         const session = getSession(sessionId)
         if (!namespace || !session || session.namespace !== namespace || !session.active) {
             emitTerminalError(terminalId, 'Session is inactive or unavailable.')
@@ -132,23 +132,18 @@ export function registerTerminalHandlers(socket: SocketWithData, deps: TerminalH
 
         socket.join(`session:${sessionId}`)
 
-        cliSocket.emit('terminal:open', {
-            sessionId,
-            terminalId,
-            cols,
-            rows
-        })
+        // This callback is synchronous: attach + replay are queued before the
+        // runner can produce output in response to open/resize. Even an empty
+        // replay establishes a v1 cursor. Legacy same-socket retries stay silent.
+        if (replayProtocol === 1) {
+            socket.emit('terminal:output', { sessionId, terminalId, ...getUserTerminalReplay(sessionId, terminalId, outputCursor) })
+        } else {
+            const buffered = getUserTerminalBuffer(sessionId, terminalId)
+            if (buffered && shouldReplayBuffer) socket.emit('terminal:output', { terminalId, data: buffered })
+        }
+        cliSocket.emit('terminal:open', { sessionId, terminalId, cols, rows })
         terminalRegistry.markActivity(terminalId)
 
-        // Replay buffered output so the terminal shows scrollback immediately
-        // instead of staying black until the next output from CLI.
-        // The buffer is never explicitly cleared here: it persists so a client
-        // whose socket reconnects with the same terminalId still sees the
-        // accumulated output. It is bounded to 256KB per terminal.
-        const buffered = getUserTerminalBuffer(sessionId, terminalId)
-        if (buffered && shouldReplayBuffer) {
-            socket.emit('terminal:output', { terminalId, data: buffered })
-        }
     })
 
     socket.on('terminal:write', (data: unknown) => {
