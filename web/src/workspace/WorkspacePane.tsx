@@ -20,6 +20,9 @@ import { panes as flatten, type PaneNode, type WorkspaceStore } from './workspac
 import { useTranslation } from '@/lib/use-translation'
 import { syncTailMessages } from '@/lib/message-window-store'
 
+type FilesTool = { view: 'directories' | 'changes'; query?: string }
+type WorkspaceTool = FilesTool | { view: 'file'; path?: string; staged: boolean; returnTo: FilesTool }
+
 export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foreground?: boolean; store: WorkspaceStore; pickSession: () => void }) {
     const root = useRef<HTMLDivElement>(null)
     const { api } = useAppContext()
@@ -37,7 +40,7 @@ export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foregro
     }, [api, props.foreground, sessionId, pane.resource.kind])
     const { session } = useSession(api, sessionId || null)
     const routeNavigate = useNavigate()
-    const [tool, setTool] = useState<{ view: 'directories' | 'changes' | 'file'; path?: string; staged?: boolean; query?: string } | null>(null)
+    const [tool, setTool] = useState<WorkspaceTool | null>(null)
     useSelectedSessionSeen(props.focused && props.foreground !== false && !tool && pane.resource.kind === 'chat'
         ? sessionId : null, session?.updatedAt)
     const closeTool = useCallback(() => setTool(null), [])
@@ -53,8 +56,19 @@ export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foregro
             setTool({ view: search?.tab ?? 'changes', query: search?.query }); return
         }
         if (options.to === '/sessions/$sessionId/file') {
-            const search = options.search as { path?: string; staged?: boolean; document?: string } | undefined
-            if (search?.staged !== undefined) { setTool({ view: 'file', ...search }); return }
+            const search = options.search as { path?: string; staged?: boolean; document?: string; tab?: FilesTool['view']; query?: string } | undefined
+            if (search?.staged !== undefined) {
+                const staged = search.staged
+                setTool(current => ({
+                    view: 'file', path: search.path, staged,
+                    // Keep the list that actually opened this diff, including its
+                    // search. Ordinary project files still use DocumentSurface.
+                    returnTo: search.tab ? { view: search.tab, query: search.query }
+                        : current?.view === 'file' ? current.returnTo
+                            : current ?? { view: 'changes', query: search.query },
+                }))
+                return
+            }
             let ref: DocumentRef
             if (search?.document) {
                 const decoded = decodeBase64(search.document)
@@ -112,7 +126,7 @@ export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foregro
                     terminalAvailable={!!session?.active && isRemoteTerminalSupported(session.metadata)} filesAvailable={!!session?.metadata?.path}
                     onSelect={view => { if (view === 'terminal') { store.focus(pane.id); store.terminal(sessionId) } else setTool({ view }) }} onClose={closeTool}
                     chat={<SessionPaneController sessionId={sessionId} onBack={() => store.closePane(pane.id)} />}
-                    panel={tool?.view === 'file' ? <SessionFile sessionId={sessionId} search={tool} onBack={() => setTool({ view: 'directories' })} />
+                    panel={tool?.view === 'file' ? <SessionFile sessionId={sessionId} search={tool} onBack={() => setTool(tool.returnTo)} />
                         : <SessionFiles sessionId={sessionId} search={{ tab: tool?.view, query: tool?.query }} onBack={closeTool} />} />}
         </div>
     </PaneContext.Provider>
