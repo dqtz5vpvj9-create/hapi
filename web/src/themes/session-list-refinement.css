@@ -87,7 +87,7 @@
     :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-mobile-tabs button:last-child { margin-left: auto; }
     :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-mobile-tabs button[aria-pressed="true"] { font-weight: 550; }
     :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-time { font-size: 12px; }
-    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-execution svg { color: #6c9ce8; }
+    :is([data-color-theme="default"], [data-color-theme="codex"]) .app-session-list-refined .app-session-row-execution svg { color: var(--app-badge-success-text); }
     .app-session-date-heading { padding: 18px 0 2px; font-size: 12px; line-height: 20px; color: var(--app-hint); }
     .app-session-date-heading:first-child { padding-top: 12px; }
     :is([data-color-theme="default"], [data-color-theme="codex"]) .app-new-task-input .app-new-task-next {

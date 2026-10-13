@@ -21,7 +21,8 @@ export function applySessionSummaryPatch(current: SessionSummary, input: Session
         modelReasoningEffort: Object.prototype.hasOwnProperty.call(patch, 'modelReasoningEffort')
             ? patch.modelReasoningEffort ?? null
             : current.modelReasoningEffort,
-        effort: Object.prototype.hasOwnProperty.call(patch, 'effort') ? patch.effort ?? null : current.effort
+        effort: Object.prototype.hasOwnProperty.call(patch, 'effort') ? patch.effort ?? null : current.effort,
+        serviceTier: Object.prototype.hasOwnProperty.call(patch, 'serviceTier') ? patch.serviceTier ?? null : current.serviceTier
     }
 
     // Gate versioned fields against THIS summary's watermarks —
@@ -60,7 +61,7 @@ export function reconcileSessionSummary(current: SessionSummary | undefined, inc
     if (!current) return incoming
     const next = { ...incoming }
     if ((current.executionVersion ?? 0) > (incoming.executionVersion ?? 0)) {
-        for (const field of ['active','thinking','activeAt','execution','executionVersion','backgroundTaskCount','model','modelReasoningEffort','effort'] as const)
+        for (const field of ['active','thinking','activeAt','execution','executionVersion','backgroundTaskCount','model','modelReasoningEffort','effort','serviceTier'] as const)
             Object.assign(next, { [field]: current[field] })
     }
     if (current.metadataVersion > incoming.metadataVersion) {

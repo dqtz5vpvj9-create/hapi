@@ -203,3 +203,22 @@ describe('SessionRowSummary supplied read-state', () => {
         }
     })
 })
+
+describe('session row Fast tier', () => {
+    it('tracks only this row confirmed tier while preserving activity', () => {
+        const row = (serviceTier?: string | null) => <I18nProvider><SessionRowSummary session={makeSummary({
+            metadata: { path: '/demo', name: 'Long title '.repeat(40), flavor: 'codex' },
+            thinking: true, backgroundTaskCount: 0, serviceTier,
+        })} /></I18nProvider>
+        const view = render(row('fast'))
+        expect(view.container.querySelector('[data-service-tier="fast"] svg')).toBeTruthy()
+        expect(view.container.querySelector('[data-service-tier="fast"]')?.getAttribute('aria-label')).toContain('Fast')
+        expect(view.container.querySelector('[data-session-status="running"]')).toBeTruthy()
+        for (const tier of ['standard', null, undefined, 'unknown']) {
+            view.rerender(row(tier))
+            expect(view.container.querySelector('[data-service-tier]')).toBeNull()
+        }
+        view.rerender(row('priority'))
+        expect(view.container.querySelector('[data-service-tier="fast"]')).toBeTruthy()
+    })
+})

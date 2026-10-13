@@ -348,6 +348,8 @@ export function HappyComposer(props: {
     onEffortChange?: (effort: string | null) => void
     /** Codex Fast mode (service tier): current value ('fast' or null/standard). */
     serviceTier?: string | null
+    /** Runtime-confirmed tier for status, separate from the settings default. */
+    confirmedServiceTier?: string | null
     /** When provided, a Fast-mode toggle renders (Codex GPT-5.5 / GPT-5.4 only). */
     onServiceTierChange?: (serviceTier: string | null) => void
     onSwitchToRemote?: () => void
@@ -2344,7 +2346,7 @@ export function HappyComposer(props: {
             model={model}
             modelReasoningEffort={modelReasoningEffort}
             effort={effort}
-            serviceTier={serviceTier}
+            serviceTier={props.confirmedServiceTier}
             permissionMode={permissionMode}
             collaborationMode={collaborationMode}
             copilotAgentMode={copilotAgentMode}
@@ -2539,7 +2541,7 @@ export function HappyComposer(props: {
                             compactControls={glassLayout ? <>
                                 {agentFlavor === 'codex' ? <ComposerGoalControl goal={props.goal ?? null} disabled={disabled || !active || (controlledByUser && !concurrentClients)} onCaptureInputSelection={captureGoalInputSelection} onAction={props.onGoalAction} /> : null}
                             </> : undefined}
-                            permissionControl={glassLayout ? (<StatusBar compact execution={props.execution} controlsDisabled={controlsDisabled} active={active} thinking={thinking} agentState={agentState} permissionMode={permissionMode} agentFlavor={agentFlavor} permissionOpen={showSettings && settingsSection === 'permission'} onPermissionClick={showPermissionSettings ? button => handleSettingsToggle('permission', button) : undefined} />) : undefined}
+                            permissionControl={glassLayout ? (<StatusBar compact serviceTier={props.confirmedServiceTier} execution={props.execution} controlsDisabled={controlsDisabled} active={active} thinking={thinking} agentState={agentState} permissionMode={permissionMode} agentFlavor={agentFlavor} permissionOpen={showSettings && settingsSection === 'permission'} onPermissionClick={showPermissionSettings ? button => handleSettingsToggle('permission', button) : undefined} />) : undefined}
                             goalMode={goalMode}
                             canSend={canSend}
                             controlsDisabled={controlsDisabled}

@@ -361,6 +361,7 @@ describe('isRenderIrrelevantPatch', () => {
         ['model', { model: 'opus' }],
         ['modelReasoningEffort', { modelReasoningEffort: 'high' }],
         ['effort', { effort: 'medium' }],
+        ['serviceTier', { serviceTier: 'fast' }],
         ['pendingRequestsCount', { pendingRequestsCount: 2 }],
         ['metadata.codexSubagents', { metadata: { path: '/tmp', codexSubagents: [{ threadId: 'native-child', parentThreadId: 'native-parent', status: 'unknown' }] } }],
         ['metadata.codexParentThreadId', { metadata: { path: '/tmp', codexParentThreadId: 'native-parent' } }],

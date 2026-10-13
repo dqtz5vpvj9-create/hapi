@@ -28,6 +28,21 @@ function mount(sessions: SessionSummary[], onStartTask = vi.fn()) {
 }
 function tabs(container: HTMLElement) { return within(container.querySelector('.app-session-mobile-tabs') as HTMLElement) }
 describe('Refined phone list', () => {
+    it('keeps Fast badges scoped to their own session across Recent and Folders', () => {
+        const fast = session('fast', 'Fast task', { serviceTier: 'fast' })
+        const standard = session('standard', 'Standard task', { serviceTier: 'standard' })
+        const { container, updateSessions } = mount([fast, standard])
+        const fastRow = () => screen.getByText('Fast task').closest('.session-list-item')!
+        const standardRow = () => screen.getByText('Standard task').closest('.session-list-item')!
+        expect(fastRow().querySelector('[data-service-tier="fast"]')).toBeTruthy()
+        expect(standardRow().querySelector('[data-service-tier]')).toBeNull()
+        fireEvent.click(tabs(container).getByRole('button', { name: 'Folders' }))
+        expect(fastRow().querySelector('[data-service-tier="fast"]')).toBeTruthy()
+        updateSessions([{ ...fast, serviceTier: null }, { ...standard, serviceTier: 'fast' }])
+        expect(fastRow().querySelector('[data-service-tier]')).toBeNull()
+        expect(standardRow().querySelector('[data-service-tier="fast"]')).toBeTruthy()
+    })
+
     it('shows newly completed unread results in Standard mode and clears the dot only when read', () => {
         localStorage.setItem('hapi.sessionLastSeen.v1', JSON.stringify({ result: 100 }))
         const native = { owner: 'machine', generation: 'g1', sequence: 1, waitingOn: [], turnId: 'turn', startedAt: 100, completedAt: null }

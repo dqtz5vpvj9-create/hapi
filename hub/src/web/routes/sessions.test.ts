@@ -1689,6 +1689,27 @@ describe('sessions routes', () => {
         expect(response.status).toBe(400)
     })
 
+    it('returns the confirmed service tier in list summaries, including an explicit clear', async () => {
+        const session = createSession({ serviceTier: 'fast' })
+        const engine = {
+            refreshCodexSessionLineage: async () => {},
+            getSessionReadStates: () => ({}),
+            getSessionsByNamespace: () => [session],
+            getFutureScheduledMessageCounts: () => new Map(),
+            getNextScheduledAtBySessionIds: () => new Map()
+        } as unknown as SyncEngine
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => { c.set('namespace', 'default'); await next() })
+        app.route('/api', createSessionsRoutes(() => engine))
+        for (const tier of ['fast', 'standard', null]) {
+            session.serviceTier = tier
+            const response = await app.request('/api/sessions')
+            expect(response.status).toBe(200)
+            const body = await response.json() as { sessions: Array<{ serviceTier?: string | null }> }
+            expect(body.sessions[0].serviceTier).toBe(tier)
+        }
+    })
+
     it('honors optional limit on GET /sessions after sort without awaiting lineage lookup', async () => {
         const sessions = [
             createSession({ id: 'older-active', active: true, updatedAt: 10 }),

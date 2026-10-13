@@ -344,3 +344,9 @@ describe('summary derivation helpers', () => {
         expect(summary?.agentSessionId).toBe('cursor-xyz')
     })
 })
+
+describe('confirmed service tier in session summaries', () => {
+    it.each(['fast', 'priority', 'standard', 'default', 'unknown', null])('preserves %s without inferring from the model', (serviceTier) => {
+        expect(toSessionSummary(makeSession({ serviceTier, model: 'gpt-fast', thinking: true })).serviceTier).toBe(serviceTier)
+    })
+})

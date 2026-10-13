@@ -2,7 +2,7 @@ import { useForkOperation } from '@/hooks/useForkOperation'
 import { ForkOperationBanner } from '@/components/ForkOperationBanner'
 import { createForkNavigator, type ForkBoundary } from '@/lib/fork-navigation'
 import { WorkspaceActivity } from '@/workspace/WorkspaceActivity'
-import { computePendingRequestKinds } from '@hapi/protocol'
+import { computePendingRequestKinds, computeBlockingRequestKinds } from '@hapi/protocol'
 import { useLayoutEffect, useSyncExternalStore } from 'react'
 import { nativeChatEnabled } from '@/chat/nativeProjection'
 import { getSessionPresentation, retainSessionPresentation, SessionPresentation } from '@/chat/sessionPresentation'
@@ -2073,8 +2073,10 @@ function SessionChatInner(props: SessionChatProps) {
                         </div>
 
                         <HappyComposer
+                        confirmedServiceTier={props.session.serviceTier}
                         workingDirectory={props.session.metadata?.path}
                         workspaceStatus={<WorkspaceActivity label session={{ active: props.session.active, thinking: props.session.thinking,
+                            execution: props.session.execution, blockingRequestKinds: computeBlockingRequestKinds(props.session.agentState),
                             pendingRequestKinds: computePendingRequestKinds(props.session.agentState), backgroundTaskCount: props.session.backgroundTaskCount ?? 0 }} />}
                         statusDetails={sessionStatus ? <SessionStatusPanel data={sessionStatus} /> : undefined}
                         onGoalAction={props.session.metadata?.capabilities?.concurrentClients ? async request => {

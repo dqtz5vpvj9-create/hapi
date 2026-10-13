@@ -175,6 +175,7 @@ export function isRenderIrrelevantPatch(current: SessionSummary, next: SessionSu
         && current.model === next.model
         && current.modelReasoningEffort === next.modelReasoningEffort
         && current.effort === next.effort
+        && current.serviceTier === next.serviceTier
         && current.pendingRequestsCount === next.pendingRequestsCount
         // Structured SSE patches (#897) can move these without touching the
         // keep-alive fields above; omit them and a todos/metadata/agentState

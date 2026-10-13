@@ -4,10 +4,8 @@ import {
     getCodexCollaborationModeLabel,
     getCopilotAgentModeLabel,
     getPermissionModeLabel,
-    getPermissionModeTone,
     isPermissionModeAllowedForFlavor
 } from '@hapi/protocol'
-import type { PermissionModeTone } from '@hapi/protocol'
 import * as Popover from '@radix-ui/react-popover'
 import { useMemo, type ReactNode } from 'react'
 import type { AgentState, CodexCollaborationMode, PermissionMode } from '@/types/api'
@@ -19,17 +17,11 @@ import {
     getReasoningEffortForFlavor,
     shouldShowReasoningStatusLabel
 } from '@/lib/codexStatusLabels'
+import { SessionServiceTier } from '../SessionServiceTier'
 import { isFastServiceTier } from './codexFastMode'
 import { useTranslation } from '@/lib/use-translation'
 import { useSessionHeaderMetadata } from '@/hooks/useSessionHeaderMetadata'
 import { useGlassSurface } from '@/themes/glass/GlassScene'
-
-const PERMISSION_TONE_CLASSES: Record<PermissionModeTone, string> = {
-    neutral: 'text-[var(--app-hint)]',
-    info: 'text-blue-500',
-    warning: 'text-amber-500',
-    danger: 'text-red-500'
-}
 
 const CONTEXT_WARNING_THRESHOLD_PERCENT = 70
 const CONTEXT_DANGER_THRESHOLD_PERCENT = 90
@@ -65,9 +57,14 @@ function getConnectionStatus(
         }
     }
 
-    if (activity.kind === 'permission' || activity.kind === 'input' || activity.kind === 'error') {
+    if (activity.kind === 'error') {
+        return { text: t('session.item.error'), color: 'text-[var(--app-badge-error-text)]',
+            dotColor: 'bg-[var(--app-badge-error-text)]', isPulsing: false }
+    }
+
+    if (activity.kind === 'permission' || activity.kind === 'input') {
         return {
-            text: t(activity.kind === 'input' ? 'session.item.needsInput' : activity.kind === 'error' ? 'session.item.error' : 'misc.permissionRequired'),
+            text: t(activity.kind === 'input' ? 'session.item.needsInput' : 'misc.permissionRequired'),
             color: 'text-[#FF9500]',
             dotColor: 'bg-[#FF9500]',
             isPulsing: true
@@ -78,8 +75,8 @@ function getConnectionStatus(
         const vibingMessage = t('session.item.running')
         return {
             text: vibingMessage,
-            color: 'text-[#007AFF]',
-            dotColor: 'bg-[#007AFF]',
+            color: 'text-[var(--app-badge-success-text)]',
+            dotColor: 'bg-[var(--app-badge-success-text)]',
             isPulsing: true
         }
     }
@@ -87,16 +84,16 @@ function getConnectionStatus(
     if (activity.kind === 'background') {
         return {
             text: `${backgroundTaskCount} background task${backgroundTaskCount > 1 ? 's' : ''} running`,
-            color: 'text-[#007AFF]',
-            dotColor: 'bg-[#007AFF]',
+            color: 'text-[var(--app-badge-success-text)]',
+            dotColor: 'bg-[var(--app-badge-success-text)]',
             isPulsing: true
         }
     }
 
     return {
         text: t('misc.online'),
-        color: 'text-[#34C759]',
-        dotColor: 'bg-[#34C759]',
+        color: 'text-[var(--app-fg)]',
+        dotColor: 'bg-[var(--app-fg)]',
         isPulsing: false
     }
 }
@@ -258,8 +255,8 @@ export function StatusBar(props: {
         : null
 
     const permissionModeLabel = displayPermissionMode ? getPermissionModeLabel(displayPermissionMode) : null
-    const permissionModeTone = displayPermissionMode ? getPermissionModeTone(displayPermissionMode) : null
-    const permissionModeColor = permissionModeTone ? PERMISSION_TONE_CLASSES[permissionModeTone] : 'text-[var(--app-hint)]'
+    // Permission mode is configuration, not an execution error.
+    const permissionModeColor = 'text-[var(--app-fg)]'
     const displayCollaborationMode = props.agentFlavor === 'codex' && props.collaborationMode === 'plan'
         ? props.collaborationMode
         : null
@@ -286,7 +283,7 @@ export function StatusBar(props: {
     const compactReasoningLabel = displaysReasoning
         ? formatCompactReasoningLabel(reasoningEffort)
         : null
-    const codexFastMode = shouldShowCodexFastBadge(props.agentFlavor, props.serviceTier)
+    const serviceTierBadge = <SessionServiceTier flavor={props.agentFlavor} serviceTier={props.serviceTier} />
     const connectionLabel = (
         <>
             <span className={`h-2 w-2 shrink-0 rounded-full ${connectionStatus.dotColor} ${connectionStatus.isPulsing ? 'animate-pulse' : ''}`} />
@@ -301,10 +298,10 @@ export function StatusBar(props: {
     )
     const controlClass = 'app-composer-chip inline-flex min-h-9 min-w-9 items-center justify-center gap-1 whitespace-nowrap rounded-md bg-[var(--app-subtle-bg)] px-2 text-xs hover:bg-[var(--app-link-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:opacity-50'
 
-    if (props.compact) return displayPermissionMode ? <button type="button" disabled={props.controlsDisabled || !props.onPermissionClick}
+    if (props.compact) return <>{serviceTierBadge}{displayPermissionMode ? <button type="button" disabled={props.controlsDisabled || !props.onPermissionClick}
         aria-label={`${t('misc.permissionMode')}: ${permissionModeLabel}`} aria-expanded={props.permissionOpen}
         onClick={event => props.onPermissionClick?.(event.currentTarget)}
-        className={`app-composer-permission ${controlClass} ${permissionModeColor}`}>{permissionModeLabel}</button> : null
+        className={`app-composer-permission ${controlClass} ${permissionModeColor}`}>{permissionModeLabel}</button> : null}</>
 
     return (
         <div className="app-glass app-composer-status flex min-w-0 items-center justify-between gap-1 px-2 pb-1">
@@ -403,11 +400,7 @@ export function StatusBar(props: {
                             className={`${controlClass} text-[var(--app-hint)]`}>{reasoningText}<span aria-hidden="true">⌄</span></button>
                     ) : <span className="whitespace-nowrap text-xs text-[var(--app-hint)]">{reasoningText}</span>
                 ) : null}
-                {codexFastMode ? (
-                    <span className="whitespace-nowrap text-xs text-[#34C759]">
-                        fast
-                    </span>
-                ) : null}
+                {serviceTierBadge}
                 {collaborationModeLabel ? (
                     <span className="whitespace-nowrap text-xs text-blue-500">
                         {collaborationModeLabel}

@@ -85,6 +85,8 @@ export type SessionSummary = {
     model: string | null
     modelReasoningEffort?: string | null
     effort: string | null
+    /** Confirmed session tier; absent on older hubs, null means unknown/unset. */
+    serviceTier?: string | null
 }
 
 // Re-exported as a standalone derivation so SSE patch handlers can recompute
@@ -256,6 +258,7 @@ export function toSessionSummary(session: Session): SessionSummary {
         nextScheduledAt: null,
         model: session.model,
         modelReasoningEffort: session.modelReasoningEffort,
-        effort: session.effort
+        effort: session.effort,
+        serviceTier: session.serviceTier
     }
 }

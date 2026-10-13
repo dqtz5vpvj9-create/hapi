@@ -3,6 +3,7 @@ import { useRelativeTimeClock } from '@/hooks/useRelativeTimeClock'
 import { useNarrowViewport } from '@/hooks/useNarrowViewport'
 import { useMemo } from 'react'
 import type { SessionSummary } from '@/types/api'
+import { SessionServiceTier } from './SessionServiceTier'
 import { MachineIdentityIcon } from './MachineIdentityIcon'
 import { AgentFlavorIcon } from '@/components/AgentFlavorIcon'
 import { ScheduleIcon } from '@/components/icons'
@@ -154,7 +155,7 @@ export function SessionRowSummary(props: {
                                 <LoaderIcon className="app-session-row-spinner h-3.5 w-3.5 shrink-0 animate-spin-slow text-[var(--app-badge-success-text)]" />
                             </span>
                         ) : activity.kind === 'error' ? (
-                            <span title={t('session.item.error')} aria-label={t('session.item.error')} data-session-status="error" className="text-[var(--app-badge-warning-text)]">!</span>
+                            <span title={t('session.item.error')} aria-label={t('session.item.error')} data-session-status="error" className="text-[var(--app-badge-error-text)]">!</span>
                         ) : null}
                         {attention ? (
                             nestedTooltips && attentionId ? <SessionAttentionIndicator
@@ -184,6 +185,7 @@ export function SessionRowSummary(props: {
                     >
                         {sessionName}
                     </div>
+                    <SessionServiceTier flavor={s.metadata?.flavor} serviceTier={s.serviceTier} iconOnly />
                     {hasScheduleTooltip && nestedTooltips && scheduleId ? (
                         <HoverTooltip
                             id={scheduleId}
@@ -225,7 +227,7 @@ export function SessionRowSummary(props: {
             </div>
             {narrowViewport ? <div className="app-session-row-mobile-meta">
                 {urgentAttention || s.pendingRequestsCount > 0 ? <span className="app-session-row-execution text-[var(--app-badge-warning-text)]">{activity.kind === 'running' ? `${t('session.item.running')} · ` : ''}{attentionLabel ?? t('session.item.pending')}</span>
-                    : activity.kind === 'error' ? <span className="app-session-row-execution">{t('session.item.error')}</span> : activity.running ? <span className="app-session-row-execution"><LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow" />{t('session.item.running')}</span> : null}
+                    : activity.kind === 'error' ? <span className="app-session-row-execution text-[var(--app-badge-error-text)]">{t('session.item.error')}</span> : activity.running ? <span className="app-session-row-execution text-[var(--app-badge-success-text)]"><LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow" />{t('session.item.running')}</span> : null}
                 {workspaceLocation ? <span className="app-session-workspace-location" title={`${workspaceLocation.name} · P${workspaceLocation.pane}`}>
                     <span className="truncate">{workspaceLocation.name}</span>
                     <span className="shrink-0">· P{workspaceLocation.pane}</span>
