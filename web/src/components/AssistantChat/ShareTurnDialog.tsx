@@ -609,6 +609,7 @@ export function ShareTurnDialog(props: ShareTurnDialogProps) {
     const { t } = useTranslation()
     const captureRef = useRef<HTMLDivElement | null>(null)
     const bodyRef = useRef<HTMLDivElement | null>(null)
+    const actionGenerationRef = useRef(0)
     const [busy, setBusy] = useState<'copy' | 'download' | 'share' | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [copied, setCopied] = useState(false)
@@ -633,6 +634,14 @@ export function ShareTurnDialog(props: ShareTurnDialogProps) {
     const exportWidth = preserveSourceLayout
         ? Math.min(1240, Math.max(480, Math.ceil((props.sourceContentWidth ?? 0) + SHARE_EXPORT_HORIZONTAL_PADDING)))
         : SHARE_EXPORT_WIDTH
+
+    useLayoutEffect(() => {
+        actionGenerationRef.current++
+        setBusy(null)
+        return () => {
+            actionGenerationRef.current++
+        }
+    }, [props.isOpen, props.sourceSnapshots])
 
     useLayoutEffect(() => {
         setReady(false)
@@ -758,6 +767,13 @@ export function ShareTurnDialog(props: ShareTurnDialogProps) {
         }
     }
 
+    const startBlobAction = (mode: 'copy' | 'download' | 'share') => {
+        const generation = ++actionGenerationRef.current
+        setBusy(mode)
+        setError(null)
+        return () => generation === actionGenerationRef.current
+    }
+
     const runBlobAction = (
         blob: Blob,
         action: (prepared: Blob) => Promise<void> | void,
@@ -765,22 +781,23 @@ export function ShareTurnDialog(props: ShareTurnDialogProps) {
     ) => {
         // Invoke the action before yielding so navigator.share() stays in the
         // direct click activation window. PNG rendering happens eagerly above.
-        setBusy(mode)
-        setError(null)
+        const isCurrent = startBlobAction(mode)
         let result: Promise<void> | void
         try {
             result = action(blob)
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to create image')
-            setBusy(null)
+            if (isCurrent()) {
+                setError(err instanceof Error ? err.message : 'Failed to create image')
+                setBusy(null)
+            }
             return
         }
         void Promise.resolve(result).then(() => {
-            if (mode === 'copy') setCopied(true)
+            if (isCurrent() && mode === 'copy') setCopied(true)
         }).catch((err) => {
-            setError(err instanceof Error ? err.message : 'Failed to create image')
+            if (isCurrent()) setError(err instanceof Error ? err.message : 'Failed to create image')
         }).finally(() => {
-            setBusy(null)
+            if (isCurrent()) setBusy(null)
         })
     }
 
@@ -791,21 +808,28 @@ export function ShareTurnDialog(props: ShareTurnDialogProps) {
         }
         const capture = captureRef.current
         if (!capture || !ready) return
-        setBusy(mode)
-        setError(null)
+        const isCurrent = startBlobAction(mode)
         try {
             const blob = await elementToPngBlob(capture, exportWidth, preserveSourceLayout)
+            // Closing or replacing this preview must not let an old renderer
+            // trigger a download/clipboard write in a later conversation.
+            if (!isCurrent()) return
             await action(blob)
-            if (mode === 'copy') setCopied(true)
+            if (isCurrent() && mode === 'copy') setCopied(true)
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to create image')
+            if (isCurrent()) setError(err instanceof Error ? err.message : 'Failed to create image')
         } finally {
-            setBusy(null)
+            if (isCurrent()) setBusy(null)
         }
     }
 
     return (
-        <Dialog open={props.isOpen} onOpenChange={(open) => { if (!open) props.onClose() }}>
+        <Dialog open={props.isOpen} onOpenChange={(open) => {
+            if (!open) {
+                actionGenerationRef.current++
+                props.onClose()
+            }
+        }}>
             <DialogContent
                 className="max-h-[calc(100vh-24px)] max-w-3xl overflow-hidden p-4 [&>button:last-child]:top-4"
                 aria-describedby={undefined}
