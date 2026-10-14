@@ -1,7 +1,7 @@
 import { usePaneNavigate } from '@/workspace/PaneContext'
 import { useWorkspacePanel } from '@/components/SessionWorkspace'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import { useLocation, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { PRESERVE_SESSION_SIDEBAR_SCROLL } from '@/lib/sessionNavigation'
 import type { FileSearchItem, GitFileStatus } from '@/types/api'
 import { FileIcon } from '@/components/FileIcon'
@@ -11,6 +11,7 @@ import { useFileMenuTrigger } from '@/hooks/useFileMenuTrigger'
 import type { AnchoredMenuPoint } from '@/hooks/useAnchoredMenu'
 import { appendFileReferenceToComposerDraft } from '@/lib/file-composer'
 import { resolveAbsoluteFilePath } from '@/lib/file-path'
+import { normalizeFileManagerTarget, type SessionFilesSearch } from '@/lib/session-files-navigation'
 import { SessionHeader } from '@/components/SessionHeader'
 import { LoadingState } from '@/components/LoadingState'
 import { useAppContext } from '@/lib/app-context'
@@ -351,10 +352,11 @@ export default function FilesPage() {
     const { sessionId } = useParams({ from: '/sessions/$sessionId/files' })
     const search = useSearch({ from: '/sessions/$sessionId/files' })
     const goBack = useAppGoBack()
-    return <SessionFiles sessionId={sessionId} search={search} onBack={goBack} />
+    const revealKey = useLocation({ select: location => location.state.__TSR_key })
+    return <SessionFiles sessionId={sessionId} search={search} revealKey={revealKey} onBack={goBack} />
 }
 
-export function SessionFiles(props: { sessionId: string; search: { tab?: 'changes' | 'directories'; query?: string }; onBack: () => void }) {
+export function SessionFiles(props: { sessionId: string; search: SessionFilesSearch; revealKey?: string | number; onBack: () => void }) {
     const workspacePanel = useWorkspacePanel()
     const { api, titleSuggestionAvailable = false } = useAppContext()
     const { t, locale } = useTranslation()
@@ -372,6 +374,7 @@ export function SessionFiles(props: { sessionId: string; search: { tab?: 'change
     const [directorySort, setDirectorySort] = useState<DirectorySort>(readDirectorySort)
     const [fileMenu, setFileMenu] = useState<{ path: string; point: AnchoredMenuPoint } | null>(null)
     const searchQuery = search.query ?? ''
+    const fileTarget = normalizeFileManagerTarget(search.target)
 
     const openFileMenu = useCallback((path: string, point: AnchoredMenuPoint) => {
         setFileMenu({ path, point })
@@ -413,7 +416,7 @@ export function SessionFiles(props: { sessionId: string; search: { tab?: 'change
         const key = `${SCROLL_KEY_PREFIX}${sessionId}:${activeTab}`
         try {
             const saved = sessionStorage.getItem(key)
-            if (saved !== null) el.scrollTop = Number(saved)
+            if (saved !== null && !(fileTarget && activeTab === 'directories' && !searchQuery)) el.scrollTop = Number(saved)
         } catch {
             // ignore
         }
@@ -425,7 +428,7 @@ export function SessionFiles(props: { sessionId: string; search: { tab?: 'change
             }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab, sessionId])
+    }, [activeTab, fileTarget, searchQuery, sessionId])
 
     const {
         status: gitStatus,
@@ -450,6 +453,7 @@ export function SessionFiles(props: { sessionId: string; search: { tab?: 'change
             ...(staged !== undefined ? { staged } : {}),
             ...(activeTab === 'directories' ? { tab: 'directories' as const } : {}),
             ...(searchQuery ? { query: searchQuery } : {}),
+            ...(fileTarget ? { target: fileTarget } : {}),
         }
         navigate({
             to: '/sessions/$sessionId/file',
@@ -457,7 +461,7 @@ export function SessionFiles(props: { sessionId: string; search: { tab?: 'change
             search: fileSearch,
             ...PRESERVE_SESSION_SIDEBAR_SCROLL,
         })
-    }, [activeTab, navigate, searchQuery, sessionId])
+    }, [activeTab, fileTarget, navigate, searchQuery, sessionId])
 
     const handleAddFileToComposer = useCallback((path: string) => {
         appendFileReferenceToComposerDraft(sessionId, path)
@@ -698,6 +702,9 @@ export function SessionFiles(props: { sessionId: string; search: { tab?: 'change
                             onOpenFile={(path) => handleOpenFile(path)}
                             onRequestFileMenu={openFileMenu}
                             sort={directorySort}
+                            target={fileTarget}
+                            revealKey={props.revealKey}
+                            caseInsensitive={/^[A-Za-z]:[\\/]/.test(session.metadata?.path ?? '')}
                         />
                     ) : gitLoading ? (
                         <FileListSkeleton label={t('loading.git')} />

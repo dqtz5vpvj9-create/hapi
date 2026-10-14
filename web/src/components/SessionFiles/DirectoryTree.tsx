@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ApiClient } from '@/api/client'
 import { FileIcon } from '@/components/FileIcon'
 import { useSessionDirectory } from '@/hooks/queries/useSessionDirectory'
@@ -10,6 +10,7 @@ import { useToast } from '@/lib/toast-context'
 import { downloadBase64File } from '@/lib/file-download'
 import { formatFileMetadata } from '@/lib/file-metadata'
 import { sortDirectoryEntries, type DirectorySort } from '@/lib/directory-sort'
+import { normalizeFileManagerTarget } from '@/lib/session-files-navigation'
 
 function ChevronIcon(props: { className?: string; collapsed: boolean }) {
     return (
@@ -102,8 +103,14 @@ function DirectoryFileRow(props: {
     onOpen: () => void
     onDownload: () => void
     onOpenMenu?: (point: AnchoredMenuPoint) => void
+    selected?: boolean
+    revealKey?: string | number
 }) {
     const { t } = useTranslation()
+    const row = useRef<HTMLDivElement>(null)
+    useEffect(() => {
+        if (props.selected) row.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    }, [props.selected, props.revealKey])
     const rowHandlers = useFileMenuTrigger({
         onOpen: props.onOpen,
         onOpenMenu: props.onOpenMenu,
@@ -111,13 +118,16 @@ function DirectoryFileRow(props: {
 
     return (
         <div
-            className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-[var(--app-subtle-bg)] transition-colors"
+            ref={row}
+            data-file-target={props.selected || undefined}
+            className={`flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-[var(--app-subtle-bg)] transition-colors ${props.selected ? 'bg-[var(--app-subtle-bg)] ring-1 ring-inset ring-[var(--app-link)]' : ''}`}
             style={{ paddingLeft: props.indent }}
         >
             <span className="h-4 w-4" />
             <FileIcon fileName={props.fileName} size={22} />
             <button
                 type="button"
+                aria-current={props.selected ? 'true' : undefined}
                 {...rowHandlers}
                 className="app-file-tree-target min-w-0 flex-1 text-left"
             >
@@ -149,11 +159,15 @@ function DirectoryNode(props: {
     expanded: Set<string>
     onToggle: (path: string) => void
     sort: DirectorySort
+    target?: string
+    revealKey?: string | number
+    caseInsensitive: boolean
 }) {
     const { t, locale } = useTranslation()
     const toast = useToast()
     const [downloadingPath, setDownloadingPath] = useState<string | null>(null)
-    const isExpanded = props.expanded.has(props.path)
+    const compare = (path: string) => props.caseInsensitive ? path.toLowerCase() : path
+    const isExpanded = props.expanded.has(compare(props.path))
     const { entries, error, isLoading } = useSessionDirectory(props.api, props.sessionId, props.path, {
         enabled: isExpanded
     })
@@ -168,6 +182,12 @@ function DirectoryNode(props: {
 
     const indent = 12 + props.depth * 14
     const childIndent = 12 + childDepth * 14
+    const targetRest = props.target && (props.path === '' ? props.target
+        : compare(props.target).startsWith(`${compare(props.path)}/`) ? props.target.slice(props.path.length + 1) : undefined)
+    const targetParts = targetRest?.split('/')
+    const targetEntry = targetParts ? entries.find(entry => compare(entry.name) === compare(targetParts[0]!)) : undefined
+    const targetUnavailable = targetParts && !isLoading && !error
+        && (!targetEntry || targetEntry.type !== (targetParts.length > 1 ? 'directory' : 'file'))
 
     const handleDownload = async (filePath: string, fileName: string) => {
         if (!props.api || downloadingPath) return
@@ -227,6 +247,9 @@ function DirectoryNode(props: {
                                     expanded={props.expanded}
                                     onToggle={props.onToggle}
                                     sort={props.sort}
+                                    target={props.target}
+                                    revealKey={props.revealKey}
+                                    caseInsensitive={props.caseInsensitive}
                                 />
                             )
                         })}
@@ -243,6 +266,8 @@ function DirectoryNode(props: {
                                     indent={childIndent}
                                     isDownloading={isDownloading}
                                     downloadDisabled={Boolean(downloadingPath)}
+                                    selected={props.target !== undefined && compare(filePath) === compare(props.target)}
+                                    revealKey={props.revealKey}
                                     onOpen={() => props.onOpenFile(filePath)}
                                     onDownload={() => void handleDownload(filePath, entry.name)}
                                     onOpenMenu={props.onRequestFileMenu
@@ -251,6 +276,10 @@ function DirectoryNode(props: {
                                 />
                             )
                         })}
+
+                        {targetUnavailable ? <div role="alert" className="px-3 py-2 text-sm text-[var(--app-hint)]" style={{ paddingLeft: childIndent }}>
+                            {t('files.directories.targetUnavailable', { path: props.target! })}
+                        </div> : null}
 
                         {directories.length === 0 && files.length === 0 ? (
                             <div
@@ -297,24 +326,43 @@ export function DirectoryTree(props: {
     onOpenFile: (path: string) => void
     onRequestFileMenu?: FileMenuRequestHandler
     sort: DirectorySort
+    target?: string
+    revealKey?: string | number
+    caseInsensitive?: boolean
 }) {
-    const [expanded, setExpanded] = useState<Set<string>>(() => readExpanded(props.sessionId))
+    const target = normalizeFileManagerTarget(props.target)
+    const caseInsensitive = props.caseInsensitive === true
+    const revealTarget = useCallback((previous: Set<string>) => {
+        const next = new Set([...previous].map(path => caseInsensitive ? path.toLowerCase() : path))
+        if (target) {
+            const parts = target.split('/')
+            for (let index = 0; index < parts.length; index++) {
+                const path = parts.slice(0, index).join('/')
+                next.add(caseInsensitive ? path.toLowerCase() : path)
+            }
+        }
+        return next
+    }, [target, caseInsensitive])
+    const [expanded, setExpanded] = useState<Set<string>>(() => revealTarget(readExpanded(props.sessionId)))
+
+    useEffect(() => { setExpanded(revealTarget) }, [revealTarget, props.revealKey])
 
     useEffect(() => {
         writeExpanded(props.sessionId, expanded)
     }, [props.sessionId, expanded])
 
     const handleToggle = useCallback((path: string) => {
+        const key = caseInsensitive ? path.toLowerCase() : path
         setExpanded((prev) => {
             const next = new Set(prev)
-            if (next.has(path)) {
-                next.delete(path)
+            if (next.has(key)) {
+                next.delete(key)
             } else {
-                next.add(path)
+                next.add(key)
             }
             return next
         })
-    }, [])
+    }, [caseInsensitive])
 
     return (
         <div className="border-t border-[var(--app-divider)]">
@@ -329,6 +377,9 @@ export function DirectoryTree(props: {
                 expanded={expanded}
                 onToggle={handleToggle}
                 sort={props.sort}
+                target={target}
+                revealKey={props.revealKey}
+                caseInsensitive={caseInsensitive}
             />
         </div>
     )

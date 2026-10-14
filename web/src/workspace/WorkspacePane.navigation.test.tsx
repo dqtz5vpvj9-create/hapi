@@ -23,7 +23,7 @@ vi.mock('@/components/SessionPaneController', () => ({
     SessionPaneController: () => { const pane = usePane()!; mocks.navigate = pane.navigate; return <div>Chat {pane.sessionId}</div> },
 }))
 vi.mock('@/routes/sessions/files', () => ({
-    SessionFiles: (props: { search: { tab?: string; query?: string } }) => <div data-testid="list" data-tab={props.search.tab} data-query={props.search.query ?? ''} />,
+    SessionFiles: (props: { search: { tab?: string; query?: string; target?: string }; revealKey?: number }) => <div data-testid="list" data-tab={props.search.tab} data-query={props.search.query ?? ''} data-target={props.search.target ?? ''} data-reveal={props.revealKey} />,
 }))
 vi.mock('@/routes/sessions/file', () => ({
     SessionFile: (props: { sessionId: string; search: { staged?: boolean }; onBack: () => void }) => <div data-testid="diff" data-session={props.sessionId} data-staged={String(props.search.staged)}><button onClick={props.onBack}>File Back</button></div>,
@@ -41,13 +41,13 @@ function setup() {
 }
 async function navigate(
     to: '/sessions/$sessionId/file' | '/sessions/$sessionId/files',
-    search: { path?: string; staged?: boolean; tab?: 'changes' | 'directories'; query?: string },
+    search: { path?: string; staged?: boolean; tab?: 'changes' | 'directories'; query?: string; target?: string },
 ) {
     await act(async () => {
         if (to === '/sessions/$sessionId/file') {
             await mocks.navigate!({ to, params: { sessionId: 'A' }, search: { ...search, path: search.path ?? '' } })
         } else {
-            await mocks.navigate!({ to, params: { sessionId: 'A' }, search: { tab: search.tab, query: search.query } })
+            await mocks.navigate!({ to, params: { sessionId: 'A' }, search: { tab: search.tab, query: search.query, target: search.target } })
         }
     })
 }
@@ -55,6 +55,30 @@ async function navigate(
 beforeEach(() => { localStorage.clear(); mocks.routeNavigate.mockReset(); mocks.navigate = null })
 
 describe('WorkspacePane diff return origin', () => {
+    it('reveals and replaces unsupported file targets inside the originating pane', async () => {
+        setup()
+        await navigate('/sessions/$sessionId/files', { tab: 'directories', target: 'build/image.tar.gz' })
+        expect(screen.getByTestId('list')).toHaveAttribute('data-target', 'build/image.tar.gz')
+        expect(screen.getByTestId('list')).toHaveAttribute('data-tab', 'directories')
+        const reveal = screen.getByTestId('list').getAttribute('data-reveal')
+        await navigate('/sessions/$sessionId/files', { tab: 'directories', target: 'build/image.tar.gz' })
+        expect(screen.getByTestId('list').getAttribute('data-reveal')).not.toBe(reveal)
+        expect(screen.queryByText('Document surface')).toBeNull()
+        expect(mocks.routeNavigate).not.toHaveBeenCalled()
+        await navigate('/sessions/$sessionId/files', { tab: 'directories', target: 'other/image.custom' })
+        expect(screen.getByTestId('list')).toHaveAttribute('data-target', 'other/image.custom')
+        fireEvent.click(screen.getByRole('button', { name: 'Close project' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+        expect(screen.getByTestId('list')).toHaveAttribute('data-target', '')
+    })
+
+    it('retains the target across a diff and its Back action', async () => {
+        setup()
+        await navigate('/sessions/$sessionId/files', { tab: 'directories', target: 'build/image.tar.gz' })
+        await navigate('/sessions/$sessionId/file', { path: btoa('README.md'), staged: false })
+        fireEvent.click(screen.getByRole('button', { name: 'File Back' }))
+        expect(screen.getByTestId('list')).toHaveAttribute('data-target', 'build/image.tar.gz')
+    })
     it.each([true, false])('returns staged=%s diffs to their changes list', async staged => {
         setup()
         fireEvent.click(screen.getByRole('button', { name: 'Code changes' }))

@@ -762,6 +762,7 @@ export default {
   'files.changes.error.unstagedDiffUnavailableWithDetail': '未暂存 Diff 不可用：{error}',
   'files.changes.error.stagedDiffUnavailableWithDetail': '已暂存 Diff 不可用：{error}',
   'files.directories.empty': '空目录。',
+  'files.directories.targetUnavailable': '找不到或无法访问此文件：{path}',
   'files.directories.error.listFailed': '加载目录失败。',
   'files.directories.error.listFailedWithDetail': '加载目录失败：{error}',
   'files.directories.download': '下载文件',

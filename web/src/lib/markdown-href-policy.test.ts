@@ -81,6 +81,27 @@ describe('expandTildePath', () => {
 describe('classifyNoSchemeHref — fail-closed (#1452)', () => {
     const workspace = '/home/ada/coding/hapi'
 
+    it.each([
+        ['archives/image.tar.gz', 'archives/image.tar.gz'],
+        ['image.zip', 'image.zip'],
+        ['./image.unknown-format', 'image.unknown-format'],
+        ['bin/firmware', 'bin/firmware'],
+        ['/home/ada/coding/hapi/archives/image.tar.gz', 'archives/image.tar.gz'],
+        ['~/coding/hapi/image.custom', 'image.custom'],
+        ['archives/中文%20文件%231%2520.tar.gz', 'archives/中文 文件#1%20.tar.gz'],
+    ])('reveals unsupported explicit path %s without preview', (href, target) => {
+        expect(classifyNoSchemeHref(href, { workspacePath: workspace })).toEqual({ action: 'files', target })
+    })
+
+    it('reveals unknown Windows files in their own workspace', () => {
+        expect(classifyNoSchemeHref(String.raw`C:\Users\ada\project\build\image.tar.gz`, { workspacePath: String.raw`C:\Users\ada\project` }))
+            .toEqual({ action: 'files', target: 'build/image.tar.gz' })
+    })
+
+    it.each(['/home/ada/other/image.tar.gz', '../image.custom', 'archives/../../image.zip', 'javascript%3Aalert(1)'])('keeps unsafe unknown %s inert', href => {
+        expect(classifyNoSchemeHref(href, { workspacePath: workspace })).toEqual({ action: 'inert' })
+    })
+
     it('keeps allowlisted relative file targets as file preview', () => {
         expect(classifyNoSchemeHref('docs/foo.md')).toEqual({
             action: 'file',

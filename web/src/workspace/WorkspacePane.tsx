@@ -2,6 +2,7 @@ import { DocumentSurface } from '@/documents/DocumentSurface'
 import { DocumentRefSchema, type DocumentRef } from '@hapi/protocol/documents'
 import { decodeBase64 } from '@/lib/utils'
 import { resolveAbsoluteFilePath } from '@/lib/file-path'
+import { parseSessionFilesSearch } from '@/lib/session-files-navigation'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { SessionPaneController } from '@/components/SessionPaneController'
@@ -20,7 +21,7 @@ import { panes as flatten, type PaneNode, type WorkspaceStore } from './workspac
 import { useTranslation } from '@/lib/use-translation'
 import { syncTailMessages } from '@/lib/message-window-store'
 
-type FilesTool = { view: 'directories' | 'changes'; query?: string }
+type FilesTool = { view: 'directories' | 'changes'; query?: string; target?: string; revealKey?: number }
 type WorkspaceTool = FilesTool | { view: 'file'; path?: string; staged: boolean; returnTo: FilesTool }
 
 export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foreground?: boolean; store: WorkspaceStore; pickSession: () => void }) {
@@ -41,6 +42,7 @@ export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foregro
     const { session } = useSession(api, sessionId || null)
     const routeNavigate = useNavigate()
     const [tool, setTool] = useState<WorkspaceTool | null>(null)
+    const fileRevealKey = useRef(0)
     useSelectedSessionSeen(props.focused && props.foreground !== false && !tool && pane.resource.kind === 'chat'
         ? sessionId : null, session?.updatedAt)
     const closeTool = useCallback(() => setTool(null), [])
@@ -52,18 +54,18 @@ export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foregro
         const target = options.params as { sessionId?: string } | undefined
         if (options.to === '/sessions/$sessionId/terminal') { store.focus(pane.id); store.terminal(sessionId); return }
         if (options.to === '/sessions/$sessionId/files') {
-            const search = options.search as { tab?: 'directories' | 'changes'; query?: string } | undefined
-            setTool({ view: search?.tab ?? 'changes', query: search?.query }); return
+            const search = parseSessionFilesSearch((options.search ?? {}) as Record<string, unknown>)
+            setTool({ view: search.tab ?? 'changes', query: search.query, target: search.target, revealKey: ++fileRevealKey.current }); return
         }
         if (options.to === '/sessions/$sessionId/file') {
-            const search = options.search as { path?: string; staged?: boolean; document?: string; tab?: FilesTool['view']; query?: string } | undefined
+            const search = options.search as { path?: string; staged?: boolean; document?: string; tab?: FilesTool['view']; query?: string; target?: string } | undefined
             if (search?.staged !== undefined) {
                 const staged = search.staged
                 setTool(current => ({
                     view: 'file', path: search.path, staged,
                     // Keep the list that actually opened this diff, including its
                     // search. Ordinary project files still use DocumentSurface.
-                    returnTo: search.tab ? { view: search.tab, query: search.query }
+                    returnTo: search.tab ? { view: search.tab, ...parseSessionFilesSearch(search) }
                         : current?.view === 'file' ? current.returnTo
                             : current ?? { view: 'changes', query: search.query },
                 }))
@@ -127,7 +129,7 @@ export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foregro
                     onSelect={view => { if (view === 'terminal') { store.focus(pane.id); store.terminal(sessionId) } else setTool({ view }) }} onClose={closeTool}
                     chat={<SessionPaneController sessionId={sessionId} onBack={() => store.closePane(pane.id)} />}
                     panel={tool?.view === 'file' ? <SessionFile sessionId={sessionId} search={tool} onBack={() => setTool(tool.returnTo)} />
-                        : <SessionFiles sessionId={sessionId} search={{ tab: tool?.view, query: tool?.query }} onBack={closeTool} />} />}
+                        : <SessionFiles sessionId={sessionId} search={{ tab: tool?.view, query: tool?.query, target: tool?.target }} revealKey={tool?.revealKey} onBack={closeTool} />} />}
         </div>
     </PaneContext.Provider>
 }

@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router'
 import { PRESERVE_SESSION_SIDEBAR_SCROLL } from '@/lib/sessionNavigation'
+import { normalizeFileManagerTarget } from '@/lib/session-files-navigation'
 
 export function getSettingsBackTarget(pathname: string): string | null {
     if (pathname === '/settings') return '/sessions'
@@ -12,15 +13,18 @@ export function getSettingsBackTarget(pathname: string): string | null {
 export function getSessionFilesBackSearch(search: unknown): {
     tab?: 'directories'
     query?: string
+    target?: string
 } {
     if (!search || typeof search !== 'object') return {}
 
-    const currentSearch = search as { tab?: unknown; query?: unknown }
+    const currentSearch = search as { tab?: unknown; query?: unknown; target?: unknown }
+    const target = normalizeFileManagerTarget(currentSearch.target)
     return {
         ...(currentSearch.tab === 'directories' ? { tab: 'directories' as const } : {}),
         ...(typeof currentSearch.query === 'string' && currentSearch.query.length > 0
             ? { query: currentSearch.query }
             : {}),
+        ...(target ? { target } : {}),
     }
 }
 

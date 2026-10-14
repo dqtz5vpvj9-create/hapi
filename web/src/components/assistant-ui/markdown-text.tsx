@@ -20,6 +20,8 @@ import remarkDisableIndentedCode from '@/lib/remark-disable-indented-code'
 import remarkRepairTables from '@/lib/remark-repair-tables'
 import remarkLatexBracketMath from '@/lib/remark-latex-bracket-math'
 import { useNavigate } from '@tanstack/react-router'
+import { usePaneNavigate } from '@/workspace/PaneContext'
+import { randomId } from '@/lib/randomId'
 import { PRESERVE_SESSION_SIDEBAR_SCROLL } from '@/lib/sessionNavigation'
 import remarkStripCjkAutolink from '@/lib/remark-strip-cjk-autolink'
 import remarkNonHttpsAutolink from '@/lib/remark-non-https-autolink'
@@ -33,7 +35,7 @@ import { useTranslation } from '@/lib/use-translation'
 import { useOptionalHappyChatContext } from '@/components/AssistantChat/context'
 import { decodeFilePathCandidateHref, decodeFilePathHref, remarkFilePathLinks } from '@/lib/remark-file-path-links'
 import { decodeCodexFileCitation, remarkCodexFileCitations } from '@/lib/remark-codex-file-citations'
-import { classifyNoSchemeHref } from '@/lib/markdown-href-policy'
+import { classifyNoSchemeHref, hasKnownFileExtension } from '@/lib/markdown-href-policy'
 import { remarkSessionPathLinks } from '@/lib/remark-session-path-links'
 import { buildSessionReferencePath, parseSessionPathHref } from '@/lib/sessionReference'
 import { UriConfirmDialog } from '@/components/UriConfirmDialog'
@@ -654,6 +656,23 @@ function InertMarkdownHref(props: { href: string; children?: ReactNode; classNam
     )
 }
 
+function FileManagerAnchor(props: ComponentPropsWithoutRef<'a'> & { fileTarget: string; sessionId: string }) {
+    const { fileTarget, sessionId, onClick, ...anchorProps } = props
+    const navigate = usePaneNavigate()
+    const search = { tab: 'directories' as const, target: fileTarget }
+    return <a {...anchorProps}
+        href={`${buildSessionReferencePath(sessionId)}/files?${new URLSearchParams(search)}`}
+        className={cn('aui-md-a font-medium text-[var(--app-link)] underline decoration-[color:var(--app-link-muted)] underline-offset-3', anchorProps.className)}
+        onClick={event => {
+            onClick?.(event)
+            if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+            event.preventDefault()
+            // A repeated reveal must also run after the user collapses the row.
+            void navigate({ to: '/sessions/$sessionId/files', params: { sessionId }, search,
+                state: previous => ({ ...previous, fileManagerReveal: randomId() }), ...PRESERVE_SESSION_SIDEBAR_SCROLL })
+        }} />
+}
+
 function A(props: ComponentPropsWithoutRef<'a'>) {
     const chat = useOptionalHappyChatContext()
     // useContext must be called unconditionally before any early return so that
@@ -680,6 +699,7 @@ function A(props: ComponentPropsWithoutRef<'a'>) {
         const decision = path ? classifyNoSchemeHref(path.replace(/[%?#]/g, encodeURIComponent), {
             workspacePath: chat?.metadata?.path ?? null,
         }) : null
+        if (chat && decision?.action === 'files') return <FileManagerAnchor {...props} fileTarget={decision.target} sessionId={chat.sessionId} />
         if (!chat || decision?.action !== 'file') return <>{props.children}</>
         return <FilePathAnchor {...props} filePath={decision.path} sessionId={chat.sessionId} />
     }
@@ -687,6 +707,12 @@ function A(props: ComponentPropsWithoutRef<'a'>) {
     if (filePath) {
         if (!chat) {
             return <>{props.children}</>
+        }
+        if (!hasKnownFileExtension(filePath)) {
+            const decision = classifyNoSchemeHref(filePath.replace(/[%?#]/g, encodeURIComponent), { workspacePath: chat.metadata?.path })
+            return decision.action === 'files'
+                ? <FileManagerAnchor {...props} fileTarget={decision.target} sessionId={chat.sessionId} />
+                : <InertMarkdownHref href={props.href ?? ''}>{props.children}</InertMarkdownHref>
         }
         return <FilePathAnchor {...props} filePath={filePath} sessionId={chat.sessionId} />
     }
@@ -726,7 +752,8 @@ function A(props: ComponentPropsWithoutRef<'a'>) {
     })()
 
     if (windowsPathFromHref || (href && !hasScheme(href))) {
-        const decision = classifyNoSchemeHref(windowsPathFromHref ?? href!, {
+        const localHref = candidatePath ? candidatePath.replace(/[%?#]/g, encodeURIComponent) : windowsPathFromHref ?? href!
+        const decision = classifyNoSchemeHref(localHref, {
             workspacePath: chat?.metadata?.path ?? null,
         })
         if (decision.action === 'file') {
@@ -734,6 +761,9 @@ function A(props: ComponentPropsWithoutRef<'a'>) {
                 return <InertMarkdownHref href={href ?? windowsPathFromHref ?? ''} className={props.className}>{props.children}</InertMarkdownHref>
             }
             return <FilePathAnchor {...props} filePath={decision.path} sessionId={chat.sessionId} />
+        }
+        if (chat && decision.action === 'files') {
+            return <FileManagerAnchor {...props} fileTarget={decision.target} sessionId={chat.sessionId} />
         }
         if (decision.action === 'inert') {
             return <InertMarkdownHref href={href ?? windowsPathFromHref ?? ''} className={props.className}>{props.children}</InertMarkdownHref>

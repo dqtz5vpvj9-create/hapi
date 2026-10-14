@@ -20,7 +20,8 @@ const mocks = vi.hoisted(() => ({
     sessionHeaderProps: null as null | {
         onSessionReopened?: (newSessionId: string) => void | Promise<void>
     },
-    search: {} as { tab?: 'changes' | 'directories'; query?: string },
+    search: {} as { tab?: 'changes' | 'directories'; query?: string; target?: string },
+    directoryTreeProps: null as null | { target?: string; onOpenFile: (path: string) => void },
     gitStatus: {
         status: null as null | Record<string, unknown>,
         error: null as null | string,
@@ -33,6 +34,7 @@ vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => mocks.navigate,
     useParams: () => ({ sessionId: mocks.sessionId }),
     useSearch: () => mocks.search,
+    useLocation: ({ select }: { select: (location: { state: { __TSR_key: string } }) => unknown }) => select({ state: { __TSR_key: 'test-entry' } }),
 }))
 
 vi.mock('@/lib/composer-draft-transfer', () => ({
@@ -85,7 +87,7 @@ vi.mock('@/components/SessionHeader', () => ({
 }))
 
 vi.mock('@/components/SessionFiles/DirectoryTree', () => ({
-    DirectoryTree: () => null,
+    DirectoryTree: (props: { target?: string; onOpenFile: (path: string) => void }) => { mocks.directoryTreeProps = props; return null },
 }))
 
 function renderFilesPage() {
@@ -116,6 +118,24 @@ describe('FilesPage search navigation', () => {
         mocks.search = { tab: 'directories', query: '感' }
         window.localStorage.clear()
         window.sessionStorage.clear()
+    })
+
+    it('passes a file-manager target to the tree and retains it when returning from a preview', () => {
+        mocks.search = { tab: 'directories', target: 'build/image.tar.gz' }
+        renderFilesPage()
+        expect(mocks.directoryTreeProps?.target).toBe('build/image.tar.gz')
+        expect(mocks.navigate).not.toHaveBeenCalled()
+        act(() => mocks.directoryTreeProps?.onOpenFile('README.md'))
+        expect(mocks.navigate).toHaveBeenCalledWith(expect.objectContaining({ to: '/sessions/$sessionId/file',
+            search: { path: encodeBase64('README.md'), tab: 'directories', target: 'build/image.tar.gz' } }))
+    })
+
+    it('does not restore an old scroll position over a target reveal', () => {
+        mocks.search = { tab: 'directories', target: 'build/image.tar.gz' }
+        window.sessionStorage.setItem('hapi-dir-scroll-session-1:directories', '987')
+        renderFilesPage()
+        const region = document.querySelector('[data-hapi-session-files-scroll="true"]') as HTMLElement
+        expect(region.scrollTop).toBe(0)
     })
 
     it('restores the route query and carries it through file navigation', () => {

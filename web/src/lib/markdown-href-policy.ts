@@ -3,14 +3,17 @@
  *
  * Product rule (#1452): never paint a clickable control that SPA-404s.
  * Prefer session file preview when the target looks like a workspace file;
- * known in-app routes stay navigable; everything else path-like is inert text.
+ * known in-app routes stay navigable; unsupported explicit files reveal in the
+ * session file manager, and targets outside the session remain inert text.
  */
 
 import { COMMON_FILE_EXTENSIONS } from '@/lib/remark-file-path-links'
+import { fileManagerTargetFromPath } from '@/lib/session-files-navigation'
 
 export type MarkdownHrefDecision =
     | { action: 'navigate' }
     | { action: 'file'; path: string }
+    | { action: 'files'; target: string }
     | { action: 'inert' }
 
 const STATIC_SPA_PATHS = new Set([
@@ -211,14 +214,21 @@ export function classifyNoSchemeHref(
     }
 
     if (path.startsWith('~/') || path === '~') {
-        if (!hasKnownFileExtension(path)) return { action: 'inert' }
         const expanded = expandTildePath(path, workspacePath)
         if (!expanded) return { action: 'inert' }
         if (!workspacePath || !isWithinWorkspace(expanded, workspacePath)) {
             return { action: 'inert' }
         }
-        return { action: 'file', path: expanded }
+        if (hasKnownFileExtension(path)) return { action: 'file', path: expanded }
+        const target = fileManagerTargetFromPath(expanded, workspacePath)
+        return target ? { action: 'files', target } : { action: 'inert' }
     }
+
+    // This classifier sees explicit links (and file citations). Bare prose and
+    // inline-code autolinks still use remark's conservative extension allowlist.
+    // Unknown file types open their directory without fetching preview bytes.
+    const target = fileManagerTargetFromPath(path, workspacePath)
+    if (target) return { action: 'files', target }
 
     if (looksPathLike(path)) return { action: 'inert' }
 

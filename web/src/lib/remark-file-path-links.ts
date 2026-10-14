@@ -45,27 +45,17 @@ export function decodeFilePathHref(href: string): string | null {
 }
 
 export function decodeFilePathCandidateHref(href: string): string | null {
-    // Decode scheme bypass spellings (`HAPI-FILE-CANDIDATE:`, percent-encoded)
-    // before extracting the payload. Empty payload → null (caller fails closed).
-    let value = href.trimStart()
-    for (let i = 0; i < 2; i++) {
-        try {
-            const next = decodeURIComponent(value)
-            if (next === value) break
-            value = next
-        } catch {
-            break
-        }
-    }
-    const match = /^hapi-file-candidate:(.*)$/i.exec(value)
+    // Only decode the path payload once. URI-scheme bypass spellings remain
+    // fail-closed in the renderer; decoding the entire href repeatedly would
+    // corrupt literal percent signs, hashes and question marks in filenames.
+    const match = /^hapi-file-candidate:(.*)$/i.exec(href.trimStart())
     if (!match) return null
     const payload = match[1]
     if (!payload) return null
     try {
-        // Payload may already be decoded by the loop above; retry is a no-op.
         return decodeURIComponent(payload)
     } catch {
-        return payload
+        return null
     }
 }
 
@@ -233,8 +223,9 @@ function rewriteFileLinkNode(node: MarkdownNode): void {
     // containment — leave POSIX for <A>; encode Windows as candidate so
     // backslashes survive mdast→hast URI normalization.
     if (isWindowsAbsolutePath(target)) {
-        if (!hasKnownFileExtension(target)) return
-        node.url = createFileCandidateHref(target)
+        // Explicit Windows links may name unsupported files. Preserve their
+        // separators so the renderer can reveal them in the file manager.
+        try { node.url = createFileCandidateHref(decodeURIComponent(target)) } catch { /* Renderer rejects malformed paths. */ }
         return
     }
     if (target.startsWith('/') && !target.startsWith('//')) return

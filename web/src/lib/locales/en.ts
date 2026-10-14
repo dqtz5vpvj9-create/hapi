@@ -764,6 +764,7 @@ export default {
   'files.changes.error.unstagedDiffUnavailableWithDetail': 'Unstaged diff unavailable: {error}',
   'files.changes.error.stagedDiffUnavailableWithDetail': 'Staged diff unavailable: {error}',
   'files.directories.empty': 'Empty directory.',
+  'files.directories.targetUnavailable': 'Cannot find or access this file: {path}',
   'files.directories.error.listFailed': 'Failed to list directory.',
   'files.directories.error.listFailedWithDetail': 'Failed to list directory: {error}',
   'files.directories.download': 'Download file',

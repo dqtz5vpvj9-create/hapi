@@ -9,6 +9,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Navigate, Outlet, createRootRoute, createRoute, createRouter, lazyRouteComponent, useLocation, useMatchRoute, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { getScrollRestorationKey } from '@/lib/scrollRestorationKey'
 import { getSessionListSelectionNavigation, PRESERVE_SESSION_SIDEBAR_SCROLL } from '@/lib/sessionNavigation'
+import { normalizeFileManagerTarget, parseSessionFilesSearch } from '@/lib/session-files-navigation'
 import { App } from '@/App'
 import { SessionWorkspace, type WorkspaceView } from '@/components/SessionWorkspace'
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
@@ -609,22 +610,7 @@ const sessionDetailRoute = createRoute({
 const sessionFilesRoute = createRoute({
     getParentRoute: () => sessionDetailRoute,
     path: 'files',
-    validateSearch: (search: Record<string, unknown>): { tab?: 'changes' | 'directories'; query?: string } => {
-        const tabValue = typeof search.tab === 'string' ? search.tab : undefined
-        const tab = tabValue === 'directories'
-            ? 'directories'
-            : tabValue === 'changes'
-                ? 'changes'
-                : undefined
-        const query = typeof search.query === 'string' && search.query.length > 0
-            ? search.query
-            : undefined
-
-        return {
-            ...(tab ? { tab } : {}),
-            ...(query ? { query } : {}),
-        }
-    },
+    validateSearch: parseSessionFilesSearch,
     component: FilesPage,
 })
 
@@ -640,6 +626,7 @@ type SessionFileSearch = {
     staged?: boolean
     tab?: 'changes' | 'directories'
     query?: string
+    target?: string
     origin?: 'chat'
 }
 
@@ -676,6 +663,8 @@ const sessionFileRoute = createRoute({
         if (query !== undefined) {
             result.query = query
         }
+        const target = normalizeFileManagerTarget(search.target)
+        if (target) result.target = target
         if (origin !== undefined) {
             result.origin = origin
         }

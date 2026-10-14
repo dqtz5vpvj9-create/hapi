@@ -40,6 +40,10 @@ describe('getSettingsBackTarget', () => {
 })
 
 describe('getSessionFilesBackSearch', () => {
+    it('keeps a safe file-manager target and drops an out-of-tree target', () => {
+        expect(getSessionFilesBackSearch({ tab: 'directories', target: 'build/image.tar.gz' })).toEqual({ tab: 'directories', target: 'build/image.tar.gz' })
+        expect(getSessionFilesBackSearch({ tab: 'directories', target: '../secret' })).toEqual({ tab: 'directories' })
+    })
     it('preserves the directory tab and file search query', () => {
         expect(getSessionFilesBackSearch({
             path: 'encoded-path',
