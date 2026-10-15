@@ -25,7 +25,8 @@ import type { ImplementCodexPlanResult } from '@hapi/protocol/apiTypes'
 import type { AgentFlavor, CodexCollaborationMode, CopilotAgentMode, DecryptedMessage, PermissionMode, Session, SyncEvent } from '@hapi/protocol/types'
 import { hasConversationMessageContent, unwrapRoleWrappedRecordEnvelope } from '@hapi/protocol/messages'
 import type { Server } from 'socket.io'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { SpawnSessionRequestSchema, type SpawnSessionRequest, type SpawnResponse } from '@hapi/protocol/apiTypes'
 import type { Store, CancelQueuedMessageResult } from '../store'
 import type { HapiSessionExportResult } from '@hapi/protocol/sessionExport'
 import type { RpcRegistry } from '../socket/rpcRegistry'
@@ -2340,6 +2341,59 @@ export class SyncEngine {
         this.sessionCache.applySessionConfig(sessionId, applied)
     }
 
+    private readonly spawnRequestFlights = new Map<string, Promise<SpawnResponse>>()
+
+    async spawnSessionIdempotent(machineId: string, namespace: string, input: SpawnSessionRequest): Promise<SpawnResponse> {
+        const request = SpawnSessionRequestSchema.parse(input)
+        if (!request.requestId) throw new Error('Spawn request identity is required')
+        // Schema parsing fixes property order and strips unknown keys before hashing.
+        const fingerprint = createHash('sha256').update(JSON.stringify({ machineId, ...request })).digest('hex')
+        const key = JSON.stringify([namespace, request.requestId])
+        const sessionId = randomUUID()
+        const admitted = this.store.spawnRequests.claim(namespace, request.requestId, fingerprint, sessionId)
+        if (!admitted) {
+            const receipt = this.store.spawnRequests.get(namespace, request.requestId)!
+            if (receipt.fingerprint !== fingerprint) return {
+                type: 'error', code: 'spawn_request_conflict',
+                message: 'This request ID already belongs to different session settings.'
+            }
+            const flight = this.spawnRequestFlights.get(key)
+            if (flight) return await flight
+            if (receipt.response && (receipt.response.type === 'success' || receipt.response.code !== 'spawn_outcome_unknown')) {
+                return receipt.response
+            }
+            // A late CLI registration can settle an ambiguous RPC, including after
+            // a hub restart. Never redispatch an interrupted durable admission.
+            const session = this.store.sessions.getSession(receipt.sessionId)
+            if (session && session.namespace === namespace && !isMachineSpawnPreallocatedStub(session)) {
+                return { type: 'success', sessionId: receipt.sessionId }
+            }
+            return { type: 'error', code: 'spawn_outcome_unknown', sessionId: receipt.sessionId,
+                message: 'The launch outcome is not confirmed. Check this session or retry this same request; it will not launch another agent.' }
+        }
+        const flight = (async (): Promise<SpawnResponse> => {
+            let response: SpawnResponse
+            try {
+                const result = await this.spawnSession(machineId, request.directory, request.agent,
+                    request.model, request.modelReasoningEffort, request.yolo, request.sessionType,
+                    request.worktreeName, undefined, request.effort, request.permissionMode,
+                    request.serviceTier, undefined, request.collaborationMode, request.copilotAgentMode,
+                    request.startingMode, namespace, sessionId)
+                response = result.type === 'error' && result.childStarted !== false
+                    ? { ...result, code: 'spawn_outcome_unknown', sessionId }
+                    : result
+            } catch (error) {
+                response = { type: 'error', code: 'spawn_outcome_unknown', sessionId,
+                    message: error instanceof Error ? error.message : 'Launch outcome is not confirmed' }
+            }
+            this.store.spawnRequests.complete(namespace, request.requestId!, response)
+            return response
+        })()
+        this.spawnRequestFlights.set(key, flight)
+        try { return await flight }
+        finally { this.spawnRequestFlights.delete(key) }
+    }
+
     async spawnSession(
         machineId: string,
         directory: string,
@@ -2359,7 +2413,8 @@ export class SyncEngine {
         startingMode?: 'remote' | 'pty',
         // Required for fresh machine spawns so the runner stamps the HAPI id on
         // argv before the first webhook (#1911 Major: unreapable window).
-        namespace?: string
+        namespace?: string,
+        reservedFreshSessionId?: string
     ): ReturnType<RpcGateway['spawnSession']> {
         // Fresh machine spawns historically omitted existingSessionId, so
         // buildCliArgs could not stamp --hapi-session-id / --existing-session-id.
@@ -2371,7 +2426,7 @@ export class SyncEngine {
         if (!allocatedSessionId && namespace) {
             const machine = this.getMachineByNamespace(machineId, namespace)
                 ?? this.getMachine(machineId)
-            allocatedSessionId = randomUUID()
+            allocatedSessionId = reservedFreshSessionId ?? randomUUID()
             this.sessionCache.getOrCreateSession(
                 `machine-spawn:${allocatedSessionId}`,
                 {

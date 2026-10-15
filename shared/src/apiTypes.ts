@@ -215,7 +215,9 @@ export type SpawnResponse =
     | {
         type: 'error'
         message: string
-        code?: 'agent_unavailable' | 'runner_upgrade_required' | 'outside_workspace_roots'
+        code?: 'agent_unavailable' | 'runner_upgrade_required' | 'outside_workspace_roots' | 'spawn_outcome_unknown' | 'spawn_request_conflict'
+        sessionId?: string
+        childStarted?: boolean
         agent?: z.infer<typeof AgentFlavorSchema>
     }
 
@@ -767,6 +769,8 @@ export type QueuedStateResponse = {
 }
 
 export const SpawnSessionRequestSchema = z.object({
+    // randomId also supports older/non-secure browsers without Web Crypto.
+    requestId: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/).optional(),
     directory: z.string().min(1),
     agent: AgentFlavorSchema.optional(),
     model: z.string().optional(),

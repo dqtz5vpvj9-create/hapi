@@ -657,6 +657,7 @@ export type ComposerButtonsProps = {
     controlsDisabled: boolean
     showSettingsButton: boolean
     permissionControl?: ReactNode
+    modelControl?: ReactNode
     compactControls?: ReactNode
     statusControl?: ReactNode
     onReferenceSession?: () => void
@@ -814,7 +815,7 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
                     </Popover.Portal>
                 </Popover.Root>}
                 {props.workspace ? <span className="composer-goal-slot">{props.compactControls}</span> : props.compactControls}
-                {props.modelValueLabel ? <button ref={props.modelValueButtonRef} type="button"
+                {!props.modelControl && props.modelValueLabel ? <button ref={props.modelValueButtonRef} type="button"
                     className="app-composer-model composer-refinement-model"
                     aria-label={props.modelValueLabel} title={props.modelValueLabel} aria-expanded={props.modelValueOpen}
                     disabled={props.modelValueDisabled} onClick={props.onModelValueToggle}>
@@ -822,7 +823,7 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
                         <span className="composer-refinement-model-name">{modelSeparator < 0 ? props.modelValueLabel : props.modelValueLabel!.slice(0, modelSeparator)}</span>
                         {modelSeparator >= 0 ? <span className="composer-refinement-model-effort">{props.modelValueLabel!.slice(modelSeparator)}</span> : null}
                     </span><ChevronIcon />
-                </button> : props.showSettingsButton ? <button ref={props.settingsButtonRef} type="button"
+                </button> : !props.modelControl && props.showSettingsButton ? <button ref={props.settingsButtonRef} type="button"
                     className="composer-refinement-icon" aria-label={t('composer.settings')}
                     disabled={props.settingsDisabled ?? props.controlsDisabled} onClick={props.onSettingsToggle}><SettingsIcon /></button> : null}
                 {props.workspace ? <><span className="workspace-cwd" title={props.workingDirectory}>{props.workingDirectory}</span>{props.statusControl}</> : null}
@@ -831,6 +832,7 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
                     aria-label={t('composer.switchRemote')} disabled={props.switchDisabled} onClick={props.onSwitch}><SwitchToRemoteIcon /></button> : null}
             </div>
             <div className="composer-refinement-send-controls">
+                {props.modelControl}
                 {props.workspace ? <ComposerExpandButton expanded={props.expanded} onToggle={props.onExpandedToggle} /> : null}
                 {props.onSchedule || props.onScratchlistToggle ? <Popover.Root open={sendOptionsOpen} onOpenChange={open => { setSendOptionsOpen(open); if (open) setShowSchedulePicker(false) }}>
                     <Popover.Trigger asChild>
@@ -1130,6 +1132,7 @@ export function ComposerButtons(props: ComposerButtonsProps) {
                             />
                         )}
 
+            {props.modelControl}
             <DictationButton
                 enabled={props.dictationEnabled ?? false}
                 canSend={props.canSend}

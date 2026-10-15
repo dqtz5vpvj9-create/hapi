@@ -1,4 +1,16 @@
 export default {
+    'composer.modelPicker.incompatibleFast': 'This model cannot use your selected Fast tier. Turn Fast off before switching or sending.',
+    'composer.modelPicker.waitForCapabilities': 'Wait for model capabilities to load before changing this Fast selection.',
+    'newTask.clearFast': 'Turn off unavailable Fast mode',
+    'newTask.heading': 'What would you like to do?',
+    'newTask.attachFiles': 'Attach files',
+    'newTask.moreSettings': 'More settings',
+    'newTask.invalidSelection': 'Choose a supported model, reasoning effort, or Fast setting before sending. Your selection has been kept.',
+    'newTask.fileTooLarge': 'Files must be smaller than 50 MB.',
+    'newTask.retryDelivery': 'Retry sending task',
+    'newTask.pendingDelivery': 'This task is pending. Retry checks the same launch and message; your draft and files are kept.',
+    'newTask.missingFiles': 'Some draft attachments could not be restored. The task has not been sent.',
+
     'codex.capacity.waiting': 'HAPI will continue this conversation in {seconds}s (attempt {attempt}/{max}).',
     'codex.capacity.checking': 'HAPI is checking whether this conversation can continue.',
     'codex.capacity.continuing': 'HAPI is continuing this conversation without resending your message.',
@@ -1082,6 +1094,9 @@ export default {
   'language.chinese': '简体中文',
 
   // Settings page
+  'composer.modelPicker.close': 'Close model settings',
+  'composer.modelPicker.chooseEffort': 'Choose a supported reasoning effort to continue.',
+  'composer.modelPicker.incompatible': 'This model does not support the selected effort. Choose Default or a supported effort before switching models.',
   'common.back': 'Back',
   'settings.title': 'Settings',
   'settings.hub.description': 'Choose a category to adjust HAPI to your workflow.',

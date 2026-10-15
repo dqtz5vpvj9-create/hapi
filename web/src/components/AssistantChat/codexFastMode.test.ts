@@ -78,3 +78,18 @@ describe('getDisplayedCodexServiceTier', () => {
         expect(getDisplayedCodexServiceTier('fast')).toBe('fast')
     })
 })
+
+describe('explicit Fast model changes', () => {
+    it('requires explicit off for unsupported targets without clearing inherited defaults', async () => {
+        const { getCodexFastModelChangeBlocker } = await import('./codexFastMode')
+        const models = [
+            { id: 'fast-model', isDefault: true, serviceTiers: ['standard', 'fast'], defaultServiceTier: 'fast' },
+            { id: 'standard-model', isDefault: false, serviceTiers: ['standard'] },
+        ]
+        expect(getCodexFastModelChangeBlocker('fast', 'standard-model', models)).toBe('unsupported')
+        expect(getCodexFastModelChangeBlocker('priority', 'unknown', models)).toBe('unknown')
+        expect(getCodexFastModelChangeBlocker('fast', 'fast-model', models)).toBeNull()
+        expect(getCodexFastModelChangeBlocker(null, 'standard-model', models)).toBeNull()
+        expect(getCodexFastModelChangeBlocker('standard', 'unknown', models)).toBeNull()
+    })
+})

@@ -1,4 +1,16 @@
 export default {
+    'composer.modelPicker.incompatibleFast': '此模型不支持你选择的 Fast 模式，请先关闭 Fast 再切换或发送。',
+    'composer.modelPicker.waitForCapabilities': '模型能力仍在加载，请稍后再更改当前 Fast 设置。',
+    'newTask.clearFast': '关闭当前不可用的 Fast 模式',
+    'newTask.heading': '我们要做什么？',
+    'newTask.attachFiles': '添加附件',
+    'newTask.moreSettings': '更多设置',
+    'newTask.invalidSelection': '请选择受支持的模型、推理强度或 Fast 设置后发送。已保留你的选择。',
+    'newTask.fileTooLarge': '文件大小不能超过 50 MB。',
+    'newTask.retryDelivery': '重试发送任务',
+    'newTask.pendingDelivery': '任务尚未确认完成。重试将沿用同一次启动和消息，草稿与附件已保留。',
+    'newTask.missingFiles': '部分草稿附件无法恢复，任务尚未发送。',
+
     'codex.capacity.waiting': 'HAPI 将在 {seconds} 秒后继续此会话（第 {attempt}/{max} 次）。',
     'codex.capacity.checking': 'HAPI 正在确认此会话是否可以继续。',
     'codex.capacity.continuing': 'HAPI 正在继续此会话，不会重发你的消息。',
@@ -1080,6 +1092,9 @@ export default {
   'language.chinese': '简体中文',
 
   // Settings page
+  'composer.modelPicker.close': '关闭模型设置',
+  'composer.modelPicker.chooseEffort': '请选择支持的推理强度后继续。',
+  'composer.modelPicker.incompatible': '此模型不支持当前推理强度。请先选择默认或支持的强度，再切换模型。',
   'common.back': '返回',
   'settings.title': '设置',
   'settings.hub.description': '选择一个分类，按你的工作方式调整 HAPI。',

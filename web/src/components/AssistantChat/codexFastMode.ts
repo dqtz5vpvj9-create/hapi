@@ -67,3 +67,15 @@ export function getEffectiveCodexServiceTier(
 export function getDisplayedCodexServiceTier(serviceTier?: string | null): 'standard' | 'fast' {
     return isFastServiceTier(serviceTier) ? 'fast' : 'standard'
 }
+
+/** Keep explicit Fast overrides until the user clears them; account defaults may change with the model. */
+export function getCodexFastModelChangeBlocker(
+    explicitTier: string | null | undefined,
+    targetModel: string | null | undefined,
+    models: ReadonlyArray<CodexModelCatalogEntry>
+): 'unknown' | 'unsupported' | null {
+    if (!isFastServiceTier(explicitTier)) return null
+    const entry = findActiveModel(targetModel, models)
+    if (!entry) return 'unknown'
+    return entry.serviceTiers?.some(isFastTierId) ? null : 'unsupported'
+}

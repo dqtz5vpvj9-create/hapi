@@ -3,7 +3,8 @@ import { WorkspaceIcon } from '@/workspace/WorkspaceIcon'
 import { getRecentSessionWarmup } from '@/lib/recent-session-warmup'
 import { SessionPaneController } from '@/components/SessionPaneController'
 import { SessionListHeaderActions } from '@/components/SessionListHeaderActions'
-import { loadNewTaskDraft, saveNewTaskDraft, stageNewTaskDraft } from '@/lib/new-task-draft'
+import { getDraft, saveDraft } from '@/lib/composer-drafts'
+import { loadNewTaskDraft, saveNewTaskDraft } from '@/lib/new-task-draft'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Navigate, Outlet, createRootRoute, createRoute, createRouter, lazyRouteComponent, useLocation, useMatchRoute, useNavigate, useParams, useSearch } from '@tanstack/react-router'
@@ -57,7 +58,8 @@ const SettingsAboutPage = lazyRouteComponent(() => import('@/routes/settings/abo
 const SettingsStoragePage = lazyRouteComponent(() => import('@/routes/settings/storage'))
 const SettingsUsagePage = lazyRouteComponent(() => import('@/routes/settings/usage'))
 const SharePage = lazyRouteComponent(() => import('@/routes/share'))
-import { setSharePendingTransfer } from '@/lib/sharePendingState'
+import { getDraftAttachments, moveDraftAttachments, getRestoredUploadMetadata } from '@/lib/composer-attachment-drafts'
+import { randomId } from '@/lib/randomId'
 import { deleteShareTransfer, parseShareSearch } from '@/lib/shareTransfer'
 
 function BackIcon(props: { className?: string }) {
@@ -433,7 +435,9 @@ function NewSessionPage() {
     const { t } = useTranslation()
     const [initialTask, setInitialTask] = useState(() => loadNewTaskDraft(baseUrl))
     const updateInitialTask = (text: string) => { setInitialTask(text); saveNewTaskDraft(baseUrl, text) }
-    const handleCreated = (sessionId: string) => stageNewTaskDraft(baseUrl, sessionId, initialTask)
+    const [handoffError, setHandoffError] = useState<string | null>(null)
+    const taskDeliveredRef = useRef(false)
+    const handleCreated = (_sessionId: string, consumedShareTransferId?: string) => { taskDeliveredRef.current = true; updateInitialTask(''); if (consumedShareTransferId) void deleteShareTransfer(consumedShareTransferId) }
     const { directory: initialDirectory, machineId: initialMachineId, shareTransferId } = newSessionRoute.useSearch()
 
     const handleCancel = useCallback(() => {
@@ -446,9 +450,24 @@ function NewSessionPage() {
         })
     }, [navigate, shareTransferId])
 
-    const handleSuccess = useCallback((sessionId: string) => {
-        if (shareTransferId) {
-            setSharePendingTransfer(shareTransferId, sessionId)
+    const handleSuccess = useCallback(async (sessionId: string) => {
+        if (!taskDeliveredRef.current) {
+            try {
+                const draftKey = `hapi:new-task:${baseUrl || window.location.origin}`
+                const [attachments, existing] = await Promise.all([getDraftAttachments(draftKey, { throwOnError: true }), getDraftAttachments(sessionId, { throwOnError: true })])
+                const combined = new Map([...existing, ...attachments].map(file => {
+                    const id = getRestoredUploadMetadata(file)?.id ?? randomId()
+                    return [id, { id, file }]
+                }))
+                await moveDraftAttachments(draftKey, sessionId, () => [...combined.values()])
+                const text = [getDraft(sessionId).trim(), initialTask.trim()].filter(Boolean).join('\n\n')
+                if (text) saveDraft(sessionId, text)
+                saveNewTaskDraft(baseUrl, '')
+                if (shareTransferId) void deleteShareTransfer(shareTransferId)
+            } catch (error) {
+                setHandoffError(error instanceof Error ? error.message : t('dialog.error.default'))
+                return
+            }
         }
         void queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
         // Replace current page with /sessions to clear spawn flow from history
@@ -465,7 +484,7 @@ function NewSessionPage() {
                 ...PRESERVE_SESSION_SIDEBAR_SCROLL,
             })
         })
-    }, [navigate, queryClient, shareTransferId])
+    }, [navigate, queryClient, shareTransferId, baseUrl, initialTask, t])
 
     const handleChooseFolder = useCallback((args: { machineId: string | null; directory: string }) => {
         // Forward the currently-selected machine so /browse opens scoped to
@@ -499,6 +518,7 @@ function NewSessionPage() {
                 className="app-scroll-y flex-1 min-h-0"
                 style={{ paddingBottom: 'calc(var(--app-floating-bottom-offset, 0px) + env(safe-area-inset-bottom))' }}
             >
+                {handoffError ? <p role="alert" className="p-3 text-sm text-red-600">{handoffError}</p> : null}
                 {machinesError ? (
                     <div className="p-3 text-sm text-red-600">
                         {machinesError}
@@ -512,6 +532,8 @@ function NewSessionPage() {
                     onCancel={handleCancel}
                     onSuccess={handleSuccess}
                     onChooseFolder={handleChooseFolder}
+                    shareTransferId={shareTransferId}
+                    draftKey={`hapi:new-task:${baseUrl || window.location.origin}`}
                     initialTask={initialTask}
                     onInitialTaskChange={updateInitialTask}
                     onCreated={handleCreated}

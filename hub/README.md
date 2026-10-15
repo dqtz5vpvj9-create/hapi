@@ -359,6 +359,13 @@ switching `DB_PATH` to the verified new file. Preserve the original database and
 its sidecars together until you have checked the restored Hub with the same
 HAPI version. Newer schema versions may require a matching newer Hub.
 
+The first-send retry guard upgrades the database from schema 31 to 32 with an
+additive, namespace-scoped spawn receipt table. Existing CLI spawn requests
+remain supported. Older Hub binaries cannot open schema 32: take a verified
+backup before upgrading, and use a pre-upgrade database copy when rolling back.
+Keep receipts intact so an uncertain launch cannot be dispatched twice after a
+Hub restart.
+
 Retention preview keeps at least the newest requested count (default 7) and
 marks only matching dated backups older than the requested age (default 30 days)
 for review. It never deletes anything, follows symlinks, or schedules a job.

@@ -830,3 +830,39 @@ describe('offline machine discovery', () => {
         expect(namespaces).toEqual(['tenant-a', 'tenant-a'])
     })
 })
+
+describe('spawn request identity routing', () => {
+    it('forwards a bounded identity with the authenticated namespace and rejects malformed identities', async () => {
+        const machine = createMachine()
+        const calls: unknown[][] = []
+        const engine = {
+            getMachine: () => machine,
+            spawnSession: () => { throw new Error('identity must use guarded spawn') },
+            spawnSessionIdempotent: async (...args: unknown[]) => {
+                calls.push(args)
+                return { type: 'success', sessionId: 'original-session' }
+            }
+        } as unknown as SyncEngine
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => { c.set('namespace', 'default'); await next() })
+        app.route('/api', createMachinesRoutes(() => engine))
+        const requestId = '943435b4-6a1d-4e97-91d0-46d087f64c9e'
+        const response = await app.request('/api/machines/machine-1/spawn', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ requestId, directory: '/project', namespace: 'spoofed' })
+        })
+        expect(await response.json()).toEqual({ type: 'success', sessionId: 'original-session' })
+        expect(calls).toEqual([['machine-1', 'default', { requestId, directory: '/project' }]])
+        const fallbackId = 'mgsd92a8-abc123def456-ghi789jkl012'
+        expect((await app.request('/api/machines/machine-1/spawn', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ requestId: fallbackId, directory: '/project' })
+        })).status).toBe(200)
+        const invalid = await app.request('/api/machines/machine-1/spawn', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ requestId: 'x'.repeat(1000), directory: '/project' })
+        })
+        expect(invalid.status).toBe(400)
+        expect(calls).toHaveLength(2)
+    })
+})

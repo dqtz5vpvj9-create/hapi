@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { Machine, PiModelSummary } from '@/types/api'
+import { createNewTaskDelivery, saveNewTaskDelivery } from './newTaskDelivery'
 import { saveNewSessionFormDraft } from './newSessionFormDraft'
 import {
     loadPreferredLaunchSettings,
@@ -46,8 +47,11 @@ const mocks = vi.hoisted(() => ({
     piModelsError: null as string | null,
     nextModelValue: 'gpt-5.6-terra',
     refetchSessions: vi.fn(),
-    addToast: vi.fn()
+    addToast: vi.fn(),
+    getShareTransfer: vi.fn().mockResolvedValue(null)
 }))
+
+vi.mock('@/lib/shareTransfer', () => ({ getShareTransfer: (...args: unknown[]) => mocks.getShareTransfer(...args) }))
 
 vi.mock('@/lib/use-translation', () => ({
     useTranslation: () => ({ t: (key: string) => key })
@@ -302,7 +306,7 @@ vi.mock('./ActionButtons', () => ({
 import { NewSession } from './index'
 
 const machine = { id: 'machine-1' } as Machine
-const api = {} as ApiClient
+const api = { sendMessage: vi.fn().mockResolvedValue(undefined) } as unknown as ApiClient
 
 describe('NewSession launch preferences', () => {
     beforeEach(() => {
@@ -344,10 +348,11 @@ describe('NewSession launch preferences', () => {
         mocks.refetchSessions.mockReset()
         mocks.refetchSessions.mockResolvedValue(undefined)
         mocks.addToast.mockReset()
+        mocks.getShareTransfer.mockReset().mockResolvedValue(null)
         savePreferredAgent('codex')
     })
 
-    it('exposes the initial task for editing and only hands it off after a successful new spawn', async () => {
+    it('keeps the initial task on launch failure and sends it before navigating after success', async () => {
         const onCreated = vi.fn(), onChange = vi.fn()
         render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo"
             initialTask="Inspect the list" onInitialTaskChange={onChange} onCreated={onCreated}
@@ -356,16 +361,110 @@ describe('NewSession launch preferences', () => {
         expect(task).toHaveValue('Inspect the list')
         fireEvent.change(task, { target: { value: 'Inspect the list and children' } })
         expect(onChange).toHaveBeenCalledWith('Inspect the list and children')
+        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
         mocks.spawnSession.mockResolvedValueOnce({ type: 'error', message: 'Synthetic failure' })
-        fireEvent.click(screen.getByTestId('create'))
+        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
         await waitFor(() => expect(screen.getByText('Synthetic failure')).toBeTruthy())
         expect(onCreated).not.toHaveBeenCalled()
         expect(mocks.onSuccess).not.toHaveBeenCalled()
         mocks.spawnSession.mockResolvedValueOnce({ type: 'success', sessionId: 'fresh-session' })
-        fireEvent.click(screen.getByTestId('create'))
-        await waitFor(() => expect(onCreated).toHaveBeenCalledWith('fresh-session'))
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.retryDelivery' }))
+        await waitFor(() => expect(onCreated).toHaveBeenCalledWith('fresh-session', undefined))
+        expect(api.sendMessage).toHaveBeenCalledWith('fresh-session', 'Inspect the list', expect.any(String), undefined)
         expect(mocks.onSuccess).toHaveBeenCalledWith('fresh-session')
         expect(onCreated.mock.invocationCallOrder[0]).toBeLessThan(mocks.onSuccess.mock.invocationCallOrder[0])
+    })
+
+    it('reuses the created session and message identity after a failed send and remount', async () => {
+        const sendMessage = vi.fn().mockRejectedValueOnce(new Error('Send timeout')).mockResolvedValueOnce(undefined)
+        const taskApi = { sendMessage } as unknown as ApiClient
+        const props = { api: taskApi, machines: [machine], initialMachineId: 'machine-1', initialDirectory: '/project', initialTask: 'Keep exact text', draftKey: 'reload-test', onSuccess: mocks.onSuccess, onCancel: () => {} }
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'created-once' })
+        const view = render(<NewSession {...props} />)
+        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        await waitFor(() => expect(screen.getByText('Send timeout')).toBeTruthy())
+        expect(screen.getByRole('textbox', { name: 'sessions.task.initial' })).toHaveValue('Keep exact text')
+        expect(mocks.onSuccess).not.toHaveBeenCalled()
+        view.unmount()
+        render(<NewSession {...props} initialTask="" />)
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.retryDelivery' })).toBeEnabled())
+        expect(screen.getByRole('textbox', { name: 'sessions.task.initial' })).toHaveValue('Keep exact text')
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.retryDelivery' }))
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('created-once'))
+        expect(mocks.spawnSession).toHaveBeenCalledTimes(1)
+        expect(sendMessage.mock.calls[0]).toEqual(sendMessage.mock.calls[1])
+    })
+
+    it('allows frozen delivery retry even if live capability selection becomes invalid', async () => {
+        const delivery = { ...createNewTaskDelivery('Frozen task', []), sessionId: 'known-session' }
+        saveNewTaskDelivery('invalid-after-failure', delivery)
+        saveNewSessionFormDraft({ agent: 'codex', model: 'gpt-5.6-terra', cursorSelectedBase: 'auto', machineId: 'machine-1', effort: 'auto', modelReasoningEffort: 'xhigh', serviceTier: 'standard', collaborationMode: 'default', copilotAgentMode: 'interactive', yoloMode: false, nativePermissionMode: 'default', grokPermissionMode: 'default', sessionType: 'simple', worktreeName: '' })
+        const sendMessage = vi.fn().mockResolvedValue(undefined)
+        render(<NewSession api={{ sendMessage } as unknown as ApiClient} machines={[machine]} draftKey="invalid-after-failure" initialMachineId="machine-1" initialDirectory="/project" initialTask="Frozen task" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByText('newTask.invalidSelection')).toBeTruthy())
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.retryDelivery' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.retryDelivery' }))
+        await waitFor(() => expect(sendMessage).toHaveBeenCalledWith('known-session', 'Frozen task', delivery.localId, undefined))
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+    })
+
+    it('sends shared-file-only new tasks and retains their files after upload failure', async () => {
+        mocks.getShareTransfer.mockResolvedValue({ title: '', text: '', url: '', createdAt: 1, files: [{ name: 'notes.txt', type: 'text/plain', blob: new Blob(['notes']) }] })
+        const uploadFile = vi.fn().mockRejectedValueOnce(new Error('Upload failed')).mockResolvedValue({ success: true, path: '/uploads/notes.txt' })
+        const sendMessage = vi.fn().mockResolvedValue(undefined)
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'shared-session' })
+        render(<NewSession api={{ uploadFile, sendMessage } as unknown as ApiClient} machines={[machine]} draftKey="share-file-test" shareTransferId="transfer-1" initialMachineId="machine-1" initialDirectory="/project" initialTask="" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByText('notes.txt')).toBeTruthy())
+        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        await waitFor(() => expect(screen.getByText('Upload failed')).toBeTruthy())
+        expect(screen.getByText('notes.txt')).toBeTruthy()
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.retryDelivery' }))
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('shared-session'))
+        expect(mocks.spawnSession).toHaveBeenCalledTimes(1)
+        expect(sendMessage).toHaveBeenCalledWith('shared-session', '', expect.any(String), [expect.objectContaining({ filename: 'notes.txt', path: '/uploads/notes.txt' })])
+    })
+
+    it('finishes the frozen old share without consuming a newly routed share payload', async () => {
+        const delivery = { ...createNewTaskDelivery('Original shared task', []), sessionId: 'old-session', shareTransferId: 'old-share' }
+        saveNewTaskDelivery('late-share-test', delivery)
+        const onCreated = vi.fn()
+        const sendMessage = vi.fn().mockResolvedValue(undefined)
+        render(<NewSession api={{ sendMessage } as unknown as ApiClient} machines={[]} draftKey="late-share-test" shareTransferId="new-share" initialTask="Different task" onCreated={onCreated} onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.retryDelivery' })).toBeEnabled())
+        expect(screen.getByRole('textbox', { name: 'sessions.task.initial' })).toHaveValue('Original shared task')
+        expect(mocks.getShareTransfer).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.retryDelivery' }))
+        await waitFor(() => expect(onCreated).toHaveBeenCalledWith('old-session', 'old-share'))
+        expect(sendMessage).toHaveBeenCalledWith('old-session', 'Original shared task', delivery.localId, undefined)
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+    })
+
+    it.each(['agy', 'opencode'] as const)('keeps an unavailable explicit %s model and requires a supported choice in the new-task picker', async (agent) => {
+        savePreferredAgent(agent)
+        mocks.directoryExists = true
+        mocks.opencodeModels = [{ modelId: 'provider/available', name: 'Available model' }]
+        mocks.opencodeCurrentModelId = 'provider/available'
+        saveNewSessionFormDraft({ agent, model: 'missing-model', cursorSelectedBase: 'auto', machineId: 'machine-1', effort: 'auto', modelReasoningEffort: 'default', serviceTier: 'standard', collaborationMode: 'default', copilotAgentMode: 'interactive', yoloMode: false, nativePermissionMode: 'default', grokPermissionMode: 'default', sessionType: 'simple', worktreeName: '' })
+        render(<NewSession api={api} machines={[machine]} draftKey={`unsupported-${agent}`} initialMachineId="machine-1" initialDirectory={'C:\\repo'} initialTask="Keep the selected model" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByText('newTask.invalidSelection')).toBeTruthy())
+        expect(screen.getByRole('button', { name: 'composer.send' })).toBeDisabled()
+        const capsule = screen.getByRole('button', { name: /missing-model/ })
+        fireEvent.click(capsule)
+        fireEvent.click(screen.getByRole('button', { name: /missing-model/ }))
+        fireEvent.click(screen.getByRole('button', { name: 'newSession.model.default' }))
+        await waitFor(() => expect(screen.queryByText('newTask.invalidSelection')).toBeNull())
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+    })
+
+    it('does not submit IME confirmation Enter or Shift+Enter', async () => {
+        render(<NewSession api={api} machines={[machine]} draftKey="ime-test" initialMachineId="machine-1" initialDirectory="/project" initialTask="Draft" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
+        const input = screen.getByRole('textbox', { name: 'sessions.task.initial' })
+        fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 })
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+        fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
     })
 
     it('connects the selected native thread and opens its binding without importing or spawning', async () => {
@@ -378,6 +477,8 @@ describe('NewSession launch preferences', () => {
             resumeSession: vi.fn()
         } as unknown as ApiClient
         render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" initialTask="Keep this task" onCreated={onCreated} onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
         fireEvent.click(screen.getByTestId('import-codex'))
@@ -398,6 +499,8 @@ describe('NewSession launch preferences', () => {
             getCodexDuplicateSessions: vi.fn().mockResolvedValue({ success: true, duplicates: [] })
         } as unknown as ApiClient;
         render(<NewSession api={codexApi} machines={[machine, { ...machine, id: 'machine-2' }]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />);
+        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }));
         await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled());
         fireEvent.click(screen.getByTestId('import-codex'));
@@ -415,6 +518,8 @@ describe('NewSession launch preferences', () => {
         const props = { api: codexApi, initialMachineId: 'machine-1', initialDirectory: '/project', onSuccess: mocks.onSuccess, onCancel: vi.fn() }
         const otherMachine = { ...machine, id: 'machine-2' }
         const view = render(<NewSession {...props} machines={[machine, otherMachine]} />)
+        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
         fireEvent.click(screen.getByTestId('import-codex'))
@@ -435,6 +540,8 @@ describe('NewSession launch preferences', () => {
         } as unknown as ApiClient
         const props = { api: codexApi, machines: [machine], initialMachineId: 'machine-1', onSuccess: mocks.onSuccess, onCancel: vi.fn() }
         const view = render(<NewSession {...props} initialDirectory="/project" />)
+        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
         fireEvent.click(screen.getByTestId('import-codex'))
@@ -452,6 +559,8 @@ describe('NewSession launch preferences', () => {
         const props = { api: codexApi, initialMachineId: 'machine-1', onSuccess: mocks.onSuccess, onCancel: vi.fn() }
         const otherMachine = { ...machine, id: 'machine-2' }
         const view = render(<NewSession {...props} machines={[machine, otherMachine]} />)
+        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
         fireEvent.click(screen.getByTestId('import-codex'))
@@ -467,6 +576,8 @@ describe('NewSession launch preferences', () => {
         render(<NewSession api={codexApi} machines={[{ ...machine, active: true }]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
         await waitFor(() => expect(codexApi.getCodexSessions).toHaveBeenCalledTimes(1))
         expect(screen.queryByTestId('codex-search-results')).not.toBeInTheDocument()
+        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await act(async () => finish({ success: true, sessions: [{ id: 'warm' }], nextCursor: null }))
         expect(screen.getByTestId('codex-search-results')).toHaveTextContent('warm')
@@ -482,6 +593,8 @@ describe('NewSession launch preferences', () => {
                 .mockResolvedValue({ success: true, sessions: [{ id: 'old-o-debug' }], nextCursor: null })
         } as unknown as ApiClient
         render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('codex-more')).toBeEnabled())
         fireEvent.click(screen.getByTestId('codex-more'))
@@ -503,6 +616,8 @@ describe('NewSession launch preferences', () => {
                 .mockResolvedValueOnce({ success: true, sessions: [{ id: 'first' }, { id: 'second' }], nextCursor: null })
         } as unknown as ApiClient
         render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('codex-more')).toBeEnabled())
         fireEvent.click(screen.getByTestId('codex-more'))
@@ -512,6 +627,8 @@ describe('NewSession launch preferences', () => {
     it('surfaces an unavailable Codex list in the dialog and retries successfully', async () => {
         const codexApi = { getCodexSessions: vi.fn().mockRejectedValueOnce(new Error('Runner unavailable')).mockResolvedValueOnce({ success: true, sessions: [{ id: 'native-1' }] }) } as unknown as ApiClient
         render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('codex-list-error')).toHaveTextContent('Runner unavailable'))
         fireEvent.click(screen.getByTestId('codex-retry'))

@@ -1,3 +1,4 @@
+import { SpawnRequestStore, createSpawnRequestSchema } from './spawnRequestStore'
 import { ForkOperationStore, createForkOperationSchema } from './forkOperationStore'
 import { SessionPresenceStore, createSessionPresenceSchema } from './sessionPresenceStore'
 import { Database } from 'bun:sqlite'
@@ -47,8 +48,9 @@ export {
     WorkGraphValidationError
 } from './workGraph'
 
-const SCHEMA_VERSION: number = 31
+const SCHEMA_VERSION: number = 32
 const REQUIRED_TABLES = [
+    'spawn_requests',
     'fork_operations',
     'fork_sources',
     'session_execution_versions',
@@ -77,6 +79,7 @@ export class Store {
     private readonly _dbPath: string
     private closed: boolean = false
 
+    readonly spawnRequests: SpawnRequestStore
     readonly forkOperations: ForkOperationStore
     readonly presence: SessionPresenceStore
     readonly sessions: SessionStore
@@ -134,6 +137,7 @@ export class Store {
             }
         }
 
+        this.spawnRequests = new SpawnRequestStore(this.db)
         this.forkOperations = new ForkOperationStore(this.db)
         this.forkOperations.recoverInterrupted()
         this.presence = new SessionPresenceStore(this.db)
@@ -374,6 +378,7 @@ export class Store {
             28: () => createWorkspaceSchema(this.db),
             29: () => createSessionPresenceSchema(this.db),
             30: () => createForkOperationSchema(this.db),
+            31: () => createSpawnRequestSchema(this.db),
         })
 
         if (currentVersion === 0) {
@@ -629,6 +634,7 @@ export class Store {
         createMessageOutlineSchema(this.db)
         createSessionPresenceSchema(this.db)
         createForkOperationSchema(this.db)
+        createSpawnRequestSchema(this.db)
         createWorkspaceSchema(this.db)
     }
 

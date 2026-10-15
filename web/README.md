@@ -143,6 +143,21 @@ a web adaptation of the design principles, not Apple's native renderer.
 
 ### New session (`src/components/NewSession/`)
 
+The new-task page is a local draft: typing and adding attachments never launch an
+agent. The first Send creates the session, uploads the saved files, and submits
+the first message. Launch retries keep a durable request identity; message
+retries keep the same session and message `localId`. An unknown launch outcome
+must be reconciled with the same request, never retried as a new process. Draft
+text, attachment bytes, selected settings, and the pending delivery survive
+navigation/reload. A pending attempt shows its frozen text and settings.
+
+The composer shares its compact model/effort picker with existing chats. Effort
+stops come from the selected agent's capabilities, and Fast is a separate
+supported service-tier choice. Unsupported selections require an explicit
+choice. Existing-chat changes display confirmed settings and are disabled while
+a turn is running; machine/project context and less frequent launch controls
+remain below the new-task composer.
+
 Modular session creation:
 
 - Machine selector

@@ -129,6 +129,7 @@ vi.mock('@/components/AssistantChat/ComposerButtons', () => ({
         pendingSchedule: PendingSchedule | null
         expanded: boolean
         onExpandedToggle: () => void
+        modelControl?: ReactNode
         modelValueLabel?: string
         modelValueDisabled?: boolean
         onModelValueToggle?: () => void
@@ -140,6 +141,7 @@ vi.mock('@/components/AssistantChat/ComposerButtons', () => ({
             </button>
             <button type="button" onClick={() => props.onSchedule({ type: 'absolute', ms: 9000 })}>select schedule</button>
             <button type="button" onClick={props.onClearSchedule}>clear schedule</button>
+            {props.modelControl}
             {props.modelValueLabel ? (
                 <button type="button" disabled={props.modelValueDisabled} onClick={props.onModelValueToggle}>{props.modelValueLabel}</button>
             ) : null}
@@ -290,21 +292,14 @@ function send() {
     fireEvent.click(screen.getByRole('button', { name: 'send' }))
 }
 
-it('keeps Pi model selection available while a message is pending', () => {
+it('locks Pi model selection while a message is pending', () => {
     const controls = renderComposer()
-
     act(() => controls.current!.setThreadDisabled(true))
-
-    // Mid-turn Pi keeps its model control live (#1442): the value button opens
-    // the unified settings sheet, whose provider-grouped rows stay clickable.
-    const valueButton = screen.getByRole('button', { name: 'Pi model' })
-    expect(valueButton).not.toBeDisabled()
+    const valueButton = screen.getByRole('button', { name: /^Pi model/ })
+    expect(valueButton).toBeDisabled()
     fireEvent.click(valueButton)
-    const modelRows = screen.getAllByRole('button', { name: 'Pi model' })
-    expect(modelRows.length).toBeGreaterThan(1)
-    // The sheet renders before the toolbar in the DOM, so the first match is the row.
-    fireEvent.click(modelRows[0])
-    expect(runtime.modelChanges).toEqual([{ provider: 'pi', modelId: 'pi-model' }])
+    expect(screen.queryByRole('slider')).toBeNull()
+    expect(runtime.modelChanges).toEqual([])
 })
 
 function acceptAndClearSchedule(controls: { current: HarnessControls | null }) {

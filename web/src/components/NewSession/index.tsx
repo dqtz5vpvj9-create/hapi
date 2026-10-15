@@ -1,7 +1,18 @@
+import { createNewTaskDelivery, loadNewTaskDelivery, saveNewTaskDelivery, sendNewTaskDelivery } from './newTaskDelivery'
+import { ArrowUp, Plus, MoreHorizontal, Folder, Monitor, Shield } from './TaskIcons'
+import { ModelEffortPicker } from '@/components/AssistantChat/ModelEffortPicker'
+import { MODEL_OPTIONS, CLAUDE_EFFORT_OPTIONS } from './types'
+import { getPiThinkingLevelOptions } from '@/components/AssistantChat/piThinkingLevelOptions'
+import { getDraftAttachments, saveDraftAttachments, clearDraftAttachments, getRestoredUploadMetadata } from '@/lib/composer-attachment-drafts'
+import { getShareTransfer } from '@/lib/shareTransfer'
+import { MAX_UPLOAD_BYTES } from '@/lib/attachmentAdapter'
+import type { AttachmentMetadata } from '@/types/api'
+import { randomId } from '@/lib/randomId'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import type { CodexDuplicateSessionGroup, CodexLocalSessionSummary, Machine, PiLocalSessionSummary } from '@/types/api'
+import { getPermissionModeLabel } from '@hapi/protocol'
 import type { CodexCollaborationMode, GrokPermissionMode, PermissionMode, CopilotAgentMode } from '@hapi/protocol'
 import { codexModelAdvertisesFastTier } from '@/components/AssistantChat/codexFastMode'
 import { usePlatform } from '@/hooks/usePlatform'
@@ -92,12 +103,58 @@ export function NewSession(props: {
     onSuccess: (sessionId: string) => void
     onCancel: () => void
     onChooseFolder?: (args: { machineId: string | null; directory: string }) => void
+    shareTransferId?: string
+    draftKey?: string
     initialTask?: string
     onInitialTaskChange?: (text: string) => void
-    onCreated?: (sessionId: string) => void
+    onCreated?: (sessionId: string, shareTransferId?: string) => void
     initialDirectory?: string
     initialMachineId?: string
 }) {
+    const draftKey = props.draftKey ?? 'hapi:new-task:attachments'
+    const [files, setFiles] = useState<Array<{ id: string; file: File }>>([])
+    const [filesReady, setFilesReady] = useState(false)
+    const fileInputRef = useRef<HTMLInputElement>(null)
+    const [contextOpen, setContextOpen] = useState<'machine' | 'directory' | null>(null)
+    const [settingsOpen, setSettingsOpen] = useState(false)
+    const [permissionOpen, setPermissionOpen] = useState(false)
+    const deliveryRef = useRef(loadNewTaskDelivery(draftKey))
+    const acceptedShareRef = useRef<string | undefined>(deliveryRef.current?.shareTransferId)
+    const createdSessionRef = useRef<string | null>(deliveryRef.current?.sessionId ?? null)
+    const launchInputRef = useRef<Parameters<ReturnType<typeof useSpawnSession>['spawnSession']>[0] | null>(deliveryRef.current?.launch as Parameters<ReturnType<typeof useSpawnSession>['spawnSession']>[0] ?? null)
+    const [deliveryPending, setDeliveryPending] = useState(Boolean(deliveryRef.current))
+    const uploadedFilesRef = useRef(new Map<string, AttachmentMetadata>(deliveryRef.current?.attachments?.map(item => [item.id, item]) ?? []))
+    useEffect(() => {
+        let alive = true
+        void (async () => {
+            const restored = await getDraftAttachments(draftKey)
+            const nextFiles = restored.map(file => ({ id: getRestoredUploadMetadata(file)?.id ?? randomId(), file }))
+            if (props.shareTransferId && !deliveryRef.current) {
+                const payload = await getShareTransfer(props.shareTransferId)
+                if (payload) {
+                    acceptedShareRef.current = props.shareTransferId
+                    for (const [index, file] of payload.files.entries()) {
+                        const id = `share-${props.shareTransferId}-${index}`
+                        if (!nextFiles.some(item => item.id === id)) nextFiles.push({ id, file: new File([file.blob], file.name, { type: file.type }) })
+                    }
+                    const marker = `${draftKey}:share:${props.shareTransferId}`
+                    if (!sessionStorage.getItem(marker)) {
+                        const text = [payload.title, payload.text, payload.url].filter(Boolean).join('\n').trim()
+                        if (text && alive) props.onInitialTaskChange?.([props.initialTask?.trim(), text].filter(Boolean).join('\n\n'))
+                        sessionStorage.setItem(marker, 'seeded')
+                    }
+                }
+            }
+            if (!alive) return
+            setFiles(deliveryRef.current ? nextFiles.filter(item => deliveryRef.current!.fileIds.includes(item.id)) : nextFiles)
+            setFilesReady(true)
+        })().catch(() => { if (alive) { setError('Could not restore shared files.'); setFilesReady(false) } })
+        return () => { alive = false }
+    }, [draftKey, props.shareTransferId])
+    useEffect(() => {
+        if (filesReady) saveDraftAttachments(draftKey, files)
+    }, [draftKey, files, filesReady])
+
     const { haptic } = usePlatform()
     const { t } = useTranslation()
     const { addToast } = useToast()
@@ -105,8 +162,8 @@ export function NewSession(props: {
     const { sessions, refetch: refetchSessions } = useSessions(props.api)
     const { getRecentPaths, addRecentPath, getLastUsedMachineId, setLastUsedMachineId } = useRecentPaths()
 
-    const [machineId, setMachineId] = useState<string | null>(props.initialMachineId ?? null)
-    const [directory, setDirectory] = useState(props.initialDirectory ?? '')
+    const [machineId, setMachineId] = useState<string | null>(deliveryRef.current?.launch?.machineId ?? props.initialMachineId ?? null)
+    const [directory, setDirectory] = useState(deliveryRef.current?.launch?.directory ?? props.initialDirectory ?? '')
     const [suppressSuggestions, setSuppressSuggestions] = useState(false)
     const [isDirectoryFocused, setIsDirectoryFocused] = useState(false)
     const [agent, setAgent] = useState<AgentType>(loadPreferredAgent)
@@ -166,6 +223,8 @@ export function NewSession(props: {
     const [isMergingDuplicateSessions, setIsMergingDuplicateSessions] = useState(false)
     const isFormDisabled = Boolean(
         isCreating
+        || deliveryPending
+        || (props.initialTask !== undefined && !filesReady)
         || isPending
         || props.isLoading
         || isImportingCodexSession
@@ -233,13 +292,13 @@ export function NewSession(props: {
         if (restoredFromBrowseRef.current) {
             return
         }
-        if (!shouldRestoreNewSessionFormDraft({
+        if (!deliveryRef.current?.form && !shouldRestoreNewSessionFormDraft({
             initialDirectory: props.initialDirectory,
             initialMachineId: props.initialMachineId
         })) {
             return
         }
-        const draft = loadNewSessionFormDraft()
+        const draft = deliveryRef.current?.form ?? loadNewSessionFormDraft()
         if (!draft) {
             return
         }
@@ -294,6 +353,10 @@ export function NewSession(props: {
             }
         } else if (props.machines[0]) {
             setMachineId(props.machines[0].id)
+            if (!props.initialDirectory) {
+                const paths = getRecentPaths(props.machines[0].id)
+                if (paths[0]) setDirectory(paths[0])
+            }
         }
     }, [props.machines, machineId, getLastUsedMachineId, getRecentPaths, props.initialDirectory])
 
@@ -314,7 +377,7 @@ export function NewSession(props: {
     const selectedAgentAvailable = availableAgents.includes(agent)
 
     useEffect(() => {
-        if (agentAvailability.isLoading || agentAvailability.error || availableAgents.length === 0) return
+        if (deliveryPending || agentAvailability.isLoading || agentAvailability.error || availableAgents.length === 0) return
         if (availableAgents.includes(agent)) return
         preserveRestoredDraftRef.current = false
         setAgent(availableAgents[0]!)
@@ -358,6 +421,7 @@ export function NewSession(props: {
     )
 
     useEffect(() => {
+        if (props.initialTask !== undefined) return
         if (
             agent !== 'codex'
             || modelReasoningEffort === 'default'
@@ -371,6 +435,7 @@ export function NewSession(props: {
 
 
     useEffect(() => {
+        if (props.initialTask !== undefined) return
         if (
             agent !== 'codex'
             || model === 'auto'
@@ -388,6 +453,7 @@ export function NewSession(props: {
         && codexModelAdvertisesFastTier(model === 'auto' ? null : model, codexModelsState.models)
 
     useEffect(() => {
+        if (props.initialTask !== undefined) return
         // Wait for the Codex model catalog to settle before clearing Fast;
         // otherwise Browse → remount restores serviceTier: 'fast' and this
         // effect would wipe it while models are still loading.
@@ -421,6 +487,7 @@ export function NewSession(props: {
     )
 
     useEffect(() => {
+        if (props.initialTask !== undefined) return
         if (
             agent !== 'cursor'
             || cursorModelsState.isLoading
@@ -624,6 +691,7 @@ export function NewSession(props: {
         )
 
     useEffect(() => {
+        if (props.initialTask !== undefined) return
         if (
             agent !== 'opencode'
             || modelReasoningEffort === 'default'
@@ -739,6 +807,7 @@ export function NewSession(props: {
         return piModelsState.availableModels.find((candidate) => candidate.modelId === model) ?? null
     }, [agent, model, piModelsState.availableModels])
     useEffect(() => {
+        if (props.initialTask !== undefined) return
         // A non-reasoning Pi model must not carry a stale launch effort (the
         // CLI would reject it and fall back to Pi's default), and a level the
         // selected model's thinkingLevelMap marks unsupported must not survive
@@ -771,6 +840,7 @@ export function NewSession(props: {
         }
     }, [agent, model, piSelectedModel, piModelsState.error, effort])
     useEffect(() => {
+        if (props.initialTask !== undefined) return
         // Reconcile a restored Pi selection with the live machine catalog
         // (mirrors the Codex/Grok/Copilot validation effects). A model that
         // left the catalog must not stay in state: the native select would
@@ -801,6 +871,7 @@ export function NewSession(props: {
     }, [agent, machineId])
 
     useEffect(() => {
+        if (props.initialTask !== undefined) return
         if (
             agent !== 'agy'
             || agyModelsState.isLoading
@@ -832,6 +903,7 @@ export function NewSession(props: {
         ) {
             return
         }
+        if (props.initialTask !== undefined && (preserveRestoredDraftRef.current || opencodeSelectedModel !== undefined)) return
         // null = explicit "Default" choice (or a restored Default preference) —
         // never overwrite it with a concrete model. Only `undefined` (no choice
         // made yet) triggers initialization.
@@ -909,6 +981,7 @@ export function NewSession(props: {
     }, [agent, legacyYoloAgent, machineId, usesSharedPermissionMode])
 
     useEffect(() => {
+        if (props.initialTask !== undefined) return
         if (
             agent !== 'grok'
             || deferredDirectoryExists !== true
@@ -940,6 +1013,7 @@ export function NewSession(props: {
         model
     ])
     useEffect(() => {
+        if (props.initialTask !== undefined) return
         if (
             agent === 'copilot'
             && deferredDirectoryExists === true
@@ -959,6 +1033,7 @@ export function NewSession(props: {
         model
     ])
     useEffect(() => {
+        if (props.initialTask !== undefined) return
         if (
             agent === 'kimi'
             && deferredDirectoryExists === true
@@ -1596,13 +1671,91 @@ export function NewSession(props: {
         }
     }, [suggestions, selectedIndex, moveUp, moveDown, clearSuggestions, handleSuggestionSelect])
 
+    const preferredLaunchSettings = {
+        model: agent === 'agy'
+            ? (agySelectedModel ?? 'auto')
+            : agent === 'opencode'
+                ? (opencodeSelectedModel ?? 'auto')
+                : model,
+        cursorSelectedBase,
+        effort,
+        modelReasoningEffort,
+        ...(usesSharedPermissionMode ? { permissionMode: nativePermissionMode } : {})
+    }
+
+    async function deliverInitialTask(sessionId: string) {
+        if (deliveryRef.current?.fileIds.some(id => !files.some(item => item.id === id))) {
+            throw new Error(t('newTask.missingFiles'))
+        }
+        const attachments: AttachmentMetadata[] = []
+        for (const item of files) {
+            let metadata = uploadedFilesRef.current.get(item.id)
+            if (!metadata) {
+                const content = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader()
+                    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
+                    reader.onerror = () => reject(new Error(`Could not read ${item.file.name}`))
+                    reader.readAsDataURL(item.file)
+                })
+                const result = await props.api.uploadFile(sessionId, item.file.name, content, item.file.type || 'application/octet-stream')
+                if (!result.success || !result.path) throw new Error(result.error || `Could not upload ${item.file.name}`)
+                metadata = { id: item.id, filename: item.file.name, mimeType: item.file.type || 'application/octet-stream', size: item.file.size, path: result.path }
+                uploadedFilesRef.current.set(item.id, metadata)
+                if (deliveryRef.current) {
+                    deliveryRef.current.attachments = [...uploadedFilesRef.current.values()]
+                    saveNewTaskDelivery(draftKey, deliveryRef.current)
+                }
+            }
+            attachments.push(metadata)
+        }
+        const delivery = deliveryRef.current!
+        delivery.sessionId = sessionId
+        saveNewTaskDelivery(draftKey, delivery)
+        await sendNewTaskDelivery(props.api, delivery, attachments.length ? attachments : undefined)
+        saveNewTaskDelivery(draftKey, null)
+        clearDraftAttachments(draftKey)
+        clearNewSessionFormDraft()
+        if (machineId) {
+            savePreferredLaunchSettings(machineId, agent, preferredLaunchSettings)
+            setLastUsedMachineId(machineId)
+            addRecentPath(machineId, trimmedDirectory)
+        }
+        props.onCreated?.(sessionId, delivery.shareTransferId)
+        props.onSuccess(sessionId)
+    }
+
     async function handleCreate() {
-        if (!machineId || !trimmedDirectory || createInFlightRef.current) return
+        if (createInFlightRef.current || (!deliveryPending && (!machineId || !trimmedDirectory))) return
+        if (props.initialTask !== undefined && !deliveryPending && (!props.initialTask.trim() && files.length === 0)) return
+        if (props.initialTask !== undefined && !deliveryPending && invalidTaskSelection) return
 
         createInFlightRef.current = true
         setIsCreating(true)
         setError(null)
         try {
+            if (createdSessionRef.current) {
+                await deliverInitialTask(createdSessionRef.current)
+                return
+            }
+            if (deliveryPending && launchInputRef.current) {
+                const result = await spawnSession(launchInputRef.current)
+                if (result.type === 'success') {
+                    createdSessionRef.current = result.sessionId
+                    deliveryRef.current!.sessionId = result.sessionId
+                    saveNewTaskDelivery(draftKey, deliveryRef.current)
+                    await deliverInitialTask(result.sessionId)
+                } else {
+                    setError(result.message)
+                    if (result.childStarted === false) {
+                        deliveryRef.current = null
+                        launchInputRef.current = null
+                        saveNewTaskDelivery(draftKey, null)
+                        setDeliveryPending(false)
+                    }
+                }
+                return
+            }
+            if (!machineId || !trimmedDirectory) return
             if (!selectedAgentAvailable) {
                 haptic.notification('error')
                 setError(t('newSession.agentUnavailable'))
@@ -1652,17 +1805,6 @@ export function NewSession(props: {
             const resolvedModelReasoningEffort = (agent === 'codex' || agent === 'opencode') && modelReasoningEffort !== 'default'
                 ? modelReasoningEffort
                 : undefined
-            const preferredLaunchSettings = {
-                model: agent === 'agy'
-                    ? (agySelectedModel ?? 'auto')
-                    : agent === 'opencode'
-                        ? (opencodeSelectedModel ?? 'auto')
-                        : model,
-                cursorSelectedBase,
-                effort,
-                modelReasoningEffort,
-                ...(usesSharedPermissionMode ? { permissionMode: nativePermissionMode } : {})
-            }
             const resolvedServiceTier = agent === 'codex' && showCodexFastMode
                 ? serviceTier
                 : undefined
@@ -1701,7 +1843,14 @@ export function NewSession(props: {
                     clearNewSessionFormDraft()
                     setLastUsedMachineId(machineId)
                     addRecentPath(machineId, trimmedDirectory)
-                    props.onSuccess(resumedSessionId)
+                    if (props.initialTask !== undefined) {
+                        deliveryRef.current = { ...createNewTaskDelivery(props.initialTask, files.map(item => item.id)), shareTransferId: acceptedShareRef.current }
+                        deliveryRef.current.sessionId = resumedSessionId
+                        createdSessionRef.current = resumedSessionId
+                        saveNewTaskDelivery(draftKey, deliveryRef.current)
+                        setDeliveryPending(true)
+                        await deliverInitialTask(resumedSessionId)
+                    } else props.onSuccess(resumedSessionId)
                     return
                 }
                 setIsImportingCodexSession(false)
@@ -1731,11 +1880,22 @@ export function NewSession(props: {
                 clearNewSessionFormDraft()
                 setLastUsedMachineId(machineId)
                 addRecentPath(machineId, trimmedDirectory)
-                props.onSuccess(reopened.sessionId)
+                if (props.initialTask !== undefined) {
+                    deliveryRef.current = { ...createNewTaskDelivery(props.initialTask, files.map(item => item.id)), shareTransferId: acceptedShareRef.current }
+                    deliveryRef.current.sessionId = reopened.sessionId
+                    createdSessionRef.current = reopened.sessionId
+                    saveNewTaskDelivery(draftKey, deliveryRef.current)
+                    setDeliveryPending(true)
+                    await deliverInitialTask(reopened.sessionId)
+                } else props.onSuccess(reopened.sessionId)
                 return
             }
 
-            const result = await spawnSession({
+            if (props.initialTask !== undefined && !deliveryRef.current) {
+                deliveryRef.current = { ...createNewTaskDelivery(props.initialTask, files.map(item => item.id)), shareTransferId: acceptedShareRef.current }
+            }
+            const launchInput = launchInputRef.current ?? {
+                requestId: deliveryRef.current?.requestId ?? randomId(),
                 machineId,
                 directory: trimmedDirectory,
                 agent,
@@ -1753,10 +1913,31 @@ export function NewSession(props: {
                 serviceTier: resolvedServiceTier,
                 collaborationMode: resolvedCollaborationMode,
                 copilotAgentMode: agent === 'copilot' ? copilotAgentMode : undefined,
-            })
+            }
+            launchInputRef.current = launchInput
+            if (deliveryRef.current) {
+                deliveryRef.current.form = {
+                    agent, model: agent === 'agy' ? (agySelectedModel ?? 'auto') : agent === 'opencode' ? (opencodeSelectedModel ?? 'auto') : model,
+                    cursorSelectedBase, machineId, effort, modelReasoningEffort, serviceTier, collaborationMode,
+                    copilotAgentMode, yoloMode, nativePermissionMode, grokPermissionMode, sessionType, worktreeName
+                }
+                deliveryRef.current.launch = launchInput
+                saveNewTaskDelivery(draftKey, deliveryRef.current)
+                setDeliveryPending(true)
+            }
+            const result = await spawnSession(launchInput)
 
 
             if (result.type === 'success') {
+                createdSessionRef.current = result.sessionId
+                if (deliveryRef.current) {
+                    deliveryRef.current.sessionId = result.sessionId
+                    saveNewTaskDelivery(draftKey, deliveryRef.current)
+                }
+                if (props.initialTask !== undefined) {
+                    await deliverInitialTask(result.sessionId)
+                    return
+                }
                 haptic.notification('success')
                 savePreferredLaunchSettings(machineId, agent, preferredLaunchSettings)
                 clearNewSessionFormDraft()
@@ -1769,6 +1950,12 @@ export function NewSession(props: {
 
             haptic.notification('error')
             setError(result.message)
+            if (result.childStarted === false) {
+                deliveryRef.current = null
+                launchInputRef.current = null
+                saveNewTaskDelivery(draftKey, null)
+                setDeliveryPending(false)
+            }
         } catch (e) {
             setIsImportingCodexSession(false)
             setIsImportingPiSession(false)
@@ -1837,16 +2024,203 @@ export function NewSession(props: {
         && !fastModeSelectionPending
     )
 
+    const taskModels = agent === 'codex' ? codexModelOptions
+        : agent === 'grok' ? grokModelOptions
+        : agent === 'copilot' ? copilotModelOptions
+        : agent === 'kimi' ? kimiModelOptions
+        : agent === 'pi' ? piModelOptions
+        : agent === 'cursor' ? cursorPicker.modelOptions
+        : agent === 'agy' ? [{ value: 'auto', label: t('newSession.model.default') }, ...agyModelsState.availableModels.map(item => ({ value: item.modelId, label: item.name || item.modelId }))]
+        : agent === 'opencode' ? [{ value: 'auto', label: t('newSession.model.default') }, ...opencodeModelsState.availableModels.map(item => ({ value: item.modelId, label: item.name || item.modelId }))]
+        : MODEL_OPTIONS[agent]
+    const taskEfforts = agent === 'codex'
+        ? [{ value: 'default', label: t('newSession.model.default') }, ...(codexSupportedReasoningEfforts ?? []).map(value => ({ value, label: value }))]
+        : agent === 'claude' ? CLAUDE_EFFORT_OPTIONS
+        : agent === 'grok' ? grokEffortOptions
+        : agent === 'pi' ? [{ value: 'auto', label: t('newSession.model.default') }, ...(piSelectedModel?.reasoning === false ? [] : getPiThinkingLevelOptions(effort, piSelectedModel?.thinkingLevelMap))]
+        : agent === 'opencode' ? [{ value: 'default', label: t('newSession.model.default') }, ...(opencodeVariantOptions ?? []).map(value => ({ value, label: value }))]
+        : agent === 'cursor' && showCursorVariantPicker ? cursorVariantSelectOptions
+        : []
+    const taskEffort = agent === 'codex' || agent === 'opencode' ? modelReasoningEffort
+        : agent === 'cursor' ? cursorEffortSelectValue : effort
+    const invalidTaskSelection = props.initialTask !== undefined && (
+        (agent === 'codex' && !codexModelsState.isLoading && !codexModelsState.error && model !== 'auto' && !codexModelsState.models.some(candidate => candidate.id === model))
+        || (agent === 'codex' && modelReasoningEffort !== 'default' && Boolean(codexSupportedReasoningEfforts) && !codexSupportedReasoningEfforts?.includes(modelReasoningEffort))
+        || (agent === 'codex' && serviceTier === 'fast' && !codexModelsState.isLoading && !showCodexFastMode)
+        || (agent === 'agy' && agySelectedModel !== null && !agyModelsState.isLoading && !agyModelsState.error && !agyModelsState.availableModels.some(candidate => candidate.modelId === agySelectedModel))
+        || (agent === 'opencode' && opencodeSelectedModel != null && !opencodeCatalogPending && !opencodeModelsState.error && !opencodeModelsState.availableModels.some(candidate => candidate.modelId === opencodeSelectedModel))
+        || (agent === 'opencode' && !opencodeCatalogPending && !isOpencodeReasoningEffortValid(modelReasoningEffort, opencodeVariantOptions ?? null))
+        || (agent === 'pi' && effort !== 'auto' && (piSelectedModel?.reasoning === false || !isThinkingLevelSupported(effort, piSelectedModel?.thinkingLevelMap)))
+        || (['grok', 'copilot', 'kimi', 'pi'].includes(agent) && model !== 'auto' && !isLaunchPreferenceValidationPending && !taskModels.some(option => option.value === model))
+        || (agent === 'cursor' && model !== 'auto' && !cursorModelsState.isLoading && !cursorModelsState.error && !availableCursorCatalog.wireToBase.has(model))
+        || (agent === 'grok' && !grokModelsState.isLoading && !grokEffortOptions.some(option => option.value === effort))
+    )
+    const taskText = deliveryPending ? deliveryRef.current?.text ?? props.initialTask : props.initialTask
+    const taskCanSend = (canCreate || deliveryPending) && !isCreating && (deliveryPending || !invalidTaskSelection) && filesReady && Boolean(deliveryPending || taskText?.trim() || files.length)
+
     return (
-        <div className="app-new-session-form flex flex-col divide-y divide-[var(--app-divider)] [&>div]:pr-[10px] lg:[&>div]:pr-3">
-            {props.initialTask !== undefined ? <div className="px-3 py-3">
-                <label htmlFor="new-session-initial-task" className="mb-1 block text-sm font-medium">{t('sessions.task.initial')}</label>
-                <textarea id="new-session-initial-task" rows={3} value={props.initialTask} disabled={isFormDisabled}
-                    onChange={event => props.onInitialTaskChange?.(event.target.value)}
-                    placeholder={t('sessions.task.placeholder')}
-                    className="w-full resize-y rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-3 text-base text-[var(--app-fg)]" />
-                <p className="mt-1 text-xs text-[var(--app-hint)]">{t('sessions.task.initialHint')}</p>
-            </div> : null}
+        <div className="app-new-session-form flex flex-col">
+            {props.initialTask !== undefined ? (
+                <section className="mx-auto flex w-full max-w-3xl flex-col px-4 pb-8 pt-[clamp(2rem,12vh,9rem)] sm:px-6" data-testid="new-task-composer">
+                    <h1 className="mb-8 text-center text-2xl font-semibold tracking-tight sm:mb-10 sm:text-4xl">{t('newTask.heading')}</h1>
+                    <div className="rounded-3xl border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-sm sm:p-4">
+                        <label htmlFor="new-session-initial-task" className="sr-only">{t('sessions.task.initial')}</label>
+                        <textarea id="new-session-initial-task" rows={6} value={taskText}
+                            onChange={event => props.onInitialTaskChange?.(event.target.value)}
+                            placeholder={t('sessions.task.placeholder')}
+                            disabled={isCreating || deliveryPending}
+                            onKeyDown={event => {
+                                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && taskCanSend) {
+                                    event.preventDefault()
+                                    void handleCreate()
+                                }
+                            }}
+                            className="min-h-40 w-full resize-y border-0 bg-transparent p-2 text-base text-[var(--app-fg)] outline-none sm:min-h-52" />
+                        {files.length > 0 ? <ul className="mb-3 flex flex-wrap gap-2" aria-label="Attachments">
+                            {files.map(item => <li key={item.id} className="flex max-w-full items-center gap-2 rounded-xl bg-[var(--app-secondary-bg)] px-3 py-2 text-xs">
+                                <span className="truncate">{item.file.name}</span><button type="button" className="min-h-11 min-w-11" disabled={isCreating || deliveryPending} aria-label={`Remove ${item.file.name}`} onClick={() => setFiles(current => current.filter(file => file.id !== item.id))}>×</button>
+                            </li>)}
+                        </ul> : null}
+                        <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+                            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={event => {
+                                const picked = Array.from(event.target.files ?? [])
+                                if (picked.some(file => file.size > MAX_UPLOAD_BYTES)) { setError(t('newTask.fileTooLarge')); return }
+                                setFiles(current => [...current, ...picked.map(file => ({ id: randomId(), file }))])
+                                event.target.value = ''
+                            }} />
+                            <button type="button" aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady} onClick={() => fileInputRef.current?.click()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] disabled:opacity-50"><Plus size={20} /></button>
+                            <button type="button" aria-label={t('misc.permissionMode')} aria-expanded={permissionOpen} onClick={() => setPermissionOpen(value => !value)} className="flex min-h-11 min-w-11 items-center gap-1 rounded-full px-2 py-2 text-xs hover:bg-[var(--app-secondary-bg)]"><Shield size={16} /><span className="hidden sm:inline">{getPermissionModeLabel(agent === 'grok' ? grokPermissionMode : usesNativePermissionSelect(agent) ? nativePermissionMode : yoloMode ? 'yolo' : 'default')}</span><span>⌄</span></button>
+                            <div className="ml-auto min-w-0">
+                                <ModelEffortPicker models={taskModels} model={agent === 'cursor' && cursorPicker.mode === 'dual' ? cursorBaseSelectValue : agent === 'agy' ? agySelectedModel ?? 'auto' : agent === 'opencode' ? opencodeSelectedModel ?? 'auto' : model}
+                                    onModelChange={value => { if (agent === 'agy') { agyModelPickedByUserRef.current = value !== 'auto'; setAgySelectedModel(value === 'auto' ? null : value); } else if (agent === 'opencode') setOpencodeSelectedModel(value === 'auto' ? null : value); else if (agent === 'cursor' && cursorPicker.mode === 'dual') handleCursorBaseChange(value ?? 'auto'); else setModel(value ?? 'auto') }}
+                                    efforts={taskEfforts} effort={taskEffort}
+                                    onEffortChange={value => { if (agent === 'codex' || agent === 'opencode') setModelReasoningEffort(value ?? 'default'); else if (agent === 'cursor') handleCursorEffortChange(value ?? 'auto'); else setEffort(value ?? 'auto') }}
+                                    fast={serviceTier === 'fast'} onFastChange={showCodexFastMode ? value => setServiceTier(value ? 'fast' : 'standard') : undefined}
+                                    disabled={isCreating || deliveryPending} loading={isLaunchPreferenceValidationPending}
+                                    error={agent === 'codex' ? codexModelsState.error : agent === 'grok' ? grokModelsState.error : agent === 'copilot' ? copilotModelsState.error : agent === 'kimi' ? kimiModelsState.error : agent === 'pi' ? piModelsState.error : null}
+                                />
+                            </div>
+                            <button type="button" aria-label={deliveryPending ? t('newTask.retryDelivery') : t('composer.send')} title={createLabel} disabled={!taskCanSend} onClick={() => void handleCreate()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-fg)] text-[var(--app-bg)] disabled:opacity-30"><ArrowUp size={22} /></button>
+                        </div>
+                        {permissionOpen ? <div className="mt-2 rounded-xl bg-[var(--app-secondary-bg)]">            <PermissionField
+                agent={agent}
+                nativeValue={agent === 'grok' ? grokPermissionMode : nativePermissionMode}
+                yoloMode={yoloMode}
+                autoPermissionModeSupported={agent === 'grok' ? grokModelsState.autoPermissionModeSupported : null}
+                isDisabled={isFormDisabled}
+                onNativeChange={(mode) => {
+                    if (agent === 'grok') {
+                        setGrokPermissionMode(mode as GrokPermissionMode)
+                    } else {
+                        setNativePermissionMode(mode)
+                    }
+                }}
+                onYoloToggle={setYoloMode}
+            />
+</div> : null}
+                    </div>
+                    <div className="mt-4 flex items-center gap-2 rounded-2xl bg-[var(--app-secondary-bg)] px-3 py-3 text-sm">
+                        <button type="button" className="flex min-h-11 min-w-11 items-center gap-2 rounded-lg px-2 py-1" onClick={() => setContextOpen(contextOpen === 'machine' ? null : 'machine')} aria-expanded={contextOpen === 'machine'}><Monitor size={17} /><span className="max-w-24 truncate sm:max-w-40">{selectedMachine?.metadata?.displayName || selectedMachine?.metadata?.host || t('newSession.machine')}</span><span>⌄</span></button>
+                        <span className="h-5 border-l border-[var(--app-border)]" />
+                        <button type="button" className="flex min-h-11 min-w-11 items-center gap-2 rounded-lg px-2 py-1" onClick={() => setContextOpen(contextOpen === 'directory' ? null : 'directory')} aria-expanded={contextOpen === 'directory'} title={directory}><Folder size={17} /><span className="max-w-24 truncate sm:max-w-52">{directory.split(/[\\/]/).filter(Boolean).pop() || t('newSession.directory')}</span><span>⌄</span></button>
+                        <button type="button" className="ml-auto flex min-h-11 min-w-11 items-center justify-center rounded-full p-2" aria-label={t('newTask.moreSettings')} aria-expanded={settingsOpen} onClick={() => setSettingsOpen(value => !value)}><MoreHorizontal size={20} /></button>
+                    </div>
+                    {contextOpen === 'machine' ? <div className="mt-2 rounded-2xl border border-[var(--app-border)]">            <MachineSelector
+                machines={props.machines}
+                machineId={machineId}
+                isLoading={props.isLoading}
+                isDisabled={isFormDisabled}
+                onChange={handleMachineChange}
+            />
+</div> : null}
+                    {contextOpen === 'directory' ? <div className="mt-2 rounded-2xl border border-[var(--app-border)]">            <DirectorySection
+                directory={directory}
+                suggestions={suggestions}
+                selectedIndex={selectedIndex}
+                isDisabled={isFormDisabled}
+                recentPaths={recentPaths}
+                statusMessage={directoryStatusMessage}
+                statusTone={directoryStatusTone}
+                onDirectoryChange={handleDirectoryChange}
+                onDirectoryFocus={handleDirectoryFocus}
+                onDirectoryBlur={handleDirectoryBlur}
+                onDirectoryKeyDown={handleDirectoryKeyDown}
+                onSuggestionSelect={handleSuggestionSelect}
+                onPathClick={handlePathClick}
+                onChooseFolder={props.onChooseFolder ? handleChooseFolderClick : undefined}
+            />
+</div> : null}
+                    {settingsOpen ? <div className="mt-2 rounded-2xl border border-[var(--app-border)]">            <AgentSelector
+                agent={agent}
+                agents={availableAgents}
+                isDisabled={isFormDisabled || agentAvailability.isLoading || Boolean(agentAvailability.error)}
+                onAgentChange={handleAgentChange}
+            />
+             <SessionTypeSelector
+                sessionType={sessionType}
+                worktreeName={worktreeName}
+                worktreeInputRef={worktreeInputRef}
+                isDisabled={isFormDisabled}
+                onSessionTypeChange={setSessionType}
+                onWorktreeNameChange={setWorktreeName}
+            />
+             {agent === 'codex' ? (
+                <CodexImportActions
+                    selectedSession={selectedCodexImportSession}
+                    isLoading={isLoadingCodexImportSessions}
+                    isDisabled={isFormDisabled || !selectedMachine}
+                    error={codexImportError}
+                    onChooseHistory={() => {
+                        codexSearchRef.current = { search: '', cwd: null }
+                        setCodexNextCursor(null)
+                        setIsCodexImportDialogOpen(true)
+                        void loadCodexImportSessions()
+                    }}
+                    onClear={() => setSelectedCodexImportSessionId(null)}
+                />
+            ) : null}
+            {agent === 'pi' ? (
+                <PiImportActions
+                    selectedSession={selectedPiImportSession}
+                    isLoading={isLoadingPiImportSessions}
+                    isDisabled={isFormDisabled}
+                    error={piImportError}
+                    onChooseHistory={() => {
+                        setIsPiImportDialogOpen(true)
+                        void loadPiImportSessions()
+                    }}
+                    onClear={() => setSelectedPiImportSessionId(null)}
+                />
+            ) : null}
+             <CollaborationModeSelector
+                agent={agent}
+                value={collaborationMode}
+                isDisabled={isFormDisabled}
+                onChange={setCollaborationMode}
+            />
+            <CopilotAgentModeSelector
+                agent={agent}
+                value={copilotAgentMode}
+                isDisabled={isFormDisabled}
+                onChange={setCopilotAgentMode}
+            />
+            <FastModeSelector
+                visible={showCodexFastMode}
+                value={serviceTier}
+                isDisabled={isFormDisabled}
+                onChange={setServiceTier}
+            />
+</div> : null}
+                    {!selectedMachine && !props.isLoading ? <RunnerSetupHint /> : null}
+                    {agentAvailability.isLoading ? <p className="mt-3 text-xs text-[var(--app-hint)]">{t('newSession.agentAvailabilityLoading')}</p> : null}
+                    {agentAvailability.error ? <button type="button" className="mt-3 text-left text-sm text-red-600" onClick={agentAvailability.refetch}>{t('newSession.agentAvailabilityFailed')} · {t('button.retry')}</button> : null}
+                    {deliveryPending ? <p role="status" className="mt-3 text-xs text-[var(--app-hint)]">{t('newTask.pendingDelivery')}</p> : null}
+                    {invalidTaskSelection ? <p role="alert" className="mt-3 text-sm text-red-600">{t('newTask.invalidSelection')}</p> : null}
+                    {serviceTier === 'fast' && !showCodexFastMode && !deliveryPending ? <button type="button" className="mt-2 min-h-11 self-start rounded-lg px-3 text-sm text-[var(--app-link)]" disabled={isCreating} onClick={() => setServiceTier('standard')}>{t('newTask.clearFast')}</button> : null}
+                    {directoryStatusMessage ? <p className="mt-3 text-xs text-[var(--app-hint)]">{directoryStatusMessage}</p> : null}
+                    {(error ?? spawnError) ? <p role="alert" className="mt-3 text-sm text-red-600">{error ?? spawnError}</p> : null}
+                </section>
+            ) : <>
             <MachineSelector
                 machines={props.machines}
                 machineId={machineId}
@@ -2116,6 +2490,7 @@ export function NewSession(props: {
                 onCancel={props.onCancel}
                 onCreate={handleCreate}
             />
+            </>}
             <CodexSessionSyncDialog
                 isOpen={isCodexImportDialogOpen}
                 onClose={() => {

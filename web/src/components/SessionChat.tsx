@@ -47,7 +47,7 @@ import {
     isDictateHotkeyBlockedTarget,
     isDictateToggleHotkey,
 } from '@/lib/composerDictateShortcut'
-import { codexModelAdvertisesFastTier, getEffectiveCodexServiceTier } from '@/components/AssistantChat/codexFastMode'
+import { codexModelAdvertisesFastTier, getEffectiveCodexServiceTier, getCodexFastModelChangeBlocker } from '@/components/AssistantChat/codexFastMode'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import { resolvePendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import { NativeDependencyProvider } from '@/components/ToolCard/nativeDependencies'
@@ -1337,7 +1337,8 @@ function SessionChatInner(props: SessionChatProps) {
         setModel,
         setModelReasoningEffort,
         setEffort,
-        setServiceTier
+        setServiceTier,
+        isPending: isSessionActionPending
     } = useSessionActions(
         props.api,
         props.session.id,
@@ -1565,6 +1566,8 @@ function SessionChatInner(props: SessionChatProps) {
         }
     }, [setCopilotAgentMode, props.onRefresh, haptic])
 
+    const [modelSettingsError, setModelSettingsError] = useState<string | null>(null)
+
     // Model mode change handler
     const handleModelChange = useCallback(async (model: SessionModelSelection) => {
         const previousModelReasoningEffort = props.session.modelReasoningEffort
@@ -1575,6 +1578,19 @@ function SessionChatInner(props: SessionChatProps) {
             model
         })
 
+        if (props.session.thinking) return
+        const fastBlocker = agentFlavor === 'codex' ? getCodexFastModelChangeBlocker(
+            props.session.serviceTier, typeof model === 'string' ? model : model?.modelId, codexModelsState.models
+        ) : null
+        if (fastBlocker) {
+            setModelSettingsError(t(fastBlocker === 'unknown' ? 'composer.modelPicker.waitForCapabilities' : 'composer.modelPicker.incompatibleFast'))
+            return
+        }
+        if (shouldClearReasoningEffort) {
+            setModelSettingsError(t('composer.modelPicker.incompatible'))
+            return
+        }
+        setModelSettingsError(null)
         try {
             await applyModelChangeWithReasoningRollback({
                 model,
@@ -1587,12 +1603,16 @@ function SessionChatInner(props: SessionChatProps) {
             props.onRefresh()
         } catch (e) {
             haptic.notification('error')
+            setModelSettingsError(e instanceof Error ? e.message : String(e))
             console.error('Failed to set model:', e)
         }
     }, [
         agentFlavor,
         codexModelsState.models,
         props.session.modelReasoningEffort,
+        props.session.thinking,
+        props.session.serviceTier,
+        t,
         setModelReasoningEffort,
         setModel,
         props.onRefresh,
@@ -1643,10 +1663,12 @@ function SessionChatInner(props: SessionChatProps) {
     const handleModelReasoningEffortChange = useCallback(async (modelReasoningEffort: string | null) => {
         try {
             await setModelReasoningEffort(modelReasoningEffort)
+            setModelSettingsError(null)
             haptic.notification('success')
             props.onRefresh()
         } catch (e) {
             haptic.notification('error')
+            setModelSettingsError(e instanceof Error ? e.message : String(e))
             console.error('Failed to set model reasoning effort:', e)
         }
     }, [setModelReasoningEffort, props.onRefresh, haptic])
@@ -1654,10 +1676,12 @@ function SessionChatInner(props: SessionChatProps) {
     const handleEffortChange = useCallback(async (effort: string | null) => {
         try {
             await setEffort(effort)
+            setModelSettingsError(null)
             haptic.notification('success')
             props.onRefresh()
         } catch (e) {
             haptic.notification('error')
+            setModelSettingsError(e instanceof Error ? e.message : String(e))
             console.error('Failed to set effort:', e)
         }
     }, [setEffort, props.onRefresh, haptic])
@@ -1665,10 +1689,12 @@ function SessionChatInner(props: SessionChatProps) {
     const handleServiceTierChange = useCallback(async (serviceTier: string | null) => {
         try {
             await setServiceTier(serviceTier)
+            setModelSettingsError(null)
             haptic.notification('success')
             props.onRefresh()
         } catch (e) {
             haptic.notification('error')
+            setModelSettingsError(e instanceof Error ? e.message : String(e))
             console.error('Failed to set service tier:', e)
         }
     }, [setServiceTier, props.onRefresh, haptic])
@@ -2098,7 +2124,7 @@ function SessionChatInner(props: SessionChatProps) {
                         onSendAttachmentDrafts={(attachments) => { submittedAttachmentDraftsRef.current = attachments }}
                         attachmentOrderRef={attachmentOrderRef}
                         resolveSessionMentionTooltip={resolveSessionMentionTooltip}
-                        disabled={props.isSending}
+                        disabled={props.isSending || isSessionActionPending}
                         pendingSchedule={pendingSchedule}
                         sendAcceptance={sendAcceptance}
                         sendSettlement={props.sendSettlement}
@@ -2108,6 +2134,7 @@ function SessionChatInner(props: SessionChatProps) {
                         collaborationMode={codexCollaborationModeSupported ? props.session.collaborationMode : undefined}
                         copilotAgentMode={agentFlavor === 'copilot' ? props.session.copilotAgentMode : undefined}
                         model={props.session.model}
+                        modelSettingsError={modelSettingsError}
                         modelReasoningEffort={agentFlavor === 'codex' || agentFlavor === 'opencode' ? props.session.modelReasoningEffort : undefined}
                         effort={props.session.effort}
                         agentFlavor={agentFlavor}
@@ -2257,6 +2284,9 @@ function SessionChatInner(props: SessionChatProps) {
                                 : handleEffortChange
                         }
                         serviceTier={effectiveCodexServiceTier}
+                        onClearUnsupportedFast={agentFlavor === 'codex' && props.session.active && !controlledByUser
+                            && getCodexFastModelChangeBlocker(props.session.serviceTier, props.session.model, codexModelsState.models) === 'unsupported'
+                            ? () => handleServiceTierChange('standard') : undefined}
                         onServiceTierChange={
                             agentFlavor === 'codex'
                                 && props.session.active

@@ -101,6 +101,10 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         const startingMode = parsed.data.startingMode
         const namespace = c.get('namespace')
 
+        if (parsed.data.requestId) {
+            return c.json(await engine.spawnSessionIdempotent(machineId, namespace, parsed.data))
+        }
+
         const result = await engine.spawnSession(
             machineId,
             parsed.data.directory,
