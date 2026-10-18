@@ -724,6 +724,7 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
     const [showSchedulePicker, setShowSchedulePicker] = useState(false)
     const sendOptionsRef = useRef<HTMLButtonElement>(null)
     const restoreSelectionRef = useRef<(() => void) | null>(null)
+    const attachmentPickerRef = useRef<HTMLButtonElement>(null)
     const referenceSelectedRef = useRef(false)
     const scratchlistFue = useFue('scratchlist-toggle')
     const hasSchedule = props.pendingSchedule != null
@@ -759,6 +760,10 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
     </>
 
     return <>
+        {/* Keep the picker owner alive while the Add menu closes. Its runtime
+            scope still cancels a result if the actual composer is replaced. */}
+        {!props.workspace ? <ComposerPrimitive.AddAttachment ref={attachmentPickerRef} hidden
+            disabled={props.controlsDisabled || hasSchedule || props.goalMode} /> : null}
         {modeLabel ? <div className="composer-refinement-mode" role="status">
             <span>{modeLabel}</span>
             <button type="button" onClick={clearSendMode} aria-label={t('composer.refinement.cancelMode')} title={t('composer.refinement.cancelMode')}>×</button>
@@ -796,11 +801,11 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
                                     referenceSelectedRef.current = false
                                 }
                             }}>
-                            <ComposerPrimitive.AddAttachment className="composer-refinement-menu-row"
+                            <button type="button" className="composer-refinement-menu-row"
                                 disabled={props.controlsDisabled || hasSchedule || props.goalMode}
-                                onClick={() => setAddOpen(false)}>
+                                onClick={() => { attachmentPickerRef.current?.click(); setAddOpen(false) }}>
                                 <AttachmentIcon />{t('composer.refinement.addFiles')}
-                            </ComposerPrimitive.AddAttachment>
+                            </button>
                             <button type="button" className="composer-refinement-menu-row"
                                 disabled={props.controlsDisabled || !props.onReferenceSession}
                                 onClick={() => {
