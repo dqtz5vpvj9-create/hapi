@@ -2,6 +2,7 @@ import { disconnectSessionReadSync } from '@/lib/sessionLastSeen'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiClient, ApiError } from '@/api/client'
 import type { AuthResponse } from '@/types/api'
+import { storeAccessToken } from '@/lib/accessTokenStorage'
 
 export type AuthSource =
     | { type: 'telegram'; initData: string }
@@ -38,14 +39,18 @@ function isNotBoundError(error: unknown): boolean {
     return error instanceof ApiError && error.status === 401 && error.code === 'not_bound'
 }
 
-const ACCESS_TOKEN_PREFIX = 'hapi_access_token::'
+type AuthScope = { baseUrl: string; source: AuthSource | null }
+type AuthState = {
+    scope: AuthScope
+    token: string | null
+    user: AuthResponse['user'] | null
+    isLoading: boolean
+    error: string | null
+    needsBinding: boolean
+}
 
-function rememberAccessToken(baseUrl: string, accessToken: string): void {
-    try {
-        localStorage.setItem(`${ACCESS_TOKEN_PREFIX}${baseUrl}`, accessToken)
-    } catch {
-        // Ignore storage errors (private mode, full quota, etc.)
-    }
+function emptyAuth(scope: AuthScope): AuthState {
+    return { scope, token: null, user: null, isLoading: Boolean(scope.source), error: null, needsBinding: false }
 }
 
 export function useAuth(authSource: AuthSource | null, baseUrl: string): {
@@ -57,128 +62,109 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
     needsBinding: boolean
     bind: (accessToken: string) => Promise<void>
 } {
-    const [token, setToken] = useState<string | null>(null)
-    const [user, setUser] = useState<AuthResponse['user'] | null>(null)
-    const [isLoading, setIsLoading] = useState<boolean>(false)
-    const [error, setError] = useState<string | null>(null)
-    const [needsBinding, setNeedsBinding] = useState<boolean>(false)
-    const refreshPromiseRef = useRef<Promise<string | null> | null>(null)
-    const tokenRef = useRef<string | null>(null)
-    const lastRefreshAttemptRef = useRef<number>(0)
-
-    // Stable reference for auth source to use in effects
-    const authSourceRef = useRef(authSource)
-    authSourceRef.current = authSource
+    const scope = useMemo(() => ({ baseUrl, source: authSource }), [baseUrl, authSource])
+    const scopeRef = useRef(scope)
+    scopeRef.current = scope
+    const mountedRef = useRef(true)
+    const [stored, setStored] = useState(() => emptyAuth(scope))
+    // A hub/account switch invalidates the public state during render, before
+    // effects and network consumers can observe a new URL with an old JWT.
+    const state = stored.scope === scope ? stored : emptyAuth(scope)
+    const { token, user, isLoading, error, needsBinding } = state
+    const tokenRef = useRef(token)
     tokenRef.current = token
+    const refreshState = useMemo(() => ({
+        promise: null as Promise<string | null> | null,
+        lastAttempt: 0,
+    }), [scope])
+
+    useEffect(() => {
+        mountedRef.current = true
+        return () => { mountedRef.current = false; tokenRef.current = null }
+    }, [])
+
+    const isCurrent = useCallback(() => mountedRef.current && scopeRef.current === scope, [scope])
+    const publish = useCallback((patch: Partial<Omit<AuthState, 'scope'>>) => {
+        if (!isCurrent()) return
+        setStored(previous => ({ ...(previous.scope === scope ? previous : emptyAuth(scope)), ...patch, scope }))
+    }, [scope, isCurrent])
 
     const refreshAuth = useCallback(async (options?: {
         minTtlMs?: number
         hardFail?: boolean
         force?: boolean
     }): Promise<string | null> => {
-        const currentSource = authSourceRef.current
+        const source = scope.source
+        if (!isCurrent() || !source || !scope.baseUrl) return null
         const currentToken = tokenRef.current
-        if (!currentSource) {
-            return null
-        }
-
         const expMs = currentToken ? decodeJwtExpMs(currentToken) : null
         const minTtlMs = options?.minTtlMs ?? 0
         const now = Date.now()
         const ttlMs = expMs ? expMs - now : null
         const needsRefreshForTtl = ttlMs !== null && ttlMs <= minTtlMs
-        if (!options?.force && ttlMs !== null && ttlMs > minTtlMs) {
-            return currentToken
-        }
-        if (!options?.force && !needsRefreshForTtl && now - lastRefreshAttemptRef.current < 15_000) {
-            return currentToken
-        }
-        if (refreshPromiseRef.current) {
-            return await refreshPromiseRef.current
-        }
+        if (!options?.force && ttlMs !== null && ttlMs > minTtlMs) return currentToken
+        if (!options?.force && !needsRefreshForTtl && now - refreshState.lastAttempt < 15_000) return currentToken
+        if (refreshState.promise) return await refreshState.promise
 
         const run = async () => {
-            lastRefreshAttemptRef.current = now
-
+            refreshState.lastAttempt = now
             try {
-                const client = new ApiClient('', { baseUrl })
-                const auth = await client.authenticate(getAuthPayload(currentSource))
+                const client = new ApiClient('', { baseUrl: scope.baseUrl })
+                const auth = await client.authenticate(getAuthPayload(source))
+                if (!isCurrent()) return null
                 tokenRef.current = auth.token
-                setToken(auth.token)
-                setUser(auth.user)
-                setError(null)
-                setNeedsBinding(false)
+                publish({ token: auth.token, user: auth.user, error: null, needsBinding: false })
                 return auth.token
             } catch (error) {
-                if (currentSource.type === 'telegram' && isNotBoundError(error)) {
+                if (!isCurrent()) return null
+                if (source.type === 'telegram' && isNotBoundError(error)) {
                     tokenRef.current = null
-                    setToken(null)
-                    setUser(null)
-                    setError(null)
-                    setNeedsBinding(true)
+                    publish({ token: null, user: null, error: null, needsBinding: true })
                     return null
                 }
-                const isExpired = expMs ? Date.now() >= expMs : false
-                if (options?.hardFail || isExpired) {
+                if (options?.hardFail || (expMs !== null && Date.now() >= expMs)) {
                     tokenRef.current = null
-                    setToken(null)
-                    setUser(null)
-                    const msg = currentSource.type === 'telegram'
+                    publish({ token: null, user: null, error: source.type === 'telegram'
                         ? 'Session expired. Reopen the Mini App from Telegram.'
-                        : 'Session expired. Please login again.'
-                    setError(msg)
+                        : 'Session expired. Please login again.' })
                 }
                 return null
             }
         }
-
-        const refreshPromise = run()
-        refreshPromiseRef.current = refreshPromise
-
-        try {
-            return await refreshPromise
-        } finally {
-            if (refreshPromiseRef.current === refreshPromise) {
-                refreshPromiseRef.current = null
-            }
+        const pending = run()
+        refreshState.promise = pending
+        try { return await pending } finally {
+            if (refreshState.promise === pending) refreshState.promise = null
         }
-    }, [baseUrl])
+    }, [scope, refreshState, isCurrent, publish])
 
     const bind = useCallback(async (accessToken: string) => {
-        const currentSource = authSourceRef.current
-        if (!currentSource || currentSource.type !== 'telegram') {
-            setError('Binding is only supported in Telegram.')
+        if (!isCurrent()) return
+        const source = scope.source
+        if (!source || source.type !== 'telegram') {
+            publish({ error: 'Binding is only supported in Telegram.' })
             return
         }
-
-        setIsLoading(true)
-        setError(null)
+        publish({ isLoading: true, error: null })
         try {
-            const client = new ApiClient('', { baseUrl })
-            const auth = await client.bind({ initData: currentSource.initData, accessToken })
+            const client = new ApiClient('', { baseUrl: scope.baseUrl })
+            const auth = await client.bind({ initData: source.initData, accessToken })
+            if (!isCurrent()) return
+            await storeAccessToken(scope.baseUrl, accessToken)
+            if (!isCurrent()) return
             tokenRef.current = auth.token
-            setToken(auth.token)
-            setUser(auth.user)
-            setNeedsBinding(false)
-            // Persist the CLI access token so Settings → Companion pairing QR
-            // can encode the same long-lived token in the deeplink. The PWA
-            // already does this for browser/CLI logins via useAuthSource.
-            rememberAccessToken(baseUrl, accessToken)
+            publish({ token: auth.token, user: auth.user, needsBinding: false })
         } catch (error) {
-            setError(error instanceof Error ? error.message : 'Binding failed')
+            if (!isCurrent()) return
+            publish({ error: error instanceof Error ? error.message : 'Binding failed' })
             throw error
         } finally {
-            setIsLoading(false)
+            publish({ isLoading: false })
         }
-    }, [baseUrl])
+    }, [scope, isCurrent, publish])
 
-    // Keep the ApiClient referentially stable across token *refreshes*: the client always reads
-    // the live token via getToken (tokenRef), so it never needs rebuilding when the token value
-    // changes — only when auth presence toggles (login/logout). Rebuilding on every refresh churns
-    // `api`'s identity, which remounts everything keyed on it (VoiceBackendSession `[props.api]`,
-    // GeneratedImageCard `[ctx.api, ...]`) and drives the remount/refetch storm. Issue #927.
-    // A refreshed token for the same account keeps the client stable; a new
-    // account must receive a separate read-state scope even without a null-token frame.
+    // Refreshes for the same account keep the ApiClient stable. A previous
+    // lifetime's callbacks must never read credentials from the current scope.
     let authIdentity = ''
     if (token) {
         try {
@@ -187,130 +173,71 @@ export function useAuth(authSource: AuthSource | null, baseUrl: string): {
         } catch { /* Placeholder tokens have no identity in tests. */ }
     }
     const hasToken = token !== null
-    const api = useMemo(() => (
-        hasToken
-            ? new ApiClient(tokenRef.current ?? '', {
-                baseUrl,
-                getToken: () => tokenRef.current,
-                onUnauthorized: () => refreshAuth({ force: true })
-            })
-            : null
-    ), [baseUrl, refreshAuth, hasToken, authIdentity])
+    const api = useMemo(() => hasToken ? new ApiClient(tokenRef.current ?? '', {
+        baseUrl: scope.baseUrl,
+        getToken: () => isCurrent() ? tokenRef.current : null,
+        onUnauthorized: () => refreshAuth({ force: true }),
+    }) : null, [scope, isCurrent, refreshAuth, hasToken, authIdentity])
 
     useEffect(() => { if (!hasToken) disconnectSessionReadSync() }, [hasToken])
 
     useEffect(() => {
-        let isCancelled = false
-
-        async function run() {
-            if (!authSource) {
-                // No auth source - waiting for login
-                setNeedsBinding(false)
-                return
-            }
-
-            setIsLoading(true)
-            setError(null)
-            setNeedsBinding(false)
+        let cancelled = false
+        const source = scope.source
+        if (!source || !scope.baseUrl) {
+            publish({ token: null, user: null, isLoading: false, needsBinding: false, error: null })
+            return
+        }
+        const run = async () => {
+            publish({ isLoading: true, error: null, needsBinding: false })
             try {
-                const client = new ApiClient('', { baseUrl }) // temporary for auth call
-                const auth = await client.authenticate(getAuthPayload(authSource))
-                if (isCancelled) return
-                setToken(auth.token)
-                setUser(auth.user)
-                setNeedsBinding(false)
-            } catch (e) {
-                if (isCancelled) return
-                if (authSource.type === 'telegram' && isNotBoundError(e)) {
-                    setToken(null)
-                    setUser(null)
-                    setError(null)
-                    setNeedsBinding(true)
-                    return
+                const client = new ApiClient('', { baseUrl: scope.baseUrl })
+                const auth = await client.authenticate(getAuthPayload(source))
+                if (cancelled || !isCurrent()) return
+                tokenRef.current = auth.token
+                publish({ token: auth.token, user: auth.user, needsBinding: false })
+            } catch (error) {
+                if (cancelled || !isCurrent()) return
+                if (source.type === 'telegram' && isNotBoundError(error)) {
+                    publish({ token: null, user: null, error: null, needsBinding: true })
+                } else {
+                    publish({ needsBinding: false, error: error instanceof Error ? error.message : 'Auth failed' })
                 }
-                setNeedsBinding(false)
-                setError(e instanceof Error ? e.message : 'Auth failed')
             } finally {
-                if (!isCancelled) {
-                    setIsLoading(false)
-                }
+                if (!cancelled) publish({ isLoading: false })
             }
         }
-
-        run()
-
-        return () => {
-            isCancelled = true
-        }
-    }, [authSource, baseUrl])
+        void run()
+        return () => { cancelled = true }
+    }, [scope, isCurrent, publish])
 
     useEffect(() => {
-        tokenRef.current = null
-        refreshPromiseRef.current = null
-        lastRefreshAttemptRef.current = 0
-        setToken(null)
-        setUser(null)
-        setError(null)
-        setNeedsBinding(false)
-    }, [baseUrl])
-
-    useEffect(() => {
-        if (!token || !authSource) {
-            return
-        }
-
+        if (!token || !authSource) return
         const expMs = decodeJwtExpMs(token)
-        if (!expMs) {
-            return
-        }
-
-        let isCancelled = false
-        let timeout: ReturnType<typeof setTimeout> | null = null
-
+        if (!expMs) return
+        let cancelled = false
+        let timeout: ReturnType<typeof setTimeout> | undefined
         const schedule = (delayMs: number) => {
-            if (timeout) {
-                clearTimeout(timeout)
-            }
+            if (timeout) clearTimeout(timeout)
             timeout = setTimeout(() => void refresh(), Math.max(0, delayMs))
         }
-
         const refresh = async () => {
-            if (isCancelled) return
+            if (cancelled) return
             const refreshed = await refreshAuth({ force: true })
-            if (isCancelled) return
-            if (!refreshed && Date.now() < expMs) {
-                schedule(15_000)
-            }
+            if (!cancelled && !refreshed && Date.now() < expMs) schedule(15_000)
         }
-
         schedule(expMs - 60_000 - Date.now())
-
-        return () => {
-            isCancelled = true
-            if (timeout) {
-                clearTimeout(timeout)
-            }
-        }
+        return () => { cancelled = true; if (timeout) clearTimeout(timeout) }
     }, [authSource, refreshAuth, token])
 
     useEffect(() => {
-        if (!authSource) {
-            return
-        }
-
-        const handleActive = () => {
-            void refreshAuth({ minTtlMs: 60_000 })
-        }
-
+        if (!authSource) return
+        const handleActive = () => { void refreshAuth({ minTtlMs: 60_000 }) }
         const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
-                handleActive()
-            }
+            if (document.visibilityState === 'visible') handleActive()
         }
-
         window.addEventListener('focus', handleActive)
         document.addEventListener('visibilitychange', handleVisibilityChange)
-
         return () => {
             window.removeEventListener('focus', handleActive)
             document.removeEventListener('visibilitychange', handleVisibilityChange)

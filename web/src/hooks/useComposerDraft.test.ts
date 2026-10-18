@@ -11,10 +11,12 @@ vi.mock('@/lib/composer-attachment-drafts', () => ({
     getDraftAttachments: vi.fn(async () => []),
     getRestoredUploadMetadata: vi.fn(() => undefined),
     saveDraftAttachments: vi.fn(),
+    flushDraftAttachmentWrites: vi.fn(async () => {}),
 }))
 
 import { getDraft, saveDraft } from '@/lib/composer-drafts'
-import { getDraftAttachments, getRestoredUploadMetadata, saveDraftAttachments } from '@/lib/composer-attachment-drafts'
+import { getDraftAttachments, getRestoredUploadMetadata, saveDraftAttachments, flushDraftAttachmentWrites } from '@/lib/composer-attachment-drafts'
+import { prepareNativeUpdateReload } from '@/lib/nativeUpdateReload'
 import { useComposerDraft } from './useComposerDraft'
 
 const mockGetDraft = vi.mocked(getDraft)
@@ -239,6 +241,52 @@ describe('useComposerDraft', () => {
         document.dispatchEvent(new Event('visibilitychange'))
 
         expect(mockSaveDraft).not.toHaveBeenCalled()
+    })
+
+    it('saves the current draft and waits for its file transaction before an explicit native update', async () => {
+        const { rerender, unmount } = renderHook(
+            ({ text }) => useComposerDraft('session-1', text, [], true, vi.fn(), vi.fn()),
+            { initialProps: { text: '' } },
+        )
+        await act(async () => flushRAF())
+        rerender({ text: 'Keep this unsent message' })
+        let finishWrite!: () => void
+        vi.mocked(flushDraftAttachmentWrites).mockReturnValueOnce(new Promise(resolve => { finishWrite = resolve }))
+        let prepared = false
+        const update = prepareNativeUpdateReload().then(() => { prepared = true })
+        await Promise.resolve()
+        expect(prepared).toBe(false)
+        expect(mockSaveDraft).toHaveBeenCalledWith('session-1', 'Keep this unsent message', { throwOnError: true })
+        finishWrite()
+        await update
+        expect(prepared).toBe(true)
+        unmount()
+    })
+
+    it('keeps the current page when draft persistence fails during an explicit native update', async () => {
+        const { unmount } = renderHook(() => useComposerDraft('session-1', 'keep me', [], true, vi.fn(), vi.fn()))
+        await act(async () => flushRAF())
+        vi.mocked(flushDraftAttachmentWrites).mockRejectedValueOnce(new Error('disk full'))
+        await expect(prepareNativeUpdateReload()).rejects.toThrow('disk full')
+        unmount()
+    })
+
+    it('defers native activation until draft hydration has finished', async () => {
+        const { unmount } = renderHook(() => useComposerDraft('session-1', '', [], true, vi.fn(), vi.fn()))
+        await expect(prepareNativeUpdateReload()).rejects.toThrow('draft is still loading')
+        unmount()
+    })
+
+    it('does not replace an unrestored stored file with an empty draft during native activation', async () => {
+        mockGetDraftAttachments.mockResolvedValueOnce([new File(['saved bytes'], 'unrestored.txt')])
+        const { unmount } = renderHook(() => useComposerDraft(
+            'session-1', '', [], true, vi.fn(), async () => { throw new Error('offline upload') },
+        ))
+        await act(async () => flushRAF())
+        mockSaveDraftAttachments.mockClear()
+        await expect(prepareNativeUpdateReload()).rejects.toThrow('attachments could not be restored')
+        expect(mockSaveDraftAttachments).not.toHaveBeenCalled()
+        unmount()
     })
 
     it('does not save draft on unmount before rAF has fired', () => {

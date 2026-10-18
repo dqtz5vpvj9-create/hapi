@@ -55,14 +55,14 @@ function evict(drafts: DraftsMap): void {
     }
 }
 
-function persist(): void {
+function persist(throwOnError = false): void {
     if (typeof window === 'undefined') return
     try {
         const drafts = hydrate()
         evict(drafts)
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify(drafts))
-    } catch {
-        // Ignore storage errors
+    } catch (error) {
+        if (throwOnError) throw error
     }
 }
 
@@ -71,7 +71,7 @@ export function getDraft(sessionId: string): string {
     return drafts[sessionId] ?? ''
 }
 
-export function saveDraft(sessionId: string, text: string): void {
+export function saveDraft(sessionId: string, text: string, options: { throwOnError?: boolean } = {}): void {
     const trimmed = text.trim()
     const drafts = hydrate()
     if (!trimmed) {
@@ -81,7 +81,7 @@ export function saveDraft(sessionId: string, text: string): void {
         delete drafts[sessionId]
         drafts[sessionId] = text
     }
-    persist()
+    persist(options.throwOnError)
 }
 
 export function clearDraft(sessionId: string): void {

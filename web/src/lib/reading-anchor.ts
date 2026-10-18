@@ -30,11 +30,21 @@ export type CodeReadingSource = {
     restore: (viewport: HTMLElement, anchor: NonNullable<ReadingAnchor['code']>, options: ReadingRestoreOptions) => void
 }
 export const CODE_READING_SOURCE_READY = 'hapi-code-reading-source-ready'
-const codeSources = new WeakMap<HTMLElement, CodeReadingSource>()
+const codeSources = new WeakMap<HTMLElement, { source: CodeReadingSource; identity: symbol }>()
 export function registerCodeReadingSource(element: HTMLElement, source: CodeReadingSource): () => void {
-    codeSources.set(element, source)
+    const registration = { source, identity: Symbol() }
+    codeSources.set(element, registration)
     element.dispatchEvent(new Event(CODE_READING_SOURCE_READY, { bubbles: true }))
-    return () => { codeSources.delete(element) }
+    return () => { if (codeSources.get(element) === registration) codeSources.delete(element) }
+}
+
+/** A restored bookmark belongs to one mounted code source. The token retains
+ * no editor or DOM and changes when that source is rebuilt in the same row. */
+export function getCodeReadingSourceIdentity(viewport: HTMLElement, anchor: ReadingAnchor): symbol | null {
+    const row = viewport.ownerDocument.getElementById(anchor.id)
+    if (!anchor.code || !row || !viewport.contains(row)) return null
+    const element = row.querySelectorAll<HTMLElement>('[data-hapi-large-code]')[anchor.code.source]
+    return element ? codeSources.get(element)?.identity ?? null : null
 }
 
 const MESSAGE_SELECTOR = '.happy-thread-messages > [id], .happy-thread-messages [id^="hapi-message-"], [data-hapi-reading-part][id]'
@@ -101,7 +111,7 @@ export function captureReadingAnchor(viewport: HTMLElement): ReadingAnchor | nul
             if (!rect || rect.top < readableTop || rect.bottom > readableBottom
                 || y < rect.top - 2 || y > rect.bottom + 2) continue
             const codeElement = point.node.parentElement?.closest<HTMLElement>('[data-hapi-large-code]')
-            const source = codeElement && codeSources.get(codeElement)
+            const source = codeElement && codeSources.get(codeElement)?.source
             const codePosition = source?.positionAt(point.node, offset)
             // Line-number gutters are not source characters. CodeMirror owns
             // positions in its document, independently of recycled text nodes.
@@ -159,7 +169,7 @@ export function restoreReadingAnchor(viewport: HTMLElement, anchor: ReadingAncho
     if (!row || !viewport.contains(row)) { options?.onRestored(false); return false }
     if (anchor.code) {
         const element = row.querySelectorAll<HTMLElement>('[data-hapi-large-code]')[anchor.code.source]
-        const source = element && codeSources.get(element)
+        const source = element && codeSources.get(element)?.source
         if (!source) { options?.onRestored(false); return false }
         source.restore(viewport, anchor.code, options ?? {
             isCurrent: () => viewport.contains(row), onScroll: () => {}, onRestored: () => {}

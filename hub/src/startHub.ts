@@ -7,6 +7,7 @@ import { HappyBot } from './telegram/bot'
 import { startWebServer } from './web/server'
 import { getOrCreateJwtSecret } from './config/jwtSecret'
 import { getOrCreateOwnerId } from './config/ownerId'
+import { normalizeCorsOrigin, normalizeCorsOrigins } from './config/corsOrigins'
 import { createSocketServer } from './socket/server'
 import { SSEManager } from './sse/sseManager'
 import { getOrCreateVapidKeys } from './config/vapidKeys'
@@ -63,28 +64,6 @@ function resolveRelayFlag(args: string[]): { enabled: boolean; source: RelayFlag
     return { enabled, source }
 }
 
-function normalizeOrigin(value: string): string {
-    const trimmed = value.trim()
-    if (!trimmed) {
-        return ''
-    }
-    try {
-        return new URL(trimmed).origin
-    } catch {
-        return trimmed
-    }
-}
-
-function normalizeOrigins(origins: string[]): string[] {
-    const normalized = origins
-        .map(normalizeOrigin)
-        .filter(Boolean)
-    if (normalized.includes('*')) {
-        return ['*']
-    }
-    return Array.from(new Set(normalized))
-}
-
 function mergeCorsOrigins(base: string[], extra: string[]): string[] {
     if (base.includes('*') || extra.includes('*')) {
         return ['*']
@@ -123,8 +102,8 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
     const relayFlag = resolveRelayFlag(options.args ?? process.argv)
     const officialWebUrl = process.env.HAPI_OFFICIAL_WEB_URL || 'https://app.hapi.run'
     const config = await createConfiguration()
-    const baseCorsOrigins = normalizeOrigins(config.corsOrigins)
-    const relayCorsOrigin = normalizeOrigin(officialWebUrl)
+    const baseCorsOrigins = normalizeCorsOrigins(config.corsOrigins)
+    const relayCorsOrigin = normalizeCorsOrigin(officialWebUrl)
     const corsOrigins = relayFlag.enabled
         ? mergeCorsOrigins(baseCorsOrigins, relayCorsOrigin ? [relayCorsOrigin] : [])
         : baseCorsOrigins

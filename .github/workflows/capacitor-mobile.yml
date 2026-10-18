@@ -1,0 +1,95 @@
+name: capacitor-mobile
+
+on:
+    push:
+        branches:
+            - main
+        paths:
+            - 'mobile/**'
+            - 'web/**'
+            - 'shared/src/**'
+            - 'patches/**'
+            - 'package.json'
+            - 'bun.lock'
+            - 'scripts/testing/check-web-budget.mjs'
+            - '.github/workflows/capacitor-mobile.yml'
+    pull_request:
+        paths:
+            - 'mobile/**'
+            - 'web/**'
+            - 'shared/src/**'
+            - 'patches/**'
+            - 'package.json'
+            - 'bun.lock'
+            - 'scripts/testing/check-web-budget.mjs'
+            - '.github/workflows/capacitor-mobile.yml'
+
+permissions:
+    contents: read
+
+concurrency:
+    group: capacitor-mobile-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    android:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version-file: package.json
+            - uses: actions/setup-java@v4
+              with:
+                  distribution: temurin
+                  java-version: '21'
+            - uses: gradle/actions/setup-gradle@v4
+            - run: bun install --frozen-lockfile
+            - name: Test native bundle packaging guard
+              run: bun run --cwd mobile test
+            - name: Build local Web assets and sync native plugins
+              run: bun run build:mobile
+            - name: Verify native dependency declarations are current
+              run: git diff --exit-code -- mobile
+            # Android SDK 36 is available on this hosted image; no hub or device
+            # credentials are needed to compile the local-asset shell.
+            - name: Assemble debug APK and lint
+              working-directory: mobile/android
+              run: ./gradlew :app:assembleDebug :app:lintDebug
+            - name: Upload debug APK
+              uses: actions/upload-artifact@v4
+              with:
+                  name: hapi-capacitor-android-debug
+                  path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+                  if-no-files-found: error
+                  retention-days: 7
+
+    ios:
+        runs-on: macos-26
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version-file: package.json
+            - run: bun install --frozen-lockfile
+            - name: Show Xcode toolchain
+              run: xcodebuild -version
+            - name: Build local Web assets and sync native plugins
+              run: bun run build:mobile
+            - name: Verify native dependency declarations are current
+              run: git diff --exit-code -- mobile
+            - name: Build unsigned iOS Simulator app
+              run: >-
+                  xcodebuild build
+                  -project mobile/ios/App/App.xcodeproj
+                  -scheme App
+                  -destination 'generic/platform=iOS Simulator'
+                  CODE_SIGNING_ALLOWED=NO

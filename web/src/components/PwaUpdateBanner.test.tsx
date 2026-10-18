@@ -103,6 +103,53 @@ describe('PwaUpdateBanner', () => {
         expect(screen.getByTestId('pwa-update-banner')).toHaveClass('top-12')
     })
 
+    it('applies a native bundle only when Update HAPI is clicked', () => {
+        const reload = vi.fn()
+        usePwaUpdateMock.mockReturnValue({ native: true, status: 'available', needRefresh: true, reload })
+        renderBanner()
+        expect(reload).not.toHaveBeenCalled()
+        expect(screen.getByText(/No app installation is needed/)).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Update HAPI' }))
+        expect(reload).toHaveBeenCalledOnce()
+    })
+
+    it('shows download progress and prevents activation before verification', () => {
+        const reload = vi.fn()
+        usePwaUpdateMock.mockReturnValue({ native: true, status: 'downloading', progress: 0.42, needRefresh: false, reload })
+        renderBanner()
+        expect(screen.getByRole('progressbar')).toHaveAttribute('value', '0.42')
+        expect(screen.getByRole('button', { name: 'Update HAPI' })).toBeDisabled()
+        fireEvent.click(screen.getByRole('button', { name: 'Update HAPI' }))
+        expect(reload).not.toHaveBeenCalled()
+    })
+
+    it('explains a native capability mismatch without offering to activate the incompatible bundle', () => {
+        usePwaUpdateMock.mockReturnValue({ native: true, status: 'app-required', needRefresh: false, reload: vi.fn() })
+        renderBanner()
+        expect(screen.getByText('App update required')).toBeInTheDocument()
+        expect(screen.getByText(/updated native capabilities/)).toBeInTheDocument()
+        expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    })
+
+    it('retries a failed download without reloading the current page', () => {
+        const reload = vi.fn()
+        const retry = vi.fn()
+        usePwaUpdateMock.mockReturnValue({ native: true, status: 'error', error: 'checksum failed', needRefresh: false, reload, retry })
+        renderBanner()
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+        expect(retry).toHaveBeenCalledOnce()
+        expect(reload).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByText('Update details'))
+        expect(screen.getByText('checksum failed')).toBeVisible()
+    })
+
+    it('prevents repeated activation while an update is applying', () => {
+        const reload = vi.fn()
+        usePwaUpdateMock.mockReturnValue({ native: true, status: 'applying', needRefresh: true, reload })
+        renderBanner()
+        expect(screen.getByRole('button', { name: 'Updating…' })).toBeDisabled()
+    })
+
     it('offsets below voice error banners when shown inside the voice provider', () => {
         usePwaUpdateMock.mockReturnValue({
             needRefresh: true,

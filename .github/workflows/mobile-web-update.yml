@@ -1,0 +1,98 @@
+name: Mobile Web update
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - 'web/**'
+            - 'shared/src/**'
+            - 'mobile/**'
+            - 'patches/**'
+            - 'package.json'
+            - 'bun.lock'
+            - 'scripts/testing/check-web-budget.mjs'
+            - '.github/workflows/mobile-web-update.yml'
+    pull_request:
+        paths:
+            - 'web/**'
+            - 'shared/src/**'
+            - 'mobile/**'
+            - 'patches/**'
+            - 'package.json'
+            - 'bun.lock'
+            - 'scripts/testing/check-web-budget.mjs'
+            - '.github/workflows/mobile-web-update.yml'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: mobile-web-update-${{ github.ref }}
+    # Publishing is serialized. Immutable archives are uploaded before the feed
+    # advances, and a superseded main build also checks the live branch head.
+    cancel-in-progress: false
+
+jobs:
+    validate:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version-file: package.json
+            - run: bun install --frozen-lockfile
+            - name: Test native compatibility, packaging and feed publication
+              run: bun run --cwd mobile test
+            - name: Build native Web assets
+              run: bun run --cwd web build:mobile
+            - name: Validate an update candidate without release credentials
+              run: >-
+                  node mobile/scripts/package-update.mjs --validate-only
+                  --artifact-base-url "https://github.com/${{ github.repository }}/releases/download/mobile-web/"
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: mobile-web-candidate-${{ github.sha }}
+                  path: mobile/dist/update/
+                  if-no-files-found: error
+                  retention-days: 7
+
+    publish:
+        needs: validate
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        runs-on: ubuntu-24.04
+        timeout-minutes: 15
+        permissions:
+            contents: write
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version-file: package.json
+            - run: bun install --frozen-lockfile
+            - name: Build native Web assets
+              run: bun run --cwd web build:mobile
+            - name: Package the immutable update
+              env:
+                  # Optional for the default HTTPS feed. If the binary pins a
+                  # publicKey, the packager requires this matching RSA key.
+                  HAPI_UPDATE_PRIVATE_KEY: ${{ secrets.HAPI_UPDATE_PRIVATE_KEY }}
+              run: >-
+                  node mobile/scripts/package-update.mjs
+                  --artifact-base-url "https://github.com/${{ github.repository }}/releases/download/mobile-web/"
+            - name: Upload immutable archive, then advance the feed atomically
+              uses: actions/github-script@v9
+              with:
+                  script: |
+                      const { pathToFileURL } = require('node:url')
+                      const { resolve } = require('node:path')
+                      const moduleUrl = pathToFileURL(resolve('mobile/scripts/publish-update.mjs')).href
+                      const { publishMobileUpdate } = await import(moduleUrl)
+                      await publishMobileUpdate({ github, context, core })

@@ -11,13 +11,14 @@ import { ownQueuedStateRequest } from '@/lib/queued-state-request-lifetime'
 
 const fixture = vi.hoisted(() => ({
     api: null as ApiClient | null, startSync: vi.fn(), endSync: vi.fn(), reportConnect: vi.fn(), reportDisconnect: vi.fn(),
+    token: 'fixture' as string | null, baseUrl: 'http://hub.test', onOutletRender: null as (() => void) | null,
     recent: { refresh: vi.fn(), event: vi.fn() }, workspace: { mode: 'single', workspaces: [], activeId: null, focused: {}, zoomed: {} },
     router: { history: { location: { pathname: '/sessions', search: '', hash: '', state: {} }, replace: vi.fn() } }
 }))
-vi.mock('@tanstack/react-router', () => ({ Outlet: () => null, useLocation: () => '/sessions', useMatchRoute: () => () => false, useRouter: () => fixture.router }))
-vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ api: fixture.api, token: 'fixture', isLoading: false, needsBinding: false }) }))
+vi.mock('@tanstack/react-router', () => ({ Outlet: () => { fixture.onOutletRender?.(); return null }, useLocation: () => '/sessions', useMatchRoute: () => () => false, useRouter: () => fixture.router }))
+vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ api: fixture.api, token: fixture.token, isLoading: false, needsBinding: false }) }))
 vi.mock('@/hooks/useAuthSource', () => ({ useAuthSource: () => ({ authSource: { type: 'accessToken' }, isLoading: false }) }))
-vi.mock('@/hooks/useServerUrl', () => ({ useServerUrl: () => ({ serverUrl: 'http://hub.test', baseUrl: 'http://hub.test' }) }))
+vi.mock('@/hooks/useServerUrl', () => ({ useServerUrl: () => ({ serverUrl: fixture.baseUrl, baseUrl: fixture.baseUrl }) }))
 vi.mock('@/hooks/useRecentSessionWarmup', () => ({ useRecentSessionWarmup: () => fixture.recent }))
 vi.mock('@/hooks/useSyncingState', () => ({ useSyncingState: () => ({ isSyncing: false, startSync: fixture.startSync, endSync: fixture.endSync }) }))
 vi.mock('@/hooks/useReconnectingState', () => ({ useReconnectingState: () => ({ isReconnecting: false, reason: null, reportConnect: fixture.reportConnect, reportDisconnect: fixture.reportDisconnect }) }))
@@ -96,7 +97,7 @@ async function reconnect(resume?: 'gap' | 'ok') {
     act(() => { const source = FakeEventSource.instances.at(-1)!; source.open(); source.emit({ type: 'connection-changed', data: { subscriptionId: 'next', ...(resume ? { resume } : {}) } }) })
     await settle()
 }
-beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); vi.clearAllMocks(); FakeEventSource.instances = []; vi.stubGlobal('EventSource', FakeEventSource) })
+beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); vi.clearAllMocks(); fixture.token = 'fixture'; fixture.baseUrl = 'http://hub.test'; fixture.onOutletRender = null; FakeEventSource.instances = []; vi.stubGlobal('EventSource', FakeEventSource) })
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear() })
 
 describe('App reconnect ownership and scratchlist repair', () => {
@@ -134,5 +135,56 @@ describe('App reconnect ownership and scratchlist repair', () => {
             expect(old.signal.aborted).toBe(true); expect(next.signal.aborted).toBe(false)
             app.unmount(); expect(next.signal.aborted).toBe(true)
         } finally { old.finish(); next.finish() }
+    })
+
+    it('removes previous-account queries before the next same-hub login renders', async () => {
+        const { app, api, client, hooks } = await setup()
+        hooks.unmount()
+        const privateSessions = { sessions: [{ id: 'private', title: 'Previous account' }] }
+        client.setQueryData(queryKeys.sessions, privateSessions)
+        client.setQueryData(queryKeys.messages('private'), { messages: ['Previous account output'] })
+        const nextLoginViews: unknown[] = []
+        fixture.onOutletRender = () => nextLoginViews.push(client.getQueryData(queryKeys.sessions))
+
+        // useAuth exposes null API/JWT when its source changes, before the
+        // next account finishes authentication. Exercise that App boundary.
+        fixture.api = null
+        fixture.token = null
+        app.rerender(createElement(App))
+        expect(client.getQueryData(queryKeys.sessions)).toBeUndefined()
+        expect(client.getQueryData(queryKeys.messages('private'))).toBeUndefined()
+        expect(client.getQueryData(queryKeys.scratchlist('a'))).toBeUndefined()
+        expect(nextLoginViews).toEqual([])
+
+        fixture.api = { ...api } as ApiClient
+        fixture.token = 'next-account-jwt'
+        app.rerender(createElement(App))
+        expect(nextLoginViews.length).toBeGreaterThan(0)
+        expect(nextLoginViews.every(value => value === undefined)).toBe(true)
+    })
+
+    it('retains current-account query data during a stable-client JWT refresh', async () => {
+        const { app, api, client } = await setup()
+        const sessions = { sessions: [{ id: 'current', title: 'Current account' }] }
+        client.setQueryData(queryKeys.sessions, sessions)
+        const cachedScratchlist = client.getQueryData(queryKeys.scratchlist('a'))
+
+        fixture.token = 'refreshed-jwt'
+        app.rerender(createElement(App))
+        expect(fixture.api).toBe(api)
+        expect(client.getQueryData(queryKeys.sessions)).toBe(sessions)
+        expect(client.getQueryData(queryKeys.scratchlist('a'))).toBe(cachedScratchlist)
+    })
+
+    it('still clears query data when the selected hub changes', async () => {
+        const { app, client, hooks } = await setup()
+        hooks.unmount()
+        client.setQueryData(queryKeys.sessions, { sessions: [{ id: 'old-hub-session' }] })
+        fixture.baseUrl = 'https://next-hub.example'
+        fixture.api = null
+        fixture.token = null
+        app.rerender(createElement(App))
+        expect(client.getQueryData(queryKeys.sessions)).toBeUndefined()
+        expect(client.getQueryData(queryKeys.scratchlist('a'))).toBeUndefined()
     })
 })

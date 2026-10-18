@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom'
 import { useGlassLayout } from '@/themes/glass/GlassScene'
 import * as Popover from '@radix-ui/react-popover'
-import { ComposerPrimitive } from '@assistant-ui/react'
+import { ComposerAttachmentPicker } from './ComposerAttachmentPicker'
 import type { ConversationStatus } from '@/realtime/types'
 import { useTranslation } from '@/lib/use-translation'
 import { ScheduleIcon } from '@/components/icons'
@@ -231,11 +231,11 @@ function AttachmentIcon() {
 
 export function ComposerAttachmentButton(props: { disabled?: boolean; className?: string }) {
     const { t } = useTranslation()
-    return <ComposerPrimitive.AddAttachment
+    return <ComposerAttachmentPicker
         aria-label={t('composer.attach')} title={t('composer.attach')}
         disabled={props.disabled} className={props.className}>
         <AttachmentIcon />
-    </ComposerPrimitive.AddAttachment>
+    </ComposerAttachmentPicker>
 }
 
 function ComposerExpandIcon(props: { expanded: boolean }) {
@@ -762,7 +762,7 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
     return <>
         {/* Keep the picker owner alive while the Add menu closes. Its runtime
             scope still cancels a result if the actual composer is replaced. */}
-        {!props.workspace ? <ComposerPrimitive.AddAttachment ref={attachmentPickerRef} hidden
+        {!props.workspace ? <ComposerAttachmentPicker ref={attachmentPickerRef} hidden
             disabled={props.controlsDisabled || hasSchedule || props.goalMode} /> : null}
         {modeLabel ? <div className="composer-refinement-mode" role="status">
             <span>{modeLabel}</span>
@@ -933,14 +933,14 @@ export function ComposerButtons(props: ComposerButtonsProps) {
                         scratchlist: t('composer.tools.scratchlist'), schedule: t('composer.tools.schedule') }}>
 
                 <ToolbarItemSlot item="attachment">
-                <ComposerPrimitive.AddAttachment
+                <ComposerAttachmentPicker
                     aria-label={t('composer.attach')}
                     title={t('composer.attach')}
                     disabled={props.controlsDisabled || hasSchedule || props.goalMode}
                     className="flex h-8 w-8 max-sm:h-11 max-sm:w-11 items-center justify-center rounded-full text-[var(--app-fg)]/60 transition-colors hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     {glassLayout ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg> : <AttachmentIcon />}
-                </ComposerPrimitive.AddAttachment>
+                </ComposerAttachmentPicker>
                 </ToolbarItemSlot>
 
                 <ToolbarItemSlot item="settings">

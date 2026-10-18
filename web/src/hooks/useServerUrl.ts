@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { isNativePlatform } from '@/lib/platform'
 
 const HUB_URL_KEY = 'hapi_hub_url'
 
@@ -21,6 +22,10 @@ export function normalizeServerUrl(input: string): ServerUrlResult {
 
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
         return { ok: false, error: 'Hub URL must start with http:// or https://' }
+    }
+
+    if (isNativePlatform() && parsed.protocol !== 'https:') {
+        return { ok: false, error: 'The mobile app requires an HTTPS hub URL' }
     }
 
     return { ok: true, value: parsed.origin }
@@ -86,7 +91,8 @@ export function useServerUrl(): {
         return readStoredServerUrl()
     })
 
-    const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+    // The packaged WebView origin serves application assets, never a hub API.
+    const fallbackOrigin = !isNativePlatform() && typeof window !== 'undefined' ? window.location.origin : ''
     const baseUrl = useMemo(() => serverUrl ?? fallbackOrigin, [serverUrl, fallbackOrigin])
 
     const setServerUrl = useCallback((input: string): ServerUrlResult => {

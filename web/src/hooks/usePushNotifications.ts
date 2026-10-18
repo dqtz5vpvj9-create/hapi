@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ApiClient } from '@/api/client'
+import { isNativePlatform } from '@/lib/platform'
 
 function isPushSupported(): boolean {
-    return typeof window !== 'undefined'
+    return !isNativePlatform() && typeof window !== 'undefined'
         && 'serviceWorker' in navigator
         && 'PushManager' in window
         && 'Notification' in window

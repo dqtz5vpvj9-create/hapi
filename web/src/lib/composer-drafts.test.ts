@@ -37,6 +37,14 @@ describe('composer-drafts', () => {
         expect(stored['session-1']).toBe('test')
     })
 
+    it('exposes a storage failure to an explicit update without losing the in-memory draft', async () => {
+        const mod = await import('./composer-drafts')
+        vi.mocked(sessionStorage.setItem).mockImplementation(() => { throw new Error('quota exceeded') })
+        expect(() => mod.saveDraft('session-1', 'unsent text', { throwOnError: true })).toThrow('quota exceeded')
+        expect(mod.getDraft('session-1')).toBe('unsent text')
+        expect(() => mod.saveDraft('session-1', 'editing still works')).not.toThrow()
+    })
+
     it('clears a draft', async () => {
         const mod = await import('./composer-drafts')
         mod.saveDraft('session-1', 'hello')

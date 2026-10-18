@@ -1,9 +1,12 @@
 import { createNewTaskDelivery, loadNewTaskDelivery, saveNewTaskDelivery, sendNewTaskDelivery } from './newTaskDelivery'
 import { ArrowUp, Plus, MoreHorizontal, Folder, Monitor, Shield } from './TaskIcons'
 import { ModelEffortPicker } from '@/components/AssistantChat/ModelEffortPicker'
+import { NativeAttachmentButton } from '@/components/NativeAttachmentButton'
+import { isNativePlatform } from '@/lib/platform'
 import { MODEL_OPTIONS, CLAUDE_EFFORT_OPTIONS } from './types'
 import { getPiThinkingLevelOptions } from '@/components/AssistantChat/piThinkingLevelOptions'
-import { getDraftAttachments, saveDraftAttachments, clearDraftAttachments, getRestoredUploadMetadata } from '@/lib/composer-attachment-drafts'
+import { getDraftAttachments, saveDraftAttachments, clearDraftAttachments, getRestoredUploadMetadata, flushDraftAttachmentWrites } from '@/lib/composer-attachment-drafts'
+import { registerNativeUpdatePreparation, wasNativeUpdateRouteRestored } from '@/lib/nativeUpdateReload'
 import { getShareTransfer } from '@/lib/shareTransfer'
 import { MAX_UPLOAD_BYTES } from '@/lib/attachmentAdapter'
 import type { AttachmentMetadata } from '@/types/api'
@@ -47,9 +50,12 @@ import {
 import { buildCursorEffortPickerOptions, resolveCursorVariantOptions } from '@/lib/cursorModelOptions'
 import {
     clearNewSessionFormDraft,
+    clearNativeUpdateNewSessionDraft,
+    loadNativeUpdateNewSessionDraft,
     loadNewSessionFormDraft,
     newSessionDraftMatchesMachine,
     saveNewSessionFormDraft,
+    saveNativeUpdateNewSessionDraft,
     shouldRestoreNewSessionFormDraft
 } from './newSessionFormDraft'
 import { isOpencodeReasoningEffortValid } from './types'
@@ -112,9 +118,12 @@ export function NewSession(props: {
     initialMachineId?: string
 }) {
     const draftKey = props.draftKey ?? 'hapi:new-task:attachments'
+    const [nativeUpdateDraft] = useState(() => isNativePlatform() && wasNativeUpdateRouteRestored()
+        ? loadNativeUpdateNewSessionDraft(draftKey) : null)
     const [files, setFiles] = useState<Array<{ id: string; file: File }>>([])
     const [filesReady, setFilesReady] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const nativeAttachmentScope = useMemo(() => ({}), [draftKey, props.api])
     const [contextOpen, setContextOpen] = useState<'machine' | 'directory' | null>(null)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [permissionOpen, setPermissionOpen] = useState(false)
@@ -162,8 +171,8 @@ export function NewSession(props: {
     const { sessions, refetch: refetchSessions } = useSessions(props.api)
     const { getRecentPaths, addRecentPath, getLastUsedMachineId, setLastUsedMachineId } = useRecentPaths()
 
-    const [machineId, setMachineId] = useState<string | null>(deliveryRef.current?.launch?.machineId ?? props.initialMachineId ?? null)
-    const [directory, setDirectory] = useState(deliveryRef.current?.launch?.directory ?? props.initialDirectory ?? '')
+    const [machineId, setMachineId] = useState<string | null>(deliveryRef.current?.launch?.machineId ?? nativeUpdateDraft?.form.machineId ?? props.initialMachineId ?? null)
+    const [directory, setDirectory] = useState(deliveryRef.current?.launch?.directory ?? nativeUpdateDraft?.directory ?? props.initialDirectory ?? '')
     const [suppressSuggestions, setSuppressSuggestions] = useState(false)
     const [isDirectoryFocused, setIsDirectoryFocused] = useState(false)
     const [agent, setAgent] = useState<AgentType>(loadPreferredAgent)
@@ -292,17 +301,18 @@ export function NewSession(props: {
         if (restoredFromBrowseRef.current) {
             return
         }
-        if (!deliveryRef.current?.form && !shouldRestoreNewSessionFormDraft({
+        const updateDraft = nativeUpdateDraft?.draftKey === draftKey ? nativeUpdateDraft : null
+        if (!deliveryRef.current?.form && !updateDraft && !shouldRestoreNewSessionFormDraft({
             initialDirectory: props.initialDirectory,
             initialMachineId: props.initialMachineId
         })) {
             return
         }
-        const draft = deliveryRef.current?.form ?? loadNewSessionFormDraft()
+        const draft = deliveryRef.current?.form ?? updateDraft?.form ?? loadNewSessionFormDraft()
         if (!draft) {
             return
         }
-        const targetMachineId = props.initialMachineId ?? machineId
+        const targetMachineId = updateDraft?.form.machineId ?? props.initialMachineId ?? machineId
         if (!newSessionDraftMatchesMachine(draft, targetMachineId)) {
             clearNewSessionFormDraft()
             return
@@ -329,11 +339,20 @@ export function NewSession(props: {
         setGrokPermissionMode(draft.grokPermissionMode)
         setSessionType(draft.sessionType)
         setWorktreeName(draft.worktreeName)
+        if (updateDraft) {
+            setMachineId(draft.machineId)
+            setDirectory(updateDraft.directory)
+            if (updateDraft.text !== undefined) props.onInitialTaskChange?.(updateDraft.text)
+            clearNativeUpdateNewSessionDraft(draftKey)
+        }
         clearNewSessionFormDraft()
     }, [
         props.initialDirectory,
         props.initialMachineId,
-        machineId
+        machineId,
+        nativeUpdateDraft,
+        draftKey,
+        props.onInitialTaskChange,
     ])
 
     useEffect(() => {
@@ -1561,6 +1580,43 @@ export function NewSession(props: {
         setModel(wireId)
     }, [cursorPicker.catalog, cursorPicker.baseKey, cursorSelectedBase])
 
+    const nativeUpdatePreparationRef = useRef<() => Promise<void>>(async () => {})
+    nativeUpdatePreparationRef.current = async () => {
+        if (!filesReady) throw new Error('The new-task draft is still loading. Wait before updating HAPI.')
+        if (createInFlightRef.current || isCreating || isPending || deliveryPending || isImportingCodexSession
+            || isBulkImportingCodexSessions || isImportingPiSession || isBulkImportingPiSessions
+            || isMergingDuplicateSessions || isRestartingCodexDesktop) {
+            throw new Error('Finish the pending session operation before updating HAPI.')
+        }
+        saveDraftAttachments(draftKey, files)
+        await flushDraftAttachmentWrites(draftKey)
+        saveNativeUpdateNewSessionDraft(draftKey, {
+            directory,
+            text: props.initialTask,
+            form: {
+                agent,
+                model: agent === 'agy' ? (agySelectedModel ?? 'auto')
+                    : agent === 'opencode' ? (opencodeSelectedModel ?? 'auto') : model,
+                cursorSelectedBase,
+                machineId,
+                effort,
+                modelReasoningEffort,
+                serviceTier,
+                collaborationMode,
+                copilotAgentMode,
+                yoloMode,
+                nativePermissionMode,
+                grokPermissionMode,
+                sessionType,
+                worktreeName,
+            },
+        })
+    }
+    useEffect(() => {
+        if (!isNativePlatform()) return
+        return registerNativeUpdatePreparation(() => nativeUpdatePreparationRef.current())
+    }, [draftKey, props.api])
+
     const handleChooseFolderClick = useCallback(() => {
         if (!props.onChooseFolder) {
             return
@@ -2082,13 +2138,19 @@ export function NewSession(props: {
                             </li>)}
                         </ul> : null}
                         <div className="flex min-w-0 items-center gap-1 sm:gap-2">
-                            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={event => {
+                            {isNativePlatform() ? <NativeAttachmentButton
+                                aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady}
+                                selectionScope={nativeAttachmentScope}
+                                onFiles={picked => setFiles(current => [...current, ...picked.map(file => ({ id: randomId(), file }))])}
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] disabled:opacity-50">
+                                <Plus size={20} />
+                            </NativeAttachmentButton> : <><input ref={fileInputRef} type="file" multiple className="hidden" onChange={event => {
                                 const picked = Array.from(event.target.files ?? [])
                                 if (picked.some(file => file.size > MAX_UPLOAD_BYTES)) { setError(t('newTask.fileTooLarge')); return }
                                 setFiles(current => [...current, ...picked.map(file => ({ id: randomId(), file }))])
                                 event.target.value = ''
                             }} />
-                            <button type="button" aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady} onClick={() => fileInputRef.current?.click()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] disabled:opacity-50"><Plus size={20} /></button>
+                            <button type="button" aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady} onClick={() => fileInputRef.current?.click()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] disabled:opacity-50"><Plus size={20} /></button></>}
                             <button type="button" aria-label={t('misc.permissionMode')} aria-expanded={permissionOpen} onClick={() => setPermissionOpen(value => !value)} className="flex min-h-11 min-w-11 items-center gap-1 rounded-full px-2 py-2 text-xs hover:bg-[var(--app-secondary-bg)]"><Shield size={16} /><span className="hidden sm:inline">{getPermissionModeLabel(agent === 'grok' ? grokPermissionMode : usesNativePermissionSelect(agent) ? nativePermissionMode : yoloMode ? 'yolo' : 'default')}</span><span>⌄</span></button>
                             <div className="ml-auto min-w-0">
                                 <ModelEffortPicker models={taskModels} model={agent === 'cursor' && cursorPicker.mode === 'dual' ? cursorBaseSelectValue : agent === 'agy' ? agySelectedModel ?? 'auto' : agent === 'opencode' ? opencodeSelectedModel ?? 'auto' : model}

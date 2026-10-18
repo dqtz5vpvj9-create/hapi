@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiClient, ApiError } from '@/api/client'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import { Spinner } from '@/components/Spinner'
@@ -6,10 +6,12 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { useTranslation } from '@/lib/use-translation'
 import type { ServerUrlResult } from '@/hooks/useServerUrl'
+import { AccessTokenStorageError } from '@/lib/accessTokenStorage'
+import { isNativePlatform } from '@/lib/platform'
 
 type LoginPromptProps = {
     mode?: 'login' | 'bind'
-    onLogin?: (token: string) => void
+    onLogin?: (token: string) => void | Promise<void>
     onBind?: (token: string) => Promise<void>
     baseUrl: string
     serverUrl: string | null
@@ -25,9 +27,23 @@ export function LoginPrompt(props: LoginPromptProps) {
     const [accessToken, setAccessToken] = useState('')
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [isServerDialogOpen, setIsServerDialogOpen] = useState(false)
+    const [isServerDialogOpen, setIsServerDialogOpen] = useState(() => isNativePlatform() && Boolean(props.requireServerUrl && !props.serverUrl))
     const [serverInput, setServerInput] = useState(props.serverUrl ?? '')
     const [serverError, setServerError] = useState<string | null>(null)
+    const currentServerRef = useRef(props.baseUrl)
+    currentServerRef.current = props.baseUrl
+    const mountedRef = useRef(true)
+
+    useEffect(() => {
+        mountedRef.current = true
+        return () => { mountedRef.current = false }
+    }, [])
+
+    useEffect(() => {
+        setAccessToken('')
+        setError(null)
+        setIsLoading(false)
+    }, [props.baseUrl])
 
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault()
@@ -58,16 +74,20 @@ export function LoginPrompt(props: LoginPromptProps) {
                 // Validate token by attempting to authenticate
                 const client = new ApiClient('', { baseUrl: props.baseUrl })
                 await client.authenticate({ accessToken: trimmedToken })
+                if (!mountedRef.current || currentServerRef.current !== props.baseUrl) return
                 // If successful, pass token to parent
                 if (!props.onLogin) {
                     setError(t('login.error.loginUnavailable'))
                     return
                 }
-                props.onLogin(trimmedToken)
+                await props.onLogin(trimmedToken)
             }
         } catch (e) {
+            if (!mountedRef.current || currentServerRef.current !== props.baseUrl) return
             const fallbackMessage = isBindMode ? t('login.error.bindFailed') : t('login.error.authFailed')
-            setError(e instanceof ApiError && e.status === 401
+            setError(e instanceof AccessTokenStorageError
+                ? t('login.error.secureStorage')
+                : e instanceof ApiError && e.status === 401
                 ? t('login.error.invalidToken')
                 : e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
                     ? t('login.error.timeout')
@@ -75,7 +95,7 @@ export function LoginPrompt(props: LoginPromptProps) {
                         ? t('login.error.network')
                         : fallbackMessage)
         } finally {
-            setIsLoading(false)
+            if (mountedRef.current && currentServerRef.current === props.baseUrl) setIsLoading(false)
         }
     }, [accessToken, props, t, isBindMode])
 
@@ -113,15 +133,17 @@ export function LoginPrompt(props: LoginPromptProps) {
     }, [])
 
     const displayError = error || props.error
-    const serverSummary = props.serverUrl ?? `${props.baseUrl} ${t('login.server.default')}`
+    const serverSummary = props.serverUrl ?? (props.requireServerUrl
+        ? t('login.server.required')
+        : `${props.baseUrl} ${t('login.server.default')}`)
     const title = isBindMode ? t('login.bind.title') : t('login.title')
     const subtitle = t('login.subtitle')
     const submitLabel = isBindMode ? t('login.bind.submit') : t('login.submit')
 
     return (
-        <div className="relative h-full flex items-center justify-center p-4">
+        <div className="app-login-screen relative h-full flex items-center justify-center p-4">
             {/* Language switcher */}
-            <div className="absolute top-4 right-4">
+            <div className="app-login-language absolute top-4 right-4">
                 <LanguageSwitcher />
             </div>
 

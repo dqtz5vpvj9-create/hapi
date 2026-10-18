@@ -325,6 +325,23 @@ body {
     height: 100%;
 }
 
+/* Route headers and composers already own their top/bottom safe areas. Keep
+ * landscape cutouts clear without adding those insets a second time. */
+html[data-native-platform] #root {
+    box-sizing: border-box;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+}
+
+html[data-native-platform] .app-login-screen {
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+html[data-native-platform] .app-login-language {
+    top: calc(1rem + env(safe-area-inset-top));
+}
+
 /* Chat viewports own vertical scrolling; keep transiently oversized messages
  * from creating a second document scrollbar without locking non-chat routes. */
 html:has(.chat-scroll-y),

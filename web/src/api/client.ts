@@ -225,6 +225,17 @@ export class ApiClient {
         }
     }
 
+    private getRequestToken(overrideToken?: string | null): string | null {
+        const token = this.getAuthToken()
+        // A supplied provider owns this client's credential lifetime. Null
+        // invalidates the client on hub/account changes, including queued
+        // retries; its construction-time JWT must never revive that lifetime.
+        if (this.getToken && token === null) {
+            throw new ApiError('Session expired. Please sign in again.', 401)
+        }
+        return overrideToken ?? token
+    }
+
     private async request<T>(
         path: string,
         init?: RequestInit,
@@ -236,10 +247,7 @@ export class ApiClient {
     ): Promise<T> {
         init?.signal?.throwIfAborted()
         const headers = new Headers(init?.headers)
-        const liveToken = this.getToken ? this.getToken() : null
-        const authToken = overrideToken !== undefined
-            ? (overrideToken ?? (liveToken ?? this.token))
-            : (liveToken ?? this.token)
+        const authToken = this.getRequestToken(overrideToken)
         if (authToken) {
             headers.set('authorization', `Bearer ${authToken}`)
         }
@@ -587,7 +595,7 @@ export class ApiClient {
     }
 
     async getDocumentPreview(sessionId: string, document: import('@hapi/protocol/documents').DocumentRef, version?: string, signal?: AbortSignal, attempt = 0): Promise<{ blob: Blob; version: string; modified?: number; size?: number }> {
-        const token = this.getToken?.() ?? this.token
+        const token = this.getRequestToken()
         const response = await fetch(this.buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/document-preview`), {
             method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
             body: JSON.stringify({ document, version: version || undefined }), signal,
@@ -613,7 +621,7 @@ export class ApiClient {
     }
 
     async readDocumentPreviewRange(sessionId: string, previewId: string, begin: number, end: number, signal: AbortSignal, attempt = 0): Promise<Uint8Array> {
-        const token = this.getToken?.() ?? this.token
+        const token = this.getRequestToken()
         const response = await fetch(this.buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/document-preview/${encodeURIComponent(previewId)}`), {
             headers: { Range: `bytes=${begin}-${end - 1}`, ...(token ? { authorization: `Bearer ${token}` } : {}) },
             signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
@@ -632,7 +640,7 @@ export class ApiClient {
     }
 
     async getArtifactBlob(sessionId: string, artifactId: string, signal?: AbortSignal, attempt = 0, overrideToken?: string): Promise<Blob> {
-        const token = overrideToken ?? this.getToken?.() ?? this.token
+        const token = this.getRequestToken(overrideToken)
         const response = await fetch(this.buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}`), {
             headers: token ? { authorization: `Bearer ${token}` } : {}, signal, cache: 'no-store'
         })
@@ -649,10 +657,7 @@ export class ApiClient {
 
     async getGeneratedImageBlob(sessionId: string, imageId: string, attempt: number = 0, overrideToken?: string | null): Promise<Blob> {
         const headers = new Headers()
-        const liveToken = this.getToken ? this.getToken() : null
-        const authToken = overrideToken !== undefined
-            ? (overrideToken ?? (liveToken ?? this.token))
-            : (liveToken ?? this.token)
+        const authToken = this.getRequestToken(overrideToken)
         if (authToken) {
             headers.set('authorization', `Bearer ${authToken}`)
         }
@@ -661,6 +666,9 @@ export class ApiClient {
         // Hub returns ETag + immutable Cache-Control (#927). Default fetch cache stores 200
         // responses so remounts avoid RPC; on 304 the body is empty — read from cache.
         if (res.status === 304) {
+            const currentToken = this.getRequestToken()
+            if (currentToken) headers.set('authorization', `Bearer ${currentToken}`)
+            else headers.delete('authorization')
             res = await fetch(url, { headers, cache: 'force-cache' })
         }
         if (res.status === 401 && attempt === 0 && this.onUnauthorized) {
@@ -936,8 +944,7 @@ export class ApiClient {
         const path = `/api/sessions/${encodeURIComponent(sessionId)}/migrate-to-acp`
         const tryOnce = async (overrideToken: string | null): Promise<Response> => {
             const headers = new Headers({ 'content-type': 'application/json' })
-            const liveToken = this.getToken ? this.getToken() : null
-            const authToken = overrideToken ?? liveToken ?? this.token
+            const authToken = this.getRequestToken(overrideToken)
             if (authToken) {
                 headers.set('authorization', `Bearer ${authToken}`)
             }
@@ -1381,8 +1388,7 @@ export class ApiClient {
 
     async fetchScratchlistAttachmentBlob(sessionId: string, attachmentId: string): Promise<Blob> {
         const headers = new Headers()
-        const liveToken = this.getToken ? this.getToken() : null
-        const authToken = liveToken ?? this.token
+        const authToken = this.getRequestToken()
         if (authToken) {
             headers.set('authorization', `Bearer ${authToken}`)
         }
