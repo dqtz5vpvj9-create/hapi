@@ -367,6 +367,8 @@ type ToolCardProps = {
     disabled: boolean
     onDone: () => void
     block: ToolCallBlock
+    /** Native history inspection cannot approve, resume or implement a plan. */
+    readOnly?: boolean
 }
 
 function ToolDetailContent(props: {
@@ -606,10 +608,10 @@ function ToolCardInner(props: ToolCardProps) {
                         )
                     ) : null}
 
-                    {(toolName === 'ExitPlanMode' || toolName === 'exit_plan_mode') && !permission ? (
+                    {!props.readOnly && (toolName === 'ExitPlanMode' || toolName === 'exit_plan_mode') && !permission ? (
                         <CodexPlanFooter planId={props.block.tool.id} />
                     ) : null}
-                    {isAskUserQuestion && permission?.status === 'pending' ? (
+                    {props.readOnly ? null : isAskUserQuestion && permission?.status === 'pending' ? (
                         <AskUserQuestionFooter
                             api={props.api}
                             sessionId={props.sessionId}
@@ -652,7 +654,7 @@ function ToolCardWithCommandDetails(props: ToolCardProps) {
         renderTiming={block => <ToolCardTimingSummary tool={block.tool} />}
         renderStatus={state => <ToolStatusIcon state={state} />}
     >
-        <PermissionFooter api={props.api} sessionId={props.sessionId} metadata={props.metadata} tool={props.block.tool} disabled={props.disabled} onDone={props.onDone} />
+        {props.readOnly ? null : <PermissionFooter api={props.api} sessionId={props.sessionId} metadata={props.metadata} tool={props.block.tool} disabled={props.disabled} onDone={props.onDone} />}
     </CommandCard>
 }
 

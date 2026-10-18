@@ -7,6 +7,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useNavigate } from '@tanstack/react-router'
 import { SessionPaneController } from '@/components/SessionPaneController'
 import { SessionWorkspace } from '@/components/SessionWorkspace'
+import { SessionFileWorkbench } from '@/file-workbench/SessionFileWorkbench'
 import { SessionFiles } from '@/routes/sessions/files'
 import { SessionFile } from '@/routes/sessions/file'
 import { SessionTerminal } from '@/routes/sessions/terminal'
@@ -123,13 +124,16 @@ export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foregro
             {pane.resource.kind === 'empty' ? <div className="workspace-empty">
                 <p>{t('workspace.empty')}</p><button type="button" onClick={props.pickSession}>{t('workspace.choose')}</button>
             </div> : pane.resource.kind === 'terminal' ? <SessionTerminal sessionId={sessionId} terminalId={pane.resource.terminalId} onBack={() => store.closePane(pane.id)} />
-                : pane.resource.kind === 'document' ? <DocumentSurface key={JSON.stringify(pane.resource)} resource={pane.resource} foreground={props.foreground} />
+                : pane.resource.kind === 'document' ? tool?.view === 'directories'
+                    ? <SessionFileWorkbench sessionId={sessionId} search={tool} revealKey={tool.revealKey} foreground={props.foreground} onBack={closeTool} />
+                    : <DocumentSurface key={JSON.stringify(pane.resource)} resource={pane.resource} foreground={props.foreground} />
                 : <SessionWorkspace open={!!tool} view={tool?.view ?? 'changes'} path={session?.metadata?.path}
                     terminalAvailable={!!session?.active && isRemoteTerminalSupported(session.metadata)} filesAvailable={!!session?.metadata?.path}
                     onSelect={view => { if (view === 'terminal') { store.focus(pane.id); store.terminal(sessionId) } else setTool({ view }) }} onClose={closeTool}
                     chat={<SessionPaneController sessionId={sessionId} onBack={() => store.closePane(pane.id)} />}
                     panel={tool?.view === 'file' ? <SessionFile sessionId={sessionId} search={tool} onBack={() => setTool(tool.returnTo)} />
-                        : <SessionFiles sessionId={sessionId} search={{ tab: tool?.view, query: tool?.query, target: tool?.target }} revealKey={tool?.revealKey} onBack={closeTool} />} />}
+                        : tool?.view === 'directories' ? <SessionFileWorkbench sessionId={sessionId} search={tool} revealKey={tool.revealKey} foreground={props.foreground} onBack={closeTool} />
+                            : <SessionFiles sessionId={sessionId} search={{ tab: tool?.view, query: tool?.query, target: tool?.target }} revealKey={tool?.revealKey} onBack={closeTool} />} />}
         </div>
     </PaneContext.Provider>
 }

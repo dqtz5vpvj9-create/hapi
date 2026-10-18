@@ -544,6 +544,7 @@ describe('updateSessionMetadata: protocol resume token preservation', () => {
         ['claudeSessionId', 'claude-thread-x'],
         ['codexSessionId', 'codex-thread-x'],
         ['geminiSessionId', 'gemini-thread-x'],
+        ['dshSessionId', 'dsh-root-x'],
         ['opencodeSessionId', 'opencode-thread-x'],
         ['grokSessionId', 'grok-thread-x'],
         ['cursorSessionId', 'cursor-thread-x'],

@@ -99,9 +99,18 @@ function buildBackgroundTerminals(
     tools: readonly ToolCallBlock[],
     messages: readonly NormalizedMessage[]
 ): { confirmed: SessionStatusTerminal[]; uncertain: SessionStatusTerminal[] } {
-    const terminals = tools
+    const byTaskId = new Map<string, SessionStatusTerminal>()
+    const observed = tools
         .map(terminalFromBlock)
         .filter((terminal): terminal is SessionStatusTerminal => terminal !== null)
+    for (const terminal of observed) {
+        const previous = byTaskId.get(terminal.id)
+        if (!previous || terminal.startedAt > previous.startedAt
+            || (previous.command === 'Bash' && terminal.command !== 'Bash')) {
+            byTaskId.set(terminal.id, terminal)
+        }
+    }
+    const terminals = [...byTaskId.values()]
     const completions = backgroundTaskCompletions(messages)
     const remaining = terminals.filter((terminal) => !completions.ids.has(terminal.id))
     const latestUnknownAt = completions.latestUnknownAt

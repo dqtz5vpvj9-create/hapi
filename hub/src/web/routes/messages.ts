@@ -9,6 +9,7 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
     const app = new Hono<WebAppEnv>()
 
     app.get('/sessions/:id/codex-subagents/:threadId/messages', async (c) => {
+        c.header('Cache-Control', 'private, no-store')
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) return engine
         const parent = requireSessionFromParam(c, engine)

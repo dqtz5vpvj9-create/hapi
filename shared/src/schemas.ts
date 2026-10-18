@@ -64,6 +64,15 @@ export const CodexSubagentSchema = z.object({
 })
 export type CodexSubagent = z.infer<typeof CodexSubagentSchema>
 
+export const DshConfigOptionSchema = z.object({
+    id: z.string(),
+    name: z.string().optional(),
+    category: z.string().optional(),
+    currentValue: z.string().optional(),
+    options: z.array(z.object({ value: z.string(), name: z.string().optional() }))
+})
+export type DshConfigOption = z.infer<typeof DshConfigOptionSchema>
+
 export const MetadataSchema = z.object({
     path: z.string(),
     host: z.string(),
@@ -95,6 +104,9 @@ export const MetadataSchema = z.object({
     // codexSessionId 保存 fork 后的 thread，codexSourceSessionId 保留来源 thread 便于同步/展示。
     codexSourceSessionId: z.string().optional(),
     geminiSessionId: z.string().optional(),
+    // Published only when the connected DSH ACP server advertises session/resume.
+    dshSessionId: z.string().optional(),
+    dshConfigOptions: z.array(DshConfigOptionSchema).optional(),
     opencodeSessionId: z.string().optional(),
     grokSessionId: z.string().optional(),
     agySessionId: z.string().optional(),

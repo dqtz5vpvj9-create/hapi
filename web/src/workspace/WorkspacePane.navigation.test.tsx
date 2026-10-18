@@ -1,16 +1,17 @@
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { WorkspacePane } from './WorkspacePane'
 import { usePane, type PaneContextValue } from './PaneContext'
 import { WorkspaceStore } from './workspaceStore'
 
-const mocks = vi.hoisted(() => ({ routeNavigate: vi.fn(), navigate: null as PaneContextValue['navigate'] | null }))
+const mocks = vi.hoisted(() => ({ routeNavigate: vi.fn(), navigate: null as PaneContextValue['navigate'] | null,
+    store: null as WorkspaceStore | null, api: { getAuthToken: () => 'test-auth' } }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mocks.routeNavigate }))
-vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: null }) }))
+vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api: mocks.api, workspace: mocks.store, baseUrl: null, token: 'test-auth' }) }))
 vi.mock('@/hooks/queries/useSession', () => ({ useSession: (_api: unknown, id: string) => ({ session: { id, active: true, metadata: { path: '/synthetic/project', machineId: 'fixture-machine' } } }) }))
 vi.mock('@/hooks/useSelectedSessionSeen', () => ({ useSelectedSessionSeen: () => {} }))
-vi.mock('@/lib/use-translation', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+vi.mock('@/lib/use-translation', () => ({ useTranslation: () => ({ t: (key: string) => key, locale: 'en' }) }))
 vi.mock('@/components/SessionWorkspace', () => ({
     SessionWorkspace: (props: { open: boolean; view: string; onSelect: (view: 'changes' | 'directories') => void; onClose: () => void; chat: ReactNode; panel: ReactNode }) => <div>
         {props.chat}
@@ -33,6 +34,7 @@ vi.mock('@/documents/DocumentSurface', () => ({ DocumentSurface: () => <div>Docu
 
 function setup() {
     const store = new WorkspaceStore('changes-test')
+    mocks.store = store
     store.enter('A')
     const pane = store.focusedPane()!
     const ui = (current = store.focusedPane()!) => <WorkspacePane pane={current} focused store={store} pickSession={() => {}} />
@@ -52,7 +54,11 @@ async function navigate(
     })
 }
 
-beforeEach(() => { localStorage.clear(); mocks.routeNavigate.mockReset(); mocks.navigate = null })
+beforeEach(() => {
+    localStorage.clear(); mocks.routeNavigate.mockReset(); mocks.navigate = null
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+})
+afterEach(() => vi.unstubAllGlobals())
 
 describe('WorkspacePane diff return origin', () => {
     it('reveals and replaces unsupported file targets inside the originating pane', async () => {

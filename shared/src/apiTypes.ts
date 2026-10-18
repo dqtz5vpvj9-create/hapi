@@ -867,6 +867,8 @@ export type DeleteUploadResponse = {
 export type DirectoryEntry = {
     name: string
     type: 'file' | 'directory' | 'other'
+    /** Symlinks are shown as leaves; listing never follows their targets. */
+    isSymbolicLink?: boolean
     size?: number
     modified?: number
 }
@@ -1148,14 +1150,27 @@ export type ConnectCodexSessionResponse = z.infer<typeof ConnectCodexSessionResp
 
 export const CodexSubagentMessagesQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(40),
-    before: z.coerce.number().int().nonnegative().optional()
-})
-export const ReadCodexSubagentMessagesRequestSchema = CodexSubagentMessagesQuerySchema.extend({
+    before: z.coerce.number().int().nonnegative().optional(),
+    after: z.coerce.number().int().nonnegative().optional(),
+    epoch: z.string().min(1).max(128).optional(),
+}).refine(query => query.before === undefined || query.after === undefined, 'Choose one pagination direction')
+    .refine(query => query.after === undefined || query.epoch !== undefined, 'Incremental reads require a transcript epoch')
+export const ReadCodexSubagentMessagesRequestSchema = CodexSubagentMessagesQuerySchema.safeExtend({
     rootThreadId: z.string().uuid(), threadId: z.string().uuid()
+})
+export type ReadCodexSubagentMessagesRequest = z.infer<typeof ReadCodexSubagentMessagesRequestSchema>
+export const CodexSubagentMessageSchema = z.object({
+    id: z.string(), role: z.enum(['user', 'assistant', 'tool']), text: z.string(), createdAt: z.number(),
+    kind: z.enum(['message', 'reasoning', 'tool-call', 'tool-result']).optional(),
+    callId: z.string().optional(), toolName: z.string().optional(),
+    input: z.unknown().optional(), output: z.unknown().optional(), isError: z.boolean().optional(),
+    truncated: z.boolean().optional(),
 })
 export const CodexSubagentMessagesResponseSchema = z.object({
     threadId: z.string(),
-    messages: z.array(z.object({ id: z.string(), role: z.enum(['user', 'assistant', 'tool']), text: z.string(), createdAt: z.number() })),
-    before: z.number().nullable(), hasMore: z.boolean()
+    messages: z.array(CodexSubagentMessageSchema),
+    before: z.number().nullable(), hasMore: z.boolean(),
+    after: z.number().int().nonnegative().optional(), epoch: z.string().optional(),
+    hasLater: z.boolean().optional(), reset: z.boolean().optional(), truncated: z.boolean().optional(),
 })
 export type CodexSubagentMessagesResponse = z.infer<typeof CodexSubagentMessagesResponseSchema>

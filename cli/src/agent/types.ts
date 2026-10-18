@@ -15,7 +15,14 @@ export type McpServerStdio = {
 
 export type AgentSessionConfig = {
     cwd: string;
-    mcpServers: McpServerStdio[];
+    mcpServers: Array<McpServerStdio | McpServerHttp>;
+};
+
+export type McpServerHttp = {
+    type: 'http';
+    name: string;
+    url: string;
+    headers: McpEnvVar[];
 };
 
 export type PromptContent = {
@@ -93,6 +100,7 @@ export type AgentSessionModelsMetadata = {
 
 export type AgentSessionConfigOptionDescriptor = {
     id: string;
+    name?: string;
     category?: string;
     currentValue?: string;
     options: Array<{ value: string; name?: string }>;

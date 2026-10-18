@@ -42,6 +42,12 @@ export type SessionBootstrapOptions = {
      * hints) stay reap-only: argv retains the id, create mints a new hub row.
      */
     reservedSessionId?: string
+    /**
+     * Durable operation identity for a new row that has not been preallocated.
+     * Uses the normal create API's id/tag/namespace collision checks. Recovery
+     * of an acknowledged row must use bootstrapExistingSession instead.
+     */
+    newSessionId?: string
     agentState?: AgentState | null
     model?: string
     modelReasoningEffort?: string
@@ -154,6 +160,7 @@ function pickExistingSessionMetadata(metadata: Metadata | null | undefined): Par
     if (metadata.codexSessionId !== undefined) preserved.codexSessionId = metadata.codexSessionId
     if (metadata.codexSourceSessionId !== undefined) preserved.codexSourceSessionId = metadata.codexSourceSessionId
     if (metadata.geminiSessionId !== undefined) preserved.geminiSessionId = metadata.geminiSessionId
+    if (metadata.dshSessionId !== undefined) preserved.dshSessionId = metadata.dshSessionId
     if (metadata.opencodeSessionId !== undefined) preserved.opencodeSessionId = metadata.opencodeSessionId
     if (metadata.grokSessionId !== undefined) preserved.grokSessionId = metadata.grokSessionId
     if (metadata.agySessionId !== undefined) preserved.agySessionId = metadata.agySessionId
@@ -232,6 +239,13 @@ export async function bootstrapSession(options: SessionBootstrapOptions): Promis
     const sessionTag = options.tag ?? randomUUID()
     const agentState = options.agentState === undefined ? {} : options.agentState
     const reservedHubId = resolveReservedHubSessionId(options.reservedSessionId)
+    if (options.newSessionId !== undefined && options.reservedSessionId !== undefined) {
+        throw new Error('A session cannot be both a new operation row and a preallocated stub')
+    }
+    // Unlike legacy reap-only reserved stamps, operation identities must never
+    // silently fall back to another freshly generated Hub ID.
+    const newHubId = options.newSessionId === undefined ? undefined : HubReservedSessionIdSchema.parse(options.newSessionId)
+    const requestedHubId = newHubId ?? reservedHubId
 
     const api = await ApiClient.create()
 
@@ -252,7 +266,7 @@ export async function bootstrapSession(options: SessionBootstrapOptions): Promis
     const sessionInfo = await api.getOrCreateSession({
         ...(reservedHubId
             ? { id: reservedHubId, adopt: true as const }
-            : {}),
+            : newHubId ? { id: newHubId } : {}),
         tag: sessionTag,
         metadata,
         state: agentState,
@@ -261,9 +275,9 @@ export async function bootstrapSession(options: SessionBootstrapOptions): Promis
         effort: options.effort
     })
 
-    if (reservedHubId && sessionInfo.id !== reservedHubId) {
+    if (requestedHubId && sessionInfo.id !== requestedHubId) {
         throw new Error(
-            `Hub returned unexpected session id ${sessionInfo.id} (reserved ${reservedHubId})`
+            `Hub returned unexpected session id ${sessionInfo.id} (requested ${requestedHubId})`
         )
     }
 

@@ -200,6 +200,7 @@ describe('bootstrapExistingSession', () => {
             claudeSessionId: 'claude-thread-1',
             codexSessionId: 'codex-thread-1',
             geminiSessionId: 'gemini-thread-1',
+            dshSessionId: 'dsh-root-1',
             opencodeSessionId: 'opencode-thread-1',
             grokSessionId: 'grok-thread-1',
             cursorSessionId: 'cursor-thread-1',
@@ -246,6 +247,7 @@ describe('bootstrapExistingSession', () => {
             claudeSessionId: 'claude-thread-1',
             codexSessionId: 'codex-thread-1',
             geminiSessionId: 'gemini-thread-1',
+            dshSessionId: 'dsh-root-1',
             opencodeSessionId: 'opencode-thread-1',
             grokSessionId: 'grok-thread-1',
             cursorSessionId: 'cursor-thread-1',
@@ -465,7 +467,46 @@ describe('bootstrapSession HAPI_SESSION_ID export', () => {
         expect(call.id).toBeUndefined()
     })
 
-    it('throws when hub returns a different id than reservedSessionId', async () => {
+    it('creates a durable fork identity without trying to adopt a missing machine stub', async () => {
+        const session = createSession()
+        session.id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+        getOrCreateSessionMock.mockResolvedValue(session)
+        getOrCreateMachineMock.mockResolvedValue({ id: 'machine-1' })
+        sessionSyncClientMock.mockReturnValue({ isPending: () => false })
+        readSettingsMock.mockResolvedValue({ machineId: 'machine-1' })
+
+        const result = await bootstrapSession({ flavor: 'codex', newSessionId: session.id,
+            workingDirectory: '/tmp/project', metadataOverrides: { forkedFrom: 'source' }, exportSessionEnv: false })
+
+        expect(result.sessionInfo.id).toBe(session.id)
+        expect(getOrCreateSessionMock).toHaveBeenCalledWith(expect.objectContaining({ id: session.id,
+            tag: expect.any(String), metadata: expect.objectContaining({ forkedFrom: 'source' }) }))
+        expect(getOrCreateSessionMock.mock.calls[0][0]).not.toHaveProperty('adopt')
+        expect(process.env[HAPI_SESSION_ID_ENV]).toBeUndefined()
+    })
+
+    it('propagates a new operation identity conflict without adopting or generating a replacement', async () => {
+        const collision = new Error('Session id is already bound to a different session')
+        getOrCreateSessionMock.mockRejectedValue(collision)
+        getOrCreateMachineMock.mockResolvedValue({ id: 'machine-1' })
+        readSettingsMock.mockResolvedValue({ machineId: 'machine-1' })
+
+        await expect(bootstrapSession({ flavor: 'codex', newSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }))
+            .rejects.toBe(collision)
+        expect(getOrCreateSessionMock).toHaveBeenCalledOnce()
+        expect(sessionSyncClientMock).not.toHaveBeenCalled()
+        expect(notifyRunnerSessionStartedMock).not.toHaveBeenCalled()
+    })
+
+    it('refuses malformed or ambiguous durable creation identities before network calls', async () => {
+        await expect(bootstrapSession({ flavor: 'codex', newSessionId: 'not-a-uuid' })).rejects.toThrow()
+        await expect(bootstrapSession({ flavor: 'codex', newSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+            reservedSessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' })).rejects.toThrow('both')
+        expect(getOrCreateMachineMock).not.toHaveBeenCalled()
+        expect(getOrCreateSessionMock).not.toHaveBeenCalled()
+    })
+
+    it.each(['reservedSessionId', 'newSessionId'] as const)('throws when hub returns a different id than %s', async identity => {
         const session = createSession()
         session.id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
         getOrCreateSessionMock.mockResolvedValue(session)
@@ -476,7 +517,7 @@ describe('bootstrapSession HAPI_SESSION_ID export', () => {
         await expect(bootstrapSession({
             flavor: 'claude',
             workingDirectory: '/tmp/project',
-            reservedSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+            [identity]: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
         })).rejects.toThrow(/unexpected session id/)
     })
 })

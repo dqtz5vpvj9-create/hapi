@@ -178,11 +178,20 @@ export HAPI_DSH_ACP_COMMAND=pnpm
 export HAPI_DSH_ACP_ARGS_JSON='["--dir", "/path/to/deepseek-harness", "run", "demo:acp"]'
 ```
 
-The official ACP demo is fresh-session-only and does not support native resume,
-model switching, MCP injection, or live tool/reasoning telemetry. HAPI uses the
-standard chat and pending one-shot permission surfaces; the ACP composition
-owns the overall permission policy and HAPI does not advertise resume or model
-controls for DSH.
+HAPI negotiates DSH capabilities at connection time. Servers advertising
+`session/resume` receive the persisted DSH root ID on resume; a failed resume
+never creates a replacement session. Servers advertising `session/close` are
+closed before the transport and HAPI MCP bridge stop, allowing DSH to drain and
+persist its runtime. Older servers remain usable for fresh sessions.
+
+Model and reasoning controls use the server's advertised `configOptions`,
+including provider groups and the empty-string provider default. The model ID
+is opaque (DSH may encode it as a JSON provider/model pair). `--model` and
+`--effort` are validated against those options after connection. Changes apply
+to the next turn; the current turn keeps its admitted selection. The HAPI HTTP
+MCP bridge is mounted only when the server advertises HTTP MCP support. Tool,
+reasoning, usage, and one-shot permission events use the standard HAPI UI;
+the DSH composition still owns its overall permission policy.
 
 ### Required
 

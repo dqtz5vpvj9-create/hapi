@@ -118,6 +118,11 @@ export function getModelOptionsForFlavor(
     currentModel?: string | null,
     customOptions?: ModelOption[]
 ): ModelOption[] {
+    if (flavor === 'dsh') {
+        // DSH accepts only the session's advertised opaque provider/model values.
+        // A removed current value must not be reintroduced as a selectable option.
+        return customOptions ?? []
+    }
     if (flavor === 'agy') {
         return getAgyModelOptions(currentModel, customOptions)
     }
@@ -175,6 +180,11 @@ export function getNextModelForFlavor(
     currentModel?: string | null,
     customOptions?: ModelOption[]
 ): string | null {
+    if (flavor === 'dsh') {
+        if (!customOptions?.length) return currentModel ?? null
+        const currentIndex = customOptions.findIndex(option => option.value === currentModel)
+        return customOptions[(currentIndex + 1) % customOptions.length]?.value ?? null
+    }
     if (flavor === 'agy') {
         const options = getAgyModelOptions(currentModel, customOptions)
         const currentIndex = options.findIndex((option) => option.value === (normalizeCurrentModel(currentModel) ?? null))

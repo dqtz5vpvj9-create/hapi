@@ -25,7 +25,6 @@ type CommandResult = Pick<CommandPresentation, 'stdout' | 'stderr' | 'output' | 
     errorPreviewOutput: string | null
 }
 
-const PREVIEW_LINES = 2
 const PREVIEW_LINE_LENGTH = 300
 const FAILED_STATUSES = new Set(['error', 'failed', 'failure', 'declined', 'incomplete', 'aborted', 'canceled', 'cancelled', 'timed_out', 'timeout'])
 const FINISHED_STATUSES = new Set(['completed', 'succeeded', 'success', 'done', ...FAILED_STATUSES])
@@ -155,27 +154,33 @@ export function cleanCommandOutput(text: string): string {
 function outputPreview(output: string): CommandPreview | null {
     const text = cleanCommandOutput(output).trimEnd()
     if (!text.trim()) return null
-    const lines: string[] = []
     let lineCount = 0
     let truncated = false
     let start = 0
-    // Count all lines without constructing an unbounded array for large logs.
+    let firstEnd = text.length
+    let lastStart = 0
+    // Retain only offsets for the first and latest row. Streaming output must
+    // keep its newest diagnostic visible without retaining an array of the log.
     while (start <= text.length) {
         const newline = text.indexOf('\n', start)
         const end = newline === -1 ? text.length : newline
         lineCount++
-        if (lines.length < PREVIEW_LINES) {
-            let previewEnd = Math.min(end, start + PREVIEW_LINE_LENGTH)
-            const shortened = previewEnd < end
-            if (shortened && /[\uD800-\uDBFF]/.test(text[previewEnd - 1] ?? '')) previewEnd--
-            lines.push(text.slice(start, previewEnd) + (shortened ? '…' : ''))
-            truncated ||= shortened
-        }
+        if (lineCount === 1) firstEnd = end
+        lastStart = start
         if (newline === -1) break
         start = newline + 1
     }
-    const hiddenLineCount = Math.max(0, lineCount - lines.length)
-    return { text: lines.join('\n'), hiddenLineCount, truncated: truncated || hiddenLineCount > 0 }
+    const line = (from: number, end: number) => {
+        let previewEnd = Math.min(end, from + PREVIEW_LINE_LENGTH)
+        const shortened = previewEnd < end
+        if (shortened && /[\uD800-\uDBFF]/.test(text[previewEnd - 1] ?? '')) previewEnd--
+        truncated ||= shortened
+        return text.slice(from, previewEnd) + (shortened ? '…' : '')
+    }
+    const head = line(0, firstEnd)
+    const hiddenLineCount = Math.max(0, lineCount - 2)
+    const preview = lineCount === 1 ? head : `${head}\n${hiddenLineCount ? '…\n' : ''}${line(lastStart, text.length)}`
+    return { text: preview, hiddenLineCount, truncated: truncated || hiddenLineCount > 0 }
 }
 
 export function getCommandPresentation(

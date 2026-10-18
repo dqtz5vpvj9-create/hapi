@@ -10,6 +10,7 @@ import { withRetry } from '@/utils/time';
 import packageJson from '../../../../package.json';
 
 type PendingPermission = {
+    sessionId: string;
     resolve: (result: { outcome: { outcome: string; optionId?: string } }) => void;
 };
 
@@ -45,6 +46,7 @@ export type AcpSessionInfoUpdate = {
 
 export type AcpConfigOptionDescriptor = {
     id: string;
+    name?: string;
     category?: string;
     currentValue?: string;
     options: Array<{ value: string; name?: string }>;
@@ -57,6 +59,7 @@ type AcpInitializeResult = {
         loadSession?: boolean;
         promptCapabilities?: unknown;
         sessionCapabilities?: unknown;
+        mcpCapabilities?: unknown;
     };
 };
 
@@ -67,6 +70,8 @@ export class AcpSdkBackend implements AgentBackend {
     private readonly pendingPermissions = new Map<string, PendingPermission>();
     private readonly sessionModelsMetadata = new Map<string, AcpSessionModelsMetadata>();
     private readonly sessionConfigOptions = new Map<string, AcpConfigOptionDescriptor[]>();
+    private readonly closingSessions = new Map<string, Promise<void>>();
+    private sessionConfigOptionsListener: ((sessionId: string, options: AcpConfigOptionDescriptor[]) => void) | null = null;
     private readonly sessionInfoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
     private readonly initialAvailableCommands = new Set<string>();
     private readonly sessionAvailableCommands = new Map<string, Set<string>>();
@@ -138,6 +143,8 @@ export class AcpSdkBackend implements AgentBackend {
         env?: Record<string, string>;
         textChunkMode?: AcpTextChunkMode;
         flavor?: AgentFlavor;
+        /** Persistent servers must not create a second session after an ambiguous timeout. */
+        retrySessionActivation?: boolean;
     }) {}
 
     async initialize(): Promise<void> {
@@ -238,7 +245,8 @@ export class AcpSdkBackend implements AgentBackend {
                 ? {
                     loadSession: response.agentCapabilities.loadSession === true,
                     promptCapabilities: response.agentCapabilities.promptCapabilities,
-                    sessionCapabilities: response.agentCapabilities.sessionCapabilities
+                    sessionCapabilities: response.agentCapabilities.sessionCapabilities,
+                    mcpCapabilities: response.agentCapabilities.mcpCapabilities
                 }
                 : undefined
         };
@@ -269,6 +277,25 @@ export class AcpSdkBackend implements AgentBackend {
 
     supportsLoadSession(): boolean {
         return this.initializeResult?.agentCapabilities?.loadSession === true;
+    }
+
+    supportsResumeSession(): boolean {
+        const capabilities = this.initializeResult?.agentCapabilities?.sessionCapabilities;
+        return isObject(capabilities) && isObject(capabilities.resume);
+    }
+
+    supportsCloseSession(): boolean {
+        const capabilities = this.initializeResult?.agentCapabilities?.sessionCapabilities;
+        return isObject(capabilities) && isObject(capabilities.close);
+    }
+
+    supportsHttpMcp(): boolean {
+        const capabilities = this.initializeResult?.agentCapabilities?.mcpCapabilities;
+        return isObject(capabilities) && capabilities.http === true;
+    }
+
+    setSessionConfigOptionsListener(listener: ((sessionId: string, options: AcpConfigOptionDescriptor[]) => void) | null): void {
+        this.sessionConfigOptionsListener = listener;
     }
 
     getSessionConfigOptions(sessionId: string): AcpConfigOptionDescriptor[] | undefined {
@@ -332,6 +359,7 @@ export class AcpSdkBackend implements AgentBackend {
             }),
             {
                 ...AcpSdkBackend.INIT_RETRY_OPTIONS,
+                maxAttempts: this.options.retrySessionActivation === false ? 1 : AcpSdkBackend.INIT_RETRY_OPTIONS.maxAttempts,
                 onRetry: (error, attempt, nextDelayMs) => {
                     logger.debug(`[ACP] session/new attempt ${attempt} failed, retrying in ${nextDelayMs}ms`, error);
                 }
@@ -346,6 +374,45 @@ export class AcpSdkBackend implements AgentBackend {
         this.activeSessionId = sessionId;
         this.captureSessionMetadata(sessionId, response);
         return sessionId;
+    }
+
+    /** Resume does not replay history. A failed activation never falls back to a new session. */
+    async resumeSession(config: AgentSessionConfig & { sessionId: string }): Promise<string> {
+        if (!this.transport) throw new Error('ACP transport not initialized');
+        if (!this.supportsResumeSession()) throw new Error('ACP agent does not advertise session/resume');
+        const response = await this.transport.sendRequest('session/resume', {
+            sessionId: config.sessionId,
+            cwd: config.cwd,
+            mcpServers: config.mcpServers
+        });
+        this.activeSessionId = config.sessionId;
+        this.captureSessionMetadata(config.sessionId, response);
+        return config.sessionId;
+    }
+
+    /** Keep transport and MCP alive until the server drains and persists its session. */
+    closeSession(sessionId: string): Promise<void> {
+        const existing = this.closingSessions.get(sessionId);
+        if (existing) return existing;
+        if (!this.transport) return Promise.resolve();
+        if (!this.supportsCloseSession()) return Promise.reject(new Error('ACP agent does not advertise session/close'));
+        const transport = this.transport;
+        const close = (async () => {
+            for (const [id, pending] of this.pendingPermissions) {
+                if (pending.sessionId !== sessionId) continue;
+                pending.resolve({ outcome: { outcome: 'cancelled' } });
+                this.pendingPermissions.delete(id);
+            }
+            await transport.sendRequest('session/close', { sessionId }, { timeoutMs: 15_000 });
+            await this.sessionUpdateQueue;
+            this.messageHandler?.drainBuffers();
+            this.sessionConfigOptions.delete(sessionId);
+            this.sessionModelsMetadata.delete(sessionId);
+            this.sessionAvailableCommands.delete(sessionId);
+            if (this.activeSessionId === sessionId) this.activeSessionId = null;
+        })();
+        this.closingSessions.set(sessionId, close);
+        return close;
     }
 
     async loadSession(config: AgentSessionConfig & { sessionId: string }): Promise<string> {
@@ -454,13 +521,16 @@ export class AcpSdkBackend implements AgentBackend {
     async setConfigOption(
         sessionId: string,
         configId: string,
-        value: string
+        value: string,
+        options?: { waitForResponse?: boolean }
     ): Promise<void> {
         if (!this.transport) {
             throw new Error('ACP transport not initialized');
         }
 
-        await this.waitForResponseComplete();
+        // DSH pins each admitted prompt's selection, so its configuration can
+        // change for the next turn while the current response is still streaming.
+        if (options?.waitForResponse !== false) await this.waitForResponseComplete();
 
         const response = await this.transport.sendRequest('session/set_config_option', {
             sessionId,
@@ -915,6 +985,10 @@ export class AcpSdkBackend implements AgentBackend {
 
     async disconnect(): Promise<void> {
         if (!this.transport) return;
+        for (const pending of this.pendingPermissions.values()) {
+            pending.resolve({ outcome: { outcome: 'cancelled' } });
+        }
+        this.pendingPermissions.clear();
         for (const timer of this.sessionInfoRefreshTimers.values()) {
             clearTimeout(timer);
         }
@@ -928,6 +1002,9 @@ export class AcpSdkBackend implements AgentBackend {
         this.foregroundPromptRequests = 0;
         this.isProcessingMessage = false;
         this.sessionModelsMetadata.clear();
+        this.sessionConfigOptions.clear();
+        this.closingSessions.clear();
+        this.initializeResult = null;
         this.initialAvailableCommands.clear();
         this.sessionAvailableCommands.clear();
         this.autoPermissionModeEnabled = null;
@@ -948,6 +1025,9 @@ export class AcpSdkBackend implements AgentBackend {
         // work is queued so async image registration preserves event order.
         if (sessionId) {
             this.captureAvailableCommands(sessionId, update);
+            if (isObject(update) && update.sessionUpdate === 'config_option_update') {
+                this.captureSessionMetadata(sessionId, update);
+            }
         }
         this.forwardSessionInfoUpdate(sessionId, update);
         this.captureUsageUpdate(update);
@@ -1185,7 +1265,7 @@ export class AcpSdkBackend implements AgentBackend {
         };
 
         const responsePromise = new Promise((resolve) => {
-            this.pendingPermissions.set(toolCallId, { resolve });
+            this.pendingPermissions.set(toolCallId, { sessionId, resolve });
         });
 
         if (this.permissionHandler) {
@@ -1356,15 +1436,10 @@ export class AcpSdkBackend implements AgentBackend {
                 const rawOptions = Array.isArray(entry.options) ? entry.options : [];
                 return {
                     id,
+                    name: asString(entry.name) ?? undefined,
                     category: asString(entry.category) ?? undefined,
                     currentValue: asString(entry.currentValue) ?? undefined,
-                    options: rawOptions
-                        .filter((option): option is Record<string, unknown> => isObject(option))
-                        .map((option) => ({
-                            value: asString(option.value) ?? '',
-                            name: asString(option.name) ?? undefined
-                        }))
-                        .filter((option) => option.value.length > 0)
+                    options: this.flattenConfigOptionValues(rawOptions)
                 };
             })
             .filter((entry): entry is AcpConfigOptionDescriptor => entry !== null);
@@ -1393,9 +1468,29 @@ export class AcpSdkBackend implements AgentBackend {
             });
         }
 
-        if (options.length > 0) {
+        if (Array.isArray(response.configOptions) || options.length > 0) {
             this.sessionConfigOptions.set(sessionId, options);
+            this.sessionConfigOptionsListener?.(sessionId, options);
         }
+    }
+
+    private flattenConfigOptionValues(rawOptions: unknown[]): Array<{ value: string; name?: string; _meta?: unknown }> {
+        const values: Array<{ value: string; name?: string; _meta?: unknown }> = [];
+        for (const option of rawOptions) {
+            if (!isObject(option)) continue;
+            if (Array.isArray(option.options)) {
+                const group = asString(option.name) ?? asString(option.group);
+                for (const child of option.options) {
+                    if (!isObject(child) || typeof child.value !== 'string') continue;
+                    const name = asString(child.name) ?? child.value;
+                    values.push({ value: child.value, name: group ? `${group} / ${name}` : name, ...(child._meta ? { _meta: child._meta } : {}) });
+                }
+            } else if (typeof option.value === 'string') {
+                // Empty strings are valid ACP select values (provider default).
+                values.push({ value: option.value, name: asString(option.name) ?? undefined, ...(option._meta ? { _meta: option._meta } : {}) });
+            }
+        }
+        return values;
     }
 
     /**
@@ -1417,7 +1512,7 @@ export class AcpSdkBackend implements AgentBackend {
             if (asString(entry.category) !== 'model' && asString(entry.id) !== 'model') continue;
             return {
                 currentValue: asString(entry.currentValue),
-                options: Array.isArray(entry.options) ? entry.options : []
+                options: this.flattenConfigOptionValues(Array.isArray(entry.options) ? entry.options : [])
             };
         }
 

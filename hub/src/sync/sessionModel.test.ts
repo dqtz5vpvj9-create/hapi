@@ -3219,6 +3219,23 @@ describe('session model', () => {
         }
     })
 
+    it('resolves a capability-confirmed DSH root within its own namespace', () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(store, {} as never, new RpcRegistry(), { broadcast() {} } as never)
+        try {
+            const session = engine.getOrCreateSession('dsh-resumable', {
+                path: '/tmp/project', host: 'localhost', machineId: 'machine-1', flavor: 'dsh',
+                dshSessionId: 'persisted-dsh-root', claudeSessionId: 'stale'
+            }, null, 'owner')
+            expect(engine.resolveLocalResumeTarget(session.id, 'owner')).toMatchObject({
+                type: 'success', target: { flavor: 'dsh', agentSessionId: 'persisted-dsh-root' }
+            })
+            expect(engine.resolveLocalResumeTarget(session.id, 'foreign')).toMatchObject({ type: 'error', code: 'access_denied' })
+        } finally {
+            engine.stop()
+        }
+    })
+
     it('returns resume_unavailable when a cursor session lacks cursorSessionId', () => {
         const store = new Store(':memory:')
         const engine = new SyncEngine(

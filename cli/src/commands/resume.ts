@@ -197,6 +197,20 @@ async function dispatchLocalResume(target: LocalResumeTarget): Promise<void> {
         return
     }
 
+    if (target.flavor === 'dsh') {
+        const { runDsh } = await import('@/dsh/runDsh')
+        await runDsh({
+            existingSessionId: base.existingSessionId,
+            workingDirectory: base.workingDirectory,
+            resumeSessionId: base.resumeSessionId,
+            startedBy: base.startedBy,
+            startingMode: 'remote',
+            model: target.model ?? undefined,
+            effort: target.effort ?? undefined
+        })
+        return
+    }
+
     const { runCursor } = await import('@/cursor/runCursor')
     await runCursor({
         existingSessionId: base.existingSessionId,
@@ -267,8 +281,8 @@ export const resumeCommand: CommandDefinition = {
             // while ACTIVE, not just thinking: keepalive-delivered thinking is a
             // volatile snapshot, and a turn can start (or its update be missed)
             // between the fetch above and the handoff request below.
-            if (target.flavor === 'agy' && target.active) {
-                throw new Error('Antigravity is active. Stop it before resuming.')
+            if ((target.flavor === 'agy' || target.flavor === 'dsh') && target.active) {
+                throw new Error(`${target.flavor === 'agy' ? 'Antigravity' : 'DeepSeek Harness'} is active. Stop it before resuming.`)
             }
 
             if (target.active) {

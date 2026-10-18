@@ -44,7 +44,7 @@ export type SocketServerDeps = {
     onSessionEnd?: CliHandlersDeps['onSessionEnd']
     isCurrentSessionSource?: CliHandlersDeps['isCurrentSessionSource']
     onMachineAlive?: (payload: { machineId: string; time: number; health?: unknown }) => void
-    onBackgroundTaskDelta?: (sessionId: string, delta: { started: number; completed: number }) => void
+    onBackgroundTasksChanged?: (sessionId: string) => void
     onSessionActivity?: (sessionId: string, updatedAt: number) => void
     onAgentProgress?: (sessionId: string, at: number) => void
     onSweepImmediateQueued?: (sessionId: string, now: number) => void
@@ -134,7 +134,7 @@ export function createSocketServer(deps: SocketServerDeps): {
         isCurrentSessionSource: deps.isCurrentSessionSource,
         onMachineAlive: deps.onMachineAlive,
         onWebappEvent: deps.onWebappEvent,
-        onBackgroundTaskDelta: deps.onBackgroundTaskDelta,
+        onBackgroundTasksChanged: deps.onBackgroundTasksChanged,
         onSessionActivity: deps.onSessionActivity,
         onAgentProgress: deps.onAgentProgress,
         onSweepImmediateQueued: deps.onSweepImmediateQueued,

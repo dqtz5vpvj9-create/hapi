@@ -1,10 +1,11 @@
 import { logger } from '@/ui/logger'
-import { readdir, stat } from 'fs/promises'
-import { basename, join, resolve } from 'path'
+import { lstat, readdir } from 'fs/promises'
+import { basename, join } from 'path'
 import type { DirectoryEntry, ListDirectoryResponse, StatFilesResponse } from '@hapi/protocol/apiTypes'
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods'
 import type { RpcHandlerManager } from '@/api/rpc/RpcHandlerManager'
 import { validatePath } from '../pathSecurity'
+import { resolveManagedPath } from '../managedPaths'
 import { getErrorMessage, rpcError } from '../rpcResponses'
 
 interface ListDirectoryRequest {
@@ -47,7 +48,7 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
         }
 
         try {
-            const resolvedPath = resolve(workingDirectory, targetPath)
+            const resolvedPath = await resolveManagedPath(targetPath, workingDirectory)
             const entries = await readdir(resolvedPath, { withFileTypes: true })
 
             const directoryEntries: DirectoryEntry[] = await Promise.all(
@@ -67,7 +68,8 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
 
                     if (!entry.isSymbolicLink()) {
                         try {
-                            const stats = await stat(fullPath)
+                            const stats = await lstat(fullPath)
+                            if (stats.isSymbolicLink()) return { name: entry.name, type: 'other' as const, isSymbolicLink: true }
                             size = stats.size
                             modified = stats.mtime.getTime()
                         } catch (error) {
@@ -78,6 +80,7 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
                     return {
                         name: entry.name,
                         type,
+                        ...(entry.isSymbolicLink() ? { isSymbolicLink: true } : {}),
                         size,
                         modified
                     }
@@ -111,7 +114,7 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
 
         const entries = await Promise.all(data.paths.map(async (path) => {
             try {
-                const stats = await stat(resolve(workingDirectory, path))
+                const stats = await lstat(await resolveManagedPath(path, workingDirectory))
                 return {
                     path,
                     size: stats.size,
@@ -136,11 +139,9 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
             return rpcError(validation.error ?? 'Invalid directory path')
         }
 
-        const resolvedRoot = resolve(workingDirectory, targetPath)
-
         async function buildTree(path: string, name: string, currentDepth: number): Promise<TreeNode | null> {
             try {
-                const stats = await stat(path)
+                const stats = await lstat(await resolveManagedPath(path, workingDirectory))
 
                 const node: TreeNode = {
                     name,
@@ -190,6 +191,7 @@ export function registerDirectoryHandlers(rpcHandlerManager: RpcHandlerManager, 
                 return rpcError('maxDepth must be non-negative')
             }
 
+            const resolvedRoot = await resolveManagedPath(targetPath, workingDirectory)
             const baseName = resolvedRoot === '/' ? '/' : basename(resolvedRoot) || resolvedRoot
             const tree = await buildTree(resolvedRoot, baseName, 0)
 

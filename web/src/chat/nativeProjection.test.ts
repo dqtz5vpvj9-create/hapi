@@ -102,14 +102,43 @@ describe('native transcript replay', () => {
         const [commentKey, answerKey] = h.projection.order
         const order = h.projection.order
         const commentChanged = vi.fn(), answerChanged = vi.fn()
-        h.projection.source(commentKey).subscribe(commentChanged)
-        h.projection.source(answerKey).subscribe(answerChanged)
+        const commentSource = h.projection.source(commentKey), answerSource = h.projection.source(answerKey)
+        commentSource.subscribe(commentChanged)
+        answerSource.subscribe(answerChanged)
+        const checkedComment = vi.spyOn(commentSource, 'publish'), checkedAnswer = vi.spyOn(answerSource, 'publish')
         const durable = { ...answer(), id: 'persisted-native-item' }
         h.apply([commentary, durable, stateRow('inProgress')])
         expect(h.projection.order).toBe(order)
         expect(commentChanged).not.toHaveBeenCalled()
         expect(answerChanged).toHaveBeenCalledTimes(1)
+        expect(checkedComment).not.toHaveBeenCalled()
+        expect(checkedAnswer).toHaveBeenCalledTimes(1)
         expect(h.projection.get(answerKey)?.block).toMatchObject({ text: 'The requested change is complete.' })
+    })
+
+    it('publishes removal once and retains dirty keys created by a publication listener', () => {
+        const projection = new NativeChatProjection()
+        const first = { kind: 'agent-text', id: 'first', localId: null, text: 'first', createdAt: 1 } satisfies ChatBlock
+        const second = { kind: 'agent-text', id: 'second', localId: null, text: 'second', createdAt: 2 } satisfies ChatBlock
+        projection.update([first, second], [])
+        projection.publish()
+        const firstSource = projection.source('agent-text:first'), secondSource = projection.source('agent-text:second')
+        const deleted = vi.fn(), updated = vi.fn()
+        secondSource.subscribe(updated)
+        firstSource.subscribe(() => {
+            deleted(firstSource.getSnapshot())
+            projection.update([{ ...second, text: 'listener update' }], [])
+        })
+        projection.update([second], [])
+        projection.publish()
+        expect(deleted).toHaveBeenCalledExactlyOnceWith(undefined)
+        expect(updated).not.toHaveBeenCalled()
+        projection.publish()
+        expect(updated).toHaveBeenCalledTimes(1)
+        expect(secondSource.getSnapshot()?.block).toMatchObject({ text: 'listener update' })
+        projection.publish()
+        expect(deleted).toHaveBeenCalledTimes(1)
+        expect(updated).toHaveBeenCalledTimes(1)
     })
 
     it('folds a genuinely completed process, keeps its answer seat, and releases evicted view state', () => {

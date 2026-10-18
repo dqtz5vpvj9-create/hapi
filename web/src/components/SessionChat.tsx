@@ -1,4 +1,5 @@
 import { reconcilePermissionActions } from '@/components/ToolCard/permissionAction'
+import { dshSessionOptions } from '@/lib/dshSessionOptions'
 import { useForkOperation } from '@/hooks/useForkOperation'
 import { ForkOperationBanner } from '@/components/ForkOperationBanner'
 import { createForkNavigator, type ForkBoundary } from '@/lib/fork-navigation'
@@ -1035,6 +1036,7 @@ function SessionChatInner(props: SessionChatProps) {
         [props.onSend, props.api, props.session.id, props.session.metadata?.capabilities?.concurrentClients, navigate, scratchlist, scratchlistMode],
     )
     const agentFlavor = props.session.metadata?.flavor ?? null
+    const dshOptions = useMemo(() => dshSessionOptions(props.session.metadata?.dshConfigOptions), [props.session.metadata?.dshConfigOptions])
     // The effort-options query is keyed by session only, so a stale option
     // list from the previous model would survive a switch. Reset when the
     // session model changes. `session.model` is updated by the hub at REST-ack
@@ -1578,7 +1580,7 @@ function SessionChatInner(props: SessionChatProps) {
             model
         })
 
-        if (props.session.thinking) return
+        if (props.session.thinking && agentFlavor !== 'dsh') return
         const fastBlocker = agentFlavor === 'codex' ? getCodexFastModelChangeBlocker(
             props.session.serviceTier, typeof model === 'string' ? model : model?.modelId, codexModelsState.models
         ) : null
@@ -2140,7 +2142,9 @@ function SessionChatInner(props: SessionChatProps) {
                         agentFlavor={agentFlavor}
                         concurrentClients={props.session.metadata?.capabilities?.concurrentClients}
                         availableModelOptions={
-                            agentFlavor === 'codex'
+                            agentFlavor === 'dsh'
+                                ? dshOptions.models
+                                : agentFlavor === 'codex'
                                 ? codexModelOptions
                                 : agentFlavor === 'cursor'
                                     ? (
@@ -2178,7 +2182,9 @@ function SessionChatInner(props: SessionChatProps) {
                                     : undefined
                         }
                         availableEffortOptions={
-                            agentFlavor === 'grok' && grokEffortState.options.length > 0
+                            agentFlavor === 'dsh'
+                                ? dshOptions.efforts
+                                : agentFlavor === 'grok' && grokEffortState.options.length > 0
                                 ? grokEffortState.options
                                 : undefined
                         }
@@ -2236,7 +2242,9 @@ function SessionChatInner(props: SessionChatProps) {
                                 : undefined
                         }
                         onModelChange={
-                            agentFlavor === 'codex'
+                            agentFlavor === 'dsh'
+                                ? (props.session.active && !controlledByUser && dshOptions.models.length > 0 ? handleModelChange : undefined)
+                                : agentFlavor === 'codex'
                                 ? (props.session.active && !controlledByUser && !codexModelsState.error ? handleModelChange : undefined)
                                 : agentFlavor === 'cursor'
                                     ? (props.session.active
@@ -2277,7 +2285,9 @@ function SessionChatInner(props: SessionChatProps) {
                                 : undefined
                         }
                         onEffortChange={
-                            agentFlavor === 'grok'
+                            agentFlavor === 'dsh'
+                                ? (props.session.active && !controlledByUser && dshOptions.efforts.length > 0 ? handleEffortChange : undefined)
+                                : agentFlavor === 'grok'
                                 ? (props.session.active && !controlledByUser && grokEffortState.options.length > 0
                                     ? handleEffortChange
                                     : undefined)

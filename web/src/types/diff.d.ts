@@ -6,5 +6,18 @@ declare module 'diff' {
     }
 
     export function diffLines(oldStr: string, newStr: string): Change[]
+
+    export type ParsedHunk = {
+        oldStart: number
+        oldLines: number
+        newStart: number
+        newLines: number
+        lines: string[]
+    }
+    export function parsePatch(unifiedDiff: string): Array<{
+        oldFileName?: string
+        newFileName?: string
+        hunks: ParsedHunk[]
+    }>
 }
 

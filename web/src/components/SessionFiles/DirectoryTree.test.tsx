@@ -5,11 +5,12 @@ import { I18nProvider } from '@/lib/i18n-context'
 import { ToastProvider } from '@/lib/toast-context'
 import { DEFAULT_DIRECTORY_SORT } from '@/lib/directory-sort'
 import { DirectoryTree } from '@/components/SessionFiles/DirectoryTree'
+import type { FileManagerTarget } from './file-manager-types'
 
 const mocks = vi.hoisted(() => ({
     reads: vi.fn(),
     readFile: vi.fn(),
-    byPath: null as Record<string, Array<{ name: string; type: 'file' | 'directory' | 'other' }>> | null,
+    byPath: null as Record<string, Array<{ name: string; type: 'file' | 'directory' | 'other'; isSymbolicLink?: boolean }>> | null,
     loadingPath: null as string | null,
     errorPath: null as string | null,
     entries: [
@@ -36,6 +37,13 @@ function renderTree(handlers: {
     target?: string
     caseInsensitive?: boolean
     revealKey?: string | number
+    showHidden?: boolean
+    exclude?: readonly string[]
+    activeFilePath?: string
+    foreground?: boolean
+    selectedPaths?: Set<string>
+    onSelectedPathsChange?: (paths: Set<string>) => void
+    onRequestEntryMenu?: (target: FileManagerTarget, point: { x: number; y: number }) => void
 } = {}) {
     const onOpenFile = handlers.onOpenFile ?? vi.fn()
     const onRequestFileMenu = handlers.onRequestFileMenu ?? vi.fn()
@@ -55,6 +63,13 @@ function renderTree(handlers: {
                         target={target}
                         caseInsensitive={handlers.caseInsensitive}
                         revealKey={revealKey}
+                        showHidden={handlers.showHidden}
+                        exclude={handlers.exclude}
+                        activeFilePath={handlers.activeFilePath}
+                        foreground={handlers.foreground}
+                        selectedPaths={handlers.selectedPaths}
+                        onSelectedPathsChange={handlers.onSelectedPathsChange}
+                        onRequestEntryMenu={handlers.onRequestEntryMenu}
                     />
                 </ToastProvider>
             </I18nProvider>
@@ -185,5 +200,66 @@ describe('DirectoryTree file context menu', () => {
         } finally {
             vi.useRealTimers()
         }
+    })
+})
+
+describe('DirectoryTree file management surface', () => {
+    it('offers the same directory and root operations through visible overflow buttons', () => {
+        const onRequestEntryMenu = vi.fn()
+        renderTree({ onRequestEntryMenu })
+        fireEvent.click(screen.getByRole('button', { name: 'File actions for src' }))
+        expect(onRequestEntryMenu).toHaveBeenCalledWith({ path: 'src', name: 'src', kind: 'directory' }, expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }))
+        fireEvent.contextMenu(screen.getByRole('button', { name: 'project' }), { clientX: 21, clientY: 34 })
+        expect(onRequestEntryMenu).toHaveBeenLastCalledWith({ path: '', name: 'project', kind: 'directory' }, { x: 21, y: 34 })
+    })
+
+    it('selects with checkboxes and modified clicks without opening or reading the file', () => {
+        const onSelectedPathsChange = vi.fn()
+        const { onOpenFile } = renderTree({ selectedPaths: new Set(), onSelectedPathsChange })
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Select README.md' }))
+        expect(onSelectedPathsChange).toHaveBeenCalledWith(new Set(['README.md']))
+        fireEvent.click(fileRow(), { ctrlKey: true })
+        expect(onSelectedPathsChange).toHaveBeenLastCalledWith(new Set(['README.md']))
+        expect(onOpenFile).not.toHaveBeenCalled()
+        expect(mocks.readFile).not.toHaveBeenCalled()
+    })
+
+    it('filters hidden files and excluded subtrees while a direct reveal remains reachable', () => {
+        mocks.byPath = {
+            '': [{ name: '.env', type: 'file' }, { name: 'build', type: 'directory' }, { name: 'ignored', type: 'directory' }, { name: 'visible.md', type: 'file' }],
+            build: [{ name: 'result.txt', type: 'file' }],
+        }
+        renderTree({ showHidden: false, exclude: ['build', 'ignored'], target: 'build/result.txt' })
+        expect(screen.queryByText('.env')).toBeNull()
+        expect(screen.queryByText('ignored')).toBeNull()
+        expect(screen.getByText('visible.md')).toBeVisible()
+        expect(screen.getByText('result.txt')).toBeVisible()
+        expect(mocks.reads.mock.calls.some(([path]) => path === 'ignored')).toBe(false)
+    })
+
+    it('shows symlinks as manageable leaves without reading or following the target', () => {
+        mocks.byPath = { '': [{ name: 'outside-link', type: 'other', isSymbolicLink: true }] }
+        const onRequestEntryMenu = vi.fn()
+        const { onOpenFile } = renderTree({ onRequestEntryMenu })
+        fireEvent.click(screen.getByRole('button', { name: /outside-link Symbolic link/ }))
+        expect(onOpenFile).not.toHaveBeenCalled()
+        expect(mocks.readFile).not.toHaveBeenCalled()
+        expect(mocks.reads.mock.calls.some(([path]) => path === 'outside-link')).toBe(false)
+        fireEvent.click(screen.getByRole('button', { name: 'File actions for outside-link' }))
+        expect(onRequestEntryMenu).toHaveBeenCalledWith(expect.objectContaining({ kind: 'symlink', path: 'outside-link' }), expect.anything())
+    })
+
+    it('disables directory reads while the tree is parked', () => {
+        renderTree({ foreground: false })
+        expect(mocks.reads).toHaveBeenCalled()
+        expect(mocks.reads.mock.calls.every(([, options]) => !options.enabled)).toBe(true)
+    })
+
+    it('distinguishes the active editor from an explicit reveal target', () => {
+        mocks.byPath = { '': [{ name: 'README.md', type: 'file' }, { name: 'other.md', type: 'file' }] }
+        renderTree({ activeFilePath: 'README.md', target: 'other.md' })
+        expect(screen.getByText('README.md').closest('button')).toHaveAttribute('aria-current', 'true')
+        expect(screen.getByText('other.md').closest('button')).not.toHaveAttribute('aria-current')
+        expect(screen.getByText('other.md').closest('[data-file-target]')).not.toBeNull()
     })
 })

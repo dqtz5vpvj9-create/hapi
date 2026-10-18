@@ -2018,10 +2018,10 @@ export function buildCliArgs(
   if (options.model) {
     args.push('--model', options.model);
   }
-  if (options.effort && (agent === 'claude' || agent === 'grok' || agent === 'pi' || agent === 'agy')) {
+  if (options.effort && (agent === 'claude' || agent === 'grok' || agent === 'pi' || agent === 'agy' || agent === 'dsh')) {
     args.push('--effort', options.effort);
   }
-  if (options.modelReasoningEffort && (agent === 'codex' || agent === 'opencode')) {
+  if (options.modelReasoningEffort && (agent === 'codex' || agent === 'opencode' || agent === 'dsh')) {
     args.push('--model-reasoning-effort', options.modelReasoningEffort);
   }
   if (options.serviceTier && agent === 'codex') {

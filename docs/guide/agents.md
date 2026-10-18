@@ -19,7 +19,7 @@ agent's integration; their supported syntax varies by agent.
 | GitHub Copilot | `hapi copilot` | ACP (`copilot --acp --stdio`) | ✓ | ✓ | `default` `read-only` `safe-yolo` `yolo` | ✓ |
 | Kimi | `hapi kimi` | ACP (`kimi acp`) | ✓ | ✓ | `default` `read-only` `safe-yolo` `yolo` | ✓ |
 | OpenCode | `hapi opencode` | ACP (`opencode acp`) | ✓ | ✓ | `default` `plan` `yolo` | ✓ |
-| DeepSeek Harness | `hapi dsh` | ACP (`dsh-acp-demo` or configured server) | — | ✓ | Managed by DSH ACP composition | — |
+| DeepSeek Harness | `hapi dsh` | ACP (`dsh-acp-demo` or configured server) | — | ✓ | Managed by DSH ACP composition | When advertised |
 | Antigravity (agy) | `hapi agy` | Headless print mode (per-turn `agy -p` + NDJSON) | — | ✓ | `request-review` `always-proceed` | ✓ |
 | Pi | `hapi pi` | `pi --mode rpc` (JSON-line RPC over stdio) | — | ✓ | none (always auto-approve) | ✓ |
 | Gemini CLI | — | **Removed** — Google sunset the consumer Gemini CLI (2026-06-18) | — | — | — | — |
@@ -30,7 +30,7 @@ Gemini is no longer launchable: `hapi gemini` is kept as a tombstone command tha
 
 ### ACP
 
-Most remote integrations speak the [Agent Client Protocol](https://agentclientprotocol.com) (ACP) over stdio through a shared HAPI backend. ACP gives remote sessions bidirectional permission approval, plan/todo updates, question UI, model catalogs, and session resume via `session/load`. Cursor, Grok, Copilot, Kimi, OpenCode, and DeepSeek Harness remote sessions all run over ACP. DSH's official ACP server is intentionally automation-only and currently supports fresh sessions, committed assistant output, cancellation, and one-shot permissions; it does not provide native resume, model switching, MCP injection, or live tool/reasoning telemetry.
+Most remote integrations speak the [Agent Client Protocol](https://agentclientprotocol.com) (ACP) over stdio through a shared HAPI backend. ACP gives remote sessions bidirectional permission approval, plan/todo updates, question UI, model catalogs, and session resume. Cursor, Grok, Copilot, Kimi, OpenCode, and DeepSeek Harness remote sessions all run over ACP. DSH uses advertised `session/resume` and `session/close` capabilities; the other integrations retain their `session/load` flows. DSH's model/effort controls and HTTP MCP bridge are enabled when the connected server advertises them.
 
 ### Permission modes
 
@@ -52,7 +52,7 @@ hapi resume                # Interactive picker of resumable sessions on this ma
 hapi resume <session-id>   # Resume a specific HAPI session
 ```
 
-`hapi resume` reopens the conversation on this machine, including active sessions you were using from your phone. Gemini and fresh-session-only DSH cannot be resumed. Pi and Antigravity resume with input still controlled from HAPI rather than the terminal.
+`hapi resume` reopens the conversation on this machine, including active sessions you were using from your phone. Gemini cannot be resumed. DSH sessions with a server-advertised resume token can be resumed after stopping the active wrapper; older fresh-only DSH sessions cannot. DSH, Pi, and Antigravity resume with input still controlled from HAPI rather than the terminal.
 
 ### Mathematical formulas in HAPI Markdown
 
@@ -260,12 +260,10 @@ default executable is `dsh-acp-demo`; configure a different ACP server or a
 source checkout with `HAPI_DSH_ACP_COMMAND`, `HAPI_DSH_ACP_CONFIG`, or the JSON
 argument array `HAPI_DSH_ACP_ARGS_JSON`.
 
-The official demo is published as `@deepseek-ai/dsh-acp-demo`; use an exact
-version such as `0.1.0-rc.7` rather than npm's stale `latest` tag:
-
-```bash
-npm install -g @deepseek-ai/dsh-acp-demo@0.1.0-rc.7
-```
+The demo package is `@deepseek-ai/dsh-acp-demo`. Use a version matching your
+DSH composition, or launch a source checkout. HAPI reads the server's ACP
+capabilities rather than assuming that every installed version supports the
+same features.
 
 A published package still needs a DSH Cordis composition/config. A source
 checkout can be launched directly:
@@ -276,11 +274,17 @@ export HAPI_DSH_ACP_ARGS_JSON='["--dir", "/path/to/deepseek-harness", "run", "de
 hapi dsh
 ```
 
-DSH sessions are remote-only and fresh-session-only. HAPI does not inject MCP
-servers or expose model/effort pickers because the official ACP contract leaves
-those surfaces to the DSH composition. Pending one-shot permission requests
-remain answerable in the standard HAPI UI, but the ACP composition owns the
-overall permission policy.
+DSH sessions are remote-only. A server advertising `session/resume` allows HAPI
+to preserve its native root ID and resume that same conversation; a resume
+failure is reported without creating a new conversation. When `session/close`
+is advertised, HAPI waits for it before stopping the transport and MCP bridge.
+
+Model and effort pickers show only the server's advertised options. Provider
+groups are retained in option labels, model values remain opaque, and provider
+default reasoning values are supported. Changes affect the next admitted turn.
+An HTTP-capable server receives HAPI's MCP bridge for HAPI tools. Tool progress,
+reasoning, usage, and pending one-shot permissions use the standard HAPI UI;
+the ACP composition owns the overall permission policy.
 
 ## Other agents
 

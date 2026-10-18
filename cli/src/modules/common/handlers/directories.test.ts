@@ -91,4 +91,14 @@ describe('directory RPC handlers', () => {
         expect(parsed.success).toBe(false)
         expect(parsed.error).toContain('outside the working directory')
     })
+
+    it.skipIf(process.platform === 'win32')('shows symlink leaves but never lists or stats through their parents', async () => {
+        await symlink(join(rootDir, '..'), join(rootDir, 'escape'))
+        const list = JSON.parse(await rpc.handleRequest({ method: 'session-test:listDirectory', params: JSON.stringify({ path: '' }) }))
+        expect(list.entries.find((entry: { name: string }) => entry.name === 'escape')).toMatchObject({ type: 'other', isSymbolicLink: true })
+        const outside = JSON.parse(await rpc.handleRequest({ method: 'session-test:listDirectory', params: JSON.stringify({ path: 'escape' }) }))
+        expect(outside.success).toBe(false)
+        const metadata = JSON.parse(await rpc.handleRequest({ method: 'session-test:statFiles', params: JSON.stringify({ paths: ['escape/outside.txt'] }) }))
+        expect(metadata.entries).toEqual([{ path: 'escape/outside.txt' }])
+    })
 })

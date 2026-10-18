@@ -16,6 +16,17 @@ jobs:
             - uses: oven-sh/setup-bun@v2
             - run: bun install --frozen-lockfile
             - run: bun run build:single-exe:all
+            - run: bunx playwright install --with-deps chromium
+            - name: Smoke the packaged Linux executable before publishing
+              run: bun run test:built-artifact --executable cli/dist-exe/bun-linux-x64-baseline/hapi
+            - name: Upload built artifact smoke evidence
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: release-artifact-smoke
+                  path: e2e-output/built-artifact/
+                  if-no-files-found: ignore
+                  retention-days: 14
             - name: Package release artifacts
               run: |
                   cd cli/dist-exe

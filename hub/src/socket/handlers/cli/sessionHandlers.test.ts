@@ -53,6 +53,37 @@ function reasoningTextOf(message: { content: unknown }): string {
 }
 
 describe('cli session handlers', () => {
+    it('commits ID-keyed background state for the current source and rejects stale socket effects', () => {
+        const store = new Store(':memory:')
+        try {
+            const session = store.sessions.getOrCreateSession('background', {}, null, 'owner')
+            let connection = 0
+            const changed: string[] = []
+            const register = () => {
+                const socket = new FakeSocket()
+                registerSessionHandlers(socket as unknown as CliSocketWithData, {
+                    store,
+                    resolveSessionAccess: () => ({ ok: true, value: session }),
+                    emitAccessError() {},
+                    onSessionAlive: payload => { connection = Math.max(connection, payload.sourceConnection!) },
+                    isCurrentSessionSource: (_id, source) => source >= connection,
+                    onBackgroundTasksChanged: id => changed.push(id)
+                })
+                return socket
+            }
+            const old = register(), current = register()
+            const message = { role: 'agent', content: { type: 'output', data: { type: 'tool_result', content: 'Command running in background with ID: task-1' } } }
+            current.trigger('session-alive', { sid: session.id, time: Date.now() })
+            old.trigger('message', { sid: session.id, message })
+            expect(store.backgroundTasks.runningCount(session.id)).toBe(0)
+            expect(changed).toEqual([])
+            current.trigger('message', { sid: session.id, message })
+            current.trigger('message', { sid: session.id, message })
+            expect(store.backgroundTasks.runningCount(session.id)).toBe(1)
+            expect(changed).toEqual([session.id, session.id])
+        } finally { store.close() }
+    })
+
     it('ignores native activity from a socket superseded by a new owner', () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession('native-activity', { codexNativeSession: true, codexUpdatedAt: 100 }, null, 'default')

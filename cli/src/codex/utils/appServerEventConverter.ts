@@ -79,24 +79,22 @@ function extractGeneratedImageFileName(item: Record<string, unknown>, savedPath:
     return savedPath.split(/[\\/]/).filter(Boolean).pop() ?? 'generated-image.png';
 }
 
-function extractChanges(value: unknown): Record<string, unknown> | null {
-    const record = asRecord(value);
-    if (record) return record;
-
+function extractChanges(value: unknown): Record<string, unknown> | unknown[] | null {
     if (Array.isArray(value)) {
-        const changes: Record<string, unknown> = {};
+        const entries: Array<[string, Record<string, unknown>]> = [];
+        const seen = new Set<string>();
         for (const entry of value) {
             const entryRecord = asRecord(entry);
-            if (!entryRecord) continue;
-            const path = asString(entryRecord.path ?? entryRecord.file ?? entryRecord.filePath ?? entryRecord.file_path);
-            if (path) {
-                changes[path] = entryRecord;
-            }
+            const path = entryRecord && asString(entryRecord.path ?? entryRecord.file ?? entryRecord.filePath ?? entryRecord.file_path);
+            // Preserve unknown/duplicate entries instead of silently dropping them.
+            if (!entryRecord || !path || seen.has(path)) return value;
+            seen.add(path);
+            entries.push([path, entryRecord]);
         }
-        return Object.keys(changes).length > 0 ? changes : null;
+        // An empty authoritative snapshot must clear earlier proposed changes.
+        return Object.fromEntries(entries);
     }
-
-    return null;
+    return asRecord(value);
 }
 
 function extractTextFromContent(value: unknown): string | null {
@@ -1191,10 +1189,21 @@ export class AppServerEventConverter {
                 }
 
                 if (method === 'item/completed') {
-                    const meta = this.fileChangeMeta.get(itemId) ?? {};
+                    const previous = this.fileChangeMeta.get(itemId);
+                    const changes = extractChanges(item.changes ?? item.change ?? item.diff);
+                    // App-server item/completed carries the authoritative fileChange.
+                    // It may differ from the proposed item/started payload, or arrive
+                    // after attaching to an already-running turn with no local start.
+                    const meta = { ...previous, ...(changes !== null ? { changes } : {}) };
                     const stdout = asString(item.stdout ?? item.output);
                     const stderr = asString(item.stderr);
                     const success = asBoolean(item.success ?? item.ok ?? item.applied ?? item.status === 'completed');
+
+                    if (!previous) events.push(scoped({
+                        type: 'patch_apply_begin',
+                        call_id: itemId,
+                        ...meta
+                    }));
 
                     events.push(scoped({
                         type: 'patch_apply_end',

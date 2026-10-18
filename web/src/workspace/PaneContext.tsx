@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useLayoutEffect, type ReactNode, type RefObject } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useFileWorkbenchNavigation } from '@/file-workbench/context'
 
 /** Local presentation ownership. A pane never owns the agent's lifetime. */
 export type PaneContextValue = {
@@ -33,12 +34,17 @@ export function usePaneEditing(dirty: boolean) {
 export function usePaneNavigate(): ReturnType<typeof useNavigate> {
     const routeNavigate = useNavigate()
     const pane = usePane()
+    const fileWorkbench = useFileWorkbenchNavigation()
+    const currentFiles = useRef(fileWorkbench)
+    currentFiles.current = fileWorkbench
+    useLayoutEffect(() => { currentFiles.current = fileWorkbench; return () => { currentFiles.current = null } }, [fileWorkbench])
     const current = useRef(pane)
     current.current = pane
     useLayoutEffect(() => { current.current = pane; return () => { current.current = null } }, [pane])
     return useCallback((options) => {
+        if (fileWorkbench) return currentFiles.current === fileWorkbench ? fileWorkbench.navigate(options) : Promise.resolve()
         if (!pane) return routeNavigate(options)
         if (current.current?.paneId !== pane.paneId || current.current?.sessionId !== pane.sessionId) return Promise.resolve()
         return pane.navigate(options)
-    }, [pane?.paneId, pane?.sessionId, pane?.navigate, routeNavigate])
+    }, [pane?.paneId, pane?.sessionId, pane?.navigate, fileWorkbench, routeNavigate])
 }

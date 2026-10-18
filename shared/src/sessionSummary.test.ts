@@ -102,7 +102,7 @@ describe('toSessionSummary', () => {
         expect(summary.metadata?.agentSessionId).toBe('cursor-session-1')
     })
 
-    it('does not claim a native resume token for fresh-only DSH ACP', () => {
+    it('does not claim a DSH resume token without a capability-confirmed native id', () => {
         const summary = toSessionSummary(makeSession({
             metadata: {
                 path: '/proj',
@@ -113,6 +113,13 @@ describe('toSessionSummary', () => {
         }))
 
         expect(summary.metadata?.agentSessionId).toBeUndefined()
+    })
+
+    it('uses the advertised DSH native resume token', () => {
+        const summary = toSessionSummary(makeSession({
+            metadata: { path: '/proj', host: 'local', flavor: 'dsh', dshSessionId: 'dsh-root', claudeSessionId: 'stale' }
+        }))
+        expect(summary.metadata?.agentSessionId).toBe('dsh-root')
     })
 
     it('does not fall back to a stale cross-agent id for a known flavor', () => {

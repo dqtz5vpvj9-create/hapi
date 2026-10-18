@@ -13,6 +13,7 @@ const {
     runGrokMock,
     runPiMock,
     runAgyMock,
+    runDshMock,
     existsSyncMock
 } = vi.hoisted(() => ({
     initializeTokenMock: vi.fn(async () => {}),
@@ -27,6 +28,7 @@ const {
     runGrokMock: vi.fn(async () => {}),
     runPiMock: vi.fn(async () => {}),
     runAgyMock: vi.fn(async () => {}),
+    runDshMock: vi.fn(async () => {}),
     existsSyncMock: vi.fn(() => true)
 }))
 
@@ -51,6 +53,7 @@ vi.mock('@/claude/runClaude', () => ({ runClaude: runClaudeMock }))
 vi.mock('@/grok/runGrok', () => ({ runGrok: runGrokMock }))
 vi.mock('@/pi/runPi', () => ({ runPi: runPiMock }))
 vi.mock('@/agy/runAgy', () => ({ runAgy: runAgyMock }))
+vi.mock('@/dsh/runDsh', () => ({ runDsh: runDshMock }))
 vi.mock('node:fs', () => ({ existsSync: existsSyncMock }))
 
 import { resumeCommand } from './resume'
@@ -81,6 +84,7 @@ describe('resumeCommand', () => {
         runGrokMock.mockClear()
         runPiMock.mockClear()
         runAgyMock.mockClear()
+        runDshMock.mockClear()
         existsSyncMock.mockReturnValue(true)
     })
 
@@ -113,6 +117,20 @@ describe('resumeCommand', () => {
             modelReasoningEffort: 'xhigh',
             collaborationMode: 'default'
         })
+    })
+
+    it('resumes a stopped DSH root with remote input and its advertised configuration', async () => {
+        getLocalResumeTargetMock.mockResolvedValue({
+            sessionId: 'hapi-dsh', flavor: 'dsh', directory: '/tmp/project', machineId: 'machine-1',
+            active: false, thinking: false, controlledByUser: false, agentSessionId: 'dsh-root',
+            model: '["provider","model"]', effort: 'high'
+        })
+        await resumeCommand.run(createContext(['hapi-dsh']))
+        expect(runDshMock).toHaveBeenCalledExactlyOnceWith({
+            existingSessionId: 'hapi-dsh', workingDirectory: '/tmp/project', resumeSessionId: 'dsh-root',
+            startedBy: 'terminal', startingMode: 'remote', model: '["provider","model"]', effort: 'high'
+        })
+        expect(handoffSessionToLocalMock).not.toHaveBeenCalled()
     })
 
     it('rejects resuming an active AGY session (turn could start before handoff)', async () => {

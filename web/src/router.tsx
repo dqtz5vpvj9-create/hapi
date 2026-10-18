@@ -13,6 +13,8 @@ import { getSessionListSelectionNavigation, PRESERVE_SESSION_SIDEBAR_SCROLL } fr
 import { normalizeFileManagerTarget, parseSessionFilesSearch } from '@/lib/session-files-navigation'
 import { App } from '@/App'
 import { SessionWorkspace, type WorkspaceView } from '@/components/SessionWorkspace'
+import { encodeBase64 } from '@/lib/utils'
+const SessionFileWorkbench = lazyRouteComponent(() => import('@/file-workbench/SessionFileWorkbench'), 'SessionFileWorkbench')
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 
 import { SessionList } from '@/components/SessionList'
@@ -422,7 +424,15 @@ function SessionDetailRoute() {
         }}
         onClose={() => navigate({ to: '/sessions/$sessionId', params: { sessionId }, ...PRESERVE_SESSION_SIDEBAR_SCROLL })}
         chat={<SessionPage />}
-        panel={<Outlet />}
+        panel={view === 'directories' || (view === 'file' && workspaceSearch.staged === undefined)
+            ? <SessionFileWorkbench sessionId={sessionId} search={parseSessionFilesSearch(workspaceSearch)}
+                requested={view === 'file' ? { path: workspaceSearch.path, document: workspaceSearch.document } : undefined}
+                onBack={() => navigate({ to: '/sessions/$sessionId', params: { sessionId }, ...PRESERVE_SESSION_SIDEBAR_SCROLL })}
+                onDocumentChange={ref => ref ? navigate({ to: '/sessions/$sessionId/file', params: { sessionId }, search: {
+                    path: ref.kind === 'file' ? encodeBase64(ref.path) : '', document: ref.kind === 'artifact' ? encodeBase64(JSON.stringify(ref)) : undefined,
+                    tab: 'directories', ...(workspaceSearch.query ? { query: workspaceSearch.query } : {}),
+                }, replace: true, ...PRESERVE_SESSION_SIDEBAR_SCROLL }) : navigate({ to: '/sessions/$sessionId/files', params: { sessionId }, search: { tab: 'directories' }, replace: true, ...PRESERVE_SESSION_SIDEBAR_SCROLL })} />
+            : <Outlet />}
     />
 }
 

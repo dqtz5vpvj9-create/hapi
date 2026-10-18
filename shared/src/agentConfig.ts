@@ -66,7 +66,11 @@ const BUILTIN_DESCRIPTORS: Record<AgentFlavor, AgentConfigFieldDescriptor[]> = {
         { id: 'serviceTier', section: 'settings', kind: 'select', optionSource: 'model', availability: 'both' },
         { id: 'collaborationMode', section: 'settings', kind: 'select', optionSource: 'static', availability: 'both' }
     ),
-    dsh: fields(MANAGED_PERMISSION),
+    dsh: fields(
+        { ...MODEL, optionSource: 'session', availability: 'session' },
+        { id: 'effort', section: 'effort', kind: 'dependent-select', optionSource: 'session', availability: 'session' },
+        MANAGED_PERMISSION
+    ),
     copilot: fields({ ...MODEL, optionSource: 'directory' }, PERMISSION),
     cursor: fields({ id: 'model', section: 'model', kind: 'dependent-select', optionSource: 'machine', availability: 'both' }, PERMISSION),
     gemini: fields(MODEL, PERMISSION),

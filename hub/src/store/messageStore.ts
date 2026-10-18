@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { backfillMessageOutline, readMessageOutline, type OutlinePosition } from './messageOutline'
 import { addNativeAgentMessage } from './nativeTextSnapshots'
+import { recordBackgroundTasks } from './backgroundTaskStore'
 import { syncNativeQueueSnapshot } from './nativeQueueMirrors'
 
 import { getMessageDependencyContext } from './messageDependencyContext'
@@ -86,12 +87,13 @@ export class MessageStore {
         return addMessage(this.db, sessionId, content, localId, scheduledAt, createdAt)
     }
 
-    addAgentMessage(sessionId: string, content: unknown, localId?: string, createdAt?: number): StoredMessage {
+    addAgentMessage(sessionId: string, content: unknown, localId?: string, createdAt?: number, options?: { trackBackgroundTasks?: boolean }): StoredMessage {
         // CLI transcript ingress proves acceptance, unlike a Web submission or
         // a native queue snapshot. Commit it with the row so an earlier ACK
         // that arrived before insertion cannot leave the transcript queued.
         return this.db.transaction(() => {
             const message = addNativeAgentMessage(this.db, sessionId, content, localId, createdAt)
+            if (options?.trackBackgroundTasks !== false) recordBackgroundTasks(this.db, message)
             if (!localId || message.invokedAt !== null) return message
             const invokedAt = Date.now()
             markMessagesInvoked(this.db, sessionId, [localId], invokedAt)

@@ -29,11 +29,16 @@ describe('agent config descriptors', () => {
 
     test('reports DSH permission as managed by its ACP composition', () => {
         const descriptor = getAgentConfigDescriptor('dsh')
-        expect(descriptor.fields).toEqual([expect.objectContaining({
+        expect(descriptor.fields).toContainEqual(expect.objectContaining({
             id: 'permission',
             kind: 'status',
             availability: 'managed'
-        })])
+        }))
+        for (const id of ['model', 'effort']) {
+            expect(descriptor.fields).toContainEqual(expect.objectContaining({
+                id, optionSource: 'session', availability: 'session'
+            }))
+        }
         expect(resolveHapiYoloPermissionMode('dsh')).toBeNull()
     })
 
