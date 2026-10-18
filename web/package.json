@@ -60,7 +60,7 @@
         "remark-math": "^6.0.0",
         "shiki": "^3.20.0",
         "socket.io-client": "^4.8.3",
-        "tailwind-merge": "^3.4.0",
+        "tailwind-merge": "^3.7.0",
         "workbox-expiration": "^7.4.0",
         "workbox-precaching": "^7.4.0",
         "workbox-routing": "^7.4.0",
