@@ -1,0 +1,59 @@
+name: Dependency UI regression
+
+on:
+    pull_request:
+        paths:
+            - '**/package.json'
+            - '**/bun.lock'
+            - 'patches/**'
+            - 'playwright.config.ts'
+            - 'e2e/typing-replay.spec.ts'
+            - 'e2e/workspace-lifecycle.spec.ts'
+            - 'e2e/settings-responsive.spec.ts'
+            - 'e2e/codex-session-dialog-layout.spec.ts'
+            - 'web/e2e-fixtures/**'
+            - '.github/dependabot.yml'
+            - '.github/workflows/dependency-ui.yml'
+    push:
+        branches: [main]
+        paths:
+            - '**/package.json'
+            - '**/bun.lock'
+            - 'patches/**'
+            - 'playwright.config.ts'
+            - 'e2e/typing-replay.spec.ts'
+            - 'e2e/workspace-lifecycle.spec.ts'
+            - 'e2e/settings-responsive.spec.ts'
+            - 'e2e/codex-session-dialog-layout.spec.ts'
+            - 'web/e2e-fixtures/**'
+            - '.github/dependabot.yml'
+            - '.github/workflows/dependency-ui.yml'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    dependency-ui:
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version-file: package.json
+            - run: bun install --frozen-lockfile
+            - run: bun run build:web
+            - run: bunx playwright install --with-deps chromium
+            - name: Check streaming, DOM collection and mobile controls
+              run: bun run test:dependency-ui
+            - name: Upload browser report
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: dependency-ui-report
+                  path: |
+                      playwright-report/
+                      test-results/
+                  if-no-files-found: ignore
+                  retention-days: 14

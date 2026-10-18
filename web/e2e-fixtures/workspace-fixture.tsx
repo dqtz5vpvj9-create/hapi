@@ -239,6 +239,10 @@ window.fetch = async (input, init) => {
         const id = match?.[1] ?? '', suffix = match?.[2] ?? ''
         const session = sessions.find(s => s.id === id)
         if (session && !suffix) data = { session }
+        else if (session && suffix === '/read-state' && method === 'PUT') {
+            const { expectedVersion, seenAt, manualUnreadAt } = JSON.parse(String(init?.body))
+            data = { applied: true, state: { version: expectedVersion + 1, seenAt, manualUnreadAt } }
+        }
         else if (session && suffix === '/files') data = { success: true, files: [] }
         else if (session && suffix === '/document-preview' && previewPdf) data = { previewId: 'fixture-pdf', length: previewPdf.length, version: 'fixture-v1' }
         else if (session && suffix === '/document-preview/fixture-pdf' && previewPdf) {

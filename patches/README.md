@@ -1,5 +1,10 @@
 # Dependency patches
 
+Dependency PRs run `bun run test:dependency-ui` through
+`.github/workflows/dependency-ui.yml`, including both regression suites below.
+The [dependency update process](../docs/operations/dependency-updates.md) covers
+the weekly update schedule and the remaining review and benchmark steps.
+
 `@assistant-ui/react@0.15.21` needs to validate the animator's current text
 when smoothing becomes enabled. HAPI displays hydrated messages without an
 animation, then enables animation when their text starts changing. In that

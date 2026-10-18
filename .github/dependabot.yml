@@ -1,0 +1,45 @@
+version: 2
+
+updates:
+    # The root lockfile covers all Bun workspaces, including web and docs.
+    - package-ecosystem: bun
+      directory: /
+      schedule:
+          interval: weekly
+          day: monday
+          time: '09:00'
+          timezone: Asia/Shanghai
+      open-pull-requests-limit: 10
+      commit-message:
+          prefix: 'chore(deps)'
+      groups:
+          react:
+              patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+              update-types: [minor, patch]
+          react-major:
+              patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+              update-types: [major]
+          assistant-ui:
+              patterns: ['@assistant-ui/*']
+              update-types: [minor, patch]
+          radix-ui:
+              patterns: ['@radix-ui/*']
+              update-types: [minor, patch]
+          tailwind:
+              patterns: ['tailwindcss', '@tailwindcss/*']
+              update-types: [minor, patch]
+          tailwind-major:
+              patterns: ['tailwindcss', '@tailwindcss/*']
+              update-types: [major]
+          tanstack-router:
+              patterns: ['@tanstack/react-router', '@tanstack/router-core', '@tanstack/router-*']
+              update-types: [minor, patch]
+          vite-vitest:
+              patterns: ['vite', '@vitejs/*', 'vitest', '@vitest/*', 'vite-plugin-*']
+              update-types: [minor, patch]
+          playwright:
+              patterns: ['playwright', '@playwright/*']
+              update-types: [minor, patch]
+      # Major upgrades outside the coupled React/Tailwind pairs stay separate.
+      # Patched packages are intentionally monitored too; their regressions run
+      # in dependency-ui.yml. Review patches/README.md when upgrading them.
