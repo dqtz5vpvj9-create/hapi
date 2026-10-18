@@ -339,14 +339,27 @@ export function NativeCodexThread(props: HappyThreadProps) {
     }, [scroll.listRef, scroll.navigation, scroll.returnToBottom, preload.input, preload.scroll, preload.pointer, loadEarlier, props.api, props.sessionId, viewport, cancelInitialCoverage])
     useLayoutEffect(() => {
         const save = () => {
-            if (pane?.root.current && getComputedStyle(pane.root.current).visibility === 'hidden') return
             // Workspace synchronization also captures mounted panes during
             // initial loading. Their provisional DOM is not a new reader
             // position and must not replace the bookmark being restored.
             if (!scroll.reading.initialized) return
+            if (pane?.root.current && getComputedStyle(pane.root.current).visibility === 'hidden') {
+                // Visibility cleanup may run after CSS has hidden this pane.
+                // Its last settled bookmark is still authoritative; hidden
+                // caret hit tests and unsampled reader input are not.
+                const saved = !scroll.reading.followingTail && !scroll.reading.pending ? chatScroll.read() : null
+                if (saved) viewport.beginPreserving(saved)
+                return
+            }
             scroll.reading.onScrollEnd()
             const position = scroll.reading.followingTail ? null : viewport.capturePosition()
-            if (position) chatScroll.save(position)
+            if (position) {
+                chatScroll.save(position)
+                // A retained phone pane can reflow while hidden, where native
+                // scroll anchoring cannot keep its character in place. Let the
+                // existing reader owner preserve this pre-transition bookmark.
+                viewport.beginPreserving(position)
+            }
         }
         viewport.onDetach = save
         pane?.beforeHide.add(save)

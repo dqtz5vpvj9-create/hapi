@@ -1,5 +1,5 @@
 import type { MessageListNavigation } from '@/components/AssistantChat/VirtualMessageList'
-import { captureReadingAnchor, restoreReadingAnchor, CODE_READING_SOURCE_READY } from '@/lib/reading-anchor'
+import { captureReadingAnchor, restoreReadingAnchor, getCodeReadingSourceIdentity, CODE_READING_SOURCE_READY } from '@/lib/reading-anchor'
 import { ChatViewport, type ViewportLanding, type ViewportMetrics } from './dsh/use-chat-viewport'
 import type { ChatScrollPosition } from './dsh/types'
 import type { ScrollFollow } from './dsh/use-scroll-follow'
@@ -13,7 +13,12 @@ export class NativeChatViewport extends ChatViewport {
     navigationVersion = 0
     readerDelta = 0
     navigation: MessageListNavigation | null = null
-    private codeRestore: { reading: NonNullable<ChatScrollPosition['reading']>; finished: boolean } | null = null
+    private codeRestore: {
+        reading: NonNullable<ChatScrollPosition['reading']>
+        sourceIdentity: symbol
+        finished: boolean
+        geometry: number[] | null
+    } | null = null
     private retained: ChatScrollPosition | null = null
     private retainedDocumentTop: number | null = null
     private pageCommitPending = false
@@ -245,16 +250,33 @@ export class NativeChatViewport extends ChatViewport {
         const reading = { ...original, id: original.disclosure ? row.id
             : (original.id.startsWith('hapi-reading-') ? part : message)?.id ?? row.id }
         if (reading.code) {
-            // The scroll adapter wraps the same saved bookmark on each read.
-            // Keep its asynchronous CodeMirror placement alive across layout
-            // publications until the actual bookmark or navigation changes.
-            if (this.codeRestore?.reading !== original) {
-                const task = { reading: original, finished: false }
+            const sourceIdentity = getCodeReadingSourceIdentity(viewport, reading)
+            if (!sourceIdentity) { this.codeRestore = null; return null }
+            const sourceElement = viewport.ownerDocument.getElementById(reading.id)!
+                .querySelectorAll<HTMLElement>('[data-hapi-large-code]')[reading.code.source]
+            const geometry = () => {
+                const source = sourceElement.getBoundingClientRect()
+                // Scroll-independent geometry changes when a pane resizes,
+                // preceding text reflows, or the cold code editor is measured.
+                return [viewport.clientWidth, viewport.clientHeight, viewport.scrollHeight,
+                    source.width, source.height,
+                    source.top - viewport.getBoundingClientRect().top + viewport.scrollTop]
+            }
+            const previous = this.codeRestore
+            const changedLayout = previous?.finished && previous.geometry !== null
+                && geometry().some((value, index) => Math.abs(value - previous.geometry![index]) > 0.5)
+            // Keep a bookmark's pending placement across layout publications.
+            // A rebuilt lazy editor cannot finish its destroyed view's task;
+            // a completed placement also needs revalidation after real reflow.
+            if (previous?.reading !== original || previous.sourceIdentity !== sourceIdentity || changedLayout) {
+                const task = { reading: original, sourceIdentity, finished: false, geometry: null as number[] | null }
                 this.codeRestore = task
+                const isCurrent = () => !this.disposed && this.codeRestore === task
+                    && getCodeReadingSourceIdentity(viewport, reading) === sourceIdentity
                 restoreReadingAnchor(viewport, reading, {
-                    isCurrent: () => !this.disposed && this.codeRestore === task,
+                    isCurrent,
                     onScroll: () => {
-                        if (this.disposed || this.codeRestore !== task) return
+                        if (!isCurrent()) return
                         const metrics = this.metrics()
                         if (metrics) {
                             this.acknowledge(metrics)
@@ -262,8 +284,8 @@ export class NativeChatViewport extends ChatViewport {
                         }
                     },
                     onRestored: success => {
-                        if (this.codeRestore !== task || this.disposed) return
-                        if (success) { task.finished = true; this.layoutCommitted() }
+                        if (!isCurrent()) return
+                        if (success) { task.finished = true; task.geometry = geometry(); this.layoutCommitted() }
                         else this.codeRestore = null
                     },
                 })

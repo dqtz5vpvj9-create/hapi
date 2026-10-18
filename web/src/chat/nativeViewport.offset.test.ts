@@ -98,6 +98,106 @@ describe('current-main actual landing reaches the virtual observer synchronously
         expect(value.notify).toHaveBeenCalledTimes(count)
     })
 
+    it.each([false, true])('revalidates the same bookmark when its code source is replaced (completed: %s)', completed => {
+        const value = fixture()
+        const code = document.createElement('div'); code.dataset.hapiLargeCode = 'true'; value.row.append(code)
+        const tasks: ReadingRestoreOptions[] = []
+        const first = registerCodeReadingSource(code, {
+            positionAt: () => null,
+            restore: (_element, _anchor, options) => { tasks.push(options) },
+        })
+        const position: ChatScrollPosition = { anchorKey: 'answer', anchorTop: 24, scrollTop: 0,
+            reading: { id: 'actual-answer', topOffset: 24,
+                code: { source: 0, position: 42, quote: 'retained code', quoteStart: 42, topOffset: 24 } } }
+        expect(value.viewport.restore(position)).toBeNull()
+        if (completed) tasks[0].onRestored(true)
+        disposers.push(value.viewport.connect({ scroll: () => {}, scrollEnd: () => {}, interact: () => {},
+            resize: () => { value.viewport.restore(position) } }))
+
+        const unrelated = document.createElement('div'); unrelated.dataset.hapiLargeCode = 'true'; value.row.append(unrelated)
+        disposers.push(registerCodeReadingSource(unrelated, { positionAt: () => null, restore: vi.fn() }))
+        value.viewport.layoutCommitted()
+        expect(tasks).toHaveLength(1)
+
+        // A lazy editor can be rebuilt under StrictMode without detaching the
+        // chat viewport. Its destroyed view never completes the old measure.
+        first()
+        disposers.push(registerCodeReadingSource(code, {
+            positionAt: () => null,
+            restore: (_element, _anchor, options) => { tasks.push(options) },
+        }))
+        first() // A late cleanup of the old registration cannot remove its replacement.
+        expect(tasks).toHaveLength(2)
+        expect(tasks[0].isCurrent()).toBe(false)
+        expect(tasks[1].isCurrent()).toBe(true)
+        value.notify.mockClear()
+        tasks[0].onScroll(); tasks[0].onRestored(true)
+        expect(value.notify).not.toHaveBeenCalled()
+
+        value.element.scrollTop = 470
+        tasks[1].onScroll(); tasks[1].onRestored(true)
+        expect(value.viewport.restore(position)?.position).toBe(position)
+        expect(value.core.scrollOffset).toBe(470)
+        expect(value.writes).toHaveBeenCalledExactlyOnceWith(470)
+    })
+
+    it('keeps reader cancellation authoritative when a pending source is replaced', () => {
+        const value = fixture()
+        const code = document.createElement('div'); code.dataset.hapiLargeCode = 'true'; value.row.append(code)
+        const tasks: ReadingRestoreOptions[] = []
+        const source = { positionAt: () => null,
+            restore: (_element: HTMLElement, _anchor: unknown, options: ReadingRestoreOptions) => { tasks.push(options) } }
+        const first = registerCodeReadingSource(code, source)
+        const position: ChatScrollPosition = { anchorKey: 'answer', anchorTop: 24, scrollTop: 0,
+            reading: { id: 'actual-answer', topOffset: 24,
+                code: { source: 0, position: 42, quote: 'retained code', quoteStart: 42, topOffset: 24 } } }
+        let restoring = true
+        disposers.push(value.viewport.connect({ scroll: () => {}, scrollEnd: () => {},
+            interact: () => { restoring = false },
+            resize: () => { if (restoring) value.viewport.restore(position) } }))
+        value.viewport.restore(position)
+        value.element.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+        expect(tasks[0].isCurrent()).toBe(false)
+        first()
+        disposers.push(registerCodeReadingSource(code, source))
+        tasks[0].onScroll(); tasks[0].onRestored(true)
+        expect(tasks).toHaveLength(1)
+        expect(value.writes).not.toHaveBeenCalled()
+        expect(value.notify).not.toHaveBeenCalled()
+    })
+
+    it('revalidates a completed code position after its source moves in the layout', () => {
+        const value = fixture()
+        const code = document.createElement('div'); code.dataset.hapiLargeCode = 'true'; value.row.append(code)
+        let documentTop = 600
+        code.getBoundingClientRect = () => new DOMRect(0, documentTop - value.element.scrollTop, 800, 200)
+        const tasks: ReadingRestoreOptions[] = []
+        disposers.push(registerCodeReadingSource(code, { positionAt: () => null,
+            restore: (_element, _anchor, options) => { tasks.push(options) } }))
+        const position: ChatScrollPosition = { anchorKey: 'answer', anchorTop: 24, scrollTop: 0,
+            reading: { id: 'actual-answer', topOffset: 24,
+                code: { source: 0, position: 42, quote: 'retained code', quoteStart: 42, topOffset: 24 } } }
+        disposers.push(value.viewport.connect({ scroll: () => {}, scrollEnd: () => {}, interact: () => {},
+            resize: () => { value.viewport.restore(position) } }))
+        value.viewport.restore(position)
+        value.element.scrollTop = 576
+        tasks[0].onScroll(); tasks[0].onRestored(true)
+        value.viewport.layoutCommitted()
+        expect(tasks).toHaveLength(1)
+
+        // A narrower pane reflows the text before a still-mounted code block.
+        // Completion at the old offset cannot certify this new geometry.
+        documentTop += 112
+        value.viewport.layoutCommitted()
+        expect(tasks).toHaveLength(2)
+        expect(tasks[0].isCurrent()).toBe(false)
+        value.element.scrollTop = 688
+        tasks[1].onScroll(); tasks[1].onRestored(true)
+        expect(value.viewport.restore(position)?.metrics.top).toBe(688)
+        expect(value.core.scrollOffset).toBe(688)
+        expect(tasks).toHaveLength(2)
+    })
+
     it('publishes instant bottom navigation using its actual clamped result', () => {
         const value = fixture(600, 880)
         expect(value.viewport.scrollToBottom(new ScrollFollow(true, 24))?.metrics.top).toBe(880)
