@@ -1,8 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { access } from 'fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { listSkills, MAX_SKILL_FILE_BYTES, resolveSkill } from './skills'
+
+vi.mock('fs/promises', async importOriginal => {
+    const actual = await importOriginal<typeof import('fs/promises')>()
+    return { ...actual, access: vi.fn(actual.access) }
+})
 
 async function writeSkill(skillDir: string, name: string, description: string): Promise<void> {
     await mkdir(skillDir, { recursive: true })
@@ -331,9 +337,22 @@ describe('listSkills', () => {
         await writeSkill(join(parentDirectory, '.agents', 'skills', 'parent-skill'), 'parent-skill', 'Parent skill')
         await writeSkill(join(workingDirectory, '.agents', 'skills', 'local-skill'), 'local-skill', 'Local skill')
 
-        const skills = await listSkills(workingDirectory)
-
-        expect(skills.map((skill) => skill.name)).toEqual(['local-skill'])
+        // The system temp directory can itself be inside a checkout. Model
+        // this case's no-repository prerequisite without changing the real
+        // skill files or weakening the parent-skill exclusion assertion.
+        const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises')
+        vi.mocked(access).mockImplementation(async (path, mode) => {
+            if (basename(String(path)) === '.git') {
+                throw Object.assign(new Error('No repository marker in this fixture'), { code: 'ENOENT' })
+            }
+            return actual.access(path, mode)
+        })
+        try {
+            const skills = await listSkills(workingDirectory)
+            expect(skills.map((skill) => skill.name)).toEqual(['local-skill'])
+        } finally {
+            vi.mocked(access).mockImplementation(actual.access)
+        }
     })
 
     it('prefers nearest project skill over parent and user duplicates', async () => {

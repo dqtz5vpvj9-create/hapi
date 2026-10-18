@@ -6,7 +6,7 @@ import { Hono } from 'hono'
 import type { WebAppEnv } from '../middleware/auth'
 import { createHubSettingsRoutes } from './hubSettings'
 import { writeSessionSummaryContractEnabled } from '../../config/sessionSummaryContract'
-import { writeSessionSummaryInChatEnabled } from '../../config/sessionSummaryInChat'
+import { getSettingsFile, updateSettings } from '../../config/settings'
 
 const directories: string[] = []
 
@@ -96,7 +96,12 @@ describe('GET/PUT /api/hub-settings', () => {
 
     it('rejects non-default namespaces for PUT but allows GET', async () => {
         const { app, dataDir } = await createApp('default')
-        await writeSessionSummaryInChatEnabled(dataDir, true)
+        const ownerPut = await app.request('/api/hub-settings', {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sessionSummaryInChat: true })
+        })
+        expect(ownerPut.status).toBe(200)
 
         const tenantApp = new Hono<WebAppEnv>()
         tenantApp.use('*', async (c, next) => {
@@ -120,10 +125,13 @@ describe('GET/PUT /api/hub-settings', () => {
         expect(put.status).toBe(403)
     })
 
-    it('survives a prior write via settings helpers', async () => {
+    it('reads both flags from a previously persisted settings snapshot', async () => {
         const { app, dataDir } = await createApp()
         await writeSessionSummaryContractEnabled(dataDir, true)
-        await writeSessionSummaryInChatEnabled(dataDir, true)
+        await updateSettings(getSettingsFile(dataDir), (current) => ({
+            settings: { ...current, sessionSummaryInChat: true },
+            result: undefined
+        }))
         const response = await app.request('/api/hub-settings')
         expect(await response.json()).toEqual({
             sessionSummaryContract: true,

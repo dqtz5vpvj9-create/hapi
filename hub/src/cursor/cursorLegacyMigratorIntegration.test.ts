@@ -145,12 +145,11 @@ describeIntegration('CursorLegacyMigrator INTEGRATION (real agent acp)', () => {
         expect(updateCalls[0].lastUsedModel).toBe('composer-2.5')
     }, 180_000)
 
-    it('migrates a REAL operator-supplied legacy store (LEGACY_FODDER_WSH + LEGACY_FODDER_UUID)', async () => {
+    it.skipIf(!process.env.LEGACY_FODDER_WSH && !process.env.LEGACY_FODDER_UUID)('migrates a REAL operator-supplied legacy store (LEGACY_FODDER_WSH + LEGACY_FODDER_UUID)', async () => {
         const fodderWsh = process.env.LEGACY_FODDER_WSH
         const fodderUuid = process.env.LEGACY_FODDER_UUID
         if (!fodderWsh || !fodderUuid) {
-            // Skip silently; fodder is operator-local data we can't ship.
-            return
+            throw new Error('Set both LEGACY_FODDER_WSH and LEGACY_FODDER_UUID, or leave both unset to skip the operator-supplied fixture')
         }
         const realSourceStore = join(homedir(), '.cursor', 'chats', fodderWsh, fodderUuid, 'store.db')
         if (!existsSync(realSourceStore)) {

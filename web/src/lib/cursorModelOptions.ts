@@ -73,26 +73,6 @@ function normalizeCurrentModel(model?: string | null): string | null {
     return trimmed
 }
 
-export function parseCursorWireParams(modelId: string): Record<string, string> {
-    const variant = cursorModelVariantId(modelId)
-    if (!variant) {
-        return {}
-    }
-
-    const params: Record<string, string> = {}
-    for (const part of variant.split(',')) {
-        const segment = part.trim()
-        if (!segment) continue
-        const eq = segment.indexOf('=')
-        if (eq === -1) {
-            params[segment] = 'true'
-            continue
-        }
-        params[segment.slice(0, eq).trim()] = segment.slice(eq + 1).trim()
-    }
-    return params
-}
-
 /** Raw label for a variant row. No fast/effort/reasoning formatting. */
 export function cursorVariantLabel(modelId: string): string {
     const variant = cursorModelVariantId(modelId)
@@ -103,40 +83,6 @@ export function cursorVariantLabel(modelId: string): string {
         return '(default)'
     }
     return cursorModelBaseId(modelId)
-}
-
-/** Kept for callers/tests; sorting is raw and should not encode semantic effort guesses. */
-export function cursorEffortPickerSortKey(wireId: string): string {
-    return wireId
-}
-
-/** Param keys that differ across wire ids in the same base model group. */
-export function cursorVaryingWireParamKeys(wireIds: readonly string[]): string[] {
-    if (wireIds.length <= 1) {
-        return []
-    }
-
-    const parsed = wireIds.map((wireId) => parseCursorWireParams(wireId))
-    const keys = new Set<string>()
-    for (const params of parsed) {
-        for (const key of Object.keys(params)) {
-            keys.add(key)
-        }
-    }
-
-    const varying: string[] = []
-    for (const key of keys) {
-        const values = new Set(parsed.map((params) => params[key] ?? ''))
-        if (values.size > 1) {
-            varying.push(key)
-        }
-    }
-    return varying
-}
-
-/** Raw variant-picker label. */
-export function cursorEffortPickerLabel(wireId: string, _siblingWireIds: readonly string[]): string {
-    return cursorVariantLabel(wireId)
 }
 
 /** Variant-picker rows for one base model, preserving ACP/catalog order. */
@@ -198,11 +144,6 @@ export function buildCursorEffortPickerOptionsWithDefaultFirst(
         defaultOption,
         ...options.filter((option) => option.value !== defaultWire)
     ]
-}
-
-/** Raw suffix for compatibility with older callers/tests. */
-export function cursorVariantDisambiguationSuffix(modelId: string): string {
-    return cursorVariantLabel(modelId)
 }
 
 /**
@@ -343,16 +284,6 @@ export function cursorCatalogHasMultiVariantBases(catalog: CursorModelCatalog): 
     return false
 }
 
-export function cursorBaseHasMultipleVariants(
-    catalog: CursorModelCatalog,
-    baseKey: string | null | undefined
-): boolean {
-    if (!baseKey || baseKey === 'auto') {
-        return false
-    }
-    return (catalog.variantsByBase.get(baseKey)?.length ?? 0) > 1
-}
-
 /** ACP parameterized wire ids use bracket params; re-export shared predicate. */
 export function isCursorAcpWireModelId(modelId: string): boolean {
     return isSharedCursorAcpWireModelId(modelId)
@@ -392,42 +323,9 @@ export function buildFlatCursorModelPickerOptions(
     ]
 }
 
-/** @deprecated Use buildCursorModelCatalog for Cursor sessions. */
-export function buildCursorModelOptions(
-    availableModels: readonly CursorModelSummary[],
-    options?: {
-        currentModel?: string | null
-        defaultValue?: null | 'auto'
-    }
-): CursorModelOption[] {
-    return buildFlatCursorModelPickerOptions(buildCursorModelCatalog(availableModels, options), options)
-}
-
 /** Raw display label from a wire id. */
 export function formatCursorModelPickerLabel(modelId: string, _name?: string | null): string {
     const base = cursorModelDedupeKey(modelId)
     const variant = cursorModelVariantId(modelId)
     return variant ? `${base} · ${variant}` : base
-}
-
-/**
- * iOS-style "configure my model" view: when a non-Default base is selected, hide
- * every other base row so the user sees Default + selected + (optional Variant
- * section below). Caller appends a "Change model…" toggle to re-expand.
- *
- * Default-row passthrough recognizes both `'auto'` (the in-picker token) and
- * `null` (the underlying base option value) so callers don't need to normalize.
- */
-export function filterCursorModelOptionsForCompactView(
-    modelOptions: readonly { value: string | null; label: string }[],
-    selectedModelBase: string | null | undefined
-): readonly { value: string | null; label: string }[] {
-    if (!selectedModelBase || selectedModelBase === 'auto') {
-        return modelOptions
-    }
-    return modelOptions.filter(
-        (option) => option.value === null
-            || option.value === 'auto'
-            || option.value === selectedModelBase
-    )
 }

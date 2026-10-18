@@ -2,12 +2,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SessionSummary } from '@/types/api'
+import type { SessionPatch, SessionSummary, SessionsResponse } from '@/types/api'
 import type { Session } from '@/types/api'
+import { queryKeys } from '@/lib/query-keys'
 import { appendOptimisticMessage, clearMessageWindow, getMessageWindowState } from '@/lib/message-window-store'
 import {
     applySessionDetailPatch,
-    canApplyVersionedSummaryPatch,
     isGlobalScopedMessageStreamEvent,
     isNewerVersionedPatch,
     isRenderIrrelevantPatch,
@@ -242,55 +242,78 @@ function makeSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     } as SessionSummary
 }
 
-describe('canApplyVersionedSummaryPatch (PR #897 review, HAPI Bot 2026-07-23 Major)', () => {
-    it('allows non-versioned patches without a detail cache', () => {
-        expect(canApplyVersionedSummaryPatch({}, false)).toBe(true)
-        expect(canApplyVersionedSummaryPatch({ metadata: undefined, agentState: undefined }, false)).toBe(true)
+describe('global SSE summary watermarks without a detail cache', () => {
+    beforeEach(() => {
+        vi.useFakeTimers()
+        FakeEventSource.instances = []
+        vi.stubGlobal('EventSource', FakeEventSource)
+    })
+    afterEach(() => {
+        vi.unstubAllGlobals()
+        vi.useRealTimers()
     })
 
-    it('refuses metadata/agentState/todos summary patches when detail version source is missing', () => {
-        expect(
-            canApplyVersionedSummaryPatch(
-                { metadata: { version: 1, value: null } },
-                false
-            )
-        ).toBe(false)
-        expect(
-            canApplyVersionedSummaryPatch(
-                { agentState: { version: 1, value: null } },
-                false
-            )
-        ).toBe(false)
-        expect(
-            canApplyVersionedSummaryPatch(
-                { todos: { version: 1, value: [] } },
-                false
-            )
-        ).toBe(false)
+    function setupSummary() {
+        const client = new QueryClient()
+        client.setQueryData<SessionsResponse>(queryKeys.sessions, { sessions: [makeSummary()] })
+        const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children)
+        const hook = renderHook(() => useSSE({ enabled: true, token: 'fixture', baseUrl: 'http://hub.test',
+            subscription: { all: true }, scope: 'global', onEvent: () => {} }), { wrapper })
+        const source = FakeEventSource.instances[0]
+        const patch = (data: SessionPatch) => act(() => {
+            source.simulateMessage({ type: 'session-updated', sessionId: 'session-1', data })
+            vi.advanceTimersByTime(16)
+        })
+        const read = () => client.getQueryData<SessionsResponse>(queryKeys.sessions)!.sessions[0]
+        const finish = () => { hook.unmount(); client.clear() }
+        return { client, patch, read, finish }
+    }
+
+    it('applies versioned fields and rejects their stale replay using the summary alone', () => {
+        const { client, patch, read, finish } = setupSummary()
+        expect(client.getQueryData(queryKeys.session('session-1'))).toBeUndefined()
+        patch({
+            metadata: { version: 4, value: { path: '/proj', host: 'machine', name: 'Current task' } },
+            agentState: { version: 5, value: { requests: { approval: { tool: 'Bash', arguments: {} } } } },
+            todos: { version: 6, value: [{ id: 'task', content: 'Verify', status: 'completed', priority: 'medium' }] }
+        })
+        expect(read()).toMatchObject({
+            metadata: { name: 'Current task' }, metadataVersion: 4,
+            pendingRequestsCount: 1, pendingRequestKinds: ['permission'], agentStateVersion: 5,
+            todoProgress: { completed: 1, total: 1 }, todosUpdatedAt: 6
+        })
+        const accepted = read()
+        patch({
+            metadata: { version: 3, value: null },
+            agentState: { version: 4, value: null },
+            todos: { version: 5, value: [] }
+        })
+        expect(read()).toEqual(accepted)
+        expect(client.getQueryState(queryKeys.sessions)?.isInvalidated).toBe(false)
+        expect(client.getQueryData(queryKeys.session('session-1'))).toBeUndefined()
+        finish()
     })
 
-    it('allows teamState-only patches without detail (summary no-op)', () => {
-        expect(
-            canApplyVersionedSummaryPatch(
-                { teamState: { version: 1, value: null } },
-                false
-            )
-        ).toBe(true)
+    it('retains watermarks even when a newer clear leaves rendered fields unchanged', () => {
+        const { patch, read, finish } = setupSummary()
+        patch({ metadata: { version: 4, value: null }, agentState: { version: 5, value: null }, todos: { version: 6, value: [] } })
+        expect(read()).toMatchObject({ metadataVersion: 4, agentStateVersion: 5, todosUpdatedAt: 6 })
+        patch({
+            metadata: { version: 3, value: { path: '/old', host: 'machine', name: 'Stale task' } },
+            agentState: { version: 4, value: { requests: { old: { tool: 'Bash', arguments: {} } } } },
+            todos: { version: 5, value: [{ id: 'old', content: 'Stale', status: 'pending', priority: 'medium' }] }
+        })
+        expect(read()).toMatchObject({ metadata: null, pendingRequestsCount: 0, todoProgress: null })
+        finish()
     })
 
-    it('allows versioned summary patches when detail is present', () => {
-        expect(
-            canApplyVersionedSummaryPatch(
-                { metadata: { version: 2, value: null } },
-                true
-            )
-        ).toBe(true)
-        expect(
-            canApplyVersionedSummaryPatch(
-                { todos: { version: 2, value: [] } },
-                true
-            )
-        ).toBe(true)
+    it('keeps team-state-only updates from invalidating the session list', () => {
+        const { client, patch, read, finish } = setupSummary()
+        const initial = read()
+        patch({ teamState: { version: 1, value: null } })
+        expect(read()).toEqual(initial)
+        expect(client.getQueryState(queryKeys.sessions)?.isInvalidated).toBe(false)
+        finish()
     })
 })
 

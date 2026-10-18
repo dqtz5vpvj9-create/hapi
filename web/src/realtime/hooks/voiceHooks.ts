@@ -155,11 +155,6 @@ export const voiceHooks = {
         return plan
     },
 
-    /** @deprecated Use prepareVoiceSession().bootstrap */
-    onVoiceStarted(sessionId: string): string {
-        return voiceHooks.prepareVoiceSession(sessionId).bootstrap
-    },
-
     /**
      * Called when Claude Code finishes processing (ready event)
      */

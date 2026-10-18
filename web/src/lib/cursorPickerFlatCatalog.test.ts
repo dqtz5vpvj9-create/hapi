@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildNewSessionCursorPickerState, shouldShowNewSessionCursorVariantPicker } from '@/components/NewSession/newSessionCursorModels'
+import { buildNewSessionCursorPickerState } from '@/components/NewSession/newSessionCursorModels'
 import { buildCursorPickerState } from '@/lib/cursorPickerState'
 
 /** Live ACP catalog shape: one wire id per base family (28 rows). */
@@ -17,7 +17,7 @@ describe('flat catalog (one wire per base)', () => {
     it('New Session uses flat picker without a useless variant dropdown', () => {
         const picker = buildNewSessionCursorPickerState(models, 'auto')
         expect(picker.mode).toBe('flat')
-        expect(shouldShowNewSessionCursorVariantPicker(picker)).toBe(false)
+        expect(picker.showEffortPicker).toBe(false)
         expect(picker.modelOptions.length).toBe(5)
         expect(picker.modelOptions.some((row) => row.value === 'gpt-5.5[context=272k,reasoning=medium,fast=false]')).toBe(true)
     })
@@ -43,7 +43,7 @@ describe('dual catalog (multiple wires per base)', () => {
     it('shows variant picker only when a base has 2+ wire ids', () => {
         const picker = buildNewSessionCursorPickerState(models, 'composer-2.5[fast=true]')
         expect(picker.mode).toBe('dual')
-        expect(shouldShowNewSessionCursorVariantPicker(picker)).toBe(true)
+        expect(picker.showEffortPicker).toBe(true)
         expect(picker.effortOptions).toHaveLength(2)
     })
 })

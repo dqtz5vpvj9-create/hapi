@@ -360,16 +360,3 @@ export function VoiceDiagnosticsControls(props: {
         </div>
     )
 }
-
-/** @deprecated Use VoiceRespondsControls + VoicePersonaControls + VoiceSoundsControls instead. */
-export function VoiceAdvancedControls(props: {
-    t: Translate
-    voiceBackend?: VoiceBackendKind | null
-}) {
-    return (
-        <>
-            <VoicePersonaControls {...props} />
-            <VoiceSoundsControls {...props} />
-        </>
-    )
-}

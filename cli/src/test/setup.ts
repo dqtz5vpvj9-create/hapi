@@ -1,24 +1,15 @@
-import { readFileSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { inject } from 'vitest'
+import type {} from './context'
 
 // This file runs at the top level of each vitest worker, before any test file
-// is imported. It reads the hub config written by globalSetup.ts and injects
-// the env vars so the CLI configuration singleton sees the temp hub.
-const CONFIG_FILE = join(tmpdir(), 'hapi-test-config.json')
+// is imported. Project-scoped context keeps simultaneous test runs isolated.
+const config = inject('hapiTestContext')
 
-if (!existsSync(CONFIG_FILE)) {
+if (!config) {
     throw new Error(
-        `[test setup] Missing isolated hub config: ${CONFIG_FILE}\n` +
-        'Run the full test suite via "pnpm test" so globalSetup can spin up a temp hub first.'
+        '[test setup] Missing isolated hub context.\n' +
+        'Run "bun run test:cli" or "bun run test:cli:integration" so globalSetup can start a temp hub first.'
     )
-}
-
-let config: { port: number; token: string; tmpHome: string; bunExec: string; stubClaudePath?: string }
-try {
-    config = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'))
-} catch (err) {
-    throw new Error(`[test setup] Failed to parse hub config at ${CONFIG_FILE}: ${err}`)
 }
 
 process.env.HAPI_API_URL = `http://127.0.0.1:${config.port}`

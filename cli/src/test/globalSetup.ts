@@ -6,12 +6,10 @@ import { fileURLToPath } from 'node:url'
 import net from 'node:net'
 import { spawn, execSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
+import type { TestProject } from 'vitest/node'
+import type {} from './context'
 import { reapTestOwnedProcesses } from './auditTestProcesses'
 import { TEST_OWNED_MARKER_KEY } from './integrationEnv'
-
-// Workers can't inherit process.env from globalSetup, so we write config to a file
-// and let setupFile.ts read it in each worker.
-export const TEST_CONFIG_FILE = join(tmpdir(), 'hapi-test-config.json')
 
 async function getFreePort(): Promise<number> {
     return new Promise((resolve, reject) => {
@@ -52,7 +50,7 @@ function findBunExec(): string {
 let hubProcess: ChildProcess | null = null
 let tmpHome: string | null = null
 
-export async function setup() {
+export async function setup(project: TestProject) {
     const port = await getFreePort()
     tmpHome = mkdtempSync(join(tmpdir(), 'hapi-test-'))
     const token = randomBytes(20).toString('base64url')
@@ -89,8 +87,10 @@ export async function setup() {
         SERVERCHAN_NOTIFICATION: 'false',
     }
 
-    // Write config so setupFile.ts can inject env vars into each test worker
-    writeFileSync(TEST_CONFIG_FILE, JSON.stringify({ port, token, tmpHome, bunExec, stubClaudePath }))
+    // Vitest serializes this project's context into its own workers. A shared
+    // temp filename lets concurrent runs overwrite or remove each other's hub
+    // credentials and home before the next worker starts.
+    project.provide('hapiTestContext', { port, token, tmpHome, bunExec, stubClaudePath })
 
     const hubEntry = join(
         dirname(fileURLToPath(import.meta.url)),
@@ -124,7 +124,6 @@ async function stopHubProcess(): Promise<void> {
 
 export async function teardown() {
     await stopHubProcess()
-    try { rmSync(TEST_CONFIG_FILE) } catch {}
 
     // Final audit: test children carry `HAPI_TEST_MARKER=<tmpHome>` in their
     // environment (see integrationEnv.ts). Anything still alive after the

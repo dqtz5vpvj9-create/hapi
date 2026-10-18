@@ -111,5 +111,3 @@ export interface AgentBackend {
     onPermissionRequest(handler: (request: PermissionRequest) => void): void;
     disconnect(): Promise<void>;
 }
-
-export type AgentBackendFactory = () => AgentBackend;

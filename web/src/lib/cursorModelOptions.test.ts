@@ -6,16 +6,11 @@ import {
     CURSOR_AUTO_MODEL_LABEL,
     cursorCatalogHasMultiVariantBases,
     shouldUseCursorDualPickers,
-    cursorEffortPickerLabel,
     cursorModelBaseId,
     cursorModelDedupeKey,
     cursorModelVariantId,
-    cursorVariantDisambiguationSuffix,
     cursorVariantLabel,
-    cursorVaryingWireParamKeys,
-    filterCursorModelOptionsForCompactView,
     formatCursorModelPickerLabel,
-    parseCursorWireParams,
     resolveCursorBaseKey,
     resolveCursorVariantOptions
 } from './cursorModelOptions'
@@ -38,20 +33,6 @@ describe('raw Cursor ACP model splitting', () => {
         )
     })
 
-    it('parses raw comma-separated wire parameters without changing labels', () => {
-        expect(
-            parseCursorWireParams('claude-opus-4-8[thinking=true,context=300k,effort=high,fast=false]')
-        ).toEqual({
-            thinking: 'true',
-            context: '300k',
-            effort: 'high',
-            fast: 'false',
-        })
-        expect(cursorVaryingWireParamKeys([
-            'composer-2.5[fast=true]',
-            'composer-2.5[fast=false]',
-        ])).toEqual(['fast'])
-    })
 })
 
 describe('buildCursorModelCatalog', () => {
@@ -151,50 +132,8 @@ describe('picker labels and modes', () => {
         expect(shouldUseCursorDualPickers(catalog, 'composer-2.5[fast=false]')).toBe(true)
     })
 
-    it('uses raw variant suffixes for compatibility helpers', () => {
-        expect(cursorEffortPickerLabel('claude-opus-4-8[effort=high,fast=false]', [])).toBe('effort=high,fast=false')
-        expect(cursorVariantDisambiguationSuffix('claude-opus-4-8[effort=high,fast=false]')).toBe('effort=high,fast=false')
+    it('uses raw variant suffixes for picker labels', () => {
+        expect(cursorVariantLabel('claude-opus-4-8[effort=high,fast=false]')).toBe('effort=high,fast=false')
         expect(formatCursorModelPickerLabel('composer-2.5[fast=true]', 'ignored')).toBe('composer-2.5 · fast=true')
-    })
-})
-
-describe('filterCursorModelOptionsForCompactView (iOS-style nested picker)', () => {
-    const options: { value: string | null; label: string }[] = [
-        { value: 'auto', label: 'Default' },
-        { value: 'claude-fable-5', label: 'claude-fable-5' },
-        { value: 'claude-opus-4-7', label: 'claude-opus-4-7' },
-        { value: 'composer-2.5', label: 'composer-2.5' },
-        { value: 'gpt-5.5', label: 'gpt-5.5' }
-    ]
-
-    it('passes the full list through when nothing or Default is selected', () => {
-        expect(filterCursorModelOptionsForCompactView(options, undefined)).toEqual(options)
-        expect(filterCursorModelOptionsForCompactView(options, null)).toEqual(options)
-        expect(filterCursorModelOptionsForCompactView(options, 'auto')).toEqual(options)
-    })
-
-    it('collapses to Default + the selected base when a non-Default base is picked', () => {
-        expect(filterCursorModelOptionsForCompactView(options, 'claude-fable-5')).toEqual([
-            { value: 'auto', label: 'Default' },
-            { value: 'claude-fable-5', label: 'claude-fable-5' }
-        ])
-    })
-
-    it('treats `null`-valued Default rows as the Default passthrough', () => {
-        const withNullDefault: { value: string | null; label: string }[] = [
-            { value: null, label: 'Default' },
-            { value: 'composer-2.5', label: 'composer-2.5' },
-            { value: 'gpt-5.5', label: 'gpt-5.5' }
-        ]
-        expect(filterCursorModelOptionsForCompactView(withNullDefault, 'gpt-5.5')).toEqual([
-            { value: null, label: 'Default' },
-            { value: 'gpt-5.5', label: 'gpt-5.5' }
-        ])
-    })
-
-    it('returns just Default when the selected base is not in the option set (catalog drift)', () => {
-        expect(filterCursorModelOptionsForCompactView(options, 'phantom-model-9')).toEqual([
-            { value: 'auto', label: 'Default' }
-        ])
     })
 })

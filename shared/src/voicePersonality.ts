@@ -89,9 +89,10 @@ export function truncateUtf8ByteLength(text: string, maxBytes: number): string {
     const encoder = new TextEncoder()
     if (encoder.encode(text).length <= maxBytes) return text
 
-    const suffix = '\n\n[…truncated for voice transport…]'
-    const suffixBytes = encoder.encode(suffix).length
-    const budget = Math.max(0, maxBytes - suffixBytes)
+    const notice = '\n\n[…truncated for voice transport…]'
+    const noticeBytes = encoder.encode(notice).length
+    const suffix = noticeBytes <= maxBytes ? notice : ''
+    const budget = maxBytes - (suffix ? noticeBytes : 0)
 
     let lo = 0
     let hi = text.length
@@ -100,6 +101,10 @@ export function truncateUtf8ByteLength(text: string, maxBytes: number): string {
         if (encoder.encode(text.slice(0, mid)).length <= budget) lo = mid
         else hi = mid - 1
     }
+    // UTF-16 slicing can leave half an emoji that TextEncoder counts as a
+    // replacement character. Keep the prefix on a complete code point.
+    const lastCodeUnit = text.charCodeAt(lo - 1)
+    if (lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff) lo--
     return text.slice(0, lo) + suffix
 }
 

@@ -13,7 +13,6 @@ const {
     runGrokMock,
     runPiMock,
     runAgyMock,
-    assertCodexLocalSupportedMock,
     existsSyncMock
 } = vi.hoisted(() => ({
     initializeTokenMock: vi.fn(async () => {}),
@@ -28,7 +27,6 @@ const {
     runGrokMock: vi.fn(async () => {}),
     runPiMock: vi.fn(async () => {}),
     runAgyMock: vi.fn(async () => {}),
-    assertCodexLocalSupportedMock: vi.fn(),
     existsSyncMock: vi.fn(() => true)
 }))
 
@@ -53,7 +51,6 @@ vi.mock('@/claude/runClaude', () => ({ runClaude: runClaudeMock }))
 vi.mock('@/grok/runGrok', () => ({ runGrok: runGrokMock }))
 vi.mock('@/pi/runPi', () => ({ runPi: runPiMock }))
 vi.mock('@/agy/runAgy', () => ({ runAgy: runAgyMock }))
-vi.mock('@/codex/utils/codexVersion', () => ({ assertCodexLocalSupported: assertCodexLocalSupportedMock }))
 vi.mock('node:fs', () => ({ existsSync: existsSyncMock }))
 
 import { resumeCommand } from './resume'
@@ -84,7 +81,6 @@ describe('resumeCommand', () => {
         runGrokMock.mockClear()
         runPiMock.mockClear()
         runAgyMock.mockClear()
-        assertCodexLocalSupportedMock.mockClear()
         existsSyncMock.mockReturnValue(true)
     })
 
@@ -107,7 +103,6 @@ describe('resumeCommand', () => {
         await resumeCommand.run(createContext(['hapi-session-1']))
 
         expect(handoffSessionToLocalMock).not.toHaveBeenCalled()
-        expect(assertCodexLocalSupportedMock).not.toHaveBeenCalled()
         expect(runCodexMock).toHaveBeenCalledWith({
             existingSessionId: 'hapi-session-1',
             workingDirectory: '/tmp/project',

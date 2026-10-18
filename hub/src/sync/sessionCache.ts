@@ -289,10 +289,6 @@ export class SessionCache {
         }
     }
 
-    setSessionPinned(sessionId: string, pinned: boolean): void {
-        this.setSessionPinMode(sessionId, pinned ? 'project' : 'none')
-    }
-
     setSessionPinMode(sessionId: string, mode: 'none' | 'project' | 'global'): void {
         const session = this.sessions.get(sessionId) ?? this.refreshSession(sessionId)
         if (!session) throw new Error('Session not found')

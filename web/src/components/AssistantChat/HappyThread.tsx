@@ -9,8 +9,7 @@ import { VirtualMessageList, type MessageListNavigation } from '@/components/Ass
 import { useHistoryPreload } from '@/hooks/useHistoryPreload'
 import { useConversationOutlineHistory } from '@/hooks/useConversationOutlineHistory'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { ThreadPrimitive, unstable_useThreadMessageIds, useAuiState } from '@assistant-ui/react'
-import type { ComponentProps } from 'react'
+import { ThreadPrimitive, useAuiState } from '@assistant-ui/react'
 import { useQuery } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import type { HappyRuntimeExtras } from '@/lib/assistant-runtime'
@@ -346,32 +345,6 @@ export const THREAD_MESSAGE_COMPONENTS = {
     AssistantMessage: HappyAssistantMessage,
     SystemMessage: HappySystemMessage
 } as const
-
-type ThreadMessageComponents = ComponentProps<typeof ThreadPrimitive.Unstable_MessageById>['components']
-
-/**
- * Render messages by stable id instead of their current array index.
- *
- * Rewind can replace a non-empty transcript with an empty one in a single
- * external-runtime update. Index-based providers may then ask assistant-ui
- * for message 0 while its lookup table is already empty. Stable id providers
- * unmount removed rows without consulting a stale index.
- */
-export function ThreadMessagesById({ components }: { components: ThreadMessageComponents }) {
-    const messageIds = unstable_useThreadMessageIds()
-
-    return (
-        <>
-            {messageIds.map((messageId) => (
-                <ThreadPrimitive.Unstable_MessageById
-                    key={messageId}
-                    messageId={messageId}
-                    components={components}
-                />
-            ))}
-        </>
-    )
-}
 
 export function ConversationOutlinePanel(props: {
     items: readonly ConversationOutlineItem[]

@@ -68,7 +68,7 @@ afterEach(async () => {
     finally { vi.useRealTimers(); }
 });
 
-async function fixture(opts?: { fresh?: boolean; hubArchived?: boolean; external?: boolean; nativeHistory?: boolean; end?: RootHost['end']; name?: string; nativeName?: string | null; syncedName?: string | null; beforeBind?: (root: SharedCodexRoot) => void; subscribe?: boolean }) {
+async function fixture(opts?: { fresh?: boolean; hubArchived?: boolean; external?: boolean; nativeHistory?: boolean; end?: RootHost['end']; create?: RootHost['create']; name?: string; nativeName?: string | null; syncedName?: string | null; threadMetadata?: Record<string, unknown>; beforeBind?: (root: SharedCodexRoot) => void; subscribe?: boolean }) {
     const directory = await mkdtemp(join(tmpdir(), 'hapi-shared-root-'));
     let state: AgentState = { steeringActive: true };
     let metadata: Metadata = { path: directory, host: 'test', flavor: 'codex', name: opts?.name, codexLastSyncedName: opts?.syncedName };
@@ -96,7 +96,7 @@ async function fixture(opts?: { fresh?: boolean; hubArchived?: boolean; external
     const end = opts?.end ?? (async () => { throw new Error('Unexpected root archive'); });
     const root = new SharedCodexRoot({ session, workingDirectory: directory } as SessionBootstrapResult, {
         directory, generation: 'test', endpoint: 'mock', external: opts?.external, codexHome: directory, settingsFor: () => undefined,
-        create: async () => { throw new Error('Unexpected root creation'); },
+        create: opts?.create ?? (async () => { throw new Error('Unexpected root creation'); }),
         end
     } satisfies RootHost);
     cleanups.push(async () => { await root.close(false); await rm(directory, { recursive: true, force: true }); });
@@ -104,7 +104,7 @@ async function fixture(opts?: { fresh?: boolean; hubArchived?: boolean; external
     if (opts && 'nativeName' in opts) Object.assign((root.client as any).thread, { name: opts.nativeName });
     opts?.beforeBind?.(root);
     const calls = vi.spyOn(root.client, 'request');
-    await root.bind('thread', { model: 'mock', thread: { turns: [] } }, opts?.subscribe ?? false, opts?.fresh);
+    await root.bind('thread', { model: 'mock', thread: { ...opts?.threadMetadata, turns: [] } }, opts?.subscribe ?? false, opts?.fresh);
     const bindCalls = [...calls.mock.calls];
     calls.mockRestore();
     const native = root.client as unknown as {
@@ -136,6 +136,78 @@ async function fixture(opts?: { fresh?: boolean; hubArchived?: boolean; external
         end,
     };
 }
+
+it('publishes native subagent lineage from the current bind path without replaying messages', async () => {
+    const f = await fixture({ fresh: true, threadMetadata: { source: { subagent: { thread_spawn: {
+        parent_thread_id: 'native-parent', agent_path: '/root/review', agent_nickname: 'Ada', agent_role: 'reviewer'
+    } } } } });
+
+    expect(f.metadata()).toMatchObject({
+        codexSessionId: 'thread', codexParentThreadId: 'native-parent',
+        codexAgentPath: '/root/review', codexAgentNickname: 'Ada', codexAgentRole: 'reviewer'
+    });
+    expect(f.send).not.toHaveBeenCalled();
+});
+
+it.each(['/clear now', '/compact now', '  /clear\tanything  ', '/compact\nsummarize this'])('rejects arguments to %s without changing native state', async text => {
+    const f = await fixture();
+    await f.root.activate();
+    const requests = vi.spyOn(f.root.client, 'request');
+    const command = text.trim().split(/\s+/)[0];
+
+    f.userMessage({ role: 'user', content: { type: 'text', text } }, 'invalid-command');
+
+    await (f.root as unknown as { work: Promise<void> }).work;
+    expect(f.native.queue).toEqual([]);
+    expect(f.root.session.emitMessagesConsumed).toHaveBeenCalledWith(['invalid-command'], { clearQueuedThinkingGrace: true });
+    expect(f.root.session.sendSessionEvent).toHaveBeenCalledWith({ type: 'message', message: `${command} does not accept arguments` });
+    expect(requests).not.toHaveBeenCalled();
+    expect(f.root.session.emitSteerIndeterminate).not.toHaveBeenCalled();
+});
+
+it.each(['/clearing', '/compactness', 'please /clear'])('keeps ordinary slash-like input %s as a model prompt', async text => {
+    const f = await fixture();
+    await f.root.activate();
+
+    f.userMessage({ role: 'user', content: { type: 'text', text } }, 'ordinary-input');
+    await (f.root as unknown as { work: Promise<void> }).work;
+
+    expect(f.native.queue).toEqual([expect.objectContaining({
+        clientUserMessageId: 'ordinary-input', input: [{ type: 'text', text }]
+    })]);
+    expect(f.root.session.sendSessionEvent).not.toHaveBeenCalled();
+});
+
+it('compacts the current native thread without queueing a model turn', async () => {
+    const f = await fixture();
+    await f.root.activate();
+    const requests = vi.spyOn(f.root.client, 'request').mockResolvedValue({});
+
+    f.userMessage({ role: 'user', content: { type: 'text', text: '  /compact  ' } }, 'compact-command');
+    await (f.root as unknown as { work: Promise<void> }).work;
+
+    expect(requests).toHaveBeenCalledExactlyOnceWith('thread/compact/start', { threadId: 'thread' });
+    expect(f.root.session.emitMessagesConsumed).toHaveBeenCalledWith(['compact-command'], { clearQueuedThinkingGrace: true });
+    expect(f.native.queue).toEqual([]);
+});
+
+it.each(['/clear', '/new'])('opens a sibling conversation for %s and preserves the original native binding', async text => {
+    const childSettings = vi.fn(async () => {});
+    const child = { session: { sessionId: 'child-session' }, initialSettings: childSettings } as unknown as SharedCodexRoot;
+    const create = vi.fn(async () => child);
+    const f = await fixture({ create });
+    await f.root.activate();
+    await f.root.initialSettings({ collaborationMode: 'plan' });
+
+    f.userMessage({ role: 'user', content: { type: 'text', text: `  ${text}  ` } }, 'new-command');
+    await (f.root as unknown as { work: Promise<void> }).work;
+
+    expect(create).toHaveBeenCalledExactlyOnceWith('thread/start', expect.objectContaining({ model: 'mock' }));
+    expect(childSettings).toHaveBeenCalledExactlyOnceWith({ collaborationMode: 'plan' });
+    expect(f.root.session.sendSessionEvent).toHaveBeenCalledWith({ type: 'message', message: 'New conversation: /sessions/child-session' });
+    expect(f.metadata().codexSessionId).toBe('thread');
+    expect(f.native.queue).toEqual([]);
+});
 
 it.each([true, false])('restores current-turn controls and queue before ready with an initial subscription (external=%s)', async external => {
     const f = await fixture({ external, subscribe: true, beforeBind(root) {

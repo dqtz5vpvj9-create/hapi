@@ -303,7 +303,7 @@ describe('cold native reader input ownership', () => {
         expect(f.geometry.top).toBe(880)
     })
 
-    it.skip('unconfirmed ordering diagnostic, outside cold-zero-range fix: does not overwrite compositor motion observed before its scroll event', () => {
+    it('does not overwrite compositor motion observed before its scroll event', () => {
         const f = fixture(); f.ready()
         // Model Chrome moving first, then delivering passive wheel, then scroll.
         f.geometry.top = 880

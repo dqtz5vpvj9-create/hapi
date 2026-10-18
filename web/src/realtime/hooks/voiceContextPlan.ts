@@ -37,8 +37,9 @@ function sortedMessages(messages: DecryptedMessage[]): DecryptedMessage[] {
     return [...messages].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
 }
 
-function chunkTextByBytes(parts: string[], maxBytes: number): string[] {
+function chunkTextByBytes(parts: string[], maxBytes: number): { chunks: string[]; truncated: boolean } {
     const chunks: string[] = []
+    let truncated = false
     let current = ''
 
     const flush = () => {
@@ -59,10 +60,11 @@ function chunkTextByBytes(parts: string[], maxBytes: number): string[] {
             current = part
         } else {
             chunks.push(truncateUtf8ByteLength(part, maxBytes))
+            truncated = true
         }
     }
     flush()
-    return chunks
+    return { chunks, truncated }
 }
 
 /**
@@ -109,13 +111,12 @@ export function buildSessionVoiceContextPlan(
     const bootstrapBeforeCap = bootstrap
     bootstrap = truncateUtf8ByteLength(bootstrap, ELEVENLABS_WEBRTC_CONTEXT_MAX_BYTES)
 
-    const streamChunks = chunkTextByBytes(
+    const { chunks: streamChunks, truncated: streamTruncated } = chunkTextByBytes(
         streamMessages.map((line) => `[Session history]\n${line}`),
         VOICE_CONTEXT_STREAM_CHUNK_MAX_BYTES
     )
 
-    const truncated = bootstrap.length < bootstrapBeforeCap.length
-        || streamMessages.length < formatted.length - recentCount
+    const truncated = bootstrap !== bootstrapBeforeCap || streamTruncated
 
     let notice: string | null = null
     if (streamChunks.length > 0) {

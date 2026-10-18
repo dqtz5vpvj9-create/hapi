@@ -7,7 +7,6 @@ import {
     findRunnerSpawnedOrphanTargets,
     findStopSessionOrphanTargets,
     reapRunnerSpawnedOrphans,
-    selectOrphanPidsForSession,
     selectOrphanTargetsForSession,
 } from './orphanReap'
 import {
@@ -61,8 +60,8 @@ describe('orphanReap argv matching', () => {
         expect(found).toBe('scan_failed')
     })
 
-    it('selectOrphanPidsForSession filters non-hapi and self', () => {
-        const pids = selectOrphanPidsForSession(
+    it('selectOrphanTargetsForSession filters non-hapi and self', () => {
+        const targets = selectOrphanTargetsForSession(
             [
                 { pid: 1, cmd: 'systemd', name: 'systemd' },
                 { pid: 42, cmd: `bun src/index.ts claude --started-by runner --existing-session-id ${sessionId}`, name: 'bun' },
@@ -71,14 +70,14 @@ describe('orphanReap argv matching', () => {
             ],
             sessionId
         )
-        expect(pids).toEqual([42])
+        expect(targets).toEqual([{ pid: 42, startMarker: null }])
     })
 
-    it('selectOrphanPidsForSession coerces string PIDs from win32 ps-list', () => {
-        const pids = selectOrphanPidsForSession(
+    it('selectOrphanTargetsForSession coerces string PIDs from process snapshots', () => {
+        const targets = selectOrphanTargetsForSession(
             [
                 {
-                    // ps-list has returned string PIDs on Windows; Number.isFinite("42") is false
+                    // Some process listers return string PIDs; Number.isFinite("42") is false.
                     pid: '42' as unknown as number,
                     cmd: `hapi.exe cursor --started-by runner --existing-session-id ${sessionId}`,
                     name: 'hapi.exe',
@@ -86,11 +85,11 @@ describe('orphanReap argv matching', () => {
             ],
             sessionId
         )
-        expect(pids).toEqual([42])
+        expect(targets).toEqual([{ pid: 42, startMarker: null }])
     })
 
     it('matches win32 CIM snapshots that include CommandLine', () => {
-        const pids = selectOrphanPidsForSession(
+        const targets = selectOrphanTargetsForSession(
             [
                 {
                     pid: 99,
@@ -105,24 +104,14 @@ describe('orphanReap argv matching', () => {
             ],
             sessionId
         )
-        expect(pids).toEqual([99])
+        expect(targets).toEqual([{ pid: 99, startMarker: null }])
     })
 })
 
 describe('reapRunnerSpawnedOrphans (stopSession orphan path)', () => {
-    const stableMarker = (marker = 'gen-a') => {
-        let reads = 0
-        return () => {
-            reads++
-            // Capture + re-check both return the same generation.
-            void reads
-            return marker
-        }
-    }
-
     it('returns null when no argv orphans match', async () => {
         const status = await reapRunnerSpawnedOrphans('missing-session', {
-            findOrphans: async () => [],
+            findTargets: async () => [],
             killTree: async () => {
                 throw new Error('should not kill')
             },
@@ -134,15 +123,15 @@ describe('reapRunnerSpawnedOrphans (stopSession orphan path)', () => {
     it('kills matching orphan PIDs and returns stopped when maps would have missed', async () => {
         const killed: number[] = []
         const status = await reapRunnerSpawnedOrphans('sess-orphan-1', {
-            findOrphans: async (sessionId) => {
+            findTargets: async (sessionId) => {
                 expect(sessionId).toBe('sess-orphan-1')
-                return [4242, 4243]
+                return [{ pid: 4242, startMarker: 'gen-stable' }, { pid: 4243, startMarker: 'gen-stable' }]
             },
             killTree: async (pid) => {
                 killed.push(pid)
                 return true
             },
-            getStartMarker: stableMarker('gen-stable'),
+            getStartMarker: () => 'gen-stable',
         })
         expect(status).toBe('stopped')
         expect(killed).toEqual([4242, 4243])
@@ -150,7 +139,7 @@ describe('reapRunnerSpawnedOrphans (stopSession orphan path)', () => {
 
     it('returns still_alive when the process scan fails', async () => {
         const status = await reapRunnerSpawnedOrphans('sess-orphan-scan-fail', {
-            findOrphans: async () => 'scan_failed',
+            findTargets: async () => 'scan_failed',
             killTree: async () => {
                 throw new Error('should not kill')
             },
@@ -160,30 +149,22 @@ describe('reapRunnerSpawnedOrphans (stopSession orphan path)', () => {
 
     it('returns still_alive when tree-kill cannot prove death', async () => {
         const status = await reapRunnerSpawnedOrphans('sess-orphan-2', {
-            findOrphans: async () => [9999],
+            findTargets: async () => [{ pid: 9999, startMarker: 'gen-a' }],
             killTree: async () => false,
-            getStartMarker: stableMarker(),
+            getStartMarker: () => 'gen-a',
         })
         expect(status).toBe('still_alive')
     })
 
-    it('does not kill when start marker changes between capture and kill (PID reuse)', async () => {
+    it('does not kill when start marker changes between snapshot and kill (PID reuse)', async () => {
         const killed: number[] = []
-        const markers = new Map<number, string[]>([
-            // First read = capture after argv match; second = pre-kill re-check
-            [4242, ['gen-orphan', 'gen-reused-unrelated']],
-        ])
         const status = await reapRunnerSpawnedOrphans('sess-orphan-reuse', {
-            findOrphans: async () => [4242],
+            findTargets: async () => [{ pid: 4242, startMarker: 'gen-orphan' }],
             killTree: async (pid) => {
                 killed.push(pid)
                 return true
             },
-            getStartMarker: (pid) => {
-                const queue = markers.get(pid)
-                if (!queue || queue.length === 0) return null
-                return queue.shift() ?? null
-            },
+            getStartMarker: () => 'gen-reused-unrelated',
             isAlive: () => true,
         })
         expect(killed).toEqual([])
@@ -193,20 +174,13 @@ describe('reapRunnerSpawnedOrphans (stopSession orphan path)', () => {
 
     it('returns still_alive when pre-kill marker probe fails while PID is alive', async () => {
         const killed: number[] = []
-        const markers = new Map<number, Array<string | null>>([
-            [4242, ['gen-orphan', null]],
-        ])
         const status = await reapRunnerSpawnedOrphans('sess-orphan-probe-fail', {
-            findOrphans: async () => [4242],
+            findTargets: async () => [{ pid: 4242, startMarker: 'gen-orphan' }],
             killTree: async (pid) => {
                 killed.push(pid)
                 return true
             },
-            getStartMarker: (pid) => {
-                const queue = markers.get(pid)
-                if (!queue || queue.length === 0) return null
-                return queue.shift() ?? null
-            },
+            getStartMarker: () => null,
             isAlive: () => true,
         })
         expect(killed).toEqual([])
@@ -217,7 +191,7 @@ describe('reapRunnerSpawnedOrphans (stopSession orphan path)', () => {
     it('returns still_alive without killing when marker cannot be read for a live orphan', async () => {
         const killed: number[] = []
         const status = await reapRunnerSpawnedOrphans('sess-orphan-no-marker', {
-            findOrphans: async () => [5555],
+            findTargets: async () => [{ pid: 5555, startMarker: null }],
             killTree: async (pid) => {
                 killed.push(pid)
                 return true
@@ -355,13 +329,6 @@ describe('run.ts stopSession orphan wiring (production callers)', () => {
 })
 
 describe('Windows orphan startMarker format agreement', () => {
-    /** Pre-fix list command: raw DateTime → ConvertTo-Json (/Date(...)/ on WinPS 5.1). */
-    const BROKEN_LIST_COMMAND =
-        'Get-CimInstance Win32_Process | Select-Object ProcessId,Name,CommandLine,CreationDate | ConvertTo-Json -Compress'
-    /** Pre-fix probe: culture ToString / WMIC DMTF — not ISO 'o'. */
-    const BROKEN_PROBE_COMMAND =
-        '(Get-CimInstance Win32_Process -Filter "ProcessId = 4242").CreationDate'
-
     it('list + single-probe CIM commands stringify CreationDate the same way', () => {
         expect(WINDOWS_CIM_CREATION_DATE_MARKER_EXPR).toContain("ToString('o')")
         expect(windowsProcessListCimCommand()).toContain(WINDOWS_CIM_CREATION_DATE_MARKER_EXPR)
@@ -373,24 +340,8 @@ describe('Windows orphan startMarker format agreement', () => {
         expect(windowsProcessListCimCommand()).toMatch(/CreationDate.*ToString\('o'\)/)
     })
 
-    it('broken WinPS shapes disagree; fixed list marker equals fixed probe marker', () => {
-        // Simulate the two producers Overseer called out: listing vs recheck.
-        // WinPS 5.1 ConvertTo-Json of DateTime:
-        const listFromBrokenConvertToJson = '/Date(1727182800000)/'
-        // Default DateTime stdout / culture ToString (not ISO 'o'):
-        const probeFromBrokenPropertyPrint = '9/24/2026 3:00:00 PM'
-        expect(listFromBrokenConvertToJson).not.toBe(probeFromBrokenPropertyPrint)
-
+    it('preserves the CIM creation-date marker when selecting an orphan target', () => {
         const iso = '2026-09-24T15:00:00.0000000Z'
-        // Fixed path: both sides emit the same ToString('o') string.
-        expect(iso).toBe(iso)
-        expect(BROKEN_LIST_COMMAND).not.toContain("ToString('o')")
-        expect(BROKEN_PROBE_COMMAND).not.toContain("ToString('o')")
-        expect(windowsProcessListCimCommand()).toContain("ToString('o')")
-        expect(windowsProcessMarkerCimCommand(4242)).toContain("ToString('o')")
-
-        // End-to-end: targets selected from a CIM-shaped list row, then reaped
-        // with a probe that returns the *same* ISO string (two code paths).
         const sessionId = 'sess-win-marker'
         const targets = selectOrphanTargetsForSession(
             [

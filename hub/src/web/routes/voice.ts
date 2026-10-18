@@ -1,10 +1,10 @@
+import { createHash } from 'node:crypto'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import type { WebAppEnv } from '../middleware/auth'
 import {
     DEEPGRAM_TRANSCRIPTION_MODEL,
-    ELEVENLABS_REALTIME_TRANSCRIPTION_MODEL,
     ELEVENLABS_TRANSCRIPTION_MODEL,
     ELEVENLABS_API_BASE,
     GROQ_TRANSCRIPTION_MODEL,
@@ -16,7 +16,7 @@ import {
     listConfiguredVoiceBackends,
     resolveHubVoiceBackend
 } from '@hapi/protocol/voice'
-import type { TranscriptionProvider, VoiceBackendType } from '@hapi/protocol/voice'
+import type { TranscriptionProvider } from '@hapi/protocol/voice'
 import {
     getProviderEnvironment,
     getTranscriptionCredentialStatus,
@@ -361,13 +361,6 @@ async function findHapiAgent(apiKey: string, agentName: string = VOICE_AGENT_NAM
     }
 }
 
-/**
- * Create a new "Hapi Voice Assistant" agent
- */
-async function createHapiAgent(apiKey: string): Promise<string | null> {
-    return createNamedHapiAgent(apiKey, VOICE_AGENT_NAME)
-}
-
 async function createNamedHapiAgent(apiKey: string, agentName: string, voiceId?: string): Promise<string | null> {
     try {
         const config = buildVoiceAgentConfig()
@@ -403,21 +396,16 @@ async function createNamedHapiAgent(apiKey: string, agentName: string, voiceId?:
     }
 }
 
-/**
- * Get or create agent ID - finds existing or creates new "Hapi Voice Assistant" agent
- */
-async function getOrCreateAgentId(apiKey: string): Promise<string | null> {
-    return getOrCreateAgentIdForVoice(apiKey)
-}
-
 function getVoiceAgentName(voiceId?: string): string {
     if (!voiceId || voiceId.trim().length === 0) return VOICE_AGENT_NAME
     return `${VOICE_AGENT_NAME} [voice:${voiceId}]`
 }
 
 async function getOrCreateAgentIdForVoice(apiKey: string, voiceId?: string): Promise<string | null> {
-    // Check cache first (simple hash of first/last chars of API key)
-    const cacheKey = `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}::${voiceId ?? 'default'}`
+    // Distinct credentials can share prefixes/suffixes. Hash the complete key
+    // and keep absent voice IDs separate from any caller-supplied voice ID.
+    const apiKeyHash = createHash('sha256').update(apiKey).digest('hex')
+    const cacheKey = JSON.stringify([apiKeyHash, voiceId ?? null])
     const cached = agentIdCache.get(cacheKey)
     if (cached) {
         return cached

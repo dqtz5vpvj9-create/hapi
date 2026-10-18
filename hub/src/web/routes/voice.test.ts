@@ -340,6 +340,105 @@ describe('voice transcription routes', () => {
 })
 
 describe('POST /api/voice/token', () => {
+    it('isolates cached agent IDs by the complete API key and reuses each account cache', async () => {
+        const app = createApp()
+        const headers = { ...(await authHeaders()), 'content-type': 'application/json' }
+        const voiceId = 'cache-account-isolation-voice'
+        const apiKeys = ['same-account-a-tail', 'same-account-b-tail']
+        const agentIds = ['agent_cache_account_a', 'agent_cache_account_b']
+        const requests: Array<{ apiKey: string | null; pathname: string; agentId: string | null }> = []
+        const originalFetch = global.fetch
+        const previousAgentMap = process.env.ELEVENLABS_VOICE_AGENT_MAP
+        delete process.env.ELEVENLABS_VOICE_AGENT_MAP
+        global.fetch = (async (input: Request | string | URL, init?: RequestInit) => {
+            const url = new URL(String(input))
+            const apiKey = new Headers(init?.headers).get('xi-api-key')
+            const account = apiKeys.indexOf(apiKey ?? '')
+            const agentId = url.searchParams.get('agent_id')
+            requests.push({ apiKey, pathname: url.pathname, agentId })
+            if (account < 0) return Response.json({ error: 'Unknown account' }, { status: 401 })
+            if (url.pathname.endsWith('/convai/agents')) return Response.json({ agents: [] })
+            if (url.pathname.endsWith('/convai/agents/create')) {
+                return Response.json({ agent_id: agentIds[account] })
+            }
+            if (url.pathname.endsWith('/convai/conversation/token')) {
+                return agentId === agentIds[account]
+                    ? Response.json({ token: `account-token-${account}` })
+                    : Response.json({ error: 'Agent belongs to another account' }, { status: 403 })
+            }
+            return new Response('not found', { status: 404 })
+        }) as typeof fetch
+
+        try {
+            for (const account of [0, 1, 0, 1]) {
+                const response = await app.request('/api/voice/token', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ customApiKey: apiKeys[account], voiceId })
+                })
+                expect(response.status).toBe(200)
+                expect(await response.json()).toEqual({
+                    allowed: true,
+                    token: `account-token-${account}`,
+                    agentId: agentIds[account]
+                })
+            }
+            expect(requests.filter(request => request.pathname.endsWith('/convai/agents/create'))).toHaveLength(2)
+            expect(requests.filter(request => request.pathname.endsWith('/convai/agents'))).toHaveLength(2)
+        } finally {
+            global.fetch = originalFetch
+            if (previousAgentMap === undefined) delete process.env.ELEVENLABS_VOICE_AGENT_MAP
+            else process.env.ELEVENLABS_VOICE_AGENT_MAP = previousAgentMap
+        }
+    })
+
+    it('keeps the default agent separate from a voice whose ID is default', async () => {
+        const app = createApp()
+        const headers = { ...(await authHeaders()), 'content-type': 'application/json' }
+        const apiKey = 'cache-voice-selection-isolation'
+        const createdVoices: Array<string | undefined> = []
+        const originalFetch = global.fetch
+        const previousAgent = process.env.ELEVENLABS_AGENT_ID
+        const previousAgentMap = process.env.ELEVENLABS_VOICE_AGENT_MAP
+        delete process.env.ELEVENLABS_AGENT_ID
+        delete process.env.ELEVENLABS_VOICE_AGENT_MAP
+        global.fetch = (async (input: Request | string | URL, init?: RequestInit) => {
+            const url = new URL(String(input))
+            if (url.pathname.endsWith('/convai/agents')) return Response.json({ agents: [] })
+            if (url.pathname.endsWith('/convai/agents/create')) {
+                const config = JSON.parse(String(init?.body))
+                const voiceId = config.conversation_config.tts.voice_id as string | undefined
+                createdVoices.push(voiceId)
+                return Response.json({ agent_id: voiceId === 'default' ? 'agent_named_default' : 'agent_without_voice' })
+            }
+            if (url.pathname.endsWith('/convai/conversation/token')) {
+                return Response.json({ token: `token-${url.searchParams.get('agent_id')}` })
+            }
+            return new Response('not found', { status: 404 })
+        }) as typeof fetch
+
+        try {
+            for (const voiceId of [undefined, 'default']) {
+                const response = await app.request('/api/voice/token', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ customApiKey: apiKey, voiceId })
+                })
+                const agentId = voiceId === 'default' ? 'agent_named_default' : 'agent_without_voice'
+                expect(response.status).toBe(200)
+                expect(await response.json()).toEqual({ allowed: true, agentId, token: `token-${agentId}` })
+            }
+            expect(createdVoices).toHaveLength(2)
+            expect(createdVoices[1]).toBe('default')
+        } finally {
+            global.fetch = originalFetch
+            if (previousAgent === undefined) delete process.env.ELEVENLABS_AGENT_ID
+            else process.env.ELEVENLABS_AGENT_ID = previousAgent
+            if (previousAgentMap === undefined) delete process.env.ELEVENLABS_VOICE_AGENT_MAP
+            else process.env.ELEVENLABS_VOICE_AGENT_MAP = previousAgentMap
+        }
+    })
+
     it('creates/selects voice-specific agent when voiceId is provided', async () => {
         const app = createApp()
         const headers = {

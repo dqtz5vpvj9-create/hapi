@@ -23,6 +23,8 @@ import { ThreadGoalSchema, type ThreadGoal } from '@hapi/protocol/schemas';
 import { ForkConversationRequestSchema, CodexGoalRequestSchema, CodexGoalResponseSchema, ImplementCodexPlanRequestSchema, type ImplementCodexPlanResult } from '@hapi/protocol/apiTypes';
 import { CodexAppServerClient, isIndeterminateError } from '../codexAppServerClient';
 import { buildHapiMcpBridge, type HapiMcpBridge } from '../utils/buildHapiMcpBridge';
+import { prepareCodexMcpServers, type PreparedCodexMcpServers } from '../utils/codexMcpProxy';
+import { extractCodexMcpServers } from '../utils/codexMcpServers';
 import { buildUserInputFromMessage } from '../utils/appServerConfig';
 import { resolveCodexPermissionModeConfig } from '../utils/permissionModeConfig';
 import { resolveCodexSlashCommand } from '../utils/slashCommands';
@@ -60,6 +62,7 @@ export class SharedCodexRoot {
     readonly client: CodexAppServerClient;
     readonly session: ApiSessionClient;
     bridge!: HapiMcpBridge;
+    private mcpProxy?: PreparedCodexMcpServers;
     threadId = '';
     private permissions!: SharedCodexPermissions;
     private queue!: SharedCodexQueue;
@@ -398,6 +401,16 @@ export class SharedCodexRoot {
         if (!this.host.external) this.bridge = await buildHapiMcpBridge(this.session, { exportSessionEnv: false, emitTitleSummary: false,
             skillLookup: { workingDirectory: this.bootstrap.workingDirectory, flavor: 'codex' } });
         await initializeSharedClient(this.client);
+        if (!this.host.external && process.platform === 'win32') {
+            try {
+                const { config } = await this.client.readConfig({ cwd: this.bootstrap.workingDirectory, includeLayers: false });
+                this.mcpProxy = await prepareCodexMcpServers(extractCodexMcpServers(config));
+            } catch (error) {
+                // Keep native config inheritance if discovery is unavailable.
+                // External engines own their launch configuration and MCP lifecycle.
+                logger.warn('[Codex shared] Windows MCP compatibility setup failed; retaining native configuration', error);
+            }
+        }
         this.permissions = this.createPermissions(this.host.generation);
         this.client.setServerRequestHandler(request => { void this.receiveRequest(request); });
     }
@@ -433,9 +446,15 @@ export class SharedCodexRoot {
     }
     config(params: Record<string, unknown>): Record<string, unknown> {
         if (this.host.external) return params;
+        const config = record(params.config);
+        // Preserve opaque native server fields and explicit per-thread overrides.
+        // Each root owns its proxy specs; closing one root must not break another.
+        const mcp = this.mcpProxy?.proxiedServerNames.length
+            ? { mcp_servers: { ...this.mcpProxy.servers, ...record(config.mcp_servers) } }
+            : {};
         return { ...params, cwd: params.cwd ?? this.bootstrap.workingDirectory,
             developerInstructions: params.developerInstructions ?? getCodexSystemPrompt(), config: {
-            ...record(params.config), 'mcp_servers.hapi': this.bridge.mcpServers.hapi,
+            ...config, ...mcp, 'mcp_servers.hapi': this.bridge.mcpServers.hapi,
             'shell_environment_policy.set.HAPI_SESSION_ID': this.session.sessionId
         } };
     }
@@ -1093,6 +1112,10 @@ export class SharedCodexRoot {
     }
     private async command(text: string): Promise<string | null> {
         const command = text.trim();
+        const name = command.split(/\s+/, 1)[0];
+        if ((name === '/clear' || name === '/compact') && command !== name) {
+            this.notice(`${name} does not accept arguments`); return null;
+        }
         if (command === '/clear' || command === '/new') {
             const child = await this.newConversation(); this.notice(`New conversation: /sessions/${child.session.sessionId}`); return null;
         }
@@ -1139,7 +1162,12 @@ export class SharedCodexRoot {
         return this.closing ??= (async () => {
             this.stopAccepting(); this.closed = true; clearInterval(this.heartbeat);
             this.permissions?.close();
-            await this.client.disconnect(); await this.notifications; await this.queue?.flush(); this.bridge?.server.stop();
+            try {
+                await this.client.disconnect(); await this.notifications; await this.queue?.flush();
+            } finally {
+                this.bridge?.server.stop();
+                await this.mcpProxy?.cleanup();
+            }
             if (archived) this.session.updateMetadata(metadata => ({ ...metadata, lifecycleState: 'archived', lifecycleStateSince: Date.now() }));
             // Inactive is resumable; uploads referenced by pending input must survive.
             this.session.sendSessionDeath(undefined, { preserveUploads: !archived });
