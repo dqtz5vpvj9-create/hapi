@@ -63,6 +63,25 @@ The debug APK is produced at
 configured in Android Studio by the maintainer; no signing credentials or
 Firebase configuration are included.
 
+Published Android debug APKs use the same persistent key as the established
+local installation. The repository secret `HAPI_ANDROID_KEYSTORE_BASE64` stores
+the existing keystore, encoded as Base64; it must not be replaced with a newly
+generated key. Main-branch and manual builds restore it before Gradle runs,
+verify the APK against the public certificate in `android-signing-cert.pem`,
+and remove the restored private key afterwards. A missing secret or different
+certificate fails publication. Pull requests still compile and lint, but do not
+receive the persistent key or publish an APK with a temporary signer.
+
+Keep the local keystore outside source/build/cache directories. The maintained
+copy is `${XDG_DATA_HOME:-$HOME/.local/share}/hapi-mobile/signing/hapi-android.keystore`;
+the local backup is in the adjacent `signing-backup` directory. Both directories
+are owner-only and the key files have mode `0600`. Local Gradle debug builds use
+the matching `$HOME/.android/debug.keystore`. Restore that file from the
+maintained copy if setting up a new local build environment. The existing key
+uses Android's standard debug alias and passwords. Never commit the keystore or
+upload it as a build artifact. The checked-in PEM contains only its public
+certificate, which is safe to distribute.
+
 ### iOS
 
 ```sh
