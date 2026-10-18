@@ -5,7 +5,7 @@ Dependency PRs run `bun run test:dependency-ui` through
 The [dependency update process](../docs/operations/dependency-updates.md) covers
 the weekly update schedule and the remaining review and benchmark steps.
 
-`@assistant-ui/react@0.15.21` needs to validate the animator's current text
+`@assistant-ui/react@0.15.29` needs to validate the animator's current text
 when smoothing becomes enabled. HAPI displays hydrated messages without an
 animation, then enables animation when their text starts changing. In that
 transition, the animator can retain the old full text while its target is
@@ -22,7 +22,7 @@ hydrated-response replacement cases, before removing or adapting the patch.
 Those cases must begin with complete text in a running session and then update
 the same message; mounting an already-streaming message does not expose this bug.
 
-`@tanstack/router-core@1.171.6` retains scrolled DOM elements in a strong map
+`@tanstack/router-core@1.171.37` retains scrolled DOM elements in a strong set
 until route navigation. HAPI workspaces replace chat panes on the same route,
 so this retains every previously scrolled pane. The patch removes disconnected
 targets when a new scroll target is registered. Connected elements keep their

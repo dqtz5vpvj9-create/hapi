@@ -13,9 +13,9 @@
         "test:mermaid-lightbox:e2e": "playwright test e2e/mermaid-lightbox.spec.ts"
     },
     "dependencies": {
-        "@assistant-ui/react": "^0.15.28",
-        "@assistant-ui/react-markdown": "^0.14.22",
-        "@assistant-ui/tap": "^0.9.18",
+        "@assistant-ui/react": "^0.15.29",
+        "@assistant-ui/react-markdown": "^0.14.23",
+        "@assistant-ui/tap": "^0.9.23",
         "@codemirror/commands": "^6.11.1",
         "@codemirror/language": "^6.12.4",
         "@codemirror/language-data": "^6.5.2",
@@ -35,7 +35,7 @@
         "@tanstack/react-query-devtools": "^5.91.1",
         "@tanstack/react-router": "^1.170.44",
         "@tanstack/react-virtual": "3.14.13",
-        "@tanstack/router-core": "^1.171.6",
+        "@tanstack/router-core": "^1.171.37",
         "@xterm/addon-canvas": "^0.7.0",
         "@xterm/addon-fit": "^0.11.0",
         "@xterm/addon-web-links": "^0.12.0",

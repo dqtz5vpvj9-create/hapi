@@ -1334,7 +1334,7 @@ describe('Pi built-in slash commands', () => {
         // Compaction keeps working for minutes without a Pi streaming event,
         // so the session reports thinking while the RPC is outstanding and
         // clears it once the run settles.
-        await vi.waitFor(() => expect(harness.session.keepAlive).toHaveBeenCalledWith(true, expect.anything(), expect.anything()));
+        await vi.waitFor(() => expect(harness.session.keepAlive).toHaveBeenCalledWith(true, 'remote', undefined));
         // While the compact RPC is outstanding, the FIFO must not release the
         // following prompt — Pi rejects prompts during compaction.
         expect(harness.sent).not.toContainEqual(expect.objectContaining({ type: 'prompt' }));

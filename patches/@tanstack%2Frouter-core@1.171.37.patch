@@ -1,0 +1,55 @@
+--- a/src/scroll-restoration.ts
++++ b/src/scroll-restoration.ts
+@@ -194,7 +194,17 @@
+         if (ignoreScroll) {
+           return
+         }
+-        trackedScrollTargets.add(event.target as Document | Element)
++        const target = event.target as Document | Element
++        // Workspaces replace panes without route navigation. Release old DOM
++        // only when a new scroll target enters the working set.
++        if (!trackedScrollTargets.has(target)) {
++          for (const tracked of trackedScrollTargets) {
++            if (tracked !== document && !tracked.isConnected) {
++              trackedScrollTargets.delete(tracked)
++            }
++          }
++        }
++        trackedScrollTargets.add(target)
+       },
+       true,
+     )
+--- a/dist/esm/scroll-restoration.js
++++ b/dist/esm/scroll-restoration.js
+@@ -92,7 +92,13 @@
+ 		history.scrollRestoration = "manual";
+ 		document.addEventListener("scroll", (event) => {
+ 			if (ignoreScroll) return;
+-			trackedScrollTargets.add(event.target);
++			const target = event.target;
++			if (!trackedScrollTargets.has(target)) {
++				for (const tracked of trackedScrollTargets) {
++					if (tracked !== document && !tracked.isConnected) trackedScrollTargets.delete(tracked);
++				}
++			}
++			trackedScrollTargets.add(target);
+ 		}, true);
+ 		router.subscribe("onBeforeLoad", (event) => {
+ 			if (event.fromLocation) snapshotCurrentScrollTargets(getKey(event.fromLocation));
+--- a/dist/cjs/scroll-restoration.cjs
++++ b/dist/cjs/scroll-restoration.cjs
+@@ -92,7 +92,13 @@
+ 		history.scrollRestoration = "manual";
+ 		document.addEventListener("scroll", (event) => {
+ 			if (ignoreScroll) return;
+-			trackedScrollTargets.add(event.target);
++			const target = event.target;
++			if (!trackedScrollTargets.has(target)) {
++				for (const tracked of trackedScrollTargets) {
++					if (tracked !== document && !tracked.isConnected) trackedScrollTargets.delete(tracked);
++				}
++			}
++			trackedScrollTargets.add(target);
+ 		}, true);
+ 		router.subscribe("onBeforeLoad", (event) => {
+ 			if (event.fromLocation) snapshotCurrentScrollTargets(getKey(event.fromLocation));
