@@ -78,7 +78,7 @@ export function App() {
 function AppInner() {
     const { t } = useTranslation()
     const { serverUrl, baseUrl, setServerUrl, clearServerUrl } = useServerUrl()
-    const { authSource, isLoading: isAuthSourceLoading, setAccessToken } = useAuthSource(baseUrl)
+    const { authSource, isLoading: isAuthSourceLoading, error: authSourceError, setAccessToken } = useAuthSource(baseUrl)
     const { token, api, isLoading: isAuthLoading, error: authError, needsBinding, bind } = useAuth(authSource, baseUrl)
     useEffect(() => {
         return () => {
@@ -223,7 +223,7 @@ function AppInner() {
     } = useReconnectingState()
     const syncTokenRef = useRef(0)
     const isFirstConnectRef = useRef(true)
-    const baseUrlRef = useRef(baseUrl)
+    const queryScopeRef = useRef({ baseUrl, api })
     const pushPromptedRef = useRef(false)
     const { appBadgeEnabled: appBadgePreferenceEnabled } = useAppBadgePreference()
     const appBadgeEnabled = Boolean(api && token && appBadgePreferenceEnabled && canUseAppBadging())
@@ -242,14 +242,20 @@ function AppInner() {
     const { isSupported: isPushSupported, permission: pushPermission, requestPermission, subscribe } = usePushNotifications(api)
 
     useEffect(() => {
-        if (baseUrlRef.current === baseUrl) {
+        const previous = queryScopeRef.current
+        queryScopeRef.current = { baseUrl, api }
+        const hubChanged = previous.baseUrl !== baseUrl
+        const authenticationEnded = previous.api !== null && api === null
+        if (!hubChanged && !authenticationEnded) {
             return
         }
-        baseUrlRef.current = baseUrl
+        // Query keys are shared across accounts. useAuth exposes null while
+        // changing sources, so clear old data before the next login mounts.
+        // Refreshing a JWT keeps its ApiClient and therefore keeps the cache.
         isFirstConnectRef.current = true
         syncTokenRef.current = 0
         queryClient.clear()
-    }, [baseUrl, queryClient])
+    }, [api, baseUrl, queryClient])
 
     // Clean up URL params after successful auth (for direct access links)
     useEffect(() => {
@@ -525,6 +531,7 @@ function AppInner() {
                 setServerUrl={setServerUrl}
                 clearServerUrl={clearServerUrl}
                 requireServerUrl={REQUIRE_SERVER_URL}
+                error={authSourceError ? t(authSourceError) : undefined}
             />,
         )
     }

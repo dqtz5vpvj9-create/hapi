@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { isNativePlatform } from '@/lib/platform'
 
 interface BeforeInstallPromptEvent extends Event {
     prompt: () => Promise<void>
@@ -51,7 +52,7 @@ export function usePWAInstall(): {
 
     const isIOS = typeof window !== 'undefined' && isIOSSafari()
 
-    const isStandalone =
+    const isStandalone = isNativePlatform() ||
         typeof window !== 'undefined' &&
         (window.matchMedia('(display-mode: standalone)').matches ||
             (window.navigator as Navigator & { standalone?: boolean }).standalone === true)

@@ -9,6 +9,7 @@
  */
 
 import { getSettingsFile, updateSettings } from './settings'
+import { normalizeCorsOrigins } from './corsOrigins'
 
 const OLD_SETTINGS_FIELDS = ['webappHost', 'webappPort', 'webappUrl'] as const
 
@@ -72,25 +73,7 @@ export interface ServerSettingsResult {
  * Parse and normalize CORS origins
  */
 function parseCorsOrigins(str: string): string[] {
-    const entries = str
-        .split(',')
-        .map(origin => origin.trim())
-        .filter(Boolean)
-
-    if (entries.includes('*')) {
-        return ['*']
-    }
-
-    const normalized: string[] = []
-    for (const entry of entries) {
-        try {
-            normalized.push(new URL(entry).origin)
-        } catch {
-            // Keep raw value if it's already an origin-like string
-            normalized.push(entry)
-        }
-    }
-    return normalized
+    return normalizeCorsOrigins(str.split(','))
 }
 
 /**
@@ -273,7 +256,7 @@ export async function loadServerSettings(dataDir: string): Promise<ServerSetting
                 needsSave = true
             }
         } else if (settings.corsOrigins !== undefined) {
-            corsOrigins = settings.corsOrigins
+            corsOrigins = normalizeCorsOrigins(settings.corsOrigins)
             sources.corsOrigins = 'file'
         } else {
             corsOrigins = deriveCorsOrigins(publicUrl)

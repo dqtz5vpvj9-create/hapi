@@ -1,8 +1,8 @@
 import { defineConfig, mergeConfig } from 'vitest/config'
 import viteConfig from './vite.config'
 
-export default mergeConfig(
-    viteConfig,
+export default defineConfig((env) => mergeConfig(
+    viteConfig(env),
     defineConfig({
         test: {
             globals: false,
@@ -11,4 +11,4 @@ export default mergeConfig(
             setupFiles: ['./src/test/setup.ts'],
         },
     })
-)
+))

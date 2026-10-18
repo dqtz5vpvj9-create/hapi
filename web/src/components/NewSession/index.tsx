@@ -1,6 +1,8 @@
 import { createNewTaskDelivery, loadNewTaskDelivery, saveNewTaskDelivery, sendNewTaskDelivery } from './newTaskDelivery'
 import { ArrowUp, Plus, MoreHorizontal, Folder, Monitor, Shield } from './TaskIcons'
 import { ModelEffortPicker } from '@/components/AssistantChat/ModelEffortPicker'
+import { NativeAttachmentButton } from '@/components/NativeAttachmentButton'
+import { isNativePlatform } from '@/lib/platform'
 import { MODEL_OPTIONS, CLAUDE_EFFORT_OPTIONS } from './types'
 import { getPiThinkingLevelOptions } from '@/components/AssistantChat/piThinkingLevelOptions'
 import { getDraftAttachments, saveDraftAttachments, clearDraftAttachments, getRestoredUploadMetadata } from '@/lib/composer-attachment-drafts'
@@ -115,6 +117,7 @@ export function NewSession(props: {
     const [files, setFiles] = useState<Array<{ id: string; file: File }>>([])
     const [filesReady, setFilesReady] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const nativeAttachmentScope = useMemo(() => ({}), [draftKey, props.api])
     const [contextOpen, setContextOpen] = useState<'machine' | 'directory' | null>(null)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [permissionOpen, setPermissionOpen] = useState(false)
@@ -2082,13 +2085,19 @@ export function NewSession(props: {
                             </li>)}
                         </ul> : null}
                         <div className="flex min-w-0 items-center gap-1 sm:gap-2">
-                            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={event => {
+                            {isNativePlatform() ? <NativeAttachmentButton
+                                aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady}
+                                selectionScope={nativeAttachmentScope}
+                                onFiles={picked => setFiles(current => [...current, ...picked.map(file => ({ id: randomId(), file }))])}
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] disabled:opacity-50">
+                                <Plus size={20} />
+                            </NativeAttachmentButton> : <><input ref={fileInputRef} type="file" multiple className="hidden" onChange={event => {
                                 const picked = Array.from(event.target.files ?? [])
                                 if (picked.some(file => file.size > MAX_UPLOAD_BYTES)) { setError(t('newTask.fileTooLarge')); return }
                                 setFiles(current => [...current, ...picked.map(file => ({ id: randomId(), file }))])
                                 event.target.value = ''
                             }} />
-                            <button type="button" aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady} onClick={() => fileInputRef.current?.click()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] disabled:opacity-50"><Plus size={20} /></button>
+                            <button type="button" aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady} onClick={() => fileInputRef.current?.click()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] disabled:opacity-50"><Plus size={20} /></button></>}
                             <button type="button" aria-label={t('misc.permissionMode')} aria-expanded={permissionOpen} onClick={() => setPermissionOpen(value => !value)} className="flex min-h-11 min-w-11 items-center gap-1 rounded-full px-2 py-2 text-xs hover:bg-[var(--app-secondary-bg)]"><Shield size={16} /><span className="hidden sm:inline">{getPermissionModeLabel(agent === 'grok' ? grokPermissionMode : usesNativePermissionSelect(agent) ? nativePermissionMode : yoloMode ? 'yolo' : 'default')}</span><span>⌄</span></button>
                             <div className="ml-auto min-w-0">
                                 <ModelEffortPicker models={taskModels} model={agent === 'cursor' && cursorPicker.mode === 'dual' ? cursorBaseSelectValue : agent === 'agy' ? agySelectedModel ?? 'auto' : agent === 'opencode' ? opencodeSelectedModel ?? 'auto' : model}

@@ -145,3 +145,56 @@ describe('loadServerSettings', () => {
         expect(result.sources.iosPushMode).toBe('file')
     })
 })
+
+describe('native WebView CORS configuration', () => {
+    let dir: string
+    const keys = ['CORS_ORIGINS', 'HAPI_PUBLIC_URL'] as const
+    let savedEnv: Partial<Record<typeof keys[number], string>>
+
+    beforeEach(() => {
+        dir = makeTempDir()
+        savedEnv = {}
+        for (const key of keys) {
+            savedEnv[key] = process.env[key]
+            delete process.env[key]
+        }
+        process.env.HAPI_PUBLIC_URL = 'https://hub.example'
+    })
+
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true })
+        for (const key of keys) {
+            if (savedEnv[key] === undefined) delete process.env[key]
+            else process.env[key] = savedEnv[key]
+        }
+    })
+
+    it('persists and reloads an explicit native allowlist without storing null', async () => {
+        process.env.CORS_ORIGINS = 'https://app.example, capacitor://localhost, https://localhost'
+        const expected = ['https://app.example', 'capacitor://localhost', 'https://localhost']
+
+        const configured = await loadServerSettings(dir)
+        expect(configured.settings.corsOrigins).toEqual(expected)
+        expect(configured.sources.corsOrigins).toBe('env')
+        expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')).corsOrigins).toEqual(expected)
+
+        delete process.env.CORS_ORIGINS
+        const restored = await loadServerSettings(dir)
+        expect(restored.settings.corsOrigins).toEqual(expected)
+        expect(restored.sources.corsOrigins).toBe('file')
+    })
+
+    it('normalizes a file allowlist without admitting opaque or other custom origins', async () => {
+        writeFileSync(join(dir, 'settings.json'), JSON.stringify({
+            corsOrigins: ['capacitor://localhost', 'https://localhost:443/', 'null', 'file:///tmp/a.html', 'capacitor://other'],
+        }))
+
+        const result = await loadServerSettings(dir)
+        expect(result.settings.corsOrigins).toEqual(['capacitor://localhost', 'https://localhost'])
+        expect(result.sources.corsOrigins).toBe('file')
+    })
+
+    it('leaves mobile origins disabled when no allowlist was configured', async () => {
+        expect((await loadServerSettings(dir)).settings.corsOrigins).toEqual(['https://hub.example'])
+    })
+})

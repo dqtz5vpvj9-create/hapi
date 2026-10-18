@@ -103,7 +103,7 @@ function pdfAssets(): Plugin {
     }
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
     appType: 'spa',
     define: {
         __APP_VERSION__: JSON.stringify(appVersion),
@@ -128,6 +128,7 @@ export default defineConfig({
         copyKaTeXFonts(),
         pdfAssets(),
         VitePWA({
+            disable: mode === 'native',
             // User-controlled reload avoids mid-session surprise reloads (autoUpdate reloads all tabs).
             registerType: 'prompt',
             includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'mask-icon.svg'],
@@ -230,7 +231,7 @@ export default defineConfig({
             }
         })
     ],
-    base,
+    base: mode === 'native' ? '/' : base,
     optimizeDeps: {
         // dev 下 VitePWA 会给每个页面注入 service worker 注册，而 sw.ts 里的
         // workbox 依赖要等 SW 真正注册后才被 Vite 发现，触发一次「optimized
@@ -264,4 +265,4 @@ export default defineConfig({
             }
         }
     }
-})
+}))

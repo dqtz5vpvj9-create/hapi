@@ -2,6 +2,13 @@
 
 React Mini App / PWA for monitoring and controlling hapi sessions.
 
+The same React application is packaged by the [Capacitor mobile shell](../mobile/README.md).
+`bun run build:mobile` at the repository root builds local native assets and syncs
+the Android/iOS projects. The shell uses a selected HTTPS hub, secure per-hub
+credential storage and a native Photos/Files picker feeding the existing upload
+pipeline. Browser/PWA builds continue to use their existing storage, file inputs
+and service worker; native builds disable PWA installation, updates and Web Push.
+
 ## What it does
 
 - Session list with status, pending approvals, todos, and summaries.

@@ -19,6 +19,8 @@ function render(ui: ReactElement) {
 }
 
 const mocks = vi.hoisted(() => ({
+    native: false,
+    pickAttachments: vi.fn(),
     spawnSession: vi.fn(),
     onSuccess: vi.fn(),
     notification: vi.fn(),
@@ -52,6 +54,11 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/shareTransfer', () => ({ getShareTransfer: (...args: unknown[]) => mocks.getShareTransfer(...args) }))
+vi.mock('@/lib/platform', () => ({ isNativePlatform: () => mocks.native }))
+vi.mock('@/lib/nativeAttachments', async importOriginal => ({
+    ...await importOriginal<typeof import('@/lib/nativeAttachments')>(),
+    pickNativeAttachments: mocks.pickAttachments,
+}))
 
 vi.mock('@/lib/use-translation', () => ({
     useTranslation: () => ({ t: (key: string) => key })
@@ -310,6 +317,8 @@ const api = { sendMessage: vi.fn().mockResolvedValue(undefined) } as unknown as 
 
 describe('NewSession launch preferences', () => {
     beforeEach(() => {
+        mocks.native = false
+        mocks.pickAttachments.mockReset().mockResolvedValue([])
         localStorage.clear()
         sessionStorage.clear()
         mocks.spawnSession.mockReset()
@@ -423,6 +432,39 @@ describe('NewSession launch preferences', () => {
         await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('shared-session'))
         expect(mocks.spawnSession).toHaveBeenCalledTimes(1)
         expect(sendMessage).toHaveBeenCalledWith('shared-session', '', expect.any(String), [expect.objectContaining({ filename: 'notes.txt', path: '/uploads/notes.txt' })])
+    })
+
+    it('keeps native picks in the local new-task draft and uses the existing upload pipeline on Send', async () => {
+        mocks.native = true
+        const file = new File(['original image bytes'], 'IMG_0007.HEIC', { type: 'image/heic' })
+        mocks.pickAttachments.mockResolvedValue([file])
+        const uploadFile = vi.fn().mockResolvedValue({ success: true, path: '/uploads/photo.heic' })
+        const sendMessage = vi.fn().mockResolvedValue(undefined)
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'native-task' })
+        render(<NewSession api={{ uploadFile, sendMessage } as unknown as ApiClient} machines={[machine]}
+            draftKey="native-file-test" initialMachineId="machine-1" initialDirectory="/project" initialTask="Inspect this photo"
+            onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.attachFiles' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.attachFiles' }))
+        fireEvent.click(screen.getByRole('button', { name: 'attachments.picker.photos' }))
+        await waitFor(() => expect(screen.getByText('IMG_0007.HEIC')).toBeInTheDocument())
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+        expect(uploadFile).not.toHaveBeenCalled()
+        expect(document.querySelector('input[type="file"]')).toBeNull()
+
+        // Dismissing another selection retains the already selected original.
+        mocks.pickAttachments.mockResolvedValueOnce([])
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.attachFiles' }))
+        fireEvent.click(screen.getByRole('button', { name: 'attachments.picker.files' }))
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+        expect(screen.getByText('IMG_0007.HEIC')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('native-task'))
+        expect(uploadFile).toHaveBeenCalledWith('native-task', 'IMG_0007.HEIC', btoa('original image bytes'), 'image/heic')
+        expect(sendMessage).toHaveBeenCalledWith('native-task', 'Inspect this photo', expect.any(String), [expect.objectContaining({
+            filename: 'IMG_0007.HEIC', mimeType: 'image/heic', size: file.size, path: '/uploads/photo.heic',
+        })])
     })
 
     it('finishes the frozen old share without consuming a newly routed share payload', async () => {
