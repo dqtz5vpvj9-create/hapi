@@ -1370,7 +1370,7 @@ describe('Pi built-in slash commands', () => {
         expect(harness.session.sendSessionEvent).not.toHaveBeenCalledWith(expect.objectContaining({
             message: expect.stringContaining('Compaction summary'),
         }));
-        await vi.waitFor(() => expect(harness.session.keepAlive).toHaveBeenCalledWith(false, expect.anything(), expect.anything()));
+        await vi.waitFor(() => expect(harness.session.keepAlive).toHaveBeenCalledWith(false, 'remote', undefined));
 
         // The thinking state is released once the RPC completes.
         await vi.waitFor(() => {
