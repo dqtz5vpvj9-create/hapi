@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "bundleId": "bb2ea77920979749eb01a79a56ea338d0554b1390e41ec47faf4d808e1a96897",
-  "version": "0.30.7+742ba115abec",
-  "createdAt": 1792323962000,
+  "bundleId": "016c43299f710d237eb436b2e6effc7fb0849a073eabb481371f72de77bd388c",
+  "version": "0.30.7+7d52055cb7e3",
+  "createdAt": 1792327865000,
   "runtimes": {
     "android": "d87b9c6adc265136692d806c08d4b6339bb282fb91dec83d02d354d90dca1b41",
     "ios": "2a91f037d5a3264d76ab16be99af56709a46b3a54fc8d42a4bbb8f48e98e64df"
   },
-  "url": "https://github.com/dqtz5vpvj9-create/hapi/releases/download/mobile-web/bb2ea77920979749eb01a79a56ea338d0554b1390e41ec47faf4d808e1a96897.zip",
-  "sha256": "bb2ea77920979749eb01a79a56ea338d0554b1390e41ec47faf4d808e1a96897",
+  "url": "https://github.com/dqtz5vpvj9-create/hapi/releases/download/mobile-web/016c43299f710d237eb436b2e6effc7fb0849a073eabb481371f72de77bd388c.zip",
+  "sha256": "016c43299f710d237eb436b2e6effc7fb0849a073eabb481371f72de77bd388c",
   "size": 6947462
 }
