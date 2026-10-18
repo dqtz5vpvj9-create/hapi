@@ -1,4 +1,4 @@
-import { isNativePlatform } from '@/lib/platform'
+import { isBundledNativePlatform } from '@/lib/platform'
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on'])
 
@@ -10,5 +10,5 @@ function parseBooleanFlag(value: string | undefined): boolean {
 }
 
 export function requireHubUrlForLogin(): boolean {
-    return isNativePlatform() || parseBooleanFlag(import.meta.env.VITE_REQUIRE_HUB_URL)
+    return isBundledNativePlatform() || parseBooleanFlag(import.meta.env.VITE_REQUIRE_HUB_URL)
 }

@@ -15,8 +15,7 @@ let package = Package(
         .package(name: "AparajitaCapacitorSecureStorage", path: "../../../../node_modules/.bun/@aparajita+capacitor-secure-storage@8.0.1/node_modules/@aparajita/capacitor-secure-storage"),
         .package(name: "CapacitorApp", path: "../../../../node_modules/.bun/@capacitor+app@8.1.2+9cf34ba37901b220/node_modules/@capacitor/app"),
         .package(name: "CapacitorKeyboard", path: "../../../../node_modules/.bun/@capacitor+keyboard@8.0.6+9cf34ba37901b220/node_modules/@capacitor/keyboard"),
-        .package(name: "CapawesomeCapacitorFilePicker", path: "../../../../node_modules/.bun/@capawesome+capacitor-file-picker@8.1.0+9cf34ba37901b220/node_modules/@capawesome/capacitor-file-picker"),
-        .package(name: "CapawesomeCapacitorLiveUpdate", path: "../../../../node_modules/.bun/@capawesome+capacitor-live-update@8.7.0+9cf34ba37901b220/node_modules/@capawesome/capacitor-live-update")
+        .package(name: "CapawesomeCapacitorFilePicker", path: "../../../../node_modules/.bun/@capawesome+capacitor-file-picker@8.1.0+9cf34ba37901b220/node_modules/@capawesome/capacitor-file-picker")
     ],
     targets: [
         .target(
@@ -27,8 +26,7 @@ let package = Package(
                 .product(name: "AparajitaCapacitorSecureStorage", package: "AparajitaCapacitorSecureStorage"),
                 .product(name: "CapacitorApp", package: "CapacitorApp"),
                 .product(name: "CapacitorKeyboard", package: "CapacitorKeyboard"),
-                .product(name: "CapawesomeCapacitorFilePicker", package: "CapawesomeCapacitorFilePicker"),
-                .product(name: "CapawesomeCapacitorLiveUpdate", package: "CapawesomeCapacitorLiveUpdate")
+                .product(name: "CapawesomeCapacitorFilePicker", package: "CapawesomeCapacitorFilePicker")
             ]
         )
     ]

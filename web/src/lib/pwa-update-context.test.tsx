@@ -4,10 +4,11 @@ import { PwaUpdateProvider, usePwaUpdateContext } from './pwa-update-context'
 
 const mocks = vi.hoisted(() => ({
     native: false,
+    bundled: true,
     browser: vi.fn(() => ({ needRefresh: false, reload: vi.fn() })),
     mobile: vi.fn(() => ({ native: true, needRefresh: true, reload: vi.fn(), status: 'available' as 'available' | 'applying' })),
 }))
-vi.mock('@/lib/platform', () => ({ isNativePlatform: () => mocks.native }))
+vi.mock('@/lib/platform', () => ({ isNativePlatform: () => mocks.native, isBundledNativePlatform: () => mocks.native && mocks.bundled }))
 vi.mock('@/hooks/usePwaUpdate', () => ({ usePwaUpdate: mocks.browser }))
 vi.mock('@/hooks/useNativeUpdate', () => ({ useNativeUpdate: mocks.mobile }))
 
@@ -17,11 +18,18 @@ function Status() {
 }
 
 describe('update provider', () => {
-    beforeEach(() => { vi.clearAllMocks() })
+    beforeEach(() => { vi.clearAllMocks(); mocks.bundled = true })
     it('keeps browser users on the existing service-worker update flow', () => {
         mocks.native = false
         render(<PwaUpdateProvider><Status /></PwaUpdateProvider>)
         expect(screen.getByText('browser:false')).toBeInTheDocument()
+        expect(mocks.browser).toHaveBeenCalledOnce()
+        expect(mocks.mobile).not.toHaveBeenCalled()
+    })
+    it('uses the website update flow in a hosted native shell', () => {
+        mocks.native = true
+        mocks.bundled = false
+        render(<PwaUpdateProvider><Status /></PwaUpdateProvider>)
         expect(mocks.browser).toHaveBeenCalledOnce()
         expect(mocks.mobile).not.toHaveBeenCalled()
     })

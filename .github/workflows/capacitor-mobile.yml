@@ -7,7 +7,6 @@ on:
             - main
         paths:
             - 'mobile/**'
-            - 'web/**'
             - 'shared/src/**'
             - 'patches/**'
             - 'package.json'
@@ -17,7 +16,6 @@ on:
     pull_request:
         paths:
             - 'mobile/**'
-            - 'web/**'
             - 'shared/src/**'
             - 'patches/**'
             - 'package.json'
@@ -52,7 +50,7 @@ jobs:
             - run: bun install --frozen-lockfile
             - name: Test native bundle packaging guard
               run: bun run --cwd mobile test
-            - name: Build local Web assets and sync native plugins
+            - name: Sync the hosted website shell and native plugins
               run: bun run build:mobile
             - name: Verify native dependency declarations are current
               run: git diff --exit-code -- mobile
@@ -62,9 +60,9 @@ jobs:
                   KEYSTORE_BASE64: ${{ secrets.HAPI_ANDROID_KEYSTORE_BASE64 }}
               run: |
                   test -n "$KEYSTORE_BASE64" || { echo 'HAPI_ANDROID_KEYSTORE_BASE64 is required to publish an APK'; exit 1; }
-                  install -d -m 700 "$HOME/.android"
-                  printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
-                  chmod 600 "$HOME/.android/debug.keystore"
+                  umask 077
+                  printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/hapi-android.keystore"
+                  printf 'HAPI_ANDROID_KEYSTORE_PATH=%s\n' "$RUNNER_TEMP/hapi-android.keystore" >> "$GITHUB_ENV"
             # Pull requests compile without access to the persistent key and
             # do not publish an installable APK with a different signer.
             - name: Assemble debug APK and lint
@@ -97,7 +95,7 @@ jobs:
                   retention-days: 7
             - name: Remove restored signing key
               if: always() && github.event_name != 'pull_request'
-              run: rm -f "${HOME:?}/.android/debug.keystore"
+              run: rm -f "${RUNNER_TEMP:?}/hapi-android.keystore"
 
     ios:
         runs-on: macos-26
@@ -113,7 +111,7 @@ jobs:
             - run: bun install --frozen-lockfile
             - name: Show Xcode toolchain
               run: xcodebuild -version
-            - name: Build local Web assets and sync native plugins
+            - name: Sync the hosted website shell and native plugins
               run: bun run build:mobile
             - name: Verify native dependency declarations are current
               run: git diff --exit-code -- mobile

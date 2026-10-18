@@ -1,27 +1,7 @@
 name: Mobile Web update
 
+# Legacy local-bundle shells only. Hosted shells update from their website.
 on:
-    push:
-        branches: [main]
-        paths:
-            - 'web/**'
-            - 'shared/src/**'
-            - 'mobile/**'
-            - 'patches/**'
-            - 'package.json'
-            - 'bun.lock'
-            - 'scripts/testing/check-web-budget.mjs'
-            - '.github/workflows/mobile-web-update.yml'
-    pull_request:
-        paths:
-            - 'web/**'
-            - 'shared/src/**'
-            - 'mobile/**'
-            - 'patches/**'
-            - 'package.json'
-            - 'bun.lock'
-            - 'scripts/testing/check-web-budget.mjs'
-            - '.github/workflows/mobile-web-update.yml'
     workflow_dispatch:
 
 permissions:

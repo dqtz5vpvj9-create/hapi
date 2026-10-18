@@ -22,7 +22,7 @@
         "download:tunwg": "bun run hub/scripts/download-tunwg.ts",
         "build:hub": "cd hub && bun run build",
         "build:web": "cd web && bun run build",
-        "build:mobile": "bun run --cwd web build:mobile && bun run --cwd mobile sync",
+        "build:mobile": "bun run --cwd mobile sync",
         "dev:hub": "cd hub && bun run dev",
         "dev:web": "cd web && bun run dev",
         "typecheck": "bun run --parallel typecheck:cli typecheck:web typecheck:hub typecheck:relay",

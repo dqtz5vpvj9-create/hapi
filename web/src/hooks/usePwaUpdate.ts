@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { registerSW } from 'virtual:pwa-register'
-import { isNativePlatform } from '@/lib/platform'
+import { isBundledNativePlatform } from '@/lib/platform'
 
 export const PWA_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
 export const PWA_UPDATE_RELOAD_FALLBACK_MS = 2000
@@ -87,7 +87,7 @@ export function usePwaUpdate() {
     useEffect(() => {
         // Native application updates replace the bundled assets. A service worker
         // would introduce a second cache that could keep the previous app version.
-        if (isNativePlatform()) return
+        if (isBundledNativePlatform()) return
 
         const updateSW = registerSW({
             onNeedRefresh() {

@@ -1,14 +1,14 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import { usePwaUpdate } from '@/hooks/usePwaUpdate'
 import { useNativeUpdate } from '@/hooks/useNativeUpdate'
-import { isNativePlatform } from '@/lib/platform'
+import { isBundledNativePlatform } from '@/lib/platform'
 
 type PwaUpdateContextValue = ReturnType<typeof usePwaUpdate> & Partial<ReturnType<typeof useNativeUpdate>>
 
 const PwaUpdateContext = createContext<PwaUpdateContextValue | null>(null)
 
 export function PwaUpdateProvider({ children }: { children: ReactNode }) {
-    return isNativePlatform()
+    return isBundledNativePlatform()
         ? <NativeUpdateProvider>{children}</NativeUpdateProvider>
         : <BrowserUpdateProvider>{children}</BrowserUpdateProvider>
 }

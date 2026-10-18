@@ -1,8 +1,8 @@
 import { renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const h = vi.hoisted(() => ({ native: true, registerSW: vi.fn() }))
-vi.mock('@/lib/platform', () => ({ isNativePlatform: () => h.native }))
+const h = vi.hoisted(() => ({ native: true, bundled: true, registerSW: vi.fn() }))
+vi.mock('@/lib/platform', () => ({ isNativePlatform: () => h.native, isBundledNativePlatform: () => h.native && h.bundled }))
 vi.mock('virtual:pwa-register', () => ({ registerSW: h.registerSW }))
 
 import { normalizeServerUrl, useServerUrl } from './useServerUrl'
@@ -13,6 +13,7 @@ import { requireHubUrlForLogin } from '@/lib/runtime-config'
 
 beforeEach(() => {
     h.native = true
+    h.bundled = true
     h.registerSW.mockClear()
     localStorage.clear()
     window.history.replaceState({}, '', '/')
@@ -24,6 +25,15 @@ describe('packaged native app runtime', () => {
         expect(result.current.serverUrl).toBeNull()
         expect(result.current.baseUrl).toBe('')
         expect(requireHubUrlForLogin()).toBe(true)
+    })
+
+    it('uses the website origin as the hub in a hosted native shell', () => {
+        h.bundled = false
+        const { result } = renderHook(() => useServerUrl())
+        expect(result.current.baseUrl).toBe(window.location.origin)
+        expect(requireHubUrlForLogin()).toBe(false)
+        renderHook(() => usePwaUpdate())
+        expect(h.registerSW).toHaveBeenCalledOnce()
     })
 
     it('normalizes HTTPS hub identities and rejects unsupported native transports', () => {

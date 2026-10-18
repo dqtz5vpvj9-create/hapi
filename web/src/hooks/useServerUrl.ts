@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { isNativePlatform } from '@/lib/platform'
+import { isNativePlatform, isBundledNativePlatform } from '@/lib/platform'
 
 const HUB_URL_KEY = 'hapi_hub_url'
 
@@ -92,7 +92,7 @@ export function useServerUrl(): {
     })
 
     // The packaged WebView origin serves application assets, never a hub API.
-    const fallbackOrigin = !isNativePlatform() && typeof window !== 'undefined' ? window.location.origin : ''
+    const fallbackOrigin = !isBundledNativePlatform() && typeof window !== 'undefined' ? window.location.origin : ''
     const baseUrl = useMemo(() => serverUrl ?? fallbackOrigin, [serverUrl, fallbackOrigin])
 
     const setServerUrl = useCallback((input: string): ServerUrlResult => {

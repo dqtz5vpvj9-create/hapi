@@ -13,7 +13,6 @@ dependencies {
     implementation project(':capacitor-app')
     implementation project(':capacitor-keyboard')
     implementation project(':capawesome-capacitor-file-picker')
-    implementation project(':capawesome-capacitor-live-update')
 
 }
 

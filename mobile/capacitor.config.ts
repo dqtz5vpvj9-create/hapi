@@ -1,20 +1,20 @@
-/// <reference types="@capawesome/capacitor-live-update" />
-
 import type { CapacitorConfig } from '@capacitor/cli'
-import { resolveNativeUpdateConfig } from './scripts/native-runtime.mjs'
+import { resolveSiteUrl } from './scripts/site-config.mjs'
 
-const updates = resolveNativeUpdateConfig()
+const siteUrl = resolveSiteUrl()
 
 const config: CapacitorConfig = {
     appId: 'run.hapi.mobile',
     appName: 'HAPI',
-    webDir: '../web/dist',
+    webDir: 'shell',
     loggingBehavior: 'debug',
     server: {
+        url: siteUrl,
         hostname: 'localhost',
         androidScheme: 'https',
         iosScheme: 'capacitor',
         cleartext: false,
+        errorPath: 'offline.html',
     },
     android: {
         allowMixedContent: false,
@@ -28,17 +28,9 @@ const config: CapacitorConfig = {
             resizeOnFullScreen: true,
         },
         SystemBars: {
-            insetsHandling: 'native',
+            insetsHandling: 'disable',
             initialViewportFitValueHint: 'cover',
         },
-        LiveUpdate: {
-            autoUpdateStrategy: 'none',
-            autoDeleteBundles: false,
-            readyTimeout: 30000,
-            autoBlockRolledBackBundles: true,
-            ...(updates.publicKey ? { publicKey: updates.publicKey } : {}),
-        },
-        HapiUpdates: updates,
     },
 }
 
