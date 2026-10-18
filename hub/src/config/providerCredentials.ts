@@ -23,11 +23,7 @@ export const PROVIDER_CREDENTIAL_ENV_KEYS = [
     'QWEN_API_KEY',
 ] as const
 
-/** @deprecated use PROVIDER_CREDENTIAL_ENV_KEYS */
-export const TRANSCRIPTION_CREDENTIAL_ENV_KEYS = PROVIDER_CREDENTIAL_ENV_KEYS
-
 export type ProviderCredentialEnvKey = (typeof PROVIDER_CREDENTIAL_ENV_KEYS)[number]
-export type TranscriptionCredentialEnvKey = ProviderCredentialEnvKey
 
 export type ProviderCredentialSource = 'env' | 'settings' | 'none'
 

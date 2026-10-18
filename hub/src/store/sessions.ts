@@ -817,11 +817,6 @@ export function setSessionPinMode(db: Database, id: string, mode: SessionPinMode
     return result.changes === 1
 }
 
-/** @deprecated Prefer setSessionPinMode — kept for project-pin merge helpers. */
-export function setSessionPinned(db: Database, id: string, pinned: boolean, namespace: string): boolean {
-    return setSessionPinMode(db, id, pinned ? 'project' : 'none', namespace)
-}
-
 export function touchSessionUpdatedAt(
     db: Database,
     id: string,

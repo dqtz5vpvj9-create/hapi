@@ -68,9 +68,13 @@ export class NativeChatViewport extends ChatViewport {
                 if (!touch) this.events?.openingInput?.(null)
             } else if (event.type === 'touchstart') this.openingTouch = null
         }
-        this.readScroll()
+        const scroll = this.readScroll()
         this.stopPreserving()
         this.events?.interact()
+        // Compositor movement can precede the passive input callback and its
+        // scroll event. Give Reading that observed movement now so a layout
+        // commit cannot follow the stale tail before scroll delivery.
+        if (scroll?.movedByReader) this.events?.scroll(scroll)
     }
     private endOpeningTouch = () => { this.openingTouch = null }
     private cancelOpeningTouch = () => { this.openingTouch = null; this.events?.openingInput?.(null) }

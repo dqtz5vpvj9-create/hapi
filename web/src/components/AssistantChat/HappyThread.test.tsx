@@ -17,8 +17,8 @@ import {
     shouldCancelInitialScrollSettling,
     shouldRenderScrollToBottomButton,
     shouldShowScrollToBottomButton,
-    ThreadMessagesById,
 } from '@/components/AssistantChat/HappyThread'
+import { VirtualMessageList } from '@/components/AssistantChat/VirtualMessageList'
 import { AssistantRuntimeProvider, useExternalStoreRuntime } from '@assistant-ui/react'
 import type { ThreadMessageLike } from '@assistant-ui/react'
 import type { ConversationOutlineItem } from '@/chat/outline'
@@ -62,8 +62,19 @@ describe('nested scroll event ownership', () => {
     })
 })
 
-describe('ThreadMessagesById', () => {
+describe('VirtualMessageList rewind', () => {
     it('does not crash when rewind shortens the transcript and then clears it', async () => {
+        // Supply only the scrollport geometry missing from jsdom. The real
+        // virtualizer and assistant-ui runtime own row identity and removal.
+        const viewport = document.createElement('div')
+        Object.defineProperties(viewport, {
+            offsetWidth: { value: 400 },
+            offsetHeight: { value: 600 },
+            clientWidth: { value: 400 },
+            clientHeight: { value: 600 },
+            scrollTo: { value: (options: ScrollToOptions) => { viewport.scrollTop = options.top ?? 0 } }
+        })
+        document.body.appendChild(viewport)
         type TestMessage = { id: string; role: 'user' | 'assistant'; text: string }
         let setMessages!: (messages: TestMessage[]) => void
         function Harness() {
@@ -85,7 +96,7 @@ describe('ThreadMessagesById', () => {
             })
             return (
                 <AssistantRuntimeProvider runtime={runtime}>
-                    <ThreadMessagesById components={{
+                    <VirtualMessageList scrollElement={viewport} components={{
                         UserMessage: () => <div data-testid="user-message" />,
                         AssistantMessage: () => <div data-testid="assistant-message" />,
                         SystemMessage: () => <div data-testid="system-message" />
@@ -94,7 +105,7 @@ describe('ThreadMessagesById', () => {
             )
         }
 
-        render(<Harness />)
+        render(<Harness />, { container: viewport })
         expect(screen.getAllByTestId('user-message')).toHaveLength(2)
         expect(screen.getAllByTestId('assistant-message')).toHaveLength(2)
 

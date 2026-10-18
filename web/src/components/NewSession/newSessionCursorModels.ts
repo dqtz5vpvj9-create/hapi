@@ -49,22 +49,6 @@ export function buildNewSessionCursorPickerState(
     })
 }
 
-export function buildNewSessionCursorModelOptions(
-    picker: CursorPickerState
-): CursorPickerState['modelOptions'] {
-    return picker.modelOptions
-}
-
-export function buildNewSessionCursorEffortOptions(
-    picker: CursorPickerState
-): CursorPickerState['effortOptions'] {
-    return picker.effortOptions
-}
-
-export function shouldShowNewSessionCursorVariantPicker(picker: CursorPickerState): boolean {
-    return picker.mode === 'dual' && picker.showEffortPicker && picker.effortOptions.length > 1
-}
-
 /** Base row value in dual mode — use explicit base state, not derived catalog baseKey. */
 export function resolveNewSessionCursorBaseSelectValue(
     picker: CursorPickerState,

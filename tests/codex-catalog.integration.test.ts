@@ -1,8 +1,9 @@
 import { afterEach, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createLocalCodexSessionSearch, getLocalCodexSessionSummary } from '../../cli/src/modules/common/codexSessions'
+import { createLocalCodexSessionSearch, getLocalCodexSessionSummary } from '../cli/src/modules/common/codexSessions'
 
 const originalHome = process.env.CODEX_HOME
 const fixtures: string[] = []
@@ -13,7 +14,7 @@ afterEach(() => {
 })
 
 test('request-scoped index paging preserves full search, cursors, and fresh titles on the next request', () => {
-    const home = mkdtempSync('/mnt/cache/data-cache/hapi-catalog-test-')
+    const home = mkdtempSync(join(tmpdir(), 'hapi-catalog-test-'))
     fixtures.push(home)
     process.env.CODEX_HOME = home
     const sessions = join(home, 'sessions')

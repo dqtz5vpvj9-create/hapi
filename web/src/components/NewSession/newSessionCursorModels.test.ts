@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
-    buildNewSessionCursorEffortOptions,
     buildNewSessionCursorModelCatalog,
-    buildNewSessionCursorModelOptions,
     buildNewSessionCursorPickerState,
     isCursorEffortWireAllowed,
     pickCursorModelsForPicker,
     resolveNewSessionCursorBaseSelectValue,
     resolveNewSessionCursorEffortSelectValue,
     resolveWireIdForBaseChange,
-    shouldShowCursorModelsUnavailable,
-    shouldShowNewSessionCursorVariantPicker
+    shouldShowCursorModelsUnavailable
 } from './newSessionCursorModels'
 
 const acpModels = [
@@ -91,10 +88,10 @@ describe('pickCursorModelsForPicker', () => {
     })
 })
 
-describe('shouldShowNewSessionCursorVariantPicker', () => {
+describe('new session Cursor variant visibility', () => {
     it('shows variant picker only when a base has multiple exact wire ids', () => {
         const picker = buildNewSessionCursorPickerState([...acpModels], 'composer-2.5[fast=true]')
-        expect(shouldShowNewSessionCursorVariantPicker(picker)).toBe(true)
+        expect(picker.showEffortPicker).toBe(true)
     })
 
     it('uses flat picker when a base has only one wire id', () => {
@@ -103,7 +100,7 @@ describe('shouldShowNewSessionCursorVariantPicker', () => {
             { modelId: wire, name: 'Claude Opus 4.7' },
         ], wire)
         expect(picker.mode).toBe('flat')
-        expect(shouldShowNewSessionCursorVariantPicker(picker)).toBe(false)
+        expect(picker.showEffortPicker).toBe(false)
         expect(picker.modelOptions.some((row) => row.value === wire)).toBe(true)
     })
 })
@@ -114,7 +111,7 @@ describe('flat vs dual cursor model pickers', () => {
             { modelId: 'claude-opus-4-7[thinking=true,context=300k,effort=xhigh,fast=false]', name: 'Claude Opus 4.7' },
             { modelId: 'composer-2.5[fast=true]', name: 'Composer 2.5' },
         ], 'auto')
-        const options = buildNewSessionCursorModelOptions(picker)
+        const options = picker.modelOptions
         expect(picker.mode).toBe('flat')
         expect(options).toEqual([
             { value: 'auto', label: 'Auto' },
@@ -129,7 +126,7 @@ describe('flat vs dual cursor model pickers', () => {
     it('uses dual pickers when one base has multiple wire ids', () => {
         const picker = buildNewSessionCursorPickerState([...acpModels], 'auto')
         expect(picker.mode).toBe('dual')
-        expect(buildNewSessionCursorModelOptions(picker)).toEqual([
+        expect(picker.modelOptions).toEqual([
             { value: 'auto', label: 'Auto' },
             { value: 'composer-2.5', label: 'composer-2.5' },
         ])
@@ -206,11 +203,11 @@ describe('probe slug catalog (New Session cold start)', () => {
 describe('new session cursor model options', () => {
     it('maps base options with auto default and raw variant labels', () => {
         const picker = buildNewSessionCursorPickerState([...acpModels], 'composer-2.5[fast=true]')
-        expect(buildNewSessionCursorModelOptions(picker)).toEqual([
+        expect(picker.modelOptions).toEqual([
             { value: 'auto', label: 'Auto' },
             { value: 'composer-2.5', label: 'composer-2.5' },
         ])
-        expect(buildNewSessionCursorEffortOptions(picker)).toEqual([
+        expect(picker.effortOptions).toEqual([
             { value: 'composer-2.5[fast=true]', label: 'fast=true' },
             { value: 'composer-2.5[fast=false]', label: 'fast=false' },
         ])
@@ -231,9 +228,7 @@ describe('new session cursor model options', () => {
     it('returns auto wire id when base is reset to default', () => {
         const catalog = buildNewSessionCursorModelCatalog([...acpModels], 'auto')
         expect(resolveWireIdForBaseChange('auto', catalog)).toBe('auto')
-        expect(buildNewSessionCursorEffortOptions(
-            buildNewSessionCursorPickerState([...acpModels], 'auto')
-        )).toEqual([])
+        expect(buildNewSessionCursorPickerState([...acpModels], 'auto').effortOptions).toEqual([])
     })
 
     it('labels context variants with raw suffixes', () => {
@@ -241,7 +236,7 @@ describe('new session cursor model options', () => {
             { modelId: 'claude-opus-4-8[context=200k]', name: 'Claude Opus 4.8' },
             { modelId: 'claude-opus-4-8[context=300k]', name: 'Claude Opus 4.8' },
         ], 'claude-opus-4-8[context=200k]')
-        expect(buildNewSessionCursorEffortOptions(picker).map((entry) => entry.label)).toEqual([
+        expect(picker.effortOptions.map((entry) => entry.label)).toEqual([
             'context=200k',
             'context=300k'
         ])

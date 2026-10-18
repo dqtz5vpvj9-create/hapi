@@ -86,15 +86,6 @@ export function selectOrphanTargetsForSession(
     return targets
 }
 
-/** @deprecated Prefer selectOrphanTargetsForSession (keeps same-snapshot markers). */
-export function selectOrphanPidsForSession(
-    processes: ProcessSnapshot[],
-    sessionId: string,
-    selfPid: number = process.pid
-): number[] {
-    return selectOrphanTargetsForSession(processes, sessionId, selfPid).map((t) => t.pid)
-}
-
 /**
  * POSIX orphan listing: one `ps` snapshot with pid + lstart + args.
  * Uses the same LC_ALL/TZ as getProcessStartMarker so re-check compares equal.
@@ -139,16 +130,6 @@ export function listPosixProcessesWithStartMarker(): ProcessSnapshot[] {
     }
     return snapshots
 }
-
-/**
- * Shared Win32 generation marker helpers live in `@/utils/process` so list +
- * single-PID probe stay format-identical. Re-export for orphanReap tests.
- */
-export {
-    WINDOWS_CIM_CREATION_DATE_MARKER_EXPR,
-    windowsProcessListCimCommand,
-    windowsProcessMarkerCimCommand,
-} from '@/utils/process'
 
 /** Win32 process list with CommandLine + CreationDate for argv orphan matching. */
 export function listWindowsProcessesWithCommandLine(): ProcessSnapshot[] {
@@ -210,8 +191,8 @@ export async function findRunnerSpawnedOrphanTargets(
 /**
  * Production stopSession orphan discovery: argv match + same-snapshot markers,
  * then optional PID skip (shared wrappers / sibling roots). Callers must use
- * this (or an equivalent findTargets that keeps startMarker) — never strip to
- * bare PIDs via findRunnerSpawnedOrphanPids / findOrphans (#1911 Overseer).
+ * this (or an equivalent findTargets that keeps startMarker) so the expected
+ * process generation always comes from the argv-match snapshot.
  */
 export async function findStopSessionOrphanTargets(
     sessionId: string,
@@ -221,15 +202,6 @@ export async function findStopSessionOrphanTargets(
     const found = await findRunnerSpawnedOrphanTargets(sessionId, listProcesses)
     if (found === 'scan_failed') return found
     return found.filter((t) => !shouldSkipPid(sessionId, t.pid))
-}
-
-export async function findRunnerSpawnedOrphanPids(
-    sessionId: string,
-    listProcesses: () => Promise<ProcessSnapshot[]> = listProcessesForOrphanScan
-): Promise<number[] | 'scan_failed'> {
-    const targets = await findRunnerSpawnedOrphanTargets(sessionId, listProcesses)
-    if (targets === 'scan_failed') return 'scan_failed'
-    return targets.map((t) => t.pid)
 }
 
 /**
@@ -248,8 +220,6 @@ export async function reapRunnerSpawnedOrphans(
     sessionId: string,
     deps: {
         findTargets?: (sessionId: string) => Promise<OrphanTarget[] | 'scan_failed'>
-        /** @deprecated Prefer findTargets (includes same-snapshot markers). */
-        findOrphans?: (sessionId: string) => Promise<number[] | 'scan_failed'>
         killTree?: (pid: number) => Promise<boolean>
         getStartMarker?: (pid: number) => string | null
         isAlive?: (pid: number) => boolean
@@ -262,24 +232,9 @@ export async function reapRunnerSpawnedOrphans(
     const getStartMarker = deps.getStartMarker ?? getProcessStartMarker
     const isAlive = deps.isAlive ?? isProcessAlive
 
-    let targets: OrphanTarget[]
-    if (deps.findTargets) {
-        const found = await deps.findTargets(sessionId)
-        if (found === 'scan_failed') return 'still_alive'
-        targets = found
-    } else if (deps.findOrphans) {
-        // Legacy: pids only — capture markers in a separate probe (tests / older callers).
-        const orphanPids = await deps.findOrphans(sessionId)
-        if (orphanPids === 'scan_failed') return 'still_alive'
-        targets = orphanPids.map((pid) => ({
-            pid,
-            startMarker: getStartMarker(pid),
-        }))
-    } else {
-        const found = await findRunnerSpawnedOrphanTargets(sessionId)
-        if (found === 'scan_failed') return 'still_alive'
-        targets = found
-    }
+    const findTargets = deps.findTargets ?? findRunnerSpawnedOrphanTargets
+    const targets = await findTargets(sessionId)
+    if (targets === 'scan_failed') return 'still_alive'
 
     if (targets.length === 0) return null
 

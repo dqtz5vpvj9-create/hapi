@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { VOICE_SYSTEM_PROMPT } from './voice'
 import {
     ELEVENLABS_WEBRTC_CONTEXT_MAX_BYTES,
+    VOICE_CONTEXT_STREAM_CHUNK_MAX_BYTES,
     getDefaultVoiceSystemPrompt,
     getVoicePersonalityPreset,
     isDefaultVoicePersonality,
@@ -77,6 +78,30 @@ describe('voicePersonality', () => {
         expect(text).toBe('hello 🎙️ world')
         const huge = truncateUtf8ByteLength('a'.repeat(50_000), 100)
         expect(utf8ByteLength(huge)).toBeLessThanOrEqual(100)
+    })
+
+    test('voice context byte limits preserve complete Unicode characters', () => {
+        const suffix = '\n\n[…truncated for voice transport…]'
+        for (const maxBytes of [ELEVENLABS_WEBRTC_CONTEXT_MAX_BYTES, VOICE_CONTEXT_STREAM_CHUNK_MAX_BYTES]) {
+            const prefix = 'a'.repeat(maxBytes - utf8ByteLength(suffix) - 3)
+            const input = prefix + '🎙' + 'z'.repeat(maxBytes)
+            const output = truncateUtf8ByteLength(input, maxBytes)
+
+            expect(output).toBe(prefix + suffix)
+            expect(new TextDecoder().decode(new TextEncoder().encode(output))).toBe(output)
+            expect(utf8ByteLength(output)).toBeLessThanOrEqual(maxBytes)
+
+            const exactPrefix = prefix.slice(1) + '🎙'
+            expect(truncateUtf8ByteLength(exactPrefix + 'z'.repeat(maxBytes), maxBytes))
+                .toBe(exactPrefix + suffix)
+        }
+    })
+
+    test('byte limits smaller than the truncation notice still bound output', () => {
+        expect(truncateUtf8ByteLength('hello world', 4)).toBe('hell')
+        expect(truncateUtf8ByteLength('🎙🎙', 3)).toBe('')
+        expect(truncateUtf8ByteLength('🎙🎙', 4)).toBe('🎙')
+        expect(truncateUtf8ByteLength('hello', 0)).toBe('')
     })
 
     test('settings fixtures preview returns full platform rules by default', () => {

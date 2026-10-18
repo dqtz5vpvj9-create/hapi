@@ -57,26 +57,6 @@ export function shouldInvalidateSessionListForEvent(scope: SSEScope, eventType: 
     return scope === 'global' && eventType === 'messages-invalidated'
 }
 
-/**
- * @deprecated Prefer gating against SessionSummary watermarks. Kept for unit
- * tests of the old "detail required" rule; summary path no longer uses this
- * for metadata/agentState/todos (teamState is a summary no-op).
- */
-export function canApplyVersionedSummaryPatch(
-    patch: Pick<SessionPatch, 'metadata' | 'agentState' | 'todos' | 'teamState'>,
-    detailPresent: boolean
-): boolean {
-    // teamState is not rendered on SessionSummary — never block list patches.
-    if (
-        patch.metadata === undefined
-        && patch.agentState === undefined
-        && patch.todos === undefined
-    ) {
-        return true
-    }
-    return detailPresent
-}
-
 type VisibilityState = 'visible' | 'hidden'
 
 type ToastEvent = Extract<SyncEvent, { type: 'toast' }>
@@ -660,7 +640,7 @@ export function useSSE(options: {
                 queueSessionListInvalidation()
             }
 
-            if (scope === 'global' && MESSAGE_STREAM_EVENT_TYPES.has(event.type)) {
+            if (isGlobalScopedMessageStreamEvent(scope, event.type)) {
                 if (event.type === 'message-received' && event.message.scheduledAt != null) {
                     queueSessionListInvalidation()
                 }

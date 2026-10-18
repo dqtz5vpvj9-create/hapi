@@ -36,10 +36,3 @@ export function thinkingHintFromSessionUpdate(
     }
     return null
 }
-
-/** @deprecated Prefer thinkingHintFromSessionUpdate; kept for call-site clarity in tests. */
-export function shouldBumpThinkingFromSessionUpdate(
-    update: { sessionUpdate?: unknown; state?: unknown } | null | undefined
-): boolean {
-    return thinkingHintFromSessionUpdate(update) === true
-}
