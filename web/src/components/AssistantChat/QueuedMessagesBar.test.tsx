@@ -66,7 +66,7 @@ vi.mock('@/lib/composer-drafts', () => ({
 }))
 
 vi.mock('@/lib/use-translation', () => ({
-    useTranslation: () => ({ t: (key: string) => key }),
+    useTranslation: () => ({ t: (key: string) => key, locale: 'en' }),
 }))
 
 vi.mock('@/lib/toast-context', () => ({
@@ -677,6 +677,49 @@ describe('sortQueuedMessages', () => {
 })
 
 describe('getQueuedMessagePreview', () => {
+    it('hides only known attachment prefixes while preserving the exact edit payload', () => {
+        const path = '/mnt/cache/hapi-blobs/session/cache-image.jpg'
+        const attachment = { id: 'att', filename: 'photo.jpg', mimeType: 'image/jpeg', size: 10, path }
+        const text = `@${path}\n\nCompare these. The original path is @${path}`
+        const message = makeQueuedMessage(null, 'attachment', {
+            content: { role: 'user', content: { type: 'text', text, attachments: [attachment] } },
+        })
+        const preview = getQueuedMessagePreview(message)
+        expect(preview.text).toBe(`Compare these. The original path is @${path}`)
+        expect(preview.attachments).toEqual([attachment])
+        expect(getQueuedMessageEditText(preview)).toBe(text)
+    })
+
+    it('does not hide arbitrary paths or partial attachment-path matches', () => {
+        const message = makeQueuedMessage(null, 'attachment', {
+            content: { role: 'user', content: { type: 'text', text: '@/uploads/a.png.backup',
+                attachments: [{ id: 'att', filename: 'a.png', mimeType: 'image/png', size: 1, path: '/uploads/a.png' }] } },
+        })
+        expect(getQueuedMessagePreview(message).text).toBe('@/uploads/a.png.backup')
+    })
+
+    it('opens a queued image without steering, editing or cancelling its message', async () => {
+        vi.stubGlobal('IntersectionObserver', undefined)
+        const path = '/mnt/cache/hapi-blobs/session/cache-image.jpg'
+        const getArtifactBlob = vi.fn(async () => new Blob(['image'], { type: 'image/jpeg' }))
+        mocks.messageWindowState = { messages: [makeQueuedMessage(null, 'attachment', {
+            content: { role: 'user', content: { type: 'text', text: `@${path}`,
+                attachments: [{ id: 'att', filename: 'photo.jpg', mimeType: 'image/jpeg', size: 10, path }] } },
+        })] }
+        const queryClient = new QueryClient()
+        render(<QueryClientProvider client={queryClient}>
+            <QueuedMessagesBar sessionId="session-1" api={{ getArtifactBlob } as unknown as ApiClient}
+                pendingSchedule={null} pendingScheduleRevision={0} />
+        </QueryClientProvider>)
+        expect(screen.queryByText(`@${path}`)).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'photo.jpg' }))
+        expect(await screen.findByRole('dialog', { name: 'photo.jpg' })).toBeInTheDocument()
+        await waitFor(() => expect(getArtifactBlob).toHaveBeenCalledWith('session-1', 'att', expect.any(AbortSignal)))
+        expect(mocks.mutateAsync).not.toHaveBeenCalled()
+        expect(mocks.steerMessage).not.toHaveBeenCalled()
+        expect(mocks.composerSetText).not.toHaveBeenCalled()
+    })
+
     it('keeps attachment names with a text prompt', () => {
         const message = {
             id: 'queued-with-image',
@@ -701,10 +744,10 @@ describe('getQueuedMessagePreview', () => {
             },
         } as unknown as DecryptedMessage
 
-        expect(getQueuedMessagePreview(message)).toEqual({
+        expect(getQueuedMessagePreview(message)).toEqual(expect.objectContaining({
             text: 'Analyze this screenshot',
             attachmentNames: ['image.png'],
-        })
+        }))
     })
 
     it('uses attachment names for attachment-only queued messages', () => {
@@ -731,10 +774,10 @@ describe('getQueuedMessagePreview', () => {
             },
         } as unknown as DecryptedMessage
 
-        expect(getQueuedMessagePreview(message)).toEqual({
+        expect(getQueuedMessagePreview(message)).toEqual(expect.objectContaining({
             text: '',
             attachmentNames: ['image.png'],
-        })
+        }))
     })
 })
 

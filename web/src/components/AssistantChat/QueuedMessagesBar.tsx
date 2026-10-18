@@ -5,7 +5,8 @@ import { getMessageWindowState, subscribeMessageWindow } from '@/lib/message-win
 import { isQueuedForInvocation } from '@/lib/messages'
 import { EMPTY_STATE } from '@/hooks/queries/useMessages'
 import { normalizeDecryptedMessage } from '@/chat/normalize'
-import type { DecryptedMessage } from '@/types/api'
+import type { AttachmentMetadata, DecryptedMessage } from '@/types/api'
+import { QueuedAttachmentButton } from './QueuedAttachmentButton'
 import { useCancelQueuedMessage } from '@/hooks/mutations/useCancelQueuedMessage'
 import { useSteerQueuedMessage } from '@/hooks/mutations/useSteerQueuedMessage'
 import { useRetryIndeterminateMessage } from '@/hooks/mutations/useRetryIndeterminateMessage'
@@ -108,22 +109,38 @@ function useQueuedMessages(sessionId: string): DecryptedMessage[] {
 }
 
 /** @internal Exported for unit testing. */
-export function getQueuedMessagePreview(msg: DecryptedMessage): { text: string; attachmentNames: string[] } {
+export function getQueuedMessagePreview(msg: DecryptedMessage): {
+    text: string; originalText: string; attachmentNames: string[]; attachments: AttachmentMetadata[]
+} {
     const normalized = normalizeDecryptedMessage(msg)
     if (!normalized || normalized.role !== 'user') {
-        return { text: '', attachmentNames: [] }
+        return { text: '', originalText: '', attachmentNames: [], attachments: [] }
     }
-    const text = (normalized.content.text ?? '').trim()
+    const originalText = (normalized.content.text ?? '').trim()
     const attachments = normalized.content.attachments ?? []
+    // CLI dispatch prepends known attachment references to the prompt. Hide
+    // that prefix in the queue immediately, without waiting for native history.
+    // Only consume exact references to this message's attachments, so paths
+    // deliberately written in the user's body remain intact.
+    let text = originalText
+    while (text.startsWith('@')) {
+        const reference = attachments.flatMap(attachment => attachment.path
+            ? [`@${attachment.path}`, `@"${attachment.path}"`, `@'${attachment.path}'`]
+            : []).find(value => text.startsWith(value) && (!text[value.length] || /\s/.test(text[value.length])))
+        if (!reference) break
+        text = text.slice(reference.length).trimStart()
+    }
     return {
         text,
+        originalText,
+        attachments,
         attachmentNames: attachments.map((a) => a.filename ?? 'attachment'),
     }
 }
 
 /** @internal Exported for unit testing. */
-export function getQueuedMessageEditText(preview: { text: string; attachmentNames: string[] }): string {
-    return preview.text || preview.attachmentNames.join(', ')
+export function getQueuedMessageEditText(preview: { text: string; originalText?: string; attachmentNames: string[] }): string {
+    return (preview.originalText ?? preview.text) || preview.attachmentNames.join(', ')
 }
 
 /**
@@ -347,7 +364,7 @@ export function QueuedMessagesBar({
                 >
                     {queued.map((msg) => {
                         const preview = getQueuedMessagePreview(msg)
-                        const { text, attachmentNames } = preview
+                        const { text, attachmentNames, attachments } = preview
                         const editText = getQueuedMessageEditText(preview)
                         const hasAttachments = attachmentNames.length > 0
                         const localId = msg.localId ?? msg.id
@@ -528,15 +545,8 @@ export function QueuedMessagesBar({
                                     ) : null}
                                     {hasAttachments ? (
                                         <div className={text ? 'mt-1 flex flex-wrap gap-1' : 'flex flex-wrap gap-1'}>
-                                            {attachmentNames.map((name, index) => (
-                                                <span
-                                                    key={`${name}-${index}`}
-                                                    className="inline-flex max-w-full items-center gap-1 rounded-md bg-[var(--app-bg)] px-2 py-0.5 text-xs text-[var(--app-hint)]"
-                                                    title={name}
-                                                >
-                                                    <span aria-hidden="true">📎</span>
-                                                    <span className="truncate">{name}</span>
-                                                </span>
+                                            {attachments.map((attachment) => (
+                                                <QueuedAttachmentButton key={attachment.id} attachment={attachment} api={api} sessionId={sessionId} />
                                             ))}
                                         </div>
                                     ) : null}

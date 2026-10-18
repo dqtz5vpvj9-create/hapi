@@ -87,6 +87,10 @@ the Web viewport. The website retains its ordinary single-row toolbar layout.
 Native secure storage uses Keychain on iOS and Android Keystore-backed encrypted
 preferences. Android backup and device transfer remain disabled.
 
+Android WebView text zoom is fixed at 100% so the shell does not multiply the
+website's font sizes by Android's system font scale. HAPI's own font-size setting
+continues to control the website's text, in both the browser and the app.
+
 After upgrading from the old local-origin shell, the website has a separate Web
 storage origin. Existing local-origin data is retained; sign in to the website
 once if its login is not already available. No chat history is stored in the APK.

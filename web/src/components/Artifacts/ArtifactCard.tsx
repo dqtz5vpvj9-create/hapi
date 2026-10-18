@@ -9,13 +9,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useTranslation } from '@/lib/use-translation'
 import { isolatedHtml, parseCsvPreview } from './documentPreview'
 import { useDocumentLabels } from '@/documents/labels'
+import type { ApiClient } from '@/api/client'
 
 const PdfPreview = lazy(() => import('./PdfArtifactPreview'))
 
-export function ArtifactCard({ artifact, previewUrl, legacyImageId }: {
+export function ArtifactCard({ artifact, previewUrl, legacyImageId, dataSource }: {
     artifact: ArtifactRef; previewUrl?: string; legacyImageId?: string
+    dataSource?: { api: ApiClient; sessionId: string }
 }) {
-    const ctx = useOptionalHappyChatContext()
+    const chat = useOptionalHappyChatContext()
+    const ctx = dataSource ?? chat
     const { t } = useTranslation()
     const documentLabels = useDocumentLabels()
     const openDocument = useOpenDocument(ctx?.sessionId)

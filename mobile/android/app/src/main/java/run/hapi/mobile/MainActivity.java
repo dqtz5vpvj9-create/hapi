@@ -12,6 +12,8 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Use the website's CSS/font setting without an extra Android fontScale multiplier.
+        getBridge().getWebView().getSettings().setTextZoom(100);
         EdgeToEdge.enable(this);
         // The hosted UI should receive a normal browser-sized viewport. Keep
         // system bars and the keyboard outside it, independently of Web CSS.
