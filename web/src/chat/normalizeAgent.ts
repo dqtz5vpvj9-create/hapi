@@ -4,6 +4,7 @@ import { AGENT_MESSAGE_PAYLOAD_TYPE, asNumber, asString, isObject } from '@hapi/
 import { sdkMessageIdentity, sdkSidechainPrompt } from '@hapi/protocol/messageDependencies'
 import { isClaudeChatVisibleMessage } from '@hapi/protocol/messages'
 import { parseAgentTimestampMs } from '@/chat/agentTimestamp'
+import { isCodexCommandResultError } from '@/chat/codexCommandResult'
 
 function normalizeToolResultPermissions(value: unknown): ToolResultPermission | undefined {
     if (!isObject(value)) return undefined
@@ -1185,7 +1186,7 @@ export function normalizeAgentRecord(
                     type: 'tool-result',
                     tool_use_id: data.callId,
                     content: data.output,
-                    is_error: Boolean(data.is_error),
+                    is_error: Boolean(data.is_error) || isCodexCommandResultError(data.output),
                     uuid,
                     parentUUID: null
                 }],

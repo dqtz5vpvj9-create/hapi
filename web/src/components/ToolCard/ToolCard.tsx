@@ -31,6 +31,7 @@ import { useTranslation } from '@/lib/use-translation'
 import { useNativeToolDetail, NativeDependencyStatus } from '@/components/ToolCard/nativeDependencies'
 import { TraceSection } from '@/components/ToolCard/trace'
 import { isSubagentToolName } from '@/chat/subagentTool'
+import { CommandCard, TERMINAL_TOOL_NAMES } from '@/components/ToolCard/CommandCard'
 
 const ELAPSED_INTERVAL_MS = 1000
 const TERMINAL_RELATED_TOOL_NAMES = new Set(['Bash', 'CodexBash', 'shell_command', 'run_shell_command', 'ssh'])
@@ -368,13 +369,12 @@ type ToolCardProps = {
     block: ToolCallBlock
 }
 
-export function ToolDetailDialogContent(input: {
+function ToolDetailContent(props: {
     block: ToolCallBlock
     metadata: SessionMetadataSummary | null
+    dependencyStatus?: ReactNode
 }) {
     const { t } = useTranslation()
-    const detail = useNativeToolDetail(input.block)
-    const props = { ...input, block: detail.block }
     const toolName = props.block.tool.name
     const FullToolView = getToolFullViewComponent(toolName)
     const ResultToolView = getToolResultViewComponent(toolName)
@@ -387,13 +387,15 @@ export function ToolDetailDialogContent(input: {
         && Object.keys(permission.answers).length > 0
     return (
         <div className="mt-3 flex max-h-[75vh] flex-col gap-4 overflow-auto">
-            <NativeDependencyStatus {...detail} />
+            {props.dependencyStatus}
             <ToolTimingDetails block={props.block} />
             <div>
                 <div className="mb-1 text-xs font-medium text-[var(--app-hint)]">
                     {isQuestionToolWithAnswers ? t('tool.questionsAnswers') : t('tool.input')}
                 </div>
-                {FullToolView ? (
+                {TERMINAL_TOOL_NAMES.has(toolName) ? (
+                    <CodeBlock code={safeStringify(props.block.tool.input)} language="json" title={t('tool.command.originalInput')} scrollLabel={t('tool.command.originalInput')} scrollY />
+                ) : FullToolView ? (
                     <FullToolView block={props.block} metadata={props.metadata} surface="dialog" />
                 ) : (
                     renderToolInput(props.block, 'dialog')
@@ -408,6 +410,14 @@ export function ToolDetailDialogContent(input: {
             ) : null}
         </div>
     )
+}
+
+export function ToolDetailDialogContent(input: {
+    block: ToolCallBlock
+    metadata: SessionMetadataSummary | null
+}) {
+    const detail = useNativeToolDetail(input.block)
+    return <ToolDetailContent block={detail.block} metadata={input.metadata} dependencyStatus={<NativeDependencyStatus {...detail} />} />
 }
 
 function ToolCardInner(props: ToolCardProps) {
@@ -631,4 +641,19 @@ function ToolCardInner(props: ToolCardProps) {
     )
 }
 
-export const ToolCard = memo(ToolCardInner)
+function ToolCardWithCommandDetails(props: ToolCardProps) {
+    if (!TERMINAL_TOOL_NAMES.has(props.block.tool.name) || props.block.tool.permission?.status === 'pending') {
+        return <ToolCardInner {...props} />
+    }
+    return <CommandCard
+        block={props.block}
+        showSummary={props.terminalToolDisplayMode === 'detailed'}
+        renderDetails={block => <ToolDetailContent block={block} metadata={props.metadata} />}
+        renderTiming={block => <ToolCardTimingSummary tool={block.tool} />}
+        renderStatus={state => <ToolStatusIcon state={state} />}
+    >
+        <PermissionFooter api={props.api} sessionId={props.sessionId} metadata={props.metadata} tool={props.block.tool} disabled={props.disabled} onDone={props.onDone} />
+    </CommandCard>
+}
+
+export const ToolCard = memo(ToolCardWithCommandDetails)

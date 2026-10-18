@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 export type TerminalToolDisplayMode = 'compact' | 'detailed'
 
-export const DEFAULT_TERMINAL_TOOL_DISPLAY_MODE: TerminalToolDisplayMode = 'compact'
+export const DEFAULT_TERMINAL_TOOL_DISPLAY_MODE: TerminalToolDisplayMode = 'detailed'
 
 export function getTerminalToolDisplayModeOptions(): ReadonlyArray<{ value: TerminalToolDisplayMode; labelKey: string }> {
     return [

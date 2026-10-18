@@ -27,6 +27,10 @@ function formatCodeLabel(language?: string, title?: string): string {
 
 export function CodeBlock(props: {
     code: string
+    /** Preserve the original text when the displayed code strips terminal controls. */
+    copyText?: string
+    /** Opt standalone code readers into keyboard scrolling without nesting focus targets in previews. */
+    scrollLabel?: string
     language?: string
     title?: string
     showCopyButton?: boolean
@@ -132,7 +136,7 @@ export function CodeBlock(props: {
                             data-hapi-share-export-exclude="true"
                             onClick={(event) => {
                                 event.stopPropagation()
-                                copy(props.code)
+                                copy(props.copyText ?? props.code)
                             }}
                             className="rounded-md p-1 text-[var(--app-code-header-fg)] transition-colors hover:bg-[var(--app-code-copy-hover-bg)] hover:text-[var(--app-fg)]"
                             title={t('code.copy')}
@@ -150,6 +154,9 @@ export function CodeBlock(props: {
 
             <div
                 data-hapi-code-body="true"
+                role={props.scrollLabel ? 'region' : undefined}
+                aria-label={props.scrollLabel}
+                tabIndex={props.scrollLabel ? 0 : undefined}
                 className={`min-w-0 w-full max-w-full ${codeWrap ? '' : 'overflow-x-auto'}`}
                 style={bodyStyle}
             >

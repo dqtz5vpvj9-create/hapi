@@ -6,6 +6,7 @@ import { collectTitleChanges, ensureToolBlock, extractTitleFromChangeTitleInput,
 import { isSubagentToolName } from '@/chat/subagentTool'
 import { asString, isObject } from '@hapi/protocol'
 import { getAgentRunFingerprint, getAgentRunIdentity } from '@hapi/protocol/messageDependencies'
+import { isCodexCommandResultError } from '@/chat/codexCommandResult'
 
 function getEventString(event: Record<string, unknown>, key: string): string | null {
     return asString(event[key])
@@ -259,7 +260,7 @@ function normalizeTraceMessage(
                 type: 'tool-result',
                 tool_use_id: callId,
                 content: data.output,
-                is_error: Boolean(data.is_error),
+                is_error: Boolean(data.is_error) || isCodexCommandResultError(data.output),
                 uuid: traceId,
                 parentUUID: null
             }]

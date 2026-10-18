@@ -42,32 +42,33 @@ function renderDetailedBash(command: string, state: 'pending' | 'completed' = 'c
         </I18nProvider>
     )
 
-    return screen.getByRole('button', { expanded: false })
+    return screen.getByRole('button', { name: completed ? /^Ran / : /^Run /, expanded: false })
 }
 
 describe('ToolCard command summary and details', () => {
-    it('keeps command output hidden until the user opens details', () => {
+    it('shows an output summary and expands full command content in place', () => {
         const trigger = renderDetailedBash('echo hello && pwd')
         expect(screen.queryByText('Input')).not.toBeInTheDocument()
-        expect(screen.queryByText('ok')).not.toBeInTheDocument()
+        expect(screen.getByRole('region', { name: 'Output preview' })).toHaveTextContent('ok')
         fireEvent.click(trigger)
-        expect(screen.getByRole('dialog')).toHaveTextContent('echo hello && pwd')
-        expect(screen.getByRole('dialog')).toHaveTextContent('ok')
+        expect(screen.getByRole('region', { name: 'Command details' })).toHaveTextContent('echo hello && pwd')
+        expect(screen.getByRole('region', { name: 'Command details' })).toHaveTextContent('ok')
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
     it('keeps a pending non-approval execution collapsed too', () => {
         const trigger = renderDetailedBash('pwd', 'pending')
         expect(screen.queryByText('Input')).not.toBeInTheDocument()
         fireEvent.click(trigger)
-        expect(screen.getByRole('dialog')).toHaveTextContent('pwd')
+        expect(screen.getByRole('region', { name: 'Command details' })).toHaveTextContent('pwd')
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 })
 
 describe('ToolCard detail dialog', () => {
     it('keeps the tool detail title left-aligned on mobile', () => {
-        renderDetailedBash('pwd')
-
-        fireEvent.click(screen.getByRole('button', { expanded: false }))
+        fireEvent.click(renderDetailedBash('pwd'))
+        fireEvent.click(screen.getByRole('button', { name: 'Open full details' }))
 
         const dialog = screen.getByRole('dialog')
         const title = within(dialog).getByRole('heading')

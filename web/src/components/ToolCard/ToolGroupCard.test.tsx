@@ -115,7 +115,8 @@ describe('ToolGroupCard', () => {
         expect(view.container.querySelectorAll('[data-execution-active]')).toHaveLength(1)
         fireEvent.click(view.container.querySelector('button[aria-expanded]')!)
         expect(view.container.querySelectorAll('[data-execution-active]')).toHaveLength(1)
-        expect(view.container.querySelector('[data-execution-active]')?.closest('button')?.getAttribute('aria-expanded')).toBeNull()
+        expect(view.container.querySelector('[data-execution-active]')?.closest('[data-hapi-command]')).not.toBeNull()
+        expect(view.container.querySelector('[data-execution-active]')?.closest('button')).toHaveAttribute('aria-expanded', 'false')
     })
 
     it('renders a collapsed target-first header', () => {
@@ -185,13 +186,13 @@ describe('ToolGroupCard', () => {
 
         expect(screen.getByLabelText('Completed')).toBeInTheDocument()
         expect(screen.queryByText('Started')).not.toBeInTheDocument()
-        fireEvent.click(screen.getByRole('button', { expanded: false }))
-        fireEvent.click(screen.getAllByRole('button')[1]!)
+        fireEvent.click(screen.getByRole('button', { name: /Inspect project files/, expanded: false }))
+        fireEvent.click(screen.getByRole('button', { name: /^Read/ }))
         expect(screen.getByRole('dialog')).toHaveTextContent('Started')
         expect(screen.getByRole('dialog')).toHaveTextContent('Finished')
     })
 
-    it('expands to show compact rows and opens a detail dialog per row', async () => {
+    it('expands to show read rows and command cards and opens read details', async () => {
         const view = renderCard(makeGroup())
         const groupToggle = within(view.container).getByRole('button', { name: /inspect a\.ts/i })
 
@@ -202,7 +203,7 @@ describe('ToolGroupCard', () => {
         expect(screen.getByRole('button', { name: /inspect a\.ts/i })).toHaveTextContent('(2)')
         expect(screen.queryByText('2 actions')).not.toBeInTheDocument()
         expect(screen.getByText('src/a.ts')).toBeInTheDocument()
-        expect(screen.getByText('bun test')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /^Ran bun test/ })).toBeInTheDocument()
 
         const firstRowButton = within(view.container)
             .getAllByRole('button')
@@ -549,13 +550,20 @@ describe('ToolGroupCard', () => {
     })
 })
 
-it('shows each Codex command on a single line even when its ordinary group is collapsed', () => {
+it('shows command previews inside a collapsed ordinary group and expands each command independently', () => {
     const tools = [makeToolBlock('command-one', 'CodexBash', { command: ['/bin/bash', '-lc', 'ls -ld /android; df -h'] }), makeToolBlock('command-two', 'CodexBash', { command: 'systemctl --user list-units' })]
-    tools[0].tool.result = 'PRIVATE_COMMAND_OUTPUT'
+    tools[0].tool.result = 'COMMAND_FIRST_LINE\nCOMMAND_SECOND_LINE\nCOMMAND_DETAIL_LINE'
     renderCard(makeGroup({ tools, presentationMode: 'default' }))
     expect(screen.getByText('Ran ls -ld /android; df -h')).toHaveClass('truncate')
     expect(screen.getByText('Ran systemctl --user list-units')).toBeVisible()
-    expect(screen.queryByText('PRIVATE_COMMAND_OUTPUT')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('region', { name: 'Output preview' })[0]).toHaveTextContent('COMMAND_FIRST_LINE')
+    expect(screen.queryByText('COMMAND_DETAIL_LINE')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Ran ls -ld/ }))
-    expect(screen.getByRole('dialog')).toHaveTextContent('PRIVATE_COMMAND_OUTPUT')
+    expect(screen.getByRole('region', { name: 'Command details' })).toHaveTextContent('COMMAND_DETAIL_LINE')
+    expect(screen.getByRole('button', { name: /Ran systemctl/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open full details' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('COMMAND_DETAIL_LINE')
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }))
+    expect(screen.getByRole('region', { name: 'Command details' })).toHaveTextContent('COMMAND_DETAIL_LINE')
 })
