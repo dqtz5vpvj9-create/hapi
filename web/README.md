@@ -451,19 +451,29 @@ transport failures. It covers desktop/mobile cleanup, fork cancellation and
 navigation retry, steering without SSE, and steering network failure. These
 fixtures do not launch a real agent or use paid model credentials.
 
-### Codex command rows
+### Command summaries and details
 
-Codex shell calls show `Ran <command>` on one ellipsized line (`Running` while
-active, `Run` before execution; localized in Chinese). Native shell argv such
-as `['/bin/bash', '-lc', command]` displays the actual script. Newlines become
-visible return markers in the summary; original input and full output remain
-unchanged in the detail dialog. Results are not rendered inline, even when
-rich output is available. Pending permission inputs and approval controls
-remain visible. Ordinary collapsed tool groups expose each Codex command as
-one line; exploration grouping and shared protocol fixtures are unchanged.
+Shell command cards show the command and execution state above a two-line
+output summary by default. Failed commands show their exit code when available
+and prioritize stderr in the preview. Missing output is distinguished from a
+confirmed empty result. Display settings retain an explicit **One line** option.
 
-`e2e/codex-command-presentation.spec.ts` checks single-line ellipsis, hidden
-output, detail opening/closing and no horizontal overflow at 390px and 1280px.
+The command header or **Show details** expands the full command and output in
+place. Long lines scroll horizontally, and the existing code controls provide
+word wrapping and copying. Terminal control sequences are removed for display;
+Copy preserves the original output text. Recognized shell argv wrappers expose
+the actual multiline script; **Open full details** retains the original input,
+execution timing, structured results and traces in a separate dialog.
+
+The same controls work in ordinary command groups. Read/search exploration
+groups remain condensed, and pending permissions retain their full input and
+approval controls. Native history dependencies load only when details are
+opened; inline and dialog views share one request owner. Streamed results keep
+updating while expanded, and disclosure state survives native row recycling.
+
+`e2e/codex-command-presentation.spec.ts` covers desktop and phone previews,
+inline expansion, keyboard focus, dialog access, horizontal wheel/touch scrolling,
+wrap/copy fidelity, failure diagnostics, streaming updates and grouped commands.
 
 ### Persistent tmux presentation
 

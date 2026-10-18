@@ -15,7 +15,7 @@ function ui(value: ToolCallBlock, api = {} as ApiClient, mode: 'compact' | 'deta
 }
 
 describe('compact tool entry behavior', () => {
-    it.each(['wait_agent', 'send_message', 'ssh', 'Bash', 'AgentRun', 'unknown_custom_tool'])('%s hides input/output until details, including with command summary preference', name => {
+    it.each(['wait_agent', 'send_message', 'AgentRun', 'unknown_custom_tool'])('%s hides input/output until details, including with command summary preference', name => {
         const view = render(ui(block(name), undefined, 'detailed'))
         expect(screen.queryByText('Input')).not.toBeInTheDocument()
         expect(screen.queryByText('FULL_RESULT_BODY')).not.toBeInTheDocument()
@@ -25,6 +25,24 @@ describe('compact tool entry behavior', () => {
         expect(dialog).toHaveTextContent('Result')
         fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        expect(view.container).not.toHaveTextContent('FULL_RESULT_BODY')
+    })
+    it.each(['ssh', 'Bash', 'shell_command', 'run_shell_command'])('%s keeps an explicit compact preference and expands output inline', name => {
+        const view = render(ui(block(name)))
+        expect(screen.queryByText('Input')).not.toBeInTheDocument()
+        expect(screen.queryByText('FULL_RESULT_BODY')).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /Show details/ })).not.toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: /^Ran ssh/, expanded: false }))
+        expect(screen.getByRole('region', { name: 'Command details' })).toHaveTextContent('FULL_RESULT_BODY')
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Open full details' }))
+        const dialog = screen.getByRole('dialog')
+        expect(dialog).toHaveTextContent('FULL_RESULT_BODY')
+        expect(dialog).toHaveTextContent('Result')
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+        expect(screen.getByRole('region', { name: 'Command details' })).toHaveTextContent('FULL_RESULT_BODY')
+        fireEvent.click(screen.getByRole('button', { name: 'Hide details' }))
         expect(view.container).not.toHaveTextContent('FULL_RESULT_BODY')
     })
     it('updates running/completed status in the same collapsed entry', () => {
@@ -39,16 +57,18 @@ describe('compact tool entry behavior', () => {
         fireEvent.click(screen.getByRole('button', { expanded: false }))
         expect(screen.getByRole('dialog')).toHaveTextContent('NEW_RESULT')
     })
-    it('keeps permission input and actual approval action available outside details', async () => {
+    it.each(['Bash', 'CodexBash'])('keeps %s permission input and actual approval action available outside details', async name => {
         const approvePermission = vi.fn(async () => {})
-        const value = block('Bash')
+        const value = block(name)
         value.tool.state = 'pending'
         value.tool.permission = { id: 'permission-fixture', status: 'pending' }
         render(ui(value, { approvePermission } as unknown as ApiClient))
         expect(screen.getByText('Input')).toBeInTheDocument()
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-        fireEvent.click(screen.getByRole('button', { name: /^Allow$/ }))
-        await waitFor(() => expect(approvePermission).toHaveBeenCalledWith('fixture-session', 'permission-fixture'))
+        fireEvent.click(screen.getByRole('button', { name: name === 'CodexBash' ? /^Yes$/ : /^Allow$/ }))
+        await waitFor(() => expect(approvePermission).toHaveBeenCalledWith(
+            'fixture-session', 'permission-fixture', ...(name === 'CodexBash' ? [{ decision: 'approved' }] : [])
+        ))
     })
     it('keeps question choices and submits the selected answer without opening details', async () => {
         const approvePermission = vi.fn(async () => {})
@@ -64,7 +84,7 @@ describe('compact tool entry behavior', () => {
     })
 })
 
-it.each(['compact', 'detailed'] as const)('shows the Codex command on one truncated row in %s mode, with output only in details', mode => {
+it.each(['compact', 'detailed'] as const)('keeps a one-line Codex summary in %s mode and preserves command details', mode => {
     const value = block('CodexBash')
     const command = 'ls -ld /home/chris/.agentsview /android; df -h\nsystemctl --user list-units'
     value.tool.input = { command: ['/bin/bash', '-lc', command] }
@@ -73,9 +93,13 @@ it.each(['compact', 'detailed'] as const)('shows the Codex command on one trunca
     const label = screen.getByText('Ran ls -ld /home/chris/.agentsview /android; df -h ↵ systemctl --user list-units')
     expect(label).toHaveClass('truncate')
     expect(label).toHaveAttribute('title', command)
-    expect(view.container).not.toHaveTextContent('FULL_RESULT_BODY')
+    if (mode === 'compact') expect(view.container).not.toHaveTextContent('FULL_RESULT_BODY')
+    else expect(screen.getByRole('region', { name: 'Output preview' })).toHaveTextContent('FULL_RESULT_BODY')
     expect(screen.queryByText('CodexBash')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    fireEvent.click(screen.getByRole('button', { name: /^Ran ls/, expanded: false }))
+    expect(screen.getByRole('region', { name: 'Command details' })).toHaveTextContent('FULL_RESULT_BODY')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open full details' }))
     expect(screen.getByRole('dialog')).toHaveTextContent('FULL_RESULT_BODY')
     expect(screen.getByRole('dialog')).toHaveTextContent('systemctl --user list-units')
 })
@@ -86,7 +110,7 @@ it('does not claim a running Codex command has completed and retains failure sta
     const view = render(ui(value))
     expect(screen.getByText('Running ssh example.invalid inspect-report')).toBeVisible()
     view.rerender(ui({ ...value, tool: { ...value.tool, state: 'error' } }))
-    expect(screen.getByText('Ran ssh example.invalid inspect-report')).toBeVisible()
+    expect(screen.getByText('Failed ssh example.invalid inspect-report')).toBeVisible()
     expect(screen.getByLabelText('error')).toBeVisible()
     expect(screen.queryByText('FULL_RESULT_BODY')).not.toBeInTheDocument()
 })

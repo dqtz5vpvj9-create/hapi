@@ -7,7 +7,8 @@ import type { ToolCallBlock } from '@/chat/types'
 import { getCodexCommandActions, type CodexCommandAction } from '@/chat/codexCommandPresentation'
 import type { SessionMetadataSummary } from '@/types/api'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
-import { getToolTimingDetails, ToolDetailDialogContent, ToolStatusIcon, ToolTimingSummary, toolStatusColorClass } from '@/components/ToolCard/ToolCard'
+import { getToolTimingDetails, ToolCard, ToolDetailDialogContent, ToolStatusIcon, ToolTimingSummary, toolStatusColorClass } from '@/components/ToolCard/ToolCard'
+import { TERMINAL_TOOL_NAMES } from '@/components/ToolCard/CommandCard'
 import { getToolPresentation } from '@/components/ToolCard/knownTools'
 import { formatGroupedHeaderSubtitle, formatGroupedHeaderTitle, safeGroupedLabelValue } from '@/components/ToolCard/groupedPresentation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -299,6 +300,19 @@ export function ToolGroupCard(props: {
 
     const primaryTitle = formatGroupedHeaderTitle(props.block, t)
     const groupState = props.block.summary.errorCount ? 'error' : props.block.summary.pendingCount ? 'pending' : groupTiming.running ? 'running' : 'completed'
+    const activeCommandVisible = props.block.presentationMode !== 'codex-exploration'
+        && props.block.tools.some(tool => tool.id === ctx.activeExecutionToolId && TERMINAL_TOOL_NAMES.has(tool.tool.name))
+    const showGroupExecution = !open && !activeCommandVisible && props.block.tools.some(tool => tool.id === ctx.activeExecutionToolId)
+    const commandCard = (tool: ToolCallBlock) => <ToolCard
+        key={tool.id}
+        block={tool}
+        api={ctx.api}
+        sessionId={ctx.sessionId}
+        metadata={props.metadata}
+        terminalToolDisplayMode={ctx.terminalToolDisplayMode}
+        disabled={ctx.disabled}
+        onDone={ctx.onRefresh}
+    />
 
     return (
         <Card className="min-w-0 max-w-full overflow-hidden rounded-md border-0 bg-transparent shadow-none">
@@ -312,7 +326,7 @@ export function ToolGroupCard(props: {
                     <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--app-hint)]">
                         <span className="shrink-0"><DetailsIcon open={open} /></span>
                         <span className="shrink-0" aria-hidden="true">⚒</span>
-                        <span data-execution-active={props.block.tools.some(tool => tool.id === ctx.activeExecutionToolId) && !open || undefined} data-execution-label={!open && props.block.tools.some(tool => tool.id === ctx.activeExecutionToolId) ? t('session.item.running') : undefined} className={cn("min-w-0 truncate font-mono text-sm", !open && props.block.tools.some(tool => tool.id === ctx.activeExecutionToolId) && "hapi-execution-sweep")} title={primaryTitle}>{primaryTitle}</span>
+                        <span data-execution-active={showGroupExecution || undefined} data-execution-label={showGroupExecution ? t('session.item.running') : undefined} className={cn("min-w-0 truncate font-mono text-sm", showGroupExecution && "hapi-execution-sweep")} title={primaryTitle}>{primaryTitle}</span>
                         <span className={cn('shrink-0', toolStatusColorClass(groupState))} aria-label={t(`toolGroup.rowStatus.${groupState}`)}><ToolStatusIcon state={groupState} /></span>
                         <span className="shrink-0 tabular-nums opacity-65">{new Date(props.block.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
                         <span className="shrink-0 opacity-65">({props.block.tools.length})</span>
@@ -321,19 +335,16 @@ export function ToolGroupCard(props: {
                 </button>
             </CardHeader>
 
-            {!open && props.block.presentationMode !== 'codex-exploration' ? props.block.tools.filter(tool => tool.tool.name === 'CodexBash').map(tool => (
-                <button key={tool.id} type="button" onClick={() => setSelectedToolId(tool.id)}
-                    className="flex w-full min-w-0 items-center gap-2 py-1 pl-6 text-left text-[var(--app-hint)] focus-visible:ring-2 focus-visible:ring-[var(--app-link)]">
-                    <RowLabel block={tool} metadata={props.metadata} />
-                    <span className={cn('shrink-0', toolStatusColorClass(tool.tool.state))} aria-label={tool.tool.state}><ToolStatusIcon state={tool.tool.state} /></span>
-                </button>
-            )) : null}
+            {!open && props.block.presentationMode !== 'codex-exploration' ? <div className="min-w-0 pl-3">
+                {props.block.tools.filter(tool => TERMINAL_TOOL_NAMES.has(tool.tool.name)).map(commandCard)}
+            </div> : null}
             {open ? (
                 <CardContent className="px-3 pb-3 pt-1">
                     <div className="flex flex-col gap-2">
                         {props.block.presentationMode === 'codex-exploration' ? (
                             <CodexExplorationRows tools={props.block.tools} onSelect={setSelectedToolId} />
                         ) : props.block.tools.map((tool) => {
+                            if (TERMINAL_TOOL_NAMES.has(tool.tool.name)) return commandCard(tool)
                             const timing = getToolTimingDetails(tool.tool, now)
                             return (
                                 <button
