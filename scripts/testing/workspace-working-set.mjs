@@ -73,7 +73,7 @@ async function runScenario(run) {
         for (let cycle = 0; cycle < cycles; cycle++) {
             for (let id = 1; id <= sessions; id++) {
                 // Timestamp the actual DOM click, excluding Playwright actionability/scroll.
-                const button = page.locator(`.workspace-tabs button[title="Workspace ${id}"]`)
+                const button = page.locator(`.workspace-tabs button[title="Window ${id}"]`)
                 await button.evaluate((element, id) => element.addEventListener('click', () => {
                     window.__workingSetStart = performance.now()
                     window.__workingSetFirstFrame = null

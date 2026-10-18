@@ -26,7 +26,7 @@ the same message; mounting an already-streaming message does not expose this bug
 until route navigation. HAPI workspaces replace chat panes on the same route,
 so this retains every previously scrolled pane. The patch removes disconnected
 targets when a new scroll target is registered. Connected elements keep their
-positions, and an existing target's scroll events do not scan the map.
+positions, and an existing target's scroll events do not scan the set.
 
 This is applied to TypeScript and both shipped JavaScript entry points. When
 upgrading Router, run the DOM collection case in
