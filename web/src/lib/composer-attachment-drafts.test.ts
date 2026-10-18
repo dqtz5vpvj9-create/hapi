@@ -28,6 +28,13 @@ describe('composer-attachment-drafts', () => {
         expect(restored[0]?.size).toBe(file.size)
     })
 
+    it('refuses a reload checkpoint when attachments have only an in-memory copy', async () => {
+        const mod = await import('./composer-attachment-drafts')
+        mod.saveDraftAttachments('session-1', [{ id: 'file-1', file: new File(['payload'], 'draft.txt') }])
+        await expect(mod.flushDraftAttachmentWrites('session-1')).rejects.toThrow('Attachment storage is unavailable')
+        expect((await mod.getDraftAttachments('session-1'))[0]?.name).toBe('draft.txt')
+    })
+
     it('isolates attachment drafts by session', async () => {
         const mod = await import('./composer-attachment-drafts')
         mod.saveDraftAttachments('session-a', [{ id: 'a', file: new File(['a'], 'a.txt') }])

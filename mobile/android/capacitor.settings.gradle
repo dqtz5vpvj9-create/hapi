@@ -13,3 +13,6 @@ project(':capacitor-keyboard').projectDir = new File('../../node_modules/.bun/@c
 
 include ':capawesome-capacitor-file-picker'
 project(':capawesome-capacitor-file-picker').projectDir = new File('../../node_modules/.bun/@capawesome+capacitor-file-picker@8.1.0+9cf34ba37901b220/node_modules/@capawesome/capacitor-file-picker/android')
+
+include ':capawesome-capacitor-live-update'
+project(':capawesome-capacitor-live-update').projectDir = new File('../../node_modules/.bun/@capawesome+capacitor-live-update@8.7.0+9cf34ba37901b220/node_modules/@capawesome/capacitor-live-update/android')

@@ -7,6 +7,10 @@ import { createAttachmentAdapter } from '../src/lib/attachmentAdapter'
 import { I18nProvider } from '../src/lib/i18n-context'
 import { GlassScene } from '../src/themes/glass/GlassScene'
 import type { ApiClient } from '../src/api/client'
+import { PwaUpdateProvider } from '../src/lib/pwa-update-context'
+import { PwaUpdateBanner } from '../src/components/PwaUpdateBanner'
+import { restoreNativeUpdateRoute } from '../src/lib/nativeUpdateReload'
+import { getDraft } from '../src/lib/composer-drafts'
 
 declare global {
     interface Window {
@@ -14,6 +18,8 @@ declare global {
     }
 }
 
+const updateFixture = new URLSearchParams(location.search).has('updates')
+if (updateFixture) restoreNativeUpdateRoute()
 window.__attachmentUploads = []
 // This fixture covers attachment selection after the composer introduction.
 localStorage.setItem('hapi.fue.v1.rich-composer-mentions', '1')
@@ -32,7 +38,7 @@ if (glass) document.documentElement.dataset.colorTheme = 'codex'
 
 function Composer() {
     const aui = useAui()
-    useEffect(() => { aui.composer().setText('Inspect these files and retain this draft.') }, [aui.composer])
+    useEffect(() => { aui.composer().setText(getDraft(sessionId) || 'Inspect these files and retain this draft.') }, [aui.composer])
     return <HappyComposer active sessionId={sessionId} agentFlavor="codex" autocompleteSuggestions={async () => []} />
 }
 
@@ -48,4 +54,6 @@ function Fixture() {
     </AssistantRuntimeProvider></I18nProvider>
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(<Fixture />)
+ReactDOM.createRoot(document.getElementById('root')!).render(updateFixture
+    ? <I18nProvider><PwaUpdateProvider><PwaUpdateBanner /><Fixture /></PwaUpdateProvider></I18nProvider>
+    : <Fixture />)

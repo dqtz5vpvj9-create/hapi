@@ -42,10 +42,15 @@ export function saveNewSessionFormDraft(draft: NewSessionFormDraft): void {
 export function loadNewSessionFormDraft(): NewSessionFormDraft | null {
     try {
         const raw = sessionStorage.getItem(DRAFT_STORAGE_KEY)
-        if (!raw) {
-            return null
-        }
-        const parsed = JSON.parse(raw) as Partial<NewSessionFormDraft>
+        return raw ? parseNewSessionFormDraft(JSON.parse(raw)) : null
+    } catch {
+        return null
+    }
+}
+
+function parseNewSessionFormDraft(value: unknown): NewSessionFormDraft | null {
+    try {
+        const parsed = value as Partial<NewSessionFormDraft>
         if (typeof parsed.agent !== 'string' || typeof parsed.model !== 'string') {
             return null
         }
@@ -124,4 +129,53 @@ export function newSessionDraftMatchesMachine(
         return true
     }
     return draft.machineId === machineId
+}
+
+const NATIVE_UPDATE_DRAFT_PREFIX = 'hapi:native-update:new-session::'
+const NATIVE_UPDATE_DRAFT_MAX_AGE_MS = 5 * 60 * 1000
+
+export type NativeUpdateNewSessionDraft = {
+    schemaVersion: 1
+    draftKey: string
+    path: string
+    savedAt: number
+    directory: string
+    text?: string
+    form: NewSessionFormDraft
+}
+
+/** Separate from browse-return drafts: an update must also retain the chosen machine, path, and exact task text. */
+export function saveNativeUpdateNewSessionDraft(
+    draftKey: string,
+    draft: Pick<NativeUpdateNewSessionDraft, 'form' | 'directory' | 'text'>,
+): void {
+    const record: NativeUpdateNewSessionDraft = {
+        schemaVersion: 1,
+        draftKey,
+        path: window.location.pathname + window.location.search + window.location.hash,
+        savedAt: Date.now(),
+        ...draft,
+    }
+    // Unlike optional browse restoration, a failed durable save aborts the update.
+    sessionStorage.setItem(NATIVE_UPDATE_DRAFT_PREFIX + draftKey, JSON.stringify(record))
+}
+
+/** Call only after bootstrap confirmed a native-update route restore; loading itself is safe under StrictMode. */
+export function loadNativeUpdateNewSessionDraft(draftKey: string): NativeUpdateNewSessionDraft | null {
+    try {
+        const raw = sessionStorage.getItem(NATIVE_UPDATE_DRAFT_PREFIX + draftKey)
+        if (!raw) return null
+        const record = JSON.parse(raw) as Partial<NativeUpdateNewSessionDraft> | null
+        if (!record || record.schemaVersion !== 1 || record.draftKey !== draftKey
+            || record.path !== window.location.pathname + window.location.search + window.location.hash
+            || typeof record.savedAt !== 'number' || !Number.isFinite(record.savedAt) || record.savedAt > Date.now()
+            || Date.now() - record.savedAt > NATIVE_UPDATE_DRAFT_MAX_AGE_MS
+            || typeof record.directory !== 'string' || (record.text !== undefined && typeof record.text !== 'string')) return null
+        const form = parseNewSessionFormDraft(record.form)
+        return form ? { ...record, form } as NativeUpdateNewSessionDraft : null
+    } catch { return null }
+}
+
+export function clearNativeUpdateNewSessionDraft(draftKey: string): void {
+    try { sessionStorage.removeItem(NATIVE_UPDATE_DRAFT_PREFIX + draftKey) } catch { /* A restore hint cannot block startup. */ }
 }

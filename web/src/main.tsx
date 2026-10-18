@@ -12,6 +12,7 @@ import { I18nProvider } from './lib/i18n-context'
 import { restoreSpaRedirect } from './lib/spaRedirect'
 import { installScrollRestorationGuard } from './lib/scrollStorageGuard'
 import { nativePlatform } from './lib/platform'
+import { restoreNativeUpdateRoute } from './lib/nativeUpdateReload'
 
 function getStartParam(): string | null {
     const query = new URLSearchParams(window.location.search)
@@ -53,6 +54,7 @@ async function bootstrap() {
     if (!isTelegram) {
         restoreSpaRedirect()
     }
+    if (platform) restoreNativeUpdateRoute()
 
     const history = isTelegram
         ? createMemoryHistory({ initialEntries: [getInitialPath()] })

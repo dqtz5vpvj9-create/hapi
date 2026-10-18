@@ -17,6 +17,7 @@
         "@aparajita/capacitor-secure-storage": "8.0.1",
         "@capacitor/core": "8.5.3",
         "@capawesome/capacitor-file-picker": "8.1.0",
+        "@capawesome/capacitor-live-update": "8.7.0",
         "@assistant-ui/react": "^0.15.29",
         "@assistant-ui/react-markdown": "^0.14.23",
         "@assistant-ui/tap": "^0.9.23",

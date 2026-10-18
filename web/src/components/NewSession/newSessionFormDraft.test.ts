@@ -1,9 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
     clearNewSessionFormDraft,
+    clearNativeUpdateNewSessionDraft,
+    loadNativeUpdateNewSessionDraft,
     loadNewSessionFormDraft,
     newSessionDraftMatchesMachine,
     saveNewSessionFormDraft,
+    saveNativeUpdateNewSessionDraft,
     shouldRestoreNewSessionFormDraft
 } from './newSessionFormDraft'
 
@@ -226,5 +229,63 @@ describe('newSessionFormDraft', () => {
         const loaded = loadNewSessionFormDraft()!
         expect(loaded.agent).toBe('claude')
         expect(loaded.nativePermissionMode).toBe('bypassPermissions')
+    })
+})
+
+describe('native update new-session snapshots', () => {
+    const scope = 'hapi:new-task:https://hub.example'
+    const snapshot = {
+        directory: '/chosen/project',
+        text: 'Keep exact text\nincluding a second line',
+        form: {
+            agent: 'codex' as const,
+            model: 'gpt-5.6-terra',
+            cursorSelectedBase: 'auto',
+            machineId: 'machine-2',
+            effort: 'auto' as const,
+            modelReasoningEffort: 'max' as const,
+            serviceTier: 'standard' as const,
+            collaborationMode: 'default' as const,
+            copilotAgentMode: 'interactive' as const,
+            yoloMode: false,
+            nativePermissionMode: 'default' as const,
+            grokPermissionMode: 'default' as const,
+            sessionType: 'simple' as const,
+            worktreeName: '',
+        },
+    }
+
+    afterEach(() => {
+        clearNativeUpdateNewSessionDraft(scope)
+        vi.restoreAllMocks()
+        window.history.replaceState(null, '', '/')
+    })
+
+    it('retains the full form and text without consuming a StrictMode initializer read', () => {
+        window.history.replaceState(null, '', '/sessions/new?directory=original')
+        saveNativeUpdateNewSessionDraft(scope, snapshot)
+        expect(loadNativeUpdateNewSessionDraft(scope)).toMatchObject({ ...snapshot, schemaVersion: 1, draftKey: scope })
+        expect(loadNativeUpdateNewSessionDraft(scope)).toMatchObject(snapshot)
+        clearNativeUpdateNewSessionDraft(scope)
+        expect(loadNativeUpdateNewSessionDraft(scope)).toBeNull()
+    })
+
+    it('never replays a snapshot for another Hub or a different route', () => {
+        window.history.replaceState(null, '', '/sessions/new')
+        saveNativeUpdateNewSessionDraft(scope, snapshot)
+        expect(loadNativeUpdateNewSessionDraft('hapi:new-task:https://other.example')).toBeNull()
+        window.history.replaceState(null, '', '/sessions/new?shareTransferId=another')
+        expect(loadNativeUpdateNewSessionDraft(scope)).toBeNull()
+    })
+
+    it('expires abandoned update snapshots', () => {
+        vi.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValue(6 * 60 * 1_000)
+        saveNativeUpdateNewSessionDraft(scope, snapshot)
+        expect(loadNativeUpdateNewSessionDraft(scope)).toBeNull()
+    })
+
+    it('propagates storage failure so the caller can abort activation', () => {
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded') })
+        expect(() => saveNativeUpdateNewSessionDraft(scope, snapshot)).toThrow('Quota exceeded')
     })
 })

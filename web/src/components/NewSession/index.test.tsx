@@ -1,11 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render as renderBase, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { Machine, PiModelSummary } from '@/types/api'
 import { createNewTaskDelivery, saveNewTaskDelivery } from './newTaskDelivery'
-import { saveNewSessionFormDraft } from './newSessionFormDraft'
+import { loadNativeUpdateNewSessionDraft, saveNewSessionFormDraft } from './newSessionFormDraft'
+import * as attachmentDrafts from '@/lib/composer-attachment-drafts'
+import * as nativeUpdateReload from '@/lib/nativeUpdateReload'
 import {
     loadPreferredLaunchSettings,
     savePreferredAgent,
@@ -316,6 +318,7 @@ const machine = { id: 'machine-1' } as Machine
 const api = { sendMessage: vi.fn().mockResolvedValue(undefined) } as unknown as ApiClient
 
 describe('NewSession launch preferences', () => {
+    afterEach(() => { vi.restoreAllMocks() })
     beforeEach(() => {
         mocks.native = false
         mocks.pickAttachments.mockReset().mockResolvedValue([])
@@ -465,6 +468,87 @@ describe('NewSession launch preferences', () => {
         expect(sendMessage).toHaveBeenCalledWith('native-task', 'Inspect this photo', expect.any(String), [expect.objectContaining({
             filename: 'IMG_0007.HEIC', mimeType: 'image/heic', size: file.size, path: '/uploads/photo.heic',
         })])
+    })
+
+    it('waits for the new-task attachment draft transaction before a native update reload', async () => {
+        mocks.native = true
+        let finish!: () => void
+        const flush = vi.spyOn(attachmentDrafts, 'flushDraftAttachmentWrites').mockImplementation(() => new Promise<void>(resolve => { finish = resolve }))
+        render(<NewSession api={api} machines={[machine]} draftKey="native-update-task" initialMachineId="machine-1"
+            initialDirectory="C:\\repo" initialTask="Keep the current new task" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
+        let prepared = false
+        const preparing = nativeUpdateReload.prepareNativeUpdateReload().then(() => { prepared = true })
+        await waitFor(() => expect(flush).toHaveBeenCalledWith('native-update-task'))
+        expect(prepared).toBe(false)
+        finish()
+        await preparing
+        expect(prepared).toBe(true)
+        expect(loadNativeUpdateNewSessionDraft('native-update-task')).toMatchObject({ text: 'Keep the current new task' })
+    })
+
+    it('restores the chosen machine, directory, model and effort after a native update instead of reverting to route defaults', async () => {
+        mocks.native = true
+        vi.spyOn(attachmentDrafts, 'flushDraftAttachmentWrites').mockResolvedValue()
+        const props = {
+            api, machines: [machine, { ...machine, id: 'machine-2' }], draftKey: 'native-update-form',
+            initialMachineId: 'machine-1', initialDirectory: 'C:\\repo', onSuccess: mocks.onSuccess, onCancel: () => {},
+        }
+        const view = render(<NewSession {...props} />)
+        fireEvent.change(screen.getByRole('combobox', { name: 'machine-selector' }), { target: { value: 'machine-2' } })
+        view.rerender(<NewSession {...props} initialDirectory="/chosen-folder" />)
+        fireEvent.click(screen.getByTestId('model'))
+        fireEvent.click(screen.getByTestId('reasoning'))
+        await waitFor(() => expect(screen.getByTestId('create')).toBeEnabled())
+        await nativeUpdateReload.prepareNativeUpdateReload()
+        expect(loadNativeUpdateNewSessionDraft('native-update-form')).toMatchObject({
+            directory: '/chosen-folder', form: { machineId: 'machine-2', model: 'gpt-5.6-terra', modelReasoningEffort: 'max' },
+        })
+        view.unmount()
+        nativeUpdateReload.restoreNativeUpdateRoute()
+        render(<NewSession {...props} />)
+        await waitFor(() => expect(screen.getByTestId('model')).toHaveTextContent('gpt-5.6-terra'))
+        expect(screen.getByRole('combobox', { name: 'machine-selector' })).toHaveValue('machine-2')
+        expect(screen.getByTestId('reasoning')).toHaveTextContent('max')
+        expect(loadNativeUpdateNewSessionDraft('native-update-form')).toBeNull()
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
+            machineId: 'machine-2', directory: '/chosen-folder', model: 'gpt-5.6-terra', modelReasoningEffort: 'max',
+        })))
+    })
+
+    it('aborts native updates when new-task files cannot be saved', async () => {
+        mocks.native = true
+        vi.spyOn(attachmentDrafts, 'flushDraftAttachmentWrites').mockRejectedValue(new Error('Attachment transaction failed'))
+        render(<NewSession api={api} machines={[machine]} draftKey="native-update-write-error" initialMachineId="machine-1"
+            initialDirectory="C:\\repo" initialTask="Keep this task" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
+        await expect(nativeUpdateReload.prepareNativeUpdateReload()).rejects.toThrow('Attachment transaction failed')
+        expect(loadNativeUpdateNewSessionDraft('native-update-write-error')).toBeNull()
+        expect(sessionStorage.getItem('hapi:native-update-route')).toBeNull()
+    })
+
+    it('aborts native updates while new-task file hydration is incomplete', async () => {
+        mocks.native = true
+        vi.spyOn(attachmentDrafts, 'getDraftAttachments').mockReturnValue(new Promise(() => {}))
+        render(<NewSession api={api} machines={[machine]} draftKey="native-update-loading" initialTask="Keep this task"
+            onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await expect(nativeUpdateReload.prepareNativeUpdateReload()).rejects.toThrow('draft is still loading')
+        expect(sessionStorage.getItem('hapi:native-update-route')).toBeNull()
+    })
+
+    it('aborts native updates during a pending spawn so request identity cannot be lost', async () => {
+        mocks.native = true
+        let finish!: (value: { type: 'success'; sessionId: string }) => void
+        mocks.spawnSession.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+        render(<NewSession api={api} machines={[machine]} draftKey="native-update-pending" initialMachineId="machine-1"
+            initialDirectory="C:\\repo" initialTask="Keep this task" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalledTimes(1))
+        await expect(nativeUpdateReload.prepareNativeUpdateReload()).rejects.toThrow('pending session operation')
+        await act(async () => { finish({ type: 'success', sessionId: 'finished-after-update-abort' }) })
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('finished-after-update-abort'))
     })
 
     it('finishes the frozen old share without consuming a newly routed share payload', async () => {

@@ -11,11 +11,15 @@ export function hasNetworkStatusBanner(state: { online: boolean; hubConnected: b
 
 export function PwaUpdateBanner({ topClassName, withinContent = false }: { topClassName?: string; withinContent?: boolean } = {}) {
     const { t } = useTranslation()
-    const { needRefresh, reload } = usePwaUpdateContext()
+    const { needRefresh, reload, native, status, progress, error, retry } = usePwaUpdateContext()
     const isOnline = useOnlineStatus()
     const { haptic } = usePlatform()
 
-    if (!needRefresh) {
+    const appRequired = native && status === 'app-required'
+    const downloading = native && status === 'downloading'
+    const applying = native && status === 'applying'
+    const updateError = native && (status === 'error' || Boolean(error)) && !appRequired
+    if (!needRefresh && !appRequired && !downloading && !applying && !updateError) {
         return null
     }
 
@@ -26,36 +30,56 @@ export function PwaUpdateBanner({ topClassName, withinContent = false }: { topCl
     return (
         <div
             data-testid="pwa-update-banner"
+            role="status"
             className={`${withinContent ? 'absolute' : 'fixed'} left-4 right-4 bg-[var(--app-secondary-bg)] border border-[var(--app-border)] rounded-lg p-4 shadow-lg z-50 ${topClass}`}
         >
             <div className="flex items-center justify-between gap-3">
                 <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-[var(--app-fg)]">
-                        {t('pwa.update.title')}
+                        {t(appRequired ? 'native.update.appTitle'
+                            : updateError ? 'native.update.errorTitle'
+                                : downloading ? 'native.update.downloading'
+                                    : 'pwa.update.title')}
                     </p>
                     <p className="text-xs text-[var(--app-hint)] mt-0.5">
-                        {t('pwa.update.body')}
+                        {t(appRequired ? 'native.update.appBody'
+                            : updateError ? 'native.update.errorBody'
+                                : applying ? 'native.update.applying'
+                                    : native ? 'native.update.body' : 'pwa.update.body')}
                     </p>
+                    {downloading && (
+                        <progress
+                            aria-label={t('native.update.downloading')}
+                            className="mt-2 w-full h-1.5"
+                            max={1}
+                            value={progress ?? undefined}
+                        />
+                    )}
                 </div>
-                <button
+                {!appRequired && <button
                     type="button"
+                    disabled={Boolean(downloading || applying)}
                     onClick={() => {
                         haptic.impact('light')
-                        reload()
+                        if (updateError && !needRefresh) retry?.()
+                        else reload()
                     }}
-                    className="shrink-0 px-4 py-2 bg-[var(--app-fg)] text-[var(--app-bg)] rounded-lg text-sm font-medium active:opacity-80"
+                    className="shrink-0 px-4 py-2 bg-[var(--app-fg)] text-[var(--app-bg)] rounded-lg text-sm font-medium active:opacity-80 disabled:opacity-50 disabled:cursor-wait"
                 >
-                    {t('pwa.update.reload')}
-                </button>
+                    {t(applying ? 'native.update.applying'
+                        : updateError && !needRefresh ? 'native.update.retry'
+                            : native ? 'native.update.action' : 'pwa.update.reload')}
+                </button>}
             </div>
 
             <details className="mt-3 border-t border-[var(--app-border)] pt-2">
                 <summary className="cursor-pointer text-xs text-[var(--app-link)] active:opacity-60 list-none [&::-webkit-details-marker]:hidden">
-                    {t('pwa.update.whyToggle')}
+                    {t(native ? 'native.update.details' : 'pwa.update.whyToggle')}
                 </summary>
                 <p className="mt-2 text-xs text-[var(--app-hint)] leading-relaxed">
-                    {t('pwa.update.whyBody')}
+                    {t(native ? 'native.update.whyBody' : 'pwa.update.whyBody')}
                 </p>
+                {native && error && <p className="mt-2 text-xs text-[var(--app-hint)] break-words">{error}</p>}
             </details>
         </div>
     )

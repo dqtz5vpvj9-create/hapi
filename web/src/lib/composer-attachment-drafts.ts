@@ -150,6 +150,14 @@ async function awaitPendingWrites(...sessionIds: string[]): Promise<void> {
     }))
 }
 
+/** Explicit app updates must wait for file transactions, rather than only saving an in-memory copy. */
+export async function flushDraftAttachmentWrites(sessionId: string): Promise<void> {
+    if (typeof indexedDB === 'undefined' && cache.get(sessionId)?.length) {
+        throw new Error('Attachment storage is unavailable. Keep this draft open and retry the update later.')
+    }
+    await awaitPendingWrites(sessionId)
+}
+
 function setCachedFiles(sessionId: string, files: File[]): void {
     cache.delete(sessionId)
     cache.set(sessionId, files)

@@ -5,7 +5,8 @@ import { NativeAttachmentButton } from '@/components/NativeAttachmentButton'
 import { isNativePlatform } from '@/lib/platform'
 import { MODEL_OPTIONS, CLAUDE_EFFORT_OPTIONS } from './types'
 import { getPiThinkingLevelOptions } from '@/components/AssistantChat/piThinkingLevelOptions'
-import { getDraftAttachments, saveDraftAttachments, clearDraftAttachments, getRestoredUploadMetadata } from '@/lib/composer-attachment-drafts'
+import { getDraftAttachments, saveDraftAttachments, clearDraftAttachments, getRestoredUploadMetadata, flushDraftAttachmentWrites } from '@/lib/composer-attachment-drafts'
+import { registerNativeUpdatePreparation, wasNativeUpdateRouteRestored } from '@/lib/nativeUpdateReload'
 import { getShareTransfer } from '@/lib/shareTransfer'
 import { MAX_UPLOAD_BYTES } from '@/lib/attachmentAdapter'
 import type { AttachmentMetadata } from '@/types/api'
@@ -49,9 +50,12 @@ import {
 import { buildCursorEffortPickerOptions, resolveCursorVariantOptions } from '@/lib/cursorModelOptions'
 import {
     clearNewSessionFormDraft,
+    clearNativeUpdateNewSessionDraft,
+    loadNativeUpdateNewSessionDraft,
     loadNewSessionFormDraft,
     newSessionDraftMatchesMachine,
     saveNewSessionFormDraft,
+    saveNativeUpdateNewSessionDraft,
     shouldRestoreNewSessionFormDraft
 } from './newSessionFormDraft'
 import { isOpencodeReasoningEffortValid } from './types'
@@ -114,6 +118,8 @@ export function NewSession(props: {
     initialMachineId?: string
 }) {
     const draftKey = props.draftKey ?? 'hapi:new-task:attachments'
+    const [nativeUpdateDraft] = useState(() => isNativePlatform() && wasNativeUpdateRouteRestored()
+        ? loadNativeUpdateNewSessionDraft(draftKey) : null)
     const [files, setFiles] = useState<Array<{ id: string; file: File }>>([])
     const [filesReady, setFilesReady] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -165,8 +171,8 @@ export function NewSession(props: {
     const { sessions, refetch: refetchSessions } = useSessions(props.api)
     const { getRecentPaths, addRecentPath, getLastUsedMachineId, setLastUsedMachineId } = useRecentPaths()
 
-    const [machineId, setMachineId] = useState<string | null>(deliveryRef.current?.launch?.machineId ?? props.initialMachineId ?? null)
-    const [directory, setDirectory] = useState(deliveryRef.current?.launch?.directory ?? props.initialDirectory ?? '')
+    const [machineId, setMachineId] = useState<string | null>(deliveryRef.current?.launch?.machineId ?? nativeUpdateDraft?.form.machineId ?? props.initialMachineId ?? null)
+    const [directory, setDirectory] = useState(deliveryRef.current?.launch?.directory ?? nativeUpdateDraft?.directory ?? props.initialDirectory ?? '')
     const [suppressSuggestions, setSuppressSuggestions] = useState(false)
     const [isDirectoryFocused, setIsDirectoryFocused] = useState(false)
     const [agent, setAgent] = useState<AgentType>(loadPreferredAgent)
@@ -295,17 +301,18 @@ export function NewSession(props: {
         if (restoredFromBrowseRef.current) {
             return
         }
-        if (!deliveryRef.current?.form && !shouldRestoreNewSessionFormDraft({
+        const updateDraft = nativeUpdateDraft?.draftKey === draftKey ? nativeUpdateDraft : null
+        if (!deliveryRef.current?.form && !updateDraft && !shouldRestoreNewSessionFormDraft({
             initialDirectory: props.initialDirectory,
             initialMachineId: props.initialMachineId
         })) {
             return
         }
-        const draft = deliveryRef.current?.form ?? loadNewSessionFormDraft()
+        const draft = deliveryRef.current?.form ?? updateDraft?.form ?? loadNewSessionFormDraft()
         if (!draft) {
             return
         }
-        const targetMachineId = props.initialMachineId ?? machineId
+        const targetMachineId = updateDraft?.form.machineId ?? props.initialMachineId ?? machineId
         if (!newSessionDraftMatchesMachine(draft, targetMachineId)) {
             clearNewSessionFormDraft()
             return
@@ -332,11 +339,20 @@ export function NewSession(props: {
         setGrokPermissionMode(draft.grokPermissionMode)
         setSessionType(draft.sessionType)
         setWorktreeName(draft.worktreeName)
+        if (updateDraft) {
+            setMachineId(draft.machineId)
+            setDirectory(updateDraft.directory)
+            if (updateDraft.text !== undefined) props.onInitialTaskChange?.(updateDraft.text)
+            clearNativeUpdateNewSessionDraft(draftKey)
+        }
         clearNewSessionFormDraft()
     }, [
         props.initialDirectory,
         props.initialMachineId,
-        machineId
+        machineId,
+        nativeUpdateDraft,
+        draftKey,
+        props.onInitialTaskChange,
     ])
 
     useEffect(() => {
@@ -1563,6 +1579,43 @@ export function NewSession(props: {
         }
         setModel(wireId)
     }, [cursorPicker.catalog, cursorPicker.baseKey, cursorSelectedBase])
+
+    const nativeUpdatePreparationRef = useRef<() => Promise<void>>(async () => {})
+    nativeUpdatePreparationRef.current = async () => {
+        if (!filesReady) throw new Error('The new-task draft is still loading. Wait before updating HAPI.')
+        if (createInFlightRef.current || isCreating || isPending || deliveryPending || isImportingCodexSession
+            || isBulkImportingCodexSessions || isImportingPiSession || isBulkImportingPiSessions
+            || isMergingDuplicateSessions || isRestartingCodexDesktop) {
+            throw new Error('Finish the pending session operation before updating HAPI.')
+        }
+        saveDraftAttachments(draftKey, files)
+        await flushDraftAttachmentWrites(draftKey)
+        saveNativeUpdateNewSessionDraft(draftKey, {
+            directory,
+            text: props.initialTask,
+            form: {
+                agent,
+                model: agent === 'agy' ? (agySelectedModel ?? 'auto')
+                    : agent === 'opencode' ? (opencodeSelectedModel ?? 'auto') : model,
+                cursorSelectedBase,
+                machineId,
+                effort,
+                modelReasoningEffort,
+                serviceTier,
+                collaborationMode,
+                copilotAgentMode,
+                yoloMode,
+                nativePermissionMode,
+                grokPermissionMode,
+                sessionType,
+                worktreeName,
+            },
+        })
+    }
+    useEffect(() => {
+        if (!isNativePlatform()) return
+        return registerNativeUpdatePreparation(() => nativeUpdatePreparationRef.current())
+    }, [draftKey, props.api])
 
     const handleChooseFolderClick = useCallback(() => {
         if (!props.onChooseFolder) {

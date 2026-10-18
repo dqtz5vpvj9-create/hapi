@@ -3,10 +3,12 @@ import { getDraft, saveDraft } from '@/lib/composer-drafts'
 import {
     getDraftAttachments,
     getRestoredUploadMetadata,
+    flushDraftAttachmentWrites,
     saveDraftAttachments,
     type AttachmentDraftInput,
 } from '@/lib/composer-attachment-drafts'
 import { persistInactiveComposerAttachments, composerDraftWasHandedOff, attachmentDraftRevision } from '@/lib/composer-draft-transfer'
+import { registerNativeUpdatePreparation } from '@/lib/nativeUpdateReload'
 
 export type ComposerDraftHydration = {
     /** Session represented by this status; prevents a previous session's ready state leaking across a key change. */
@@ -54,6 +56,7 @@ export function useComposerDraft(
 
     const draftReadyRef = useRef(false)
     const attachmentsReadyRef = useRef(false)
+    const attachmentRestoreFailedRef = useRef(false)
     const savedAttachmentRevisionRef = useRef<string | null>(null)
     const attachmentRevision = attachmentDraftRevision(attachments)
     const [hydration, setHydration] = useState<ComposerDraftHydration>(() => ({
@@ -76,6 +79,7 @@ export function useComposerDraft(
 
         draftReadyRef.current = false
         attachmentsReadyRef.current = false
+        attachmentRestoreFailedRef.current = false
         savedAttachmentRevisionRef.current = null
         setHydration({
             sessionId,
@@ -149,6 +153,7 @@ export function useComposerDraft(
                     }
                     : current)
                 let restoredAttachment = false
+                let restorationFailed = false
                 if (filesToRestore.length > 0) {
                     for (const file of filesToRestore) {
                         if (disposed) break
@@ -156,18 +161,20 @@ export function useComposerDraft(
                             await addAttachment(file)
                             restoredAttachment = true
                         } catch {
+                            restorationFailed = true
                             // Continue restoring remaining files; one failed
                             // attachment must not discard a successful sibling.
                         }
                     }
                 }
-                return { restoredAttachment, hasStoredAttachments: files.length > 0 }
+                return { restoredAttachment, hasStoredAttachments: files.length > 0, restorationFailed }
             }).catch(() => {
                 // Attachment draft read is best effort.
-                return { restoredAttachment: false, hasStoredAttachments: false }
+                return { restoredAttachment: false, hasStoredAttachments: false, restorationFailed: true }
             }).then((result) => {
                 if (!disposed) {
                     attachmentsReadyRef.current = true
+                    attachmentRestoreFailedRef.current = Boolean(result?.restorationFailed)
                     setHydration((current) => current.sessionId === sessionId
                         ? {
                             ...current,
@@ -182,10 +189,18 @@ export function useComposerDraft(
 
         // Cross-session resume already moved this draft; do not recreate the
         // obsolete source id after the route change unmounts the composer.
-        const persistNow = () => {
+        const persistNow = (forUpdate = false): void | Promise<void> => {
             if (composerDraftWasHandedOff(sessionId)) return
+            if (forUpdate && attachmentRestoreFailedRef.current) {
+                throw new Error('Some draft attachments could not be restored. Resolve the draft before updating HAPI.')
+            }
+            if (forUpdate && (!draftReadyRef.current || (canRestoreAttachments && !attachmentsReadyRef.current)
+                || attachmentRecoveryRef?.current)) {
+                throw new Error('The draft is still loading. Wait for it to finish before updating HAPI.')
+            }
             if (draftReadyRef.current) {
-                saveDraft(sessionId, composerTextRef.current)
+                if (forUpdate) saveDraft(sessionId, composerTextRef.current, { throwOnError: true })
+                else saveDraft(sessionId, composerTextRef.current)
             }
             // Failed-send recovery already saved its complete submitted blob
             // snapshot. A partially repopulated adapter must not replace it,
@@ -193,14 +208,17 @@ export function useComposerDraft(
             if (attachmentRecoveryRef?.current) return
             if (canRestoreAttachments && (attachmentsRef.current.length > 0 || attachmentsReadyRef.current)) {
                 saveDraftAttachments(sessionId, [...attachmentsRef.current])
+                if (forUpdate) return flushDraftAttachmentWrites(sessionId)
             } else if (!canRestoreAttachments && attachmentsRef.current.length > 0) {
                 // Merge visible pending picks into IndexedDB; do not replace the
                 // hidden stored list with only the incomplete visible set.
-                void persistInactiveComposerAttachments(
+                const persistence = persistInactiveComposerAttachments(
                     sessionId,
                     composerTextRef.current,
                     attachmentsRef.current,
-                ).catch((error) => {
+                )
+                if (forUpdate) return persistence.then(() => flushDraftAttachmentWrites(sessionId))
+                void persistence.catch((error) => {
                     console.warn('[composer-draft] inactive persistence failed', error)
                 })
             }
@@ -215,11 +233,13 @@ export function useComposerDraft(
             }
         }
         document.addEventListener('visibilitychange', handleVisibilityChange)
+        const unregisterUpdatePreparation = registerNativeUpdatePreparation(() => persistNow(true))
 
         return () => {
             disposed = true
             cancelAnimationFrame(frame)
             document.removeEventListener('visibilitychange', handleVisibilityChange)
+            unregisterUpdatePreparation()
             persistNow()
             draftReadyRef.current = false
             attachmentsReadyRef.current = false

@@ -100,9 +100,11 @@
         "@capacitor/ios": "8.5.3",
         "@capacitor/keyboard": "8.0.6",
         "@capawesome/capacitor-file-picker": "8.1.0",
+        "@capawesome/capacitor-live-update": "8.7.0",
       },
       "devDependencies": {
         "@capacitor/cli": "8.5.3",
+        "typescript": "5.9.3",
       },
     },
     "relay": {
@@ -138,6 +140,7 @@
         "@assistant-ui/tap": "^0.9.23",
         "@capacitor/core": "8.5.3",
         "@capawesome/capacitor-file-picker": "8.1.0",
+        "@capawesome/capacitor-live-update": "8.7.0",
         "@codemirror/commands": "^6.11.1",
         "@codemirror/language": "^6.12.4",
         "@codemirror/language-data": "^6.5.2",
@@ -596,6 +599,10 @@
     "@capacitor/keyboard": ["@capacitor/keyboard@8.0.6", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-Bbe+9V0qaT6dzEFJEK7BUWR01l2+vZE8FM5ITF/WgKtx+G6eGZ6d5+YiSMRJBAK0VGjdO59v8yiQ10Doa5KyvQ=="],
 
     "@capawesome/capacitor-file-picker": ["@capawesome/capacitor-file-picker@8.1.0", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-vBWB9VWwW/Yf1EewXZ2Ng2COZwSbbJplJ5vcNVEIgCWqr9OfQI0tZdRx3i2F661mrDWftAGLG4zmYZ75MLUmJg=="],
+
+    "@capawesome/capacitor-live-update": ["@capawesome/capacitor-live-update@8.7.0", "", { "dependencies": { "@capawesome/electron-live-update": "^0.1.0" }, "peerDependencies": { "@capacitor/core": ">=8.0.0", "@capawesome/capacitor-electron": ">=0.2.0" }, "optionalPeers": ["@capawesome/capacitor-electron"] }, "sha512-iWFEaD1gd0PParSapVaKLMbP2g7EENHqGSeg27h7COhNXeWsxfmaVCdJafW5mT096WykEDrgLJD3p5GmE+9D0g=="],
+
+    "@capawesome/electron-live-update": ["@capawesome/electron-live-update@0.1.0", "", { "dependencies": { "yauzl": "^3.2.0" }, "peerDependencies": { "electron": ">=28.0.0" }, "optionalPeers": ["electron"] }, "sha512-1qTEO8SzNplSfj53PkvrmV+5s+t86dZeYzjbsswCqSEhXIzg0TUsrBmWCueRgjGcOXb0Iu3AYi6pKekKQi9XTw=="],
 
     "@chevrotain/cst-dts-gen": ["@chevrotain/cst-dts-gen@12.0.0", "", { "dependencies": { "@chevrotain/gast": "12.0.0", "@chevrotain/types": "12.0.0" } }, "sha512-fSL4KXjTl7cDgf0B5Rip9Q05BOrYvkJV/RrBTE/bKDN096E4hN/ySpcBK5B24T76dlQ2i32Zc3PAE27jFnFrKg=="],
 
@@ -3538,6 +3545,8 @@
     "@builder.io/jsx-loc-internals/magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 
     "@builder.io/vite-plugin-jsx-loc/vite": ["vite@5.4.21", "", { "dependencies": { "esbuild": "^0.21.3", "postcss": "^8.4.43", "rollup": "^4.20.0" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^18.0.0 || >=20.0.0", "less": "*", "lightningcss": "^1.21.0", "sass": "*", "sass-embedded": "*", "stylus": "*", "sugarss": "*", "terser": "^5.4.0" }, "optionalPeers": ["@types/node", "less", "lightningcss", "sass", "sass-embedded", "stylus", "sugarss", "terser"], "bin": { "vite": "bin/vite.js" } }, "sha512-o5a9xKjbtuhY6Bi5S3+HvbRERmouabWbyUcpXXUA1u+GNUKoROi9byOJ8M0nHbHYHkYICiMlqxkg1KkYmm25Sw=="],
+
+    "@capawesome/electron-live-update/yauzl": ["yauzl@3.4.0", "", { "dependencies": { "pend": "~1.2.0" } }, "sha512-jIH9yLR9wqr0wOS0TpBvo/g/2UgZH5qePVbjgRliiF0BYvOZyaBknKsF+x9Iht0O6sqgnB93rCICdOZFecJuDw=="],
 
     "@emotion/babel-plugin/@emotion/hash": ["@emotion/hash@0.9.2", "", {}, "sha512-MyqliTZGuOm3+5ZRSaaBGP3USLw6+EGykkwZns2EPC5g8jJ4z9OrdZY9apkl3+UP9+sdz76YYkwCKP5gh8iY3g=="],
 

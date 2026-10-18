@@ -5,6 +5,7 @@
     "type": "module",
     "scripts": {
         "check:bundle": "node scripts/check-web-bundle.mjs",
+        "package:update": "node scripts/package-update.mjs",
         "test": "node --test scripts/*.test.mjs",
         "sync": "node scripts/check-web-bundle.mjs && cap sync",
         "sync:android": "node scripts/check-web-bundle.mjs && cap sync android",
@@ -21,9 +22,11 @@
         "@capacitor/core": "8.5.3",
         "@capacitor/ios": "8.5.3",
         "@capacitor/keyboard": "8.0.6",
-        "@capawesome/capacitor-file-picker": "8.1.0"
+        "@capawesome/capacitor-file-picker": "8.1.0",
+        "@capawesome/capacitor-live-update": "8.7.0"
     },
     "devDependencies": {
-        "@capacitor/cli": "8.5.3"
+        "@capacitor/cli": "8.5.3",
+        "typescript": "5.9.3"
     }
 }
