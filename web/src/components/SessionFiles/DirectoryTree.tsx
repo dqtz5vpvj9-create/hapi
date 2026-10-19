@@ -13,6 +13,7 @@ import { sortDirectoryEntries, type DirectorySort } from '@/lib/directory-sort'
 import { normalizeFileManagerTarget } from '@/lib/session-files-navigation'
 import { fileManagerContains, fileManagerJoin, matchesFileManagerExclude } from './file-manager-paths'
 import type { FileManagerTarget } from './file-manager-types'
+import './file-browser.css'
 
 type FileMenuRequestHandler = (path: string, point: AnchoredMenuPoint) => void
 type EntryMenuRequestHandler = (target: FileManagerTarget, point: AnchoredMenuPoint) => void
@@ -22,7 +23,7 @@ function ChevronIcon(props: { collapsed: boolean }) {
 }
 
 function FolderIcon() {
-    return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="shrink-0 text-[var(--app-link)]" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="shrink-0 text-[var(--app-hint)]" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
 }
 
 function DownloadIcon() {
@@ -35,14 +36,14 @@ function DirectorySkeleton(props: { depth: number }) {
 
 function RowMenuButton(props: { name: string; onOpen: (point: AnchoredMenuPoint) => void }) {
     const { t } = useTranslation()
-    return <button type="button" className="app-file-icon-action flex h-8 w-8 shrink-0 items-center justify-center rounded text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]" aria-label={t('files.manage.actions', { name: props.name })} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); props.onOpen({ x: rect.right, y: rect.bottom }) }}>
+    return <button type="button" className="app-file-icon-action file-tree-overflow flex h-8 w-8 shrink-0 items-center justify-center rounded text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)]" aria-label={t('files.manage.actions', { name: props.name })} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); props.onOpen({ x: rect.right, y: rect.bottom }) }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
     </button>
 }
 
 function SelectionBox(props: { name: string; selected: boolean; onToggle: () => void }) {
     const { t } = useTranslation()
-    return <input type="checkbox" checked={props.selected} onChange={props.onToggle} aria-label={t('files.manage.select', { name: props.name })} className="h-3.5 w-3.5 shrink-0 accent-[var(--app-link)]" />
+    return <label className="file-tree-select-target"><input type="checkbox" checked={props.selected} onChange={props.onToggle} aria-label={t('files.manage.select', { name: props.name })} /></label>
 }
 
 type TreeOptions = {
@@ -64,6 +65,7 @@ type TreeOptions = {
     expanded: Set<string>
     onToggle: (path: string) => void
     selectedPaths?: ReadonlySet<string>
+    selectionMode?: boolean
     onSelect?: (path: string, range: boolean) => void
 }
 
@@ -97,22 +99,29 @@ function DirectoryFileRow(props: {
     const revealed = options.target !== undefined && compare(options.target) === compare(target.path)
     useEffect(() => { if (revealed && options.foreground) row.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }) }, [revealed, options.revealKey, options.foreground])
     const openMenu = menuFor(options, target)
-    const handlers = useFileMenuTrigger({ onOpen: () => { if (target.kind === 'file') options.onOpenFile(target.path) }, onOpenMenu: openMenu })
+    const handlers = useFileMenuTrigger({ onOpen: () => {
+        if (options.selectionMode && options.onSelect) options.onSelect(target.path, false)
+        else if (target.kind === 'file') options.onOpenFile(target.path)
+    }, onOpenMenu: openMenu })
     const selected = options.selectedPaths?.has(target.path) ?? false
     return <div
         ref={row} role="treeitem" aria-selected={selected} aria-level={props.depth + 1}
         data-file-path={target.path} data-file-kind={target.kind} data-file-target={revealed || undefined}
-        className={`flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-[var(--app-subtle-bg)] ${current ? 'bg-[var(--app-subtle-bg)] ring-1 ring-inset ring-[var(--app-link)]' : selected ? 'bg-[var(--app-subtle-bg)]' : ''}`}
-        style={{ paddingLeft: 12 + props.depth * 14 }}
+        className="file-tree-row"
+        data-current={current || undefined} data-selected={selected || undefined}
+        style={{ paddingLeft: 10 + props.depth * 14 }}
     >
-        {options.onSelect ? <SelectionBox name={target.name} selected={selected} onToggle={() => options.onSelect!(target.path, false)} /> : <span className="h-4 w-4" />}
-        <FileIcon fileName={target.name} size={22} />
-        <button type="button" {...handlers} onClickCapture={event => selectWithModifier(event, options, target.path)} aria-current={current ? 'true' : undefined} aria-disabled={target.kind === 'symlink' || undefined} title={target.path} className="app-file-tree-target min-w-0 flex-1 text-left">
-            <div className="truncate font-medium">{target.name}</div>
-            {target.kind === 'symlink' ? <div className="truncate text-xs text-[var(--app-hint)]" title={t('files.manage.symbolicLinkHint')}>{t('files.manage.symbolicLink')}</div>
-                : props.metadata ? <div className="truncate text-xs text-[var(--app-hint)]">{props.metadata}</div> : null}
+        {options.onSelect && options.selectionMode ? <SelectionBox name={target.name} selected={selected} onToggle={() => options.onSelect!(target.path, false)} /> : null}
+        <button type="button" {...handlers} onClickCapture={event => selectWithModifier(event, options, target.path)} aria-current={current ? 'true' : undefined} aria-disabled={target.kind === 'symlink' || undefined} title={target.path} className="app-file-tree-target">
+            <span className="file-tree-icon" aria-hidden="true" />
+            <FileIcon fileName={target.name} size={18} />
+            <span className="file-tree-description">
+                <span className="file-tree-name">{target.name}</span>
+                {target.kind === 'symlink' ? <span className="file-tree-metadata" title={t('files.manage.symbolicLinkHint')}>{t('files.manage.symbolicLink')}</span>
+                    : props.metadata ? <span className="file-tree-metadata">{props.metadata}</span> : null}
+            </span>
         </button>
-        {target.kind === 'file' ? <button type="button" onClick={props.onDownload} disabled={props.downloadDisabled} className={`app-file-icon-action flex h-8 w-8 shrink-0 items-center justify-center rounded text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)] disabled:opacity-40 ${props.downloading ? 'animate-pulse' : ''}`} title={t('files.directories.download')} aria-label={t('files.directories.downloadNamed', { name: target.name })}><DownloadIcon /></button> : null}
+        {target.kind === 'file' && !options.onRequestEntryMenu ? <button type="button" onClick={props.onDownload} disabled={props.downloadDisabled} className={`app-file-icon-action file-tree-overflow flex shrink-0 items-center justify-center rounded text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)] disabled:opacity-40 ${props.downloading ? 'animate-pulse' : ''}`} title={t('files.directories.download')} aria-label={t('files.directories.downloadNamed', { name: target.name })}><DownloadIcon /></button> : null}
         {openMenu ? <RowMenuButton name={target.name} onOpen={openMenu} /> : null}
     </div>
 }
@@ -161,11 +170,12 @@ function DirectoryNode(props: { path: string; label: string; depth: number; opti
         setDropActive(true)
     }
 
-    return <div role="treeitem" aria-expanded={isExpanded} aria-level={props.depth + 1}>
+    return <div role="treeitem" aria-expanded={isExpanded} aria-level={props.depth + 1} aria-selected={path && options.onSelect ? options.selectedPaths?.has(path) ?? false : undefined}>
         <div
             data-file-path={path} data-file-kind="directory"
-            className={`flex items-center gap-2 px-2 py-1.5 hover:bg-[var(--app-subtle-bg)] ${dropActive ? 'bg-[var(--app-subtle-bg)] ring-1 ring-inset ring-[var(--app-link)]' : ''}`}
-            style={{ paddingLeft: 12 + props.depth * 14 }}
+            className={`file-tree-row ${path ? '' : 'file-tree-root'}`}
+            data-selected={options.selectedPaths?.has(path) || undefined} data-drop-active={dropActive || undefined}
+            style={{ paddingLeft: 10 + props.depth * 14 }}
             onDragEnter={drag} onDragOver={drag} onDragLeave={() => setDropActive(false)}
             onDrop={event => {
                 if (!options.onDropFiles || !event.dataTransfer.types.includes('Files')) return
@@ -173,9 +183,9 @@ function DirectoryNode(props: { path: string; label: string; depth: number; opti
                 options.onDropFiles(event.dataTransfer, path)
             }}
         >
-            {options.onSelect && path ? <SelectionBox name={props.label} selected={options.selectedPaths?.has(path) ?? false} onToggle={() => options.onSelect!(path, false)} /> : null}
-            <button type="button" {...handlers} aria-expanded={isExpanded} onClickCapture={event => { if (path) selectWithModifier(event, options, path) }} title={path || props.label} className="app-file-tree-target flex min-w-0 flex-1 items-center gap-2 text-left">
-                <ChevronIcon collapsed={!isExpanded} /><FolderIcon /><span className="truncate font-medium">{props.label}</span>
+            {options.onSelect && options.selectionMode && path ? <SelectionBox name={props.label} selected={options.selectedPaths?.has(path) ?? false} onToggle={() => options.onSelect!(path, false)} /> : null}
+            <button type="button" {...handlers} aria-expanded={isExpanded} onClickCapture={event => { if (path && (event.ctrlKey || event.metaKey || event.shiftKey)) selectWithModifier(event, options, path) }} title={path || props.label} className="app-file-tree-target">
+                <ChevronIcon collapsed={!isExpanded} />{path ? <FolderIcon /> : null}<span className="file-tree-name">{props.label}</span>
             </button>
             {openMenu ? <RowMenuButton name={props.label} onOpen={openMenu} /> : null}
         </div>
@@ -225,6 +235,7 @@ export function DirectoryTree(props: {
     exclude?: readonly string[]
     foreground?: boolean
     selectedPaths?: ReadonlySet<string>
+    selectionMode?: boolean
     onSelectedPathsChange?: (paths: Set<string>) => void
 }) {
     const target = normalizeFileManagerTarget(props.target)
@@ -279,7 +290,7 @@ export function DirectoryTree(props: {
     }, [props.onSelectedPathsChange, props.selectedPaths])
 
     const options: TreeOptions = { ...props, target, activeFilePath: normalizeFileManagerTarget(props.activeFilePath), caseInsensitive, expanded, onToggle: toggle, onSelect: props.onSelectedPathsChange ? select : undefined, showHidden: props.showHidden ?? true, exclude: props.exclude ?? EMPTY_PATTERNS, foreground: props.foreground !== false }
-    return <div ref={treeRef} role="tree" aria-label={props.rootLabel} aria-multiselectable={Boolean(props.onSelectedPathsChange)} className="border-t border-[var(--app-divider)]">
+    return <div ref={treeRef} role="tree" aria-label={props.rootLabel} aria-multiselectable={Boolean(props.onSelectedPathsChange)} className="file-browser-tree">
         <DirectoryNode path="" label={props.rootLabel} depth={0} options={options} />
     </div>
 }

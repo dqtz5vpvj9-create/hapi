@@ -1,0 +1,163 @@
+.file-browser-toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--app-divider);
+    background: var(--app-bg);
+}
+.file-browser-search {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    min-height: 36px;
+    padding-left: 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: var(--app-subtle-bg);
+    color: var(--app-hint);
+}
+.file-browser-search > svg { flex: 0 0 auto; width: 16px; height: 16px; }
+.file-browser-search:focus-within { border-color: var(--app-link); }
+.file-browser-search-input {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+    padding: 7px 8px 7px 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--app-fg);
+    font-size: .8125rem;
+    line-height: 20px;
+}
+.file-browser-search-input::placeholder { color: var(--app-hint); }
+.file-browser-search-clear,
+.file-browser-control {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 36px;
+    min-height: 36px;
+    padding: 6px;
+    border-radius: 8px;
+    color: var(--app-hint);
+    font-size: .8125rem;
+    line-height: 20px;
+}
+.file-browser-search-clear { align-self: stretch; padding: 0 8px; }
+.file-browser-control:hover, .file-browser-search-clear:hover { background: var(--app-subtle-bg); color: var(--app-fg); }
+.file-browser-control:focus-visible, .file-browser-search-clear:focus-visible { outline: 2px solid var(--app-link); outline-offset: 1px; }
+.file-browser-control:disabled { opacity: .4; }
+.file-browser-create { padding-inline: 9px; color: var(--app-fg); font-weight: 500; }
+.file-browser-options { position: relative; }
+.file-browser-filter-dot { position: absolute; top: 6px; right: 6px; width: 5px; height: 5px; border-radius: 50%; background: var(--app-link); }
+.file-browser-selection-count { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; font-weight: 500; }
+.file-browser-done { padding-inline: 10px; color: var(--app-link); font-weight: 500; }
+.file-browser-menu {
+    z-index: 60;
+    width: max-content;
+    min-width: 220px;
+    max-width: calc(100vw - 16px);
+    max-height: min(70dvh, var(--radix-popover-content-available-height));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 5px;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    background: var(--app-bg);
+    color: var(--app-fg);
+    box-shadow: 0 8px 32px #0002, 0 2px 6px #0001;
+    font-size: .8125rem;
+}
+.file-browser-menu button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 36px;
+    padding: 7px 10px;
+    border-radius: 7px;
+    text-align: left;
+    line-height: 1.4;
+}
+.file-browser-menu button:hover, .file-browser-menu button:focus-visible { background: var(--app-subtle-bg); outline: none; }
+.file-browser-menu button:disabled { opacity: .4; }
+.file-browser-menu svg { flex: 0 0 auto; color: var(--app-hint); }
+.file-browser-menu [role='separator'] { margin: 4px 6px; border-top: 1px solid var(--app-divider); }
+.file-browser-menu-tail { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; padding-left: 12px; color: var(--app-hint); }
+.file-browser-check { display: flex; flex: 0 0 18px; align-items: center; justify-content: center; }
+.file-browser-menu-back { font-weight: 600; }
+.file-browser-menu .file-browser-danger { color: var(--app-danger, #c33); }
+.file-browser-filter-menu { width: 300px; }
+.file-browser-filter-menu form { padding: 8px; }
+.file-browser-filter-menu label { display: flex; flex-direction: column; gap: 8px; }
+.file-browser-filter-menu input { min-width: 0; padding: 8px; border: 1px solid var(--app-border); border-radius: 6px; background: var(--app-bg); }
+.file-browser-filter-menu p { margin-top: 9px; color: var(--app-hint); font-size: .75rem; line-height: 1.5; }
+.file-browser-menu .file-browser-apply { justify-content: center; margin-top: 12px; background: var(--app-button); color: var(--app-button-text); }
+.file-browser-tree { padding: 3px 0 12px; }
+.file-browser-tree .file-tree-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 36px;
+    padding-block: 0;
+    padding-right: 6px;
+    text-align: left;
+}
+.file-browser-tree .file-tree-row[data-current='true'] { background: var(--app-subtle-bg); box-shadow: inset 2px 0 0 var(--app-link); }
+.file-browser-tree .file-tree-row[data-selected='true'] { background: var(--app-subtle-bg); }
+.file-browser-tree .file-tree-row[data-drop-active='true'] { background: var(--app-subtle-bg); outline: 1px solid var(--app-link); outline-offset: -1px; }
+.file-browser-tree .file-tree-row .app-file-tree-target { display: flex; align-items: center; flex: 1; gap: 7px; min-width: 0; min-height: 36px; padding: 3px 0; text-align: left; font-size: .875rem; line-height: 1.35; }
+.file-browser-tree .file-tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
+.file-browser-tree .file-tree-description { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 1px; }
+.file-browser-tree .file-tree-metadata { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-hint); font-size: .6875rem; line-height: 1.3; }
+.file-browser-tree .file-tree-root .app-file-tree-target { font-size: .75rem; color: var(--app-hint); }
+.file-browser-tree .file-tree-root .file-tree-name { font-weight: 600; }
+.file-browser-tree .file-tree-icon { flex: 0 0 16px; width: 16px; height: 16px; }
+.file-browser-tree .file-tree-select-target { display: flex; align-items: center; justify-content: center; flex: 0 0 28px; align-self: stretch; min-height: 36px; margin-left: -4px; cursor: pointer; }
+.file-browser-tree .file-tree-select-target input { width: 15px; height: 15px; accent-color: var(--app-link); }
+.file-browser-tree .file-tree-overflow { min-width: 32px; width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 6px; }
+.file-browser-search-result .file-tree-select-target { display: flex; align-items: center; justify-content: center; align-self: stretch; flex: 0 0 28px; min-height: 44px; }
+.file-browser-search-result .file-tree-select-target input { width: 15px; height: 15px; accent-color: var(--app-link); }
+@media (hover: hover) and (pointer: fine) {
+    .file-browser-tree .file-tree-row:hover { background: var(--app-subtle-bg); }
+    .file-browser-tree .file-tree-overflow { opacity: 0; }
+    .file-browser-tree .file-tree-row:hover .file-tree-overflow,
+    .file-browser-tree .file-tree-row:focus-within .file-tree-overflow,
+    .file-browser-tree .file-tree-overflow:focus-visible { opacity: 1; }
+}
+@media (max-width: 640px), (pointer: coarse) {
+    .file-browser-search, .file-browser-control, .file-browser-search-clear { min-width: 44px; min-height: 44px; }
+    .file-browser-menu button { min-height: 44px; }
+    .file-browser-toolbar { padding-block: 6px; }
+    .file-browser-tree .file-tree-row,
+    .file-browser-tree .file-tree-row .app-file-tree-target,
+    .file-browser-tree .file-tree-select-target { min-height: 44px; }
+    .file-browser-tree .file-tree-overflow { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
+    .file-browser-tree .file-tree-select-target { flex-basis: 36px; }
+}
+.file-browser-search-result {
+    min-height: 36px;
+    padding-block: 0;
+}
+.file-browser-search-result .app-file-tree-target {
+    min-height: 36px;
+    padding-block: 3px;
+    font-size: .875rem;
+    line-height: 1.35;
+}
+.file-browser-search-result .font-medium { font-weight: 400; }
+.file-browser-search-result .text-xs { font-size: .6875rem; line-height: 1.3; }
+@media (max-width: 640px), (pointer: coarse) {
+    .file-browser-search-input { font-size: max(16px, .8125rem); }
+    .file-browser-search-result, .file-browser-search-result .app-file-tree-target { min-height: 44px; }
+    .file-browser-search-result .app-file-icon-action { min-width: 44px; min-height: 44px; }
+}

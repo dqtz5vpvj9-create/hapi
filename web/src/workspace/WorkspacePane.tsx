@@ -127,13 +127,13 @@ export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foregro
                 : pane.resource.kind === 'document' ? tool?.view === 'directories'
                     ? <SessionFileWorkbench sessionId={sessionId} search={tool} revealKey={tool.revealKey} foreground={props.foreground} onBack={closeTool} />
                     : <DocumentSurface key={JSON.stringify(pane.resource)} resource={pane.resource} foreground={props.foreground} />
-                : <SessionWorkspace open={!!tool} view={tool?.view ?? 'changes'} path={session?.metadata?.path}
+                : <SessionWorkspace open={!!tool} foreground={props.foreground} view={tool?.view ?? 'changes'} path={session?.metadata?.path}
                     terminalAvailable={!!session?.active && isRemoteTerminalSupported(session.metadata)} filesAvailable={!!session?.metadata?.path}
                     onSelect={view => { if (view === 'terminal') { store.focus(pane.id); store.terminal(sessionId) } else setTool({ view }) }} onClose={closeTool}
                     chat={<SessionPaneController sessionId={sessionId} onBack={() => store.closePane(pane.id)} />}
                     panel={tool?.view === 'file' ? <SessionFile sessionId={sessionId} search={tool} onBack={() => setTool(tool.returnTo)} />
                         : tool?.view === 'directories' ? <SessionFileWorkbench sessionId={sessionId} search={tool} revealKey={tool.revealKey} foreground={props.foreground} onBack={closeTool} />
-                            : <SessionFiles sessionId={sessionId} search={{ tab: tool?.view, query: tool?.query, target: tool?.target }} revealKey={tool?.revealKey} onBack={closeTool} />} />}
+                            : <SessionFiles sessionId={sessionId} search={{ tab: tool?.view, query: tool?.query, target: tool?.target }} revealKey={tool?.revealKey} foreground={props.foreground} onBack={closeTool} />} />}
         </div>
     </PaneContext.Provider>
 }

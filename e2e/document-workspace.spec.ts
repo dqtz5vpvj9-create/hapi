@@ -1,4 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
+
+async function documentAction(page: Page, surface: Locator, name: string) {
+    await surface.getByRole('button', { name: 'Document actions', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Document actions', exact: true }).getByRole('button', { name, exact: true }).click()
+}
 
 for (const width of [390, 1440]) {
     for (const format of ['pptx', 'pdf']) {
@@ -11,7 +16,9 @@ for (const width of [390, 1440]) {
             await surface.getByRole('button', { name: 'Next page', exact: true }).click()
             await expect(ready).toBeVisible()
             await expect(surface.locator('.textLayer')).toContainText('Second page')
-            await surface.getByRole('button', { name: 'Zoom in', exact: true }).click()
+            await surface.getByRole('button', { name: 'Zoom', exact: true }).click()
+            await page.getByRole('dialog', { name: 'Zoom', exact: true }).getByRole('button', { name: 'Zoom in', exact: true }).click()
+            await page.keyboard.press('Escape')
             await expect(ready).toBeVisible()
 
             // Sample intermediate frames too: the hidden pane must retain its
@@ -100,19 +107,21 @@ test('edits, conflicts, saves, and attaches a selection without sending or repla
     expect(sent.text).toContain('> # 文档工作区')
 })
 
-test('keeps a single-session file draft when canceling Back and discards only after an explicit choice', async ({ page }) => {
+test('keeps a single-session file draft when canceling Close and discards only after an explicit choice', async ({ page }) => {
     await page.goto('/e2e-fixtures/workspace-fixture.html?singleDocument=1')
     const document = page.locator('.document-surface')
     await expect(document).toHaveAttribute('data-document-state', 'ready')
     await document.getByRole('button', { name: 'Edit', exact: true }).click()
     const editor = document.locator('.cm-content')
     await editor.click(); await editor.press('Control+End'); await editor.pressSequentially('\nLeave prompt draft')
-    await document.getByRole('button', { name: 'Back', exact: true }).click()
+    // The single-session file route now owns a retained workbench. Revealing
+    // its tree keeps the draft mounted; closing the file is the leave action.
+    await documentAction(page, document, 'Close file')
     const dialog = page.getByRole('dialog')
     await expect(dialog).toContainText('Keep your changes?')
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
     await expect(editor).toContainText('Leave prompt draft')
-    await document.getByRole('button', { name: 'Back', exact: true }).click()
+    await documentAction(page, document, 'Close file')
     await dialog.getByRole('button', { name: 'Discard changes', exact: true }).click()
     await expect(document).toHaveCount(0)
     expect(await page.evaluate(() => window.__workspaceFixture.fileWrites.length)).toBe(0)
@@ -175,12 +184,55 @@ test('reloads a clean editor but keeps a dirty draft when the original file chan
     await document.getByRole('button', { name: 'Edit', exact: true }).click()
     const editor = document.locator('.cm-content')
     await page.evaluate(() => window.__workspaceFixture.updateDocument('# Updated original\n'))
-    await document.getByRole('button', { name: 'Reload', exact: true }).first().click()
+    await documentAction(page, document, 'Reload')
     await expect(editor).toHaveText('# Updated original')
     await editor.click(); await editor.press('Control+End'); await editor.pressSequentially('\nKeep my draft')
     await page.evaluate(() => window.__workspaceFixture.updateDocument('# Updated again\n'))
-    await document.getByRole('button', { name: 'Reload', exact: true }).first().click()
+    await documentAction(page, document, 'Reload')
     await expect(document.getByRole('button', { name: 'Compare with disk' })).toBeVisible()
     await expect(editor).toContainText('Keep my draft')
     expect(await page.evaluate(() => window.__workspaceFixture.fileWrites.length)).toBe(0)
+})
+
+test('opens Find from the reader actions with keyboard focus in the actual text search', async ({ page }) => {
+    await page.goto('/e2e-fixtures/workspace-fixture.html?panes=1&documents=1')
+    const document = page.locator('.document-surface')
+    await expect(document).toHaveAttribute('data-document-state', 'ready')
+    await document.getByRole('button', { name: 'Document actions', exact: true }).click()
+    const actions = page.getByRole('dialog', { name: 'Document actions', exact: true })
+    await expect(actions.getByRole('button', { name: 'Find', exact: true })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await document.getByRole('button', { name: 'Edit', exact: true }).click()
+    const trigger = document.getByRole('button', { name: 'Document actions', exact: true })
+    await trigger.focus()
+    await page.keyboard.press('Enter')
+    await actions.getByRole('button', { name: 'Find', exact: true }).focus()
+    await page.keyboard.press('Enter')
+    const search = document.locator('.cm-search input[name="search"]')
+    await expect(search).toBeVisible()
+    await expect(search).toBeFocused()
+    await page.keyboard.type('workspace')
+    await expect(search).toHaveValue('workspace')
+    expect(await page.evaluate(() => window.__workspaceFixture.fileWrites.length)).toBe(0)
+})
+
+test('closes reader and PDF popovers when their retained phone pane becomes hidden', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/e2e-fixtures/workspace-fixture.html?panes=1&documents=1&documentSample=pane-visibility.pdf')
+    const surface = page.locator('.document-surface')
+    await expect(surface.locator('.document-page[aria-busy="false"]')).toBeVisible({ timeout: 30000 })
+    for (const label of ['File path', 'Document actions', 'Zoom', 'Selection tool']) {
+        await surface.getByRole('button', { name: label, exact: true }).click()
+        await expect(page.getByRole('dialog', { name: label, exact: true })).toBeVisible()
+        // No outside pointer event or Escape: the foreground transition itself
+        // must close portalled controls, including a programmatic pane switch.
+        await page.getByRole('button', { name: 'P1', exact: true }).evaluate(button => button.click())
+        await expect(surface).not.toBeVisible()
+        await expect(page.getByRole('dialog', { name: label, exact: true })).toHaveCount(0)
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+        expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[inert], [aria-hidden="true"], .document-popover')))).toBe(false)
+        await page.getByRole('button', { name: 'P2', exact: true }).click()
+        await expect(surface.locator('.document-page[aria-busy="false"]')).toBeVisible()
+        await expect(page.getByRole('dialog', { name: label, exact: true })).toHaveCount(0)
+    }
 })

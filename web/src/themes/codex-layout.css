@@ -356,7 +356,6 @@
     [data-color-theme="codex"] .app-new-session-actions > button,
     [data-color-theme="codex"] .app-settings-choice-option,
     [data-color-theme="codex"] .app-settings-color-option,
-    [data-color-theme="codex"] .app-file-sort-option,
     [data-color-theme="codex"] .app-file-view-tab {
         min-height: 44px;
     }
@@ -389,15 +388,6 @@
 
     [data-color-theme="codex"] .app-settings-stepper input {
         height: 44px;
-    }
-
-    [data-color-theme="codex"] .app-files-search-input {
-        height: 44px;
-        padding-right: 88px;
-    }
-
-    [data-color-theme="codex"] .app-files-search-clear {
-        right: 44px;
     }
 
     [data-color-theme="codex"] .app-file-path-toolbar,

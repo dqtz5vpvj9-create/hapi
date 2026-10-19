@@ -1,7 +1,7 @@
 import { usePaneNavigate } from '@/workspace/PaneContext'
 import { useWorkspacePanel } from '@/components/SessionWorkspace'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useLocation, useParams, useSearch } from '@tanstack/react-router'
 import { PRESERVE_SESSION_SIDEBAR_SCROLL } from '@/lib/sessionNavigation'
 import type { FileSearchItem, GitFileStatus } from '@/types/api'
 import { FileIcon } from '@/components/FileIcon'
@@ -37,45 +37,12 @@ import { transferComposerDraftThenNavigate } from '@/lib/composer-draft-transfer
 import { formatFileMetadata } from '@/lib/file-metadata'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from '@/lib/use-translation'
-import * as Popover from '@radix-ui/react-popover'
-import { CheckIcon, CloseIcon } from '@/components/icons'
-import { Button } from '@/components/ui/button'
+import { CloseIcon } from '@/components/icons'
 import {
     DEFAULT_DIRECTORY_SORT,
     type DirectorySort,
-    type DirectorySortDirection,
-    type DirectorySortField,
     sortFileSearchItems,
 } from '@/lib/directory-sort'
-
-function RefreshIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <path d="M21 12a9 9 0 1 1-3-6.7" />
-            <polyline points="21 3 21 9 15 9" />
-        </svg>
-    )
-}
-
-function SortIcon() {
-    return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 6h13" /><path d="M3 12h9" /><path d="M3 18h5" />
-            <path d="m17 15 3 3 3-3" /><path d="M20 18V6" />
-        </svg>
-    )
-}
 
 const DIRECTORY_SORT_STORAGE_KEY = 'hapi-directory-sort'
 const FILES_TAB_STORAGE_KEY = 'hapi-files-tab'
@@ -112,76 +79,6 @@ function readDirectorySort(): DirectorySort {
         // Use the default when storage is unavailable or invalid.
     }
     return DEFAULT_DIRECTORY_SORT
-}
-
-function DirectorySortMenu(props: { sort: DirectorySort; onChange: (sort: DirectorySort) => void; embedded?: boolean }) {
-    const { t } = useTranslation()
-    const fields: Array<{ value: DirectorySortField; label: string }> = [
-        { value: 'name', label: t('files.sort.name') },
-        { value: 'modified', label: t('files.sort.modified') },
-        { value: 'size', label: t('files.sort.size') },
-    ]
-    const directions: Array<{ value: DirectorySortDirection; label: string }> = props.sort.field === 'name'
-        ? [{ value: 'asc', label: t('files.sort.nameAsc') }, { value: 'desc', label: t('files.sort.nameDesc') }]
-        : props.sort.field === 'modified'
-            ? [{ value: 'asc', label: t('files.sort.oldest') }, { value: 'desc', label: t('files.sort.newest') }]
-            : [{ value: 'asc', label: t('files.sort.smallest') }, { value: 'desc', label: t('files.sort.largest') }]
-    const optionClass = 'app-file-sort-option flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-[var(--app-subtle-bg)]'
-
-    return (
-        <Popover.Root>
-            <Popover.Trigger asChild>
-                <button
-                    type="button"
-                    className={props.embedded
-                        ? 'app-file-icon-action flex w-10 shrink-0 self-stretch items-center justify-center rounded-r-md rounded-l-sm text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'
-                        : 'app-file-icon-action flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]'}
-                    title={t('files.sort.title')}
-                    aria-label={t('files.sort.title')}
-                >
-                    <SortIcon />
-                </button>
-            </Popover.Trigger>
-            <Popover.Portal>
-                <Popover.Content side="bottom" align="end" sideOffset={6} collisionPadding={8} className="z-50 w-48 rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] p-2 shadow-lg">
-                    <div className="px-2 pb-1 text-xs font-semibold text-[var(--app-hint)]">{t('files.sort.by')}</div>
-                    {fields.map((field) => (
-                        <button key={field.value} type="button" className={optionClass} onClick={() => props.onChange({ field: field.value, direction: props.sort.direction })}>
-                            <span className="flex h-4 w-4 items-center justify-center">{props.sort.field === field.value ? <CheckIcon className="h-3.5 w-3.5" /> : null}</span>
-                            {field.label}
-                        </button>
-                    ))}
-                    <div className="my-1 border-t border-[var(--app-divider)]" />
-                    {directions.map((direction) => (
-                        <button key={direction.value} type="button" className={optionClass} onClick={() => props.onChange({ ...props.sort, direction: direction.value })}>
-                            <span className="flex h-4 w-4 items-center justify-center">{props.sort.direction === direction.value ? <CheckIcon className="h-3.5 w-3.5" /> : null}</span>
-                            {direction.label}
-                        </button>
-                    ))}
-                </Popover.Content>
-            </Popover.Portal>
-        </Popover.Root>
-    )
-}
-
-function SearchIcon(props: { className?: string }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={props.className}
-        >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-    )
 }
 
 function GitBranchIcon(props: { className?: string }) {
@@ -306,11 +203,14 @@ function SearchResultRow(props: {
     onOpenMenu: (point: AnchoredMenuPoint) => void
     showDivider: boolean
     active?: boolean
+    selectionMode?: boolean
+    selected?: boolean
+    onSelect?: () => void
 }) {
     const { t, locale } = useTranslation()
     const metadata = formatFileMetadata(props.file.size, props.file.modified, locale)
     const rowHandlers = useFileMenuTrigger({
-        onOpen: props.onOpen,
+        onOpen: () => { if (props.selectionMode && props.onSelect) props.onSelect(); else props.onOpen() },
         onOpenMenu: props.onOpenMenu,
     })
     const icon = props.file.fileType === 'file'
@@ -318,8 +218,13 @@ function SearchResultRow(props: {
         : <FolderIcon className="text-[var(--app-link)]" />
 
     return (
-        <div data-file-path={props.file.fullPath} data-file-kind="file" className={`flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-[var(--app-subtle-bg)] transition-colors ${props.showDivider ? 'border-b border-[var(--app-divider)]' : ''} ${props.active ? 'bg-[var(--app-subtle-bg)]' : ''}`}>
-        <button type="button" {...rowHandlers} aria-current={props.active ? 'true' : undefined} className="app-file-tree-target flex min-w-0 flex-1 items-center gap-3 text-left">
+        <div data-file-path={props.file.fullPath} data-file-kind="file" className={`file-browser-search-result flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-[var(--app-subtle-bg)] transition-colors ${props.showDivider ? 'border-b border-[var(--app-divider)]' : ''} ${props.active ? 'bg-[var(--app-subtle-bg)]' : ''}`}>
+        {props.selectionMode && props.onSelect ? <label className="file-tree-select-target"><input type="checkbox" aria-label={t('files.manage.select', { name: props.file.fileName })} checked={props.selected ?? false} onChange={props.onSelect} /></label> : null}
+        <button type="button" {...rowHandlers} onClickCapture={event => {
+            if (props.onSelect && (event.ctrlKey || event.metaKey || event.shiftKey)) {
+                event.preventDefault(); event.stopPropagation(); props.onSelect()
+            }
+        }} aria-current={props.active ? 'true' : undefined} className="app-file-tree-target flex min-w-0 flex-1 items-center gap-3 text-left">
             {icon}
             <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{props.file.fullPath}</div>
@@ -369,6 +274,7 @@ export function SessionFiles(props: {
     search: SessionFilesSearch
     revealKey?: string | number
     onBack: () => void
+    headerAction?: ReactNode
     activeFilePath?: string
     onOpenFile?: (path: string) => void
     foreground?: boolean
@@ -393,6 +299,7 @@ export function SessionFiles(props: {
     const [directorySort, setDirectorySort] = useState<DirectorySort>(readDirectorySort)
     const [fileMenu, setFileMenu] = useState<FileManagementMenuState | null>(null)
     const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+    const [selectionMode, setSelectionMode] = useState(false)
     const [showHidden, setShowHidden] = useState(() => { try { return localStorage.getItem('hapi-file-show-hidden') === 'true' } catch { return false } })
     const [exclude, setExclude] = useState<string[]>(() => {
         try {
@@ -420,7 +327,7 @@ export function SessionFiles(props: {
     const caseInsensitive = /^[A-Za-z]:[\\/]/.test(session?.metadata?.path ?? '')
 
     useEffect(() => {
-        setFileMenu(null); setSelectedPaths(new Set()); setLocalReveal(undefined); setRevealedDirectory(undefined); setCopyError(null)
+        setFileMenu(null); setSelectedPaths(new Set()); setSelectionMode(false); setLocalReveal(undefined); setRevealedDirectory(undefined); setCopyError(null)
     }, [api, sessionId])
     useEffect(() => { setLocalReveal(undefined) }, [search.target, props.revealKey])
     useEffect(() => { try { localStorage.setItem('hapi-file-show-hidden', String(showHidden)); localStorage.setItem('hapi-file-exclude', JSON.stringify(exclude)) } catch { /* Preferences are optional. */ } }, [exclude, showHidden])
@@ -542,6 +449,7 @@ export function SessionFiles(props: {
         try { await safeCopyToClipboard(paths.join('\n')); setCopyError(null) }
         catch (cause) { setCopyError(cause instanceof Error ? cause.message : t('files.manage.failed')) }
     }, [t])
+    const selecting = selectionMode || selectedPaths.size > 0
     const selectedTargets = [...selectedPaths].map(path => ({ path, name: fileManagerBasename(path), kind: 'file' as const }))
     const uploadDrop = (data: DataTransfer, directory = '') => {
         setDropActive(false)
@@ -688,50 +596,17 @@ export function SessionFiles(props: {
                 }}
             />}
 
-            <div className="bg-[var(--app-bg)]">
-                <div className="mx-auto flex w-full max-w-content items-center gap-2 border-b border-[var(--app-border)] p-3">
-                    <div className="relative min-w-0 flex-1">
-                        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--app-hint)]" />
-                        <input
-                            value={searchQuery}
-                            onChange={(event) => setSearchQuery(event.target.value)}
-                            placeholder={t('files.page.searchPlaceholder')}
-                            className="app-files-search-input h-9 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] py-2 pl-9 pr-20 text-sm text-[var(--app-fg)] outline-none placeholder:text-[var(--app-hint)] focus:border-[var(--app-link)] focus:ring-1 focus:ring-[var(--app-link)]"
-                            autoCapitalize="none"
-                            autoCorrect="off"
-                        />
-                        {searchQuery ? (
-                            <button
-                                type="button"
-                                onClick={() => setSearchQuery('')}
-                                className="app-file-icon-action app-files-search-clear absolute inset-y-0 right-10 flex items-center rounded p-0.5 text-[var(--app-hint)] hover:text-[var(--app-fg)]"
-                                title={t('sessions.search.clear')}
-                                aria-label={t('sessions.search.clear')}
-                            >
-                                <CloseIcon className="h-3.5 w-3.5" />
-                            </button>
-                        ) : null}
-                        {activeTab === 'directories' || searchQuery ? (
-                            <div className="absolute inset-y-0 right-0 flex items-stretch">
-                                <DirectorySortMenu sort={directorySort} onChange={setDirectorySort} embedded />
-                            </div>
-                        ) : null}
-                    </div>
-                    <Button
-                        variant="outline"
-                        type="button"
-                        onClick={handleRefresh}
-                        className="app-file-icon-action h-9 w-9 shrink-0 px-0"
-                        title={t('files.page.refreshFilesystem')}
-                        aria-label={t('files.page.refreshFilesystem')}
-                    >
-                        <RefreshIcon />
-                    </Button>
-                </div>
-            </div>
-
-            {activeTab === 'directories' ? <FileManagementToolbar
+            <FileManagementToolbar
+                key={sessionId}
+                foreground={foreground}
                 busy={management.busy || collectingDrop}
+                canManage={activeTab === 'directories'}
+                headerAction={props.headerAction}
+                query={searchQuery}
+                onQueryChange={setSearchQuery}
+                onRefresh={handleRefresh}
+                sort={directorySort}
+                onSortChange={setDirectorySort}
                 showHidden={showHidden}
                 exclude={exclude}
                 onShowHidden={() => setShowHidden(value => !value)}
@@ -741,7 +616,16 @@ export function SessionFiles(props: {
                 onUpload={() => requestUpload()}
                 onUploadFolder={() => requestUpload('', true)}
                 onCollapse={() => setCollapseKey(value => value + 1)}
-            /> : null}
+                onStartSelection={() => setSelectionMode(true)}
+                selection={selecting && activeTab === 'directories' ? {
+                    count: selectedPaths.size,
+                    onCopyPaths: () => void copyPaths([...selectedPaths]),
+                    onMove: () => void management.arm('move', selectedTargets),
+                    onCopy: () => void management.arm('copy', selectedTargets),
+                    onDelete: () => void management.arm('delete', selectedTargets),
+                    onDone: () => { setSelectedPaths(new Set()); setSelectionMode(false) },
+                } : undefined}
+            />
             <input ref={uploadInput} type="file" multiple hidden aria-label={t('files.manage.uploadFiles')} onChange={event => { void management.uploadFiles([...(event.target.files ?? [])], uploadDirectory.current); event.target.value = '' }} />
             <input ref={folderUploadInput} type="file" multiple hidden {...{ webkitdirectory: '' }} aria-label={t('files.manage.uploadFolder')} onChange={event => { void management.uploadFiles([...(event.target.files ?? [])], uploadDirectory.current); event.target.value = '' }} />
             {management.error && !management.dialog || copyError ? <div role="alert" className="flex items-start gap-2 border-b border-[var(--app-divider)] bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">
@@ -752,15 +636,6 @@ export function SessionFiles(props: {
                 <div className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate">{t('files.manage.uploading', { completed: management.upload.completed, total: management.upload.total, name: management.upload.current })}</span><button type="button" className="shrink-0 underline" disabled={management.upload.cancelled} onClick={management.cancelUpload}>{t(management.upload.cancelled ? 'files.manage.cancellingUpload' : 'files.manage.cancelUpload')}</button></div>
                 <progress value={management.upload.completed} max={management.upload.total} className="h-1.5 w-full" />
             </div> : management.status ? <div role="status" className="border-b border-[var(--app-divider)] px-3 py-2 text-xs text-[var(--app-hint)]">{management.status}</div> : null}
-            {selectedPaths.size && activeTab === 'directories' ? <div role="toolbar" aria-label={t('files.manage.selected', { count: selectedPaths.size })} className="flex flex-wrap items-center gap-2 border-b border-[var(--app-divider)] bg-[var(--app-subtle-bg)] px-3 py-2 text-xs">
-                <span>{t('files.manage.selected', { count: selectedPaths.size })}</span>
-                <button type="button" className="underline" onClick={() => void copyPaths([...selectedPaths])}>{t('files.manage.copyPaths')}</button>
-                <button type="button" className="underline" disabled={management.busy} onClick={() => void management.arm('move', selectedTargets)}>{t('files.manage.moveSelected')}</button>
-                <button type="button" className="underline" disabled={management.busy} onClick={() => void management.arm('copy', selectedTargets)}>{t('files.manage.copySelected')}</button>
-                <button type="button" className="text-red-600 underline dark:text-red-400" disabled={management.busy} onClick={() => void management.arm('delete', selectedTargets)}>{t('files.manage.deleteSelected')}</button>
-                <button type="button" className="ml-auto underline" onClick={() => setSelectedPaths(new Set())}>{t('files.manage.clearSelection')}</button>
-            </div> : null}
-
             {workspacePanel ? null : <div className="bg-[var(--app-bg)] border-b border-[var(--app-divider)]" role="tablist">
                 <div className="mx-auto w-full max-w-content grid grid-cols-2">
                     <button
@@ -835,6 +710,7 @@ export function SessionFiles(props: {
                             exclude={exclude}
                             foreground={foreground && !shouldSearch && activeTab === 'directories'}
                             selectedPaths={selectedPaths}
+                            selectionMode={selecting}
                             onSelectedPathsChange={setSelectedPaths}
                         />
                     </div>
@@ -862,6 +738,13 @@ export function SessionFiles(props: {
                                         onOpenMenu={(point) => openFileMenu(file.fullPath, point)}
                                         showDivider={index < sortedSearchResults.length - 1}
                                         active={props.activeFilePath === file.fullPath}
+                                        selectionMode={selecting && activeTab === 'directories'}
+                                        selected={selectedPaths.has(file.fullPath)}
+                                        onSelect={activeTab === 'directories' ? () => setSelectedPaths(previous => {
+                                            const next = new Set(previous)
+                                            if (next.has(file.fullPath)) next.delete(file.fullPath); else next.add(file.fullPath)
+                                            return next
+                                        }) : undefined}
                                     />
                                 ))}
                             </div>
@@ -932,6 +815,10 @@ export function SessionFiles(props: {
                     setActiveTab('directories')
                     if (searchQuery) setSearchQuery('')
                 }}
+                onSelect={activeTab === 'directories' ? target => {
+                    setSelectionMode(true)
+                    setSelectedPaths(previous => new Set([...previous, target.path]))
+                } : undefined}
                 onDownload={target => void management.download(target)}
                 onUpload={target => requestUpload(target.path)}
                 onCopyPath={(absolute, target) => void copyPaths([absolute ? resolveAbsoluteFilePath(session.metadata?.path, target.path) : target.path || '.'])}

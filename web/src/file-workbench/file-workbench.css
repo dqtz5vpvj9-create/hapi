@@ -1,30 +1,57 @@
-.file-workbench { display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; background:var(--app-bg); }
-.file-workbench-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:4px; padding:4px 8px; border-bottom:1px solid var(--app-divider); }
-.file-workbench-toolbar button { min-height:36px; padding:4px 8px; font-size:12px; border-radius:6px; }
-.file-workbench-toolbar button:hover { background:var(--app-subtle-bg); }
-.file-workbench-toolbar button:disabled { opacity:.45; }
-.file-workbench-body { position:relative; display:flex; flex:1; min-width:0; min-height:0; }
-.file-workbench-tree { flex:0 0 var(--file-tree-width); min-width:180px; overflow:hidden; }
-.file-workbench-resizer { flex:0 0 5px; background:var(--app-divider); cursor:col-resize; touch-action:none; }
-.file-workbench-resizer:hover,.file-workbench-resizer:focus-visible { background:var(--app-link); }
-.file-workbench-documents { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; }
-.file-workbench-tabs { display:flex; flex:0 0 auto; min-width:0; overflow-x:auto; overscroll-behavior-x:contain; border-bottom:1px solid var(--app-divider); scrollbar-width:thin; }
-.file-workbench-tab { display:flex; flex:0 0 auto; max-width:260px; border-right:1px solid var(--app-divider); border-bottom:2px solid transparent; }
-.file-workbench-tab[data-active=true] { border-bottom-color:var(--app-link); background:var(--app-subtle-bg); }
-.file-workbench-tab button { min-height:40px; padding:6px 10px; font-size:12px; }
-.file-workbench-tab [role=tab] { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
-.file-workbench-tab button:last-child { flex-shrink:0; font-size:18px; padding:4px 10px; }
-.file-workbench-tab button:hover { background:var(--app-subtle-bg); }
-.file-workbench-readers { position:relative; flex:1; min-height:0; min-width:0; }
-.file-workbench-reader { height:100%; min-height:0; min-width:0; }
-.file-workbench-reader[hidden] { display:none; }
-.file-workbench-empty { display:flex; flex:1; align-items:center; justify-content:center; padding:24px; text-align:center; color:var(--app-hint); font-size:13px; }
-.file-workbench-notice { margin:0; padding:8px 12px; color:var(--app-hint); font-size:13px; }
-.file-workbench[data-wide=false] .file-workbench-tree { flex:1; min-width:0; }
-.file-workbench[data-wide=false] .file-workbench-resizer { display:none; }
-.file-workbench[data-wide=false][data-tree=false] .file-workbench-tree { display:none; }
-.file-workbench[data-wide=false][data-tree=true] .file-workbench-documents { display:none; }
-.file-workbench[data-wide=false] .file-workbench-empty { display:none; }
+.file-workbench {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+    background: var(--app-bg);
+}
+.file-workbench-body { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; }
+.file-workbench-tree { flex: 0 0 var(--file-tree-width); min-width: 180px; overflow: hidden; }
+.file-workbench-resizer { flex: 0 0 5px; background: var(--app-divider); cursor: col-resize; touch-action: none; }
+.file-workbench-resizer:hover, .file-workbench-resizer:focus-visible { background: var(--app-link); }
+.file-workbench-documents { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.file-workbench-tabbar { display: flex; flex: 0 0 auto; min-width: 0; border-bottom: 1px solid var(--app-divider); }
+.file-workbench-tabbar[hidden] { display: none; }
+.file-workbench-tabs {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+}
+.file-workbench-tabs::-webkit-scrollbar { display: none; }
+.file-workbench-tab { display: flex; flex: 0 0 auto; max-width: 260px; border-bottom: 2px solid transparent; }
+.file-workbench-tab[data-active=true] { border-bottom-color: var(--app-link); background: var(--app-subtle-bg); }
+.file-workbench-tab button { min-height: 40px; padding: 6px 10px; font-size: .75rem; }
+.file-workbench-tab [role=tab] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.file-workbench-tab .file-workbench-tab-close { display: grid; place-items: center; flex: 0 0 36px; padding: 0; color: var(--app-hint); }
+.file-workbench-tab button:hover { background: var(--app-subtle-bg); }
+.file-workbench-tree-toggle, .file-workbench-return {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    color: var(--app-hint);
+}
+.file-workbench-tree-toggle:hover, .file-workbench-return:hover { background: var(--app-subtle-bg); color: var(--app-fg); }
+.file-workbench-return-count { position: absolute; right: 3px; top: 2px; min-width: 14px; padding: 0 2px; border-radius: 4px; font-size: 9px; line-height: 14px; background: var(--app-bg); color: var(--app-hint); }
+.file-workbench button:focus-visible { outline: 2px solid var(--app-link); outline-offset: -2px; }
+.file-workbench-readers { position: relative; flex: 1; min-height: 0; min-width: 0; }
+.file-workbench-reader { height: 100%; min-height: 0; min-width: 0; }
+.file-workbench-reader[hidden] { display: none; }
+.file-workbench-empty { display: flex; flex: 1; align-items: center; justify-content: center; padding: 24px; text-align: center; color: var(--app-hint); font-size: .8125rem; }
+.file-workbench-notice { margin: 0; padding: 8px 12px; color: var(--app-hint); font-size: .8125rem; }
+.file-workbench[data-wide=false] .file-workbench-tree { flex: 1; min-width: 0; }
+.file-workbench[data-wide=false] .file-workbench-resizer { display: none; }
+.file-workbench[data-wide=false][data-tree=false] .file-workbench-tree { display: none; }
+.file-workbench[data-wide=false][data-tree=true] .file-workbench-documents { display: none; }
+.file-workbench[data-wide=false] .file-workbench-empty { display: none; }
+.file-workbench[data-wide=false] .file-workbench-tab button { min-height: 44px; }
+.file-workbench[data-wide=false] .file-workbench-tab .file-workbench-tab-close { flex-basis: 44px; }
 .file-workbench[data-wide=true][data-desktop-tree=false] .file-workbench-tree,
-.file-workbench[data-wide=true][data-desktop-tree=false] .file-workbench-resizer { display:none; }
-.file-workbench .document-toolbar { flex-wrap:wrap; }
+.file-workbench[data-wide=true][data-desktop-tree=false] .file-workbench-resizer { display: none; }

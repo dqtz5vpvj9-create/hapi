@@ -42,6 +42,7 @@ function renderTree(handlers: {
     activeFilePath?: string
     foreground?: boolean
     selectedPaths?: Set<string>
+    selectionMode?: boolean
     onSelectedPathsChange?: (paths: Set<string>) => void
     onRequestEntryMenu?: (target: FileManagerTarget, point: { x: number; y: number }) => void
 } = {}) {
@@ -68,6 +69,7 @@ function renderTree(handlers: {
                         activeFilePath={handlers.activeFilePath}
                         foreground={handlers.foreground}
                         selectedPaths={handlers.selectedPaths}
+                        selectionMode={handlers.selectionMode}
                         onSelectedPathsChange={handlers.onSelectedPathsChange}
                         onRequestEntryMenu={handlers.onRequestEntryMenu}
                     />
@@ -215,13 +217,61 @@ describe('DirectoryTree file management surface', () => {
 
     it('selects with checkboxes and modified clicks without opening or reading the file', () => {
         const onSelectedPathsChange = vi.fn()
-        const { onOpenFile } = renderTree({ selectedPaths: new Set(), onSelectedPathsChange })
+        const { onOpenFile } = renderTree({ selectedPaths: new Set(), selectionMode: true, onSelectedPathsChange })
         fireEvent.click(screen.getByRole('checkbox', { name: 'Select README.md' }))
         expect(onSelectedPathsChange).toHaveBeenCalledWith(new Set(['README.md']))
         fireEvent.click(fileRow(), { ctrlKey: true })
         expect(onSelectedPathsChange).toHaveBeenLastCalledWith(new Set(['README.md']))
         expect(onOpenFile).not.toHaveBeenCalled()
         expect(mocks.readFile).not.toHaveBeenCalled()
+    })
+
+    it('keeps checkboxes out of browsing mode while modified clicks still select', () => {
+        const onSelectedPathsChange = vi.fn()
+        const { onOpenFile } = renderTree({ selectedPaths: new Set(), onSelectedPathsChange })
+        expect(screen.queryByRole('checkbox')).toBeNull()
+        fireEvent.click(fileRow(), { metaKey: true })
+        expect(onSelectedPathsChange).toHaveBeenCalledWith(new Set(['README.md']))
+        expect(onOpenFile).not.toHaveBeenCalled()
+        expect(mocks.readFile).not.toHaveBeenCalled()
+    })
+
+    it('selects a file by tapping its name in selection mode and still expands directories', () => {
+        mocks.byPath = { '': [{ name: 'README.md', type: 'file' }, { name: 'src', type: 'directory' }], src: [{ name: 'nested.ts', type: 'file' }] }
+        const onSelectedPathsChange = vi.fn()
+        const { onOpenFile } = renderTree({ selectionMode: true, selectedPaths: new Set(), onSelectedPathsChange })
+        fireEvent.click(fileRow())
+        expect(onSelectedPathsChange).toHaveBeenCalledWith(new Set(['README.md']))
+        fireEvent.click(screen.getByRole('button', { name: 'src' }))
+        expect(screen.getByRole('checkbox', { name: 'Select nested.ts' })).toBeVisible()
+        expect(onOpenFile).not.toHaveBeenCalled()
+        expect(mocks.readFile).not.toHaveBeenCalled()
+    })
+
+    it('does not change selection on a synthetic click after a touch long-press opens actions', () => {
+        vi.useFakeTimers()
+        try {
+            const onSelectedPathsChange = vi.fn()
+            const { onOpenFile, onRequestFileMenu } = renderTree({ selectionMode: true, selectedPaths: new Set(), onSelectedPathsChange })
+            fireEvent.touchStart(fileRow(), { touches: [{ clientX: 44, clientY: 55 }] })
+            act(() => { vi.advanceTimersByTime(600) })
+            fireEvent.touchEnd(fileRow(), { changedTouches: [{ clientX: 44, clientY: 55 }] })
+            fireEvent.click(fileRow(), { detail: 1 })
+            expect(onRequestFileMenu).toHaveBeenCalledOnce()
+            expect(onSelectedPathsChange).not.toHaveBeenCalled()
+            expect(onOpenFile).not.toHaveBeenCalled()
+            fireEvent.click(fileRow(), { detail: 0 })
+            expect(onSelectedPathsChange).toHaveBeenCalledWith(new Set(['README.md']))
+        } finally { vi.useRealTimers() }
+    })
+
+    it('keeps download in the complete entry menu and retains the standalone fallback', () => {
+        renderTree({ onRequestEntryMenu: vi.fn() })
+        expect(screen.queryByRole('button', { name: 'Download README.md' })).toBeNull()
+        expect(screen.getByRole('button', { name: 'File actions for README.md' })).toBeVisible()
+        cleanup()
+        renderTree()
+        expect(screen.getByRole('button', { name: 'Download README.md' })).toBeVisible()
     })
 
     it('filters hidden files and excluded subtrees while a direct reveal remains reachable', () => {

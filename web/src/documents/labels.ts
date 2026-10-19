@@ -2,6 +2,7 @@ import { useTranslation } from '@/lib/use-translation'
 const en = {
     save: 'Save', saving: 'Saving…', saved: 'Saved', unsaved: 'Unsaved changes', preview: 'Preview', edit: 'Edit',
     find: 'Find', download: 'Download', reload: 'Reload', pin: 'Keep open', pinned: 'Kept open', loading: 'Loading document…',
+    actions: 'Document actions', closeFile: 'Close file', closeOthers: 'Close other files', zoom: 'Zoom', selectionTool: 'Selection tool',
     request: 'Reference selection', saveReference: 'Save and reference', clear: 'Clear selection', target: 'Send to conversation',
     closeTitle: 'Keep your changes?', closeDescription: 'Save to the original file, keep a local draft, or discard your changes.',
     keepDraft: 'Keep local draft', discard: 'Discard changes', cancel: 'Cancel', conflict: 'The file changed on disk. Your draft is preserved.',
@@ -22,6 +23,7 @@ const en = {
 const zh: Record<keyof typeof en, string> = {
     save: '保存', saving: '正在保存…', saved: '已保存', unsaved: '尚未保存', preview: '预览', edit: '编辑', find: '查找',
     download: '下载', reload: '重新读取', pin: '固定文档', pinned: '已固定', loading: '正在读取文档…', request: '引用选区',
+    actions: '文档操作', closeFile: '关闭文件', closeOthers: '关闭其他文件', zoom: '缩放', selectionTool: '选择工具',
     saveReference: '保存并引用', clear: '取消选区', target: '请求发送到', closeTitle: '如何处理未保存的修改？',
     closeDescription: '可以保存到原文件、保留本机草稿，或放弃修改。', keepDraft: '保留本机草稿', discard: '放弃修改', cancel: '取消',
     conflict: '原文件已被修改。你的草稿已保留。', compare: '对比磁盘版本', useDisk: '使用磁盘版本', keepMine: '将草稿作为下一版保存',

@@ -30,28 +30,59 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: max(8px, env(safe-area-inset-top)) 12px 6px 8px;
+    flex: 0 0 auto;
+    min-height: 56px;
+    padding: max(4px, env(safe-area-inset-top)) 8px 4px;
+    border-bottom: 1px solid var(--app-divider);
 }
 .session-workspace-heading > button {
     display: grid;
     place-items: center;
     flex: 0 0 44px;
     height: 44px;
-    border-radius: 50%;
+    border-radius: 8px;
 }
-.session-workspace-tabs { display: flex; padding: 0 12px; gap: 8px; border-bottom: 1px solid var(--app-divider); }
-.session-workspace-tabs > button {
-    flex: 1;
+.session-workspace-context { flex: 1; min-width: 0; position: relative; }
+.session-workspace-switch {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    min-height: 44px;
+    padding: 0 4px 14px;
+    border-radius: 6px;
+    font-size: .8125rem;
+    font-weight: 600;
+    text-align: left;
+}
+.session-workspace-switch span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.session-workspace-switch svg { flex-shrink: 0; color: var(--app-hint); }
+.session-workspace-path { position: absolute; left: 4px; right: 4px; bottom: 2px; pointer-events: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: .6875rem; line-height: 16px; color: var(--app-hint); }
+.session-workspace-context:not(:has(.session-workspace-path)) .session-workspace-switch { padding-bottom: 0; }
+.session-workspace-view-menu { z-index: 60; min-width: 220px; max-width: calc(100vw - 24px); padding: 4px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-bg); box-shadow: 0 12px 32px #0002; }
+.session-workspace-view-menu button {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
     min-width: 0;
     min-height: 44px;
-    font-size: 13px;
-    color: var(--app-hint);
-    border-bottom: 2px solid transparent;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: .8125rem;
+    text-align: left;
 }
-.session-workspace-tabs > button[aria-current="page"] { color: var(--app-fg); border-bottom-color: currentColor; font-weight: 600; }
-.session-workspace-tabs > button:disabled { opacity: .4; }
+.session-workspace-view-menu button[aria-checked=true] { font-weight: 600; }
+.session-workspace-view-menu button:disabled { opacity: .4; }
 .session-workspace-heading > button:hover,
-.session-workspace-tabs > button:enabled:hover { background: var(--app-subtle-bg); }
+.session-workspace-switch:hover,
+.session-workspace-view-menu button:enabled:hover { background: var(--app-subtle-bg); }
+.session-workspace-heading button:focus-visible,
+.session-workspace-view-menu button:focus-visible { outline: 2px solid var(--app-link); outline-offset: -2px; }
+/* A narrow reader supplies its own file heading and return-to-tree action.
+   Keep the tree's workspace navigation mounted without stacking it above the file. */
+.session-workspace-panel:has(.file-workbench[data-wide=false][data-tree=false]) > .session-workspace-heading { display: none; }
 .session-workspace-content { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .session-workspace-resizer { flex: 0 0 5px; z-index: 2; cursor: col-resize; touch-action: none; background: var(--app-divider); }
 .session-workspace-resizer:hover, .session-workspace-resizer:focus-visible { background: var(--app-link); }

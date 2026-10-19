@@ -14,6 +14,7 @@ export function FileManagementMenu(props: {
     onOpen: (target: FileManagerTarget) => void
     onReveal: (target: FileManagerTarget) => void
     onDownload: (target: FileManagerTarget) => void
+    onSelect?: (target: FileManagerTarget) => void
     onUpload: (target: FileManagerTarget) => void
     onCopyPath: (absolute: boolean, target: FileManagerTarget) => void
     onReference: (target: FileManagerTarget) => void
@@ -53,6 +54,7 @@ export function FileManagementMenu(props: {
                 <button type="button" role="menuitem" className={itemClass} onClick={choose(() => props.onCopyPath(true, target))}>{t('file.menu.copyAbsolutePath')}</button>
                 <button type="button" role="menuitem" className={itemClass} onClick={choose(() => props.onReference(target))}>{t('file.menu.addToComposer')}</button>
                 {target.path ? <>
+                    {props.onSelect ? <button type="button" role="menuitem" className={itemClass} onClick={choose(() => props.onSelect!(target))}>{t('files.manage.selectItems')}</button> : null}
                     <div role="separator" className="my-1 border-t border-[var(--app-divider)]" />
                     {mutationItem('rename', t('files.manage.rename'))}
                     {mutationItem('move', t('files.manage.moveMenu'))}

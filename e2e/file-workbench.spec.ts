@@ -5,7 +5,9 @@ const root = '/mnt/cache/src/hapi'
 const tree = (page: Page) => page.getByRole('tree')
 const entry = (page: Page, path: string) => tree(page).locator(`[data-file-path="${path}"][data-file-kind]`)
 const surface = (page: Page) => page.locator('.document-surface:visible')
-const tabs = (page: Page) => page.getByRole('tablist', { name: 'Open files' })
+// A single mobile file uses the reader heading; its retained tab model becomes
+// visible when another file opens or the workbench grows to a split view.
+const tabs = (page: Page) => page.locator('.file-workbench:visible').getByRole('tablist', { name: 'Open files', includeHidden: true })
 const fileTab = (page: Page, path: string) => tabs(page).locator(`[role="tab"][title="${root}/${path}"]`)
 
 async function openFilesFromChat(page: Page) {
@@ -40,7 +42,8 @@ async function action(page: Page, path: string, name: string) {
 }
 
 async function create(page: Page, kind: 'file' | 'folder', name: string) {
-    await page.getByRole('button', { name: kind === 'file' ? 'New file' : 'New folder', exact: true }).click()
+    await page.getByRole('button', { name: 'New', exact: true }).click()
+    await page.getByRole('menuitem', { name: kind === 'file' ? 'New file' : 'New folder', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: kind === 'file' ? 'New file' : 'New folder', exact: true })
     await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill(name)
     await dialog.getByRole('button', { name: 'Create', exact: true }).click()
@@ -78,7 +81,9 @@ test('loads directories lazily and keeps same-basename file tabs and bytes isola
     expect(await directoryReads()).not.toContain('src')
     expect(await directoryReads()).not.toContain('lazy')
     await expect(entry(page, '.hidden.txt')).toHaveCount(0)
-    await page.getByRole('button', { name: 'Show hidden files', exact: true }).click()
+    await page.getByRole('button', { name: 'File browser options', exact: true }).click()
+    await page.getByRole('menuitemcheckbox', { name: 'Show hidden files', exact: true }).click()
+    await page.keyboard.press('Escape')
     await expect(entry(page, '.hidden.txt')).toBeVisible()
 
     await openFile(page, 'src/README.md')
@@ -199,7 +204,8 @@ test('keeps both files after stale-source and existing-destination conflicts and
     await copy.getByRole('button', { name: 'Cancel', exact: true }).click()
 
     const mutations = await page.evaluate(() => window.__fileWorkbenchFixture.mutations.length)
-    await page.getByRole('button', { name: 'New file', exact: true }).click()
+    await page.getByRole('button', { name: 'New', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'New file', exact: true }).click()
     const creation = page.getByRole('dialog', { name: 'New file', exact: true })
     await creation.getByRole('textbox', { name: 'Name', exact: true }).fill('../outside.txt')
     await creation.getByRole('button', { name: 'Create', exact: true }).click()
@@ -301,7 +307,8 @@ test('keeps two editors of one physical file synchronized without dropping eithe
     expect(await page.evaluate(() => window.__fileWorkbenchFixture.mutations.filter(mutation => mutation.action === 'write').map(mutation => mutation.sessionId))).toEqual(['chat-2', 'chat-1', 'chat-2'])
     await expect(first.editor).toContainText('Remounted second pane draft.')
     const readCount = await page.evaluate(() => window.__fileWorkbenchFixture.requests.length)
-    await remounted.document.getByRole('button', { name: 'Reload', exact: true }).click()
+    await remounted.document.getByRole('button', { name: 'Document actions', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Document actions', exact: true }).getByRole('button', { name: 'Reload', exact: true }).click()
     await expect.poll(() => page.evaluate(start => window.__fileWorkbenchFixture.requests.slice(start).filter(request => request.route === 'file' && request.method === 'GET').map(request => request.sessionId), readCount)).toEqual(['chat-2'])
     await assertCleanBoundary(page)
 })
@@ -463,7 +470,7 @@ test('uploads and downloads exact binary bytes and refuses to overwrite an exist
     expect(await page.evaluate(() => window.__fileWorkbenchFixture.bytes('chat-2', 'payload.bin'))).toBeNull()
 
     const downloadEvent = page.waitForEvent('download')
-    await entry(page, 'payload.bin').getByRole('button', { name: 'Download payload.bin', exact: true }).click()
+    await action(page, 'payload.bin', 'Download')
     const download = await downloadEvent
     expect(download.suggestedFilename()).toBe('payload.bin')
     expect(Array.from(await readFile((await download.path())!))).toEqual(original)
@@ -495,7 +502,7 @@ test('retains dirty tabs through phone tree switches and reload while polling on
 
     await page.setViewportSize({ width: 390, height: 844 })
     await expect(surface(page).locator('.cm-content')).toContainText('Retained mobile draft')
-    await page.getByRole('button', { name: 'Show file tree', exact: true }).click()
+    await surface(page).getByRole('button', { name: 'Back to file tree', exact: true }).click()
     await expect(tree(page)).toBeVisible()
     await expect(surface(page)).toHaveCount(0)
     await openFile(page, 'src/README.md')
@@ -551,7 +558,8 @@ test('keeps a copyable full path visible and returns a dirty mobile document to 
     // Collapse the remembered branch before returning again. Retaining the old
     // expansion alone cannot satisfy this assertion: the active file must be
     // revealed, its ancestors expanded, and its row scrolled into view.
-    await page.getByRole('button', { name: 'Collapse folders', exact: true }).click()
+    await page.getByRole('button', { name: 'File browser options', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Collapse folders', exact: true }).click()
     await expect(entry(page, 'lazy').locator('button[aria-expanded]').first()).toHaveAttribute('aria-expanded', 'false')
     await page.getByRole('button', { name: 'Show file', exact: true }).click()
     await expect(surface(page).locator('.cm-content')).toContainText('Keep this tree-return draft')
@@ -572,5 +580,19 @@ test('keeps a copyable full path visible and returns a dirty mobile document to 
     await expect(tree(page)).toBeVisible()
     await expect(surface(page)).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('file-workbench-desktop.png') })
+    await assertCleanBoundary(page)
+})
+
+test('restores the file tree after closing the last file with the desktop tree collapsed', async ({ page }) => {
+    await openWorkbench(page)
+    await openFile(page, 'lazy/nested/leaf.txt')
+    await page.getByRole('button', { name: 'Hide file tree', exact: true }).click()
+    await expect(tree(page)).toBeHidden()
+    await surface(page).getByRole('button', { name: 'Document actions', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Document actions', exact: true }).getByRole('button', { name: 'Close file', exact: true }).click()
+    await expect(surface(page)).toHaveCount(0)
+    await expect(tree(page)).toBeVisible()
+    await openFile(page, 'README.md')
+    await expect(surface(page)).toContainText('chat-1 root document')
     await assertCleanBoundary(page)
 })
