@@ -37,7 +37,7 @@
         "@shikijs/langs": "^3.20.0",
         "@shikijs/themes": "^3.20.0",
         "@tanstack/react-query": "^5.90.12",
-        "@tanstack/react-query-devtools": "^5.91.1",
+        "@tanstack/react-query-devtools": "^5.104.3",
         "@tanstack/react-router": "^1.170.44",
         "@tanstack/react-virtual": "3.14.13",
         "@tanstack/router-core": "^1.171.37",
