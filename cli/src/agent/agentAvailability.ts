@@ -39,6 +39,9 @@ function resolveLaunchSpec(agent: AgentFlavor, env: LaunchEnvironment, context: 
 }
 
 function hasValidDshConfiguration(env: LaunchEnvironment): boolean {
+    // Explicit JSON arguments replace the generated config/patch argument.
+    // Match launch precedence instead of rejecting a config it will not read.
+    if (env.HAPI_DSH_ACP_ARGS_JSON?.trim()) return true
     const config = env.HAPI_DSH_ACP_CONFIG?.trim()
     if (!config) return true
     if (!isAbsolute(config)) return false

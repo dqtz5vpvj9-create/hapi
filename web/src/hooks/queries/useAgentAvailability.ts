@@ -10,6 +10,7 @@ export function useAgentAvailability(args: {
 }): {
     agents: AgentAvailabilityEntry[]
     isLoading: boolean
+    isFetching: boolean
     error: string | null
     upgradeRequired: boolean
     refetch: () => void
@@ -31,6 +32,7 @@ export function useAgentAvailability(args: {
     return {
         agents: query.data?.agents ?? [],
         isLoading: enabled && query.isLoading,
+        isFetching: enabled && query.isFetching,
         error: query.error instanceof Error
             ? query.error.message
             : query.error

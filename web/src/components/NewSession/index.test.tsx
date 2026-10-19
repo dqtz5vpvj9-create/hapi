@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render as renderBase, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render as renderBase, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
 import type { ApiClient } from '@/api/client'
@@ -29,7 +29,9 @@ const mocks = vi.hoisted(() => ({
     checkPathsExists: vi.fn(),
     availableAgents: [
         'agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi'
-    ].map((agent) => ({ agent, available: true })),
+    ].map((agent) => ({ agent, available: true })) as Array<{ agent: string; available: boolean; reason?: 'not_found' | 'invalid_configuration' }>,
+    refreshAgentAvailability: vi.fn(),
+    agentAvailabilityFetching: false,
     codexModelsLoading: false,
     agyModelsLoading: false,
     agyModels: [{ modelId: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)' }],
@@ -100,9 +102,10 @@ vi.mock('@/hooks/queries/useAgentAvailability', () => ({
     useAgentAvailability: () => ({
         agents: mocks.availableAgents,
         isLoading: false,
+        isFetching: mocks.agentAvailabilityFetching,
         error: null,
         upgradeRequired: false,
-        refetch: vi.fn()
+        refetch: mocks.refreshAgentAvailability
     })
 }))
 vi.mock('@/hooks/useDirectorySuggestions', () => ({
@@ -337,6 +340,8 @@ describe('NewSession launch preferences', () => {
             ...['agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi']
                 .map((agent) => ({ agent, available: true }))
         )
+        mocks.refreshAgentAvailability.mockReset()
+        mocks.agentAvailabilityFetching = false
         mocks.codexModelsLoading = false
         mocks.agyModelsLoading = false
         mocks.agyModels = [{ modelId: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)' }]
@@ -785,6 +790,28 @@ describe('NewSession launch preferences', () => {
         expect(screen.queryByDisplayValue('claude')).not.toBeInTheDocument()
     })
 
+    it.each([false, true])('reveals DSH diagnostics and refreshes the machine catalog in the new-task form: %s', async (newTask) => {
+        savePreferredAgent('claude')
+        mocks.availableAgents.splice(0, mocks.availableAgents.length,
+            { agent: 'claude', available: true },
+            { agent: 'codex', available: true },
+            { agent: 'dsh', available: false, reason: 'invalid_configuration' }
+        )
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo"
+            initialTask={newTask ? 'Inspect project' : undefined} onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        if (newTask) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+
+        expect(screen.queryByText('DeepSeek Harness (DSH)')).not.toBeInTheDocument()
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newSession.otherAgents' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'newSession.otherAgents' }))
+        const dsh = screen.getByText('DeepSeek Harness (DSH)').closest('li')!
+        expect(within(dsh).getByText('newSession.agentConfigurationInvalid')).toBeInTheDocument()
+        expect(screen.queryByDisplayValue('dsh')).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'newSession.refreshAgents' }))
+        expect(mocks.refreshAgentAvailability).toHaveBeenCalledOnce()
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+    })
+
     it('refuses a directory rejected by workspace-root validation', async () => {
         mocks.checkPathsExists.mockImplementation(async ([path]: string[]) => ({
             exists: { [path]: false },
@@ -1177,6 +1204,26 @@ describe('NewSession launch preferences', () => {
             agent: 'dsh',
             yolo: undefined,
             permissionMode: undefined
+        }))
+    })
+
+    it('shows DSH-managed launch settings without an empty model picker or a misleading YOLO caption', async () => {
+        savePreferredAgent('dsh')
+        savePreferredYoloMode(true)
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'dsh-task' })
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo"
+            initialTask="Inspect this project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+
+        const model = screen.getByText('newSession.dshManagedModel')
+        expect(model.closest('button')).toBeNull()
+        expect(screen.queryByRole('button', { name: 'auto · auto' })).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'misc.permissionMode' })).toHaveTextContent('newSession.permission.managedTitle')
+        expect(screen.getByRole('button', { name: 'misc.permissionMode' })).not.toHaveTextContent('Yolo')
+        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('dsh-task'))
+        expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
+            agent: 'dsh', model: undefined, effort: undefined, yolo: undefined, permissionMode: undefined
         }))
     })
 

@@ -19,7 +19,7 @@ agent's integration; their supported syntax varies by agent.
 | GitHub Copilot | `hapi copilot` | ACP (`copilot --acp --stdio`) | ✓ | ✓ | `default` `read-only` `safe-yolo` `yolo` | ✓ |
 | Kimi | `hapi kimi` | ACP (`kimi acp`) | ✓ | ✓ | `default` `read-only` `safe-yolo` `yolo` | ✓ |
 | OpenCode | `hapi opencode` | ACP (`opencode acp`) | ✓ | ✓ | `default` `plan` `yolo` | ✓ |
-| DeepSeek Harness | `hapi dsh` | ACP (`dsh-acp-demo` or configured server) | — | ✓ | Managed by DSH ACP composition | When advertised |
+| DeepSeek Harness | `hapi dsh` | ACP (`dsh --profile acp` or configured server) | — | ✓ | Managed by DSH ACP composition | When advertised |
 | Antigravity (agy) | `hapi agy` | Headless print mode (per-turn `agy -p` + NDJSON) | — | ✓ | `request-review` `always-proceed` | ✓ |
 | Pi | `hapi pi` | `pi --mode rpc` (JSON-line RPC over stdio) | — | ✓ | none (always auto-approve) | ✓ |
 | Gemini CLI | — | **Removed** — Google sunset the consumer Gemini CLI (2026-06-18) | — | — | — | — |
@@ -255,31 +255,53 @@ If a remote session reports authentication failure, run `grok login --device-aut
 
 ## DeepSeek Harness
 
-`hapi dsh` uses the shared ACP transport and keeps DSH's runtime outside HAPI. The
-default executable is `dsh-acp-demo`; configure a different ACP server or a
-source checkout with `HAPI_DSH_ACP_COMMAND`, `HAPI_DSH_ACP_CONFIG`, or the JSON
-argument array `HAPI_DSH_ACP_ARGS_JSON`.
+`hapi dsh` starts the official launcher as `dsh --profile acp` through HAPI's
+shared ACP transport. DSH remains a separately installed runtime. Install it on
+the machine running the HAPI runner, then configure its model provider according
+to the [DSH guide](https://github.com/deepseek-ai/deepseek-harness/tree/master/apps/cli):
 
-The demo package is `@deepseek-ai/dsh-acp-demo`. Use a version matching your
-DSH composition, or launch a source checkout. HAPI reads the server's ACP
-capabilities rather than assuming that every installed version supports the
-same features.
+```bash
+npm install -g @deepseek-ai/dsh
+hapi dsh
+```
 
-A published package still needs a DSH Cordis composition/config. A source
-checkout can be launched directly:
+The built-in ACP profile initializes the stdio server. A separate composition
+file is optional. Set `HAPI_DSH_ACP_CONFIG` to an absolute configuration-patch
+path to launch `dsh --profile acp --patch /absolute/path/to/patch.yml`.
+
+For a source checkout, first run its `pnpm install` and `pnpm run build`, then:
 
 ```bash
 export HAPI_DSH_ACP_COMMAND=pnpm
-export HAPI_DSH_ACP_ARGS_JSON='["--dir", "/path/to/deepseek-harness", "run", "demo:acp"]'
+export HAPI_DSH_ACP_ARGS_JSON='["--dir", "/path/to/deepseek-harness", "run", "dsh", "--profile", "acp"]'
 hapi dsh
 ```
+
+`HAPI_DSH_ACP_COMMAND` can also point directly to a `dsh` executable outside
+`PATH`, or to a custom ACP server. A custom server receives no generated profile
+arguments; if a config path is supplied it receives `--config <path>`.
+`HAPI_DSH_ACP_ARGS_JSON` replaces all generated arguments exactly, including
+when set to `[]`; `HAPI_DSH_ACP_CONFIG` is ignored in that case.
+
+In **New task → More settings → Agent**, installed agents are selectable.
+**Other agents** shows why a supported agent is unavailable, and **Refresh**
+checks the selected machine again. If DSH is missing, make sure this machine's
+HAPI CLI includes the corrected DSH launcher and that its runner can find `dsh`
+on its own `PATH`. Set command overrides in the runner's environment before
+starting it. After an install, CLI upgrade, or environment change, restart the
+runner with `hapi runner start`, keeping its existing `--workspace-root` options,
+or restart its service if managed by a service manager. **Update HAPI** in the
+Web UI updates Web assets; it does not install DSH or upgrade another machine's
+CLI.
 
 DSH sessions are remote-only. A server advertising `session/resume` allows HAPI
 to preserve its native root ID and resume that same conversation; a resume
 failure is reported without creating a new conversation. When `session/close`
 is advertised, HAPI waits for it before stopping the transport and MCP bridge.
 
-Model and effort pickers show only the server's advertised options. Provider
+Before launch, the model summary reads **Configured by DSH** and permission
+policy is shown as agent-managed. In a running session, model and effort
+pickers show only the server's advertised options. Provider
 groups are retained in option labels, model values remain opaque, and provider
 default reasoning values are supported. Changes affect the next admitted turn.
 An HTTP-capable server receives HAPI's MCP bridge for HAPI tools. Tool progress,

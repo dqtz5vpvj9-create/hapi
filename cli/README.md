@@ -40,7 +40,7 @@ Choose a supported coding agent from your terminal and control its sessions remo
 - `hapi opencode` - Start OpenCode mode via ACP. See `src/opencode/runOpencode.ts`.
   Note: OpenCode supports local and remote modes; local mode streams via OpenCode plugins.
 - `hapi dsh` - Start DeepSeek Harness through ACP. See `src/dsh/runDsh.ts`.
-  DSH is remote-only and its ACP server must be configured separately.
+  DSH is remote-only; install the official `@deepseek-ai/dsh` runtime and configure its model provider separately.
 - `hapi resume [sessionId]` - List resumable sessions for this machine or resume one locally.
 - `hapi ping-peer <session-id-prefix> <message>` - Resume (if needed) and message another session. Prefer this or MCP `ping_peer` / `list_peers` over reinventing JWT+curl. Also `--message-file` / `--list`.
 - `hapi inspect-peer <session-id-or-prefix>` - Read-only peer metadata + recent message text (no resume). Prefer this or MCP `inspect_peer` when a user cites `[title](/sessions/<id>)` or Copy-reference `See session "…" (/sessions/<id>) for context`. `/sessions/<id>` is a hub path, not a local file. Optional `--limit`.
@@ -162,21 +162,40 @@ environment automatically.
 
 See `src/configuration.ts` for all options.
 
-DeepSeek Harness ACP uses `dsh-acp-demo` by default. Override the executable or
-its arguments without shell parsing:
+DeepSeek Harness uses the official `dsh --profile acp` entry point. Install the
+DSH runtime separately on the runner machine:
 
 ```bash
-export HAPI_DSH_ACP_COMMAND=dsh-acp-demo
-export HAPI_DSH_ACP_CONFIG=/path/to/deepseek-harness/examples/acp-agent/cordis.yml
+npm install -g @deepseek-ai/dsh
 hapi dsh
 ```
 
-For a source checkout, use JSON arguments:
+The official ACP profile initializes on first use and reads the runner account's
+DSH configuration. To apply an additional Cordis patch, set
+`HAPI_DSH_ACP_CONFIG=/absolute/path/to/cordis.patch.yml`; HAPI passes it as
+`--patch` after `--profile acp`. An absolute `HAPI_DSH_ACP_COMMAND` pointing to
+`dsh` (or a Windows `dsh.exe`/`dsh.cmd` shim) uses the same profile arguments.
+
+For a source checkout, first run its `pnpm install` and `pnpm run build`, then
+use the official source launcher through JSON arguments:
 
 ```bash
 export HAPI_DSH_ACP_COMMAND=pnpm
-export HAPI_DSH_ACP_ARGS_JSON='["--dir", "/path/to/deepseek-harness", "run", "demo:acp"]'
+export HAPI_DSH_ACP_ARGS_JSON='["--dir", "/path/to/deepseek-harness", "run", "dsh", "--profile", "acp"]'
+hapi dsh
 ```
+
+Explicit custom ACP server executables keep their own argument contract: no
+generated profile arguments, and `--config <path>` if `HAPI_DSH_ACP_CONFIG` is
+set. `HAPI_DSH_ACP_ARGS_JSON` replaces all generated arguments exactly, including
+an empty `[]`; `HAPI_DSH_ACP_CONFIG` is ignored in that case. The JSON argument
+array is not split as a shell command. HAPI does not automatically fall back to
+a retired demo.
+
+The Web Create page checks the selected machine's runner environment. Install
+DSH and set any `HAPI_DSH_*` variables where that runner starts, then restart it
+after environment changes. A Web interface update alone does not install DSH or
+upgrade a remote runner's HAPI CLI.
 
 HAPI negotiates DSH capabilities at connection time. Servers advertising
 `session/resume` receive the persisted DSH root ID on resume; a failed resume
@@ -204,9 +223,9 @@ the DSH composition still owns its overall permission policy.
 - `HAPI_EXPERIMENTAL` - Enable experimental features (true/1/yes).
 - `HAPI_EXTRA_HEADERS_JSON` - JSON object of extra headers to send on CLI → hub requests, e.g. `{"Cookie":"CF_Authorization=..."}`. Can also be set as the `extraHeaders` object in `~/.hapi/settings.json` (environment variable wins).
 - `HAPI_CLAUDE_PATH` - Path to a specific `claude` executable.
-- `HAPI_DSH_ACP_COMMAND` - ACP server executable for `hapi dsh` (default: `dsh-acp-demo`).
-- `HAPI_DSH_ACP_CONFIG` - Optional `dsh-acp-demo --config` path.
-- `HAPI_DSH_ACP_ARGS_JSON` - Optional JSON array of ACP server arguments.
+- `HAPI_DSH_ACP_COMMAND` - ACP server executable for `hapi dsh` (default: `dsh`, launched with `--profile acp`).
+- `HAPI_DSH_ACP_CONFIG` - Optional absolute Cordis patch path for the official CLI (`--patch`), or config path for an explicit custom ACP server (`--config`).
+- `HAPI_DSH_ACP_ARGS_JSON` - Optional JSON array replacing all ACP server arguments; takes precedence over `HAPI_DSH_ACP_CONFIG`.
 - `HAPI_HTTP_MCP_URL` - Default MCP target for `hapi mcp`.
 
 ### Runner

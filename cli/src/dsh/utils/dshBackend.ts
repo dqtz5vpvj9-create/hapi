@@ -1,4 +1,5 @@
 import { AcpSdkBackend } from '@/agent/backends/acp'
+import { getAgentLaunchCommand } from '@/agent/agentLaunchCommand'
 
 type DshAcpEnvironment = Record<string, string | undefined>
 
@@ -25,12 +26,18 @@ export function resolveDshAcpCommand(env: DshAcpEnvironment = process.env): {
     command: string
     args: string[]
 } {
-    const command = env.HAPI_DSH_ACP_COMMAND?.trim() || 'dsh-acp-demo'
+    const command = getAgentLaunchCommand('dsh', env)
     if (env.HAPI_DSH_ACP_ARGS_JSON?.trim()) {
         return { command, args: parseArgsJson(env.HAPI_DSH_ACP_ARGS_JSON.trim()) }
     }
+    // The official CLI serves ACP through a profile. An explicit community
+    // server keeps its own argument contract; JSON arguments override either.
+    const commandName = command.replaceAll('\\', '/').split('/').at(-1) ?? command
+    const officialCli = /^dsh(?:\.(?:exe|cmd|bat))?$/i.test(commandName)
+    const args = officialCli ? ['--profile', 'acp'] : []
     const config = env.HAPI_DSH_ACP_CONFIG?.trim()
-    return { command, args: config ? ['--config', config] : [] }
+    if (config) args.push(officialCli ? '--patch' : '--config', config)
+    return { command, args }
 }
 
 export function createDshBackend(env: NodeJS.ProcessEnv = process.env): AcpSdkBackend {
