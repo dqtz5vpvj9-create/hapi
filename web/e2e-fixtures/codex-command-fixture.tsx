@@ -13,7 +13,7 @@ const params = new URLSearchParams(location.search)
 const command = 'ls -ld /home/chris/.agentsview /home/chris/miniconda3 /android; df -h\nsystemctl --user list-units --type=service --state=running --no-pager'
 const powershellCommand = '"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command "rg needle src"'
 const reportLine = `Browser reports: ${Array.from({ length: 18 }, (_, index) => `browser-report-${String(index + 1).padStart(2, '0')}.json`).join(' | ')}`
-const output = ['API acceptance saved: True', reportLine, 'DETAIL_OUTPUT_ONLY', 'Verification complete.'].join('\n')
+const output = ['API acceptance saved: True', 'DETAIL_OUTPUT_ONLY', 'Verification complete.', reportLine].join('\n')
 const startedAt = Date.now() - 1200
 const api = {} as ApiClient
 const context: HappyChatContextValue = {

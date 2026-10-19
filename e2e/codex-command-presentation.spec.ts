@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 const fixtureUrl = '/e2e-fixtures/codex-command-fixture.html'
 const powershellCommand = '"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command "rg needle src"'
 const reportLine = `Browser reports: ${Array.from({ length: 18 }, (_, index) => `browser-report-${String(index + 1).padStart(2, '0')}.json`).join(' | ')}`
-const fullOutput = ['API acceptance saved: True', reportLine, 'DETAIL_OUTPUT_ONLY', 'Verification complete.'].join('\n')
+const fullOutput = ['API acceptance saved: True', 'DETAIL_OUTPUT_ONLY', 'Verification complete.', reportLine].join('\n')
 
 async function expectNoPageOverflow(page: Page) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -44,7 +44,7 @@ for (const width of [390, 1280]) {
         const preview = page.getByRole('region', { name: 'Output preview', exact: true })
         await expect(preview).toContainText('API acceptance saved: True')
         await expect(preview).toContainText('Browser reports: browser-report-01.json')
-        expect((await preview.innerText()).split('\n')).toHaveLength(2)
+        expect((await preview.innerText()).split('\n')).toEqual(['API acceptance saved: True', '…', expect.stringMatching(/^Browser reports: browser-report-01\.json.*…$/)])
         await expect(page.getByText('DETAIL_OUTPUT_ONLY')).toHaveCount(0)
         await expect(page.getByRole('button', { name: /Show details/ })).toContainText('+2 lines')
         await expectNoPageOverflow(page)
@@ -106,7 +106,7 @@ for (const width of [390, 1280]) {
         await expect(header).toBeVisible()
         await expect(page.getByRole('button', { name: /^Ran ls -ld/ })).toHaveCount(0)
         const preview = page.getByRole('region', { name: 'Output preview', exact: true })
-        await expect(preview).toHaveText('Browser verification failed: expected chat content was not rendered.\nAPI acceptance saved: True')
+        await expect(preview).toHaveText('Browser verification failed: expected chat content was not rendered.\n…\nDIAGNOSTIC_OUTPUT_ONLY: report artifact capture stopped.')
         await page.screenshot({ path: testInfo.outputPath(`command-failed-${width}.png`) })
         await header.click()
         const details = page.getByRole('region', { name: 'Command details', exact: true })
