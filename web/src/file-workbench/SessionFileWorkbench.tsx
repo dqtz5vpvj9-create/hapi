@@ -234,25 +234,22 @@ export function SessionFileWorkbench(props: {
         if (tab) { select(tab.id); document.getElementById(`${instanceId}-file-tab-${tab.id}`)?.focus() }
     }
     return <FileWorkbenchNavigationContext.Provider value={navigation}>
-        <div ref={root} className="file-workbench" data-wide={wide} data-tree={mobileTree || !active} data-desktop-tree={desktopTree}
+        <div ref={root} className="file-workbench" data-wide={wide} data-tree={mobileTree || !active} data-desktop-tree={desktopTree || !active}
             style={{ '--file-tree-width': `${state.treeWidth}px` } as CSSProperties}
             onKeyDown={event => {
                 if (!(event.ctrlKey || event.metaKey)) return
                 if (event.key === 'PageDown' || event.key === 'PageUp') { event.preventDefault(); switchTab(event.key === 'PageDown' ? 1 : -1) }
                 if (event.key.toLowerCase() === 'w' && active) { event.preventDefault(); void close([active.id]) }
             }}>
-            <div className="file-workbench-toolbar">
-                <button type="button" onClick={() => {
-                    if (wide ? desktopTree : mobileTree) { if (wide) setDesktopTree(false); else setMobileTree(false) }
-                    else revealActive()
-                }} aria-pressed={wide ? desktopTree : mobileTree} disabled={!active}>{(wide ? desktopTree : mobileTree) ? labels.showFile : labels.showTree}</button>
-                <button type="button" onClick={revealActive} disabled={!activeTarget}>{labels.reveal}</button>
-                {active && state.tabs.length > 1 ? <button type="button" onClick={() => void close(state.tabs.filter(tab => tab.id !== active.id).map(tab => tab.id))}>{labels.closeOthers}</button> : null}
-            </div>
             {error || state.error ? <p className="file-workbench-notice" role="alert">{error || state.error}</p> : null}
             <div className="file-workbench-body">
                 <div className="file-workbench-tree" inert={!wide && !mobileTree && !!active} aria-hidden={!wide && !mobileTree && !!active || undefined}>
                     <SessionFiles sessionId={props.sessionId} search={search} revealKey={reveal} onBack={props.onBack}
+                        headerAction={!wide && active ? <button type="button" className="file-workbench-return" aria-label={labels.showFile}
+                            title={`${labels.showFile}: ${documentName(active.resource.document)}`} onClick={() => setMobileTree(false)}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 15h8m-3-3 3 3-3 3" /></svg>
+                            <span className="file-workbench-return-count" aria-hidden="true">{state.tabs.length}</span>
+                        </button> : undefined}
                         activeFilePath={activeTarget} onOpenFile={openFile} foreground={foreground && ((wide && desktopTree) || (!wide && mobileTree) || !active)}
                         beforeFileMutation={beforeMutation} onFileMutation={afterMutation} onFileMutationSettled={settleMutation} />
                 </div>
@@ -263,7 +260,13 @@ export function SessionFileWorkbench(props: {
                             if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); store.resize(state.treeWidth + (event.key === 'ArrowRight' ? 20 : -20)) }
                         }} />
                     <div className="file-workbench-documents" inert={!wide && mobileTree} aria-hidden={!wide && mobileTree || undefined}>
-                        <div className="file-workbench-tabs" role="tablist" aria-label={labels.tabs}>
+                        <div className="file-workbench-tabbar" hidden={!wide && state.tabs.length === 1}>
+                            {wide ? <button type="button" className="file-workbench-tree-toggle" aria-label={desktopTree ? labels.hideTree : labels.showTree}
+                                title={desktopTree ? labels.hideTree : labels.showTree} aria-pressed={desktopTree}
+                                onClick={() => { if (desktopTree) setDesktopTree(false); else { setDesktopTree(true); revealActive() } }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M5.5 8h1M5.5 12h1" /></svg>
+                            </button> : null}
+                            <div className="file-workbench-tabs" role="tablist" aria-label={labels.tabs}>
                             {state.tabs.map(tab => {
                                 const name = documentName(tab.resource.document), path = tab.resource.document.kind === 'file' ? tab.resource.document.path : name
                                 return <div className="file-workbench-tab" key={tab.id} data-path={path} data-active={tab.id === state.activeId}
@@ -273,14 +276,19 @@ export function SessionFileWorkbench(props: {
                                     <button type="button" role="tab" id={`${instanceId}-file-tab-${tab.id}`} aria-controls={`${instanceId}-file-panel-${tab.id}`} aria-selected={tab.id === state.activeId}
                                         tabIndex={tab.id === state.activeId ? 0 : -1} title={path} onClick={() => select(tab.id)}
                                         onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); switchTab(event.key === 'ArrowRight' ? 1 : -1) } }}>{name}</button>
-                                    <button type="button" aria-label={`${labels.close} ${name}`} title={path} onClick={() => void close([tab.id])}>×</button>
+                                    <button type="button" className="file-workbench-tab-close" aria-label={`${labels.close} ${name}`} title={path} onClick={() => void close([tab.id])}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
+                                    </button>
                                 </div>
                             })}
+                            </div>
                         </div>
                         <div className="file-workbench-readers">
                             {state.tabs.filter(tab => retained.has(tab.id)).map(tab => <div key={tab.id} id={`${instanceId}-file-panel-${tab.id}`} role="tabpanel" aria-labelledby={`${instanceId}-file-tab-${tab.id}`}
                                 className="file-workbench-reader" hidden={tab.id !== state.activeId} inert={tab.id !== state.activeId}>
-                                <DocumentSurface resource={tab.resource} foreground={foreground && tab.id === state.activeId && (wide || !mobileTree)} />
+                                <DocumentSurface resource={tab.resource} foreground={foreground && tab.id === state.activeId && (wide || !mobileTree)}
+                                    onClose={() => void close([tab.id])}
+                                    onCloseOthers={state.tabs.length > 1 ? () => void close(state.tabs.filter(other => other.id !== tab.id).map(other => other.id)) : undefined} />
                             </div>)}
                         </div>
                     </div>

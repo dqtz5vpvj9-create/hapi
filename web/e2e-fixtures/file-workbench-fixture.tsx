@@ -1,12 +1,17 @@
 import './workspace-fixture'
+import { documentPdf } from './document-pdf'
+import { initializeFontScale } from '@/hooks/useFontScale'
 
 // Use the production App/router and the existing session boundary. Only file
 // APIs differ: sessions have independent mutable bytes by default. sharedFiles
 // explicitly models two sessions on the same machine, backed by one filesystem.
 // Assertions can therefore detect both misrouted bytes and stale shared editors.
+// The fixture bypasses main.tsx, so apply its real saved display preference too.
+initializeFontScale()
 const root = '/mnt/cache/src/hapi'
 const sharedFiles = new URLSearchParams(location.search).has('sharedFiles')
-const storageKey = `fixture:file-workbench:v1${sharedFiles ? ':shared' : ''}`
+const layout = new URLSearchParams(location.search).has('layout')
+const storageKey = `fixture:file-workbench:v1${sharedFiles ? ':shared' : ''}${layout ? ':layout' : ''}`
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 type Entry = { type: 'file' | 'directory'; content: string; revision: number }
@@ -32,6 +37,13 @@ const seed = (): FileState => ({
             ['/lazy/nested/leaf.txt', `Lazy bytes for ${sessionId}.\n`],
             ['/.hidden.txt', `Hidden bytes for ${sessionId}.\n`],
         ].map(([path, text]) => [root + path, { type: 'file', content: encode(encoder.encode(text)), revision: 1 }]),
+        ...(layout ? [
+            ...['/object-aware-ram', '/outputs', '/scripts', '/submitted', '/variants', '/docs/research', '/docs/research/AgentCompletionInterrupt']
+                .map(path => [root + path, { type: 'directory', content: '', revision: 1 }]),
+            // Render actual PDF.js canvas/text layers within the production
+            // file workbench; a placeholder cannot reveal stacked reader chrome.
+            [root + '/docs/research/AgentCompletionInterrupt/6787-R2-review.pdf', { type: 'file', content: encode(documentPdf({ portrait: true })), revision: 1 }],
+        ] : []),
     ])])) as FileState['sessions'],
 })
 const state: FileState = JSON.parse(localStorage.getItem(storageKey) ?? 'null') ?? seed()

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import * as Popover from '@radix-ui/react-popover'
 import { getDocument, GlobalWorkerOptions, PDFDataRangeTransport, PDFWorker, TextLayer, type PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import 'pdfjs-dist/web/pdf_viewer.css'
@@ -19,6 +20,10 @@ export default function PdfDocument({ session, foreground, office, onSelect }: {
     const [page, setPage] = useState(session.page)
     const [zoom, setZoom] = useState(session.zoom)
     const [region, setRegion] = useState(false)
+    const [zoomOpen, setZoomOpen] = useState(false)
+    const [toolOpen, setToolOpen] = useState(false)
+    const foregroundRef = useRef(foreground)
+    foregroundRef.current = foreground
     const [error, setError] = useState<string>()
     const [retry, setRetry] = useState(0)
     const [width, setWidth] = useState(600)
@@ -27,6 +32,9 @@ export default function PdfDocument({ session, foreground, office, onSelect }: {
     const canvas = useRef<HTMLCanvasElement>(null), text = useRef<HTMLDivElement>(null), container = useRef<HTMLDivElement>(null)
     const sourceBlob = session.state.blob
     const preview = session.state.preview
+    useEffect(() => {
+        if (!foreground) { setZoomOpen(false); setToolOpen(false) }
+    }, [foreground])
     // Load the viewer worker while Office conversion is running, not after it finishes.
     useEffect(() => {
         if (!foreground) return
@@ -106,11 +114,41 @@ export default function PdfDocument({ session, foreground, office, onSelect }: {
     }
     return <div className="document-pages">
         <div className="document-page-controls">
-            <button disabled={page <= 1} aria-label={labels.previous} onClick={() => changePage(page - 1)}>←</button>
-            <span>{pdf ? `${page} / ${pdf.numPages}` : '…'}</span>
-            <button disabled={!pdf || page >= pdf.numPages} aria-label={labels.next} onClick={() => changePage(page + 1)}>→</button>
-            <button aria-label={labels.zoomOut} onClick={() => setZoom(value => Math.max(.25, value - .25))}>−</button><button onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button><button aria-label={labels.zoomIn} onClick={() => setZoom(value => Math.min(3, value + .25))}>+</button>
-            <button aria-pressed={region} onClick={() => setRegion(value => !value)}>{region ? labels.region : labels.text} ▾</button>
+            <div className="document-pagination" aria-label={labels.pages}>
+                <button type="button" className="document-icon-button" disabled={page <= 1} aria-label={labels.previous} title={labels.previous} onClick={() => changePage(page - 1)}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg>
+                </button>
+                <span className="document-page-number" aria-live="polite">{pdf ? `${page} / ${pdf.numPages}` : '…'}</span>
+                <button type="button" className="document-icon-button" disabled={!pdf || page >= pdf.numPages} aria-label={labels.next} title={labels.next} onClick={() => changePage(page + 1)}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m10 6 6 6-6 6" /></svg>
+                </button>
+            </div>
+            <Popover.Root open={foreground && zoomOpen} onOpenChange={setZoomOpen}>
+                <Popover.Trigger asChild><button type="button" className="document-zoom-trigger" aria-label={labels.zoom} title={labels.zoom}>
+                    {Math.round(zoom * 100)}%<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m5 6 3 3 3-3" /></svg>
+                </button></Popover.Trigger>
+                <Popover.Portal><Popover.Content className="document-popover document-zoom-popover" side="bottom" align="end" sideOffset={6} collisionPadding={12} aria-label={labels.zoom}
+                    onCloseAutoFocus={event => { if (!foregroundRef.current) event.preventDefault() }}>
+                    <div className="document-zoom-controls">
+                        <button type="button" className="document-icon-button" disabled={zoom <= .25} aria-label={labels.zoomOut} onClick={() => setZoom(value => Math.max(.25, value - .25))}>−</button>
+                        <span aria-live="polite">{Math.round(zoom * 100)}%</span>
+                        <button type="button" className="document-icon-button" disabled={zoom >= 3} aria-label={labels.zoomIn} onClick={() => setZoom(value => Math.min(3, value + .25))}>+</button>
+                    </div>
+                    <Popover.Close asChild><button type="button" className="document-fit-width" onClick={() => setZoom(1)}>{labels.fit}</button></Popover.Close>
+                </Popover.Content></Popover.Portal>
+            </Popover.Root>
+            <Popover.Root open={foreground && toolOpen} onOpenChange={setToolOpen}>
+                <Popover.Trigger asChild><button type="button" className="document-icon-button document-selection-trigger" data-region={region || undefined} aria-label={labels.selectionTool} title={region ? labels.region : labels.text}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        {region ? <path d="M9 4H5a1 1 0 0 0-1 1v4m0 6v4a1 1 0 0 0 1 1h4m6 0h4a1 1 0 0 0 1-1v-4m0-6V5a1 1 0 0 0-1-1h-4" /> : <path d="M5 7V4h14v3M12 4v16m-4 0h8" />}
+                    </svg>
+                </button></Popover.Trigger>
+                <Popover.Portal><Popover.Content className="document-popover document-action-menu" side="bottom" align="end" sideOffset={6} collisionPadding={12} aria-label={labels.selectionTool}
+                    onCloseAutoFocus={event => { if (!foregroundRef.current) event.preventDefault() }}>
+                    <Popover.Close asChild><button type="button" aria-pressed={!region} onClick={() => setRegion(false)}>{labels.text}<span aria-hidden="true">{!region ? '✓' : ''}</span></button></Popover.Close>
+                    <Popover.Close asChild><button type="button" aria-pressed={region} onClick={() => setRegion(true)}>{labels.region}<span aria-hidden="true">{region ? '✓' : ''}</span></button></Popover.Close>
+                </Popover.Content></Popover.Portal>
+            </Popover.Root>
         </div>
         {office ? <div className="document-notice">{labels.conversionNotice}</div> : null}
         {error ? <div className="document-notice" role="alert">{error} <button onClick={() => preview ? void session.load(api, true) : setRetry(value => value + 1)}>{labels.reload}</button></div> : null}

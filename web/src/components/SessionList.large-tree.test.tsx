@@ -81,7 +81,10 @@ describe('Recent huge subtree window', () => {
     })
     it('shows mobile headings on root day boundaries only', () => {
         viewport.narrow = true
-        const list = mount([session('a', undefined, Date.UTC(2025, 0, 3)), session('child', 'a', Date.UTC(2025, 0, 4)), session('b', undefined, Date.UTC(2025, 0, 2))])
+        // Headings describe the viewer's local calendar day. UTC midnight is
+        // still the previous day in western time zones, so seed local dates.
+        const localDay = (day: number) => new Date(2025, 0, day, 12).getTime()
+        const list = mount([session('a', undefined, localDay(3)), session('child', 'a', localDay(4)), session('b', undefined, localDay(2))])
         fireEvent.click(toggle(list.container, 'a'))
         const headings = list.container.querySelectorAll('.app-session-date-heading')
         expect(headings).toHaveLength(2)

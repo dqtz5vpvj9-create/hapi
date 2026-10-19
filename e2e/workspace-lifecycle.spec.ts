@@ -221,3 +221,65 @@ for (const renderer of ['native', 'mixed']) test(`keeps mobile pane returns warm
     expect(await page.evaluate(() => window.__workspaceFixture.sends)).toEqual([])
     expect(await page.evaluate(() => window.__workspaceFixture.unhandled)).toEqual([])
 })
+
+test('keeps the newly opened terminal pane focused after choosing it from the workspace view menu', async ({ page }) => {
+    await page.goto('/e2e-fixtures/file-workbench-fixture.html?panes=1&theme=codex')
+    await page.getByRole('button', { name: 'Pane actions', exact: true }).first().click()
+    await page.getByRole('menuitem', { name: 'Project files', exact: true }).click()
+    await expect(page.getByRole('tree')).toBeVisible()
+    const sourceId = await page.locator('.workspace-pane[data-focused=true]').getAttribute('data-pane-id')
+    const source = page.locator(`.workspace-pane[data-pane-id="${sourceId}"]`)
+    await source.locator('.session-workspace-switch').click()
+    await page.getByRole('menuitemradio', { name: 'Terminal', exact: true }).click()
+    const terminal = page.locator('.workspace-pane').filter({ has: page.locator('.xterm') })
+    await expect(terminal).toBeVisible()
+    await expect(page.getByRole('menu', { name: 'Workspace', exact: true })).toHaveCount(0)
+    // Radix queues close-auto-focus after the menu unmounts. Observe the next
+    // two frames so a transient store focus before that callback cannot pass.
+    await page.evaluate(() => new Promise<void>(resolve => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    }))
+    await expect(terminal).toHaveAttribute('data-focused', 'true')
+    await expect(source).toHaveAttribute('data-focused', 'false')
+    await expect(source.locator('.session-workspace-switch')).not.toBeFocused()
+    expect(await page.evaluate(() => window.__workspaceFixture.sends)).toEqual([])
+})
+
+test('dismisses retained Code changes options when another workspace becomes foreground', async ({ page }) => {
+    await page.goto('/e2e-fixtures/workspace-fixture.html?panes=1&workingSet=2&theme=codex')
+    await expect(pane(page, 1)).toBeVisible()
+    // This fixture normally exercises chat only. Supply its read-only Git
+    // boundary so this navigation test does not depend on a Hub or local repo.
+    await page.evaluate(() => {
+        const fetch = window.fetch.bind(window)
+        window.fetch = async (input, init) => {
+            const url = new URL(input instanceof Request ? input.url : input.toString(), location.href)
+            if (/\/api\/sessions\/[^/]+\/git-(status|diff-numstat)$/.test(url.pathname)) {
+                return new Response(JSON.stringify({ success: true, stdout: url.pathname.endsWith('/git-status') ? '## main\n' : '', stderr: '' }), {
+                    headers: { 'Content-Type': 'application/json' },
+                })
+            }
+            return fetch(input, init)
+        }
+    })
+    await page.getByRole('button', { name: 'Pane actions', exact: true }).first().click()
+    await page.getByRole('menuitem', { name: 'Code changes', exact: true }).click()
+    const source = pane(page, 1)
+    await expect(source.locator('.session-workspace-switch')).toHaveText('Code changes')
+    await source.getByRole('button', { name: 'File browser options', exact: true }).click()
+    await expect(page.getByRole('menu', { name: 'File browser options', exact: true })).toBeVisible()
+    // Activate through the existing window control without an outside pointer
+    // or focus event: those would independently dismiss and mask a leaked portal.
+    await workspace(page, 2).evaluate(button => (button as HTMLButtonElement).click())
+    await expect(pane(page, 2)).toBeVisible()
+    await expect(source).toHaveCount(1)
+    await expect(source).toBeHidden()
+    await expect(page.getByRole('menu', { name: 'File browser options', exact: true })).toHaveCount(0)
+    await workspace(page, 1).click()
+    await expect(source.locator('.session-workspace-switch')).toHaveText('Code changes')
+    await expect(page.getByRole('menu', { name: 'File browser options', exact: true })).toHaveCount(0)
+    await source.getByRole('button', { name: 'File browser options', exact: true }).click()
+    await expect(page.getByRole('menuitem', { name: 'Refresh filesystem view', exact: true })).toBeVisible()
+    expect(await page.evaluate(() => window.__workspaceFixture.unhandled)).toEqual([])
+    expect(await page.evaluate(() => window.__workspaceFixture.sends)).toEqual([])
+})

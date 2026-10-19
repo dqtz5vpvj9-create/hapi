@@ -11,6 +11,9 @@ on:
             - 'scripts/testing/realtime-cohort.mjs'
             - 'scripts/testing/recent/lifecycle.mjs'
             - 'e2e/file-workbench.spec.ts'
+            - 'e2e/file-workbench-layout.spec.ts'
+            - 'e2e/document-workspace.spec.ts'
+            - 'e2e/html-document.spec.ts'
             - 'e2e/typing-replay.spec.ts'
             - 'e2e/workspace-lifecycle.spec.ts'
             - 'e2e/settings-responsive.spec.ts'
@@ -32,6 +35,9 @@ on:
             - 'scripts/testing/realtime-cohort.mjs'
             - 'scripts/testing/recent/lifecycle.mjs'
             - 'e2e/file-workbench.spec.ts'
+            - 'e2e/file-workbench-layout.spec.ts'
+            - 'e2e/document-workspace.spec.ts'
+            - 'e2e/html-document.spec.ts'
             - 'e2e/typing-replay.spec.ts'
             - 'e2e/workspace-lifecycle.spec.ts'
             - 'e2e/settings-responsive.spec.ts'
@@ -62,7 +68,7 @@ jobs:
             - name: Check the staged artifact and real streaming reconnect recovery
               run: bun run test:realtime-cohort
             - name: Check streaming, DOM collection and mobile controls
-              run: bun run test:dependency-ui file-workbench.spec.ts
+              run: bun run test:dependency-ui file-workbench.spec.ts file-workbench-layout.spec.ts document-workspace.spec.ts html-document.spec.ts
             - name: Upload browser report
               if: always()
               uses: actions/upload-artifact@v4

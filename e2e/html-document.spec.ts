@@ -1,4 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
+
+async function documentAction(page: Page, surface: Locator, name: string) {
+    await surface.getByRole('button', { name: 'Document actions', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Document actions', exact: true }).getByRole('button', { name, exact: true }).click()
+}
 
 for (const width of [390, 1440]) {
     test(`renders an isolated interactive Windows HTML report and keeps its pane state at ${width}px`, async ({ page }) => {
@@ -23,7 +28,7 @@ for (const width of [390, 1440]) {
 
         await surface.getByRole('button', { name: 'Source', exact: true }).click()
         await expect(surface.locator('.cm-content')).toContainText('<!doctype html>')
-        await surface.getByRole('button', { name: 'Preview', exact: true }).click()
+        await documentAction(page, surface, 'Preview')
         await expect(filter).toHaveValue('联系人 12')
         await expect.poll(starts).toBe(1)
         const htmlFrame = await page.locator('.document-html-frame').first().contentFrame().locator('body').evaluate(() => window.name = 'kept-html-frame')
@@ -121,7 +126,7 @@ test('edits HTML source, updates preview explicitly and restores view state afte
     await editor.click(); await editor.press('Control+End'); await editor.pressSequentially('<p id="edited">已修改报告</p>')
     await surface.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(surface.locator('.document-status')).toHaveText('Saved')
-    await surface.getByRole('button', { name: 'Preview', exact: true }).click()
+    await documentAction(page, surface, 'Preview')
     const frame = page.frameLocator('.document-html-frame').first()
     await expect(frame.getByText('已修改报告')).toBeAttached()
     await frame.getByRole('textbox', { name: '查找联系人' }).fill('联系人 12')
@@ -129,7 +134,7 @@ test('edits HTML source, updates preview explicitly and restores view state afte
     await expect.poll(() => frame.locator('tbody tr:visible').count()).toBe(1)
     // Wait for the state publication, rather than adding a timer to the implementation.
     await frame.locator('body').evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-    await surface.getByRole('button', { name: 'Reload', exact: true }).click()
+    await documentAction(page, surface, 'Reload')
     await expect(surface.locator('.document-html')).toHaveAttribute('data-html-state', 'ready')
     await expect(frame.getByRole('textbox', { name: '查找联系人' })).toHaveValue('联系人 12')
     await expect(frame.locator('tbody tr').nth(11).locator('details')).toHaveAttribute('open', '')
