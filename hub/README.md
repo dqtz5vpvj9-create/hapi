@@ -114,7 +114,7 @@ for request/response shapes and error semantics, and `src/web/routes/` for all e
 - `GET /api/sessions/:id/skills` - List skills.
 - `POST /api/sessions/:id/permission-mode` - Set permission mode.
 - `POST /api/sessions/:id/model` - Set model preference.
-- `POST /api/sessions/:id/effort` - Set effort for Claude, Grok, or Pi; other config controls are flavor/capability-gated (see the client contract).
+- `POST /api/sessions/:id/effort` - Set effort for Claude, Grok, Pi, or a DSH session advertising effort options; other config controls are flavor/capability-gated (see the client contract).
 - `GET/POST /api/sessions/:id/scratchlist` - Read/create Hub-persisted scratchlist entries; update/delete and attachment routes share this prefix.
 
 ### Messages (`src/web/routes/messages.ts`)
@@ -157,6 +157,28 @@ for request/response shapes and error semantics, and `src/web/routes/` for all e
 - `GET /api/sessions/:id/file` - Read file content.
 - `GET /api/sessions/:id/files` - File search with ripgrep.
 
+### File management (`src/web/routes/fileManagement.ts`)
+
+- `GET /api/sessions/:id/filesystem/entry?path=...` - Inspect a file, directory, or symlink leaf and obtain its revision.
+- `POST /api/sessions/:id/filesystem` - Typed create-file, create-directory, rename, move, copy, or delete operation.
+- `POST /api/sessions/:id/filesystem/upload` - Create a new file from base64 bytes (maximum 64 MiB).
+- `GET /api/sessions/:id/filesystem/download?path=...` - Download a regular file as an attachment (maximum 64 MiB).
+
+These routes require an active session in the caller's namespace. Paths remain
+inside the real session directory; symlink parents are rejected and symlink
+leaves are inspected/copied/deleted without opening their targets. Destinations
+are exclusive. Source-changing operations require the revision returned by
+inspection; directory revisions include descendants, up to 20,000 entries.
+
+Recursive deletion is guarded per entry. If a later conflict leaves a partial
+result, `deletedPaths` reports the verified deletions so clients can reconcile
+open documents. `commit` similarly reports an already verified move when the
+subsequent metadata refresh fails. Clients must reconcile these fields even on
+`success: false`. Safe moves use GNU-compatible `/bin/mv` on Linux or the fixed
+PowerShell 7 helper on Windows; unsupported platforms and cross-filesystem moves
+return an explicit error. Create, copy, upload, download, and delete do not need
+the move helper.
+
 ### Events (`src/web/routes/events.ts`)
 
 - `GET /api/events` - SSE stream for live updates.
@@ -194,6 +216,23 @@ See `src/socket/handlers/cli/index.ts` and `src/socket/handlers/terminal.ts` for
 
 Namespaces: `/cli` (raw CLI access token) and `/terminal` (client JWT).
 Ordinary web/native session updates use SSE, not the CLI Socket.IO namespace.
+
+### Background task observations
+
+Schema 33 persists background task observations keyed by session and native task
+ID. The task update commits in the same transaction as its CLI message. Replayed
+starts/completions are idempotent, and a terminal task cannot become running
+again because its start arrived late. Notifications without a valid task ID do
+not decrement unrelated tasks.
+
+Task counts are derived from running observations. A connection timeout hides
+the count while preserving state for reconnect and Hub restart. Explicit
+session end marks remaining tasks `detached`, preserving uncertainty about the
+external processes instead of claiming completion. Task IDs and end fences
+remain until their session is deleted. Transcript copies, imports, and existing
+history during the schema upgrade do not create live task ownership; new task
+observations arrive through CLI ingress. This ledger observes agent-owned
+processes and does not restart or execute them.
 
 ### Client events (CLI to hub)
 

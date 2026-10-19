@@ -14,7 +14,8 @@ const en = {
     fit: 'Fit width', zoomIn: 'Zoom in', zoomOut: 'Zoom out', previous: 'Previous page', next: 'Next page',
     back: 'Back', openPane: 'Open in pane', removeReference: 'Remove', original: 'Original loaded version', diskVersion: 'Current disk version', mixedEndings: 'Mixed line endings: read only to preserve the original file format.',
     changedOnDisk: 'The original file changed or was removed. Reload to inspect the latest version; your current selection and draft are preserved.',
-    downloadDraft: 'Download draft',
+    downloadDraft: 'Download draft', filePath: 'File path', copyPath: 'Copy file path', pathCopied: 'Path copied',
+    pathCopyFailed: 'Could not copy the path. Select the path and copy it manually.', backToTree: 'Back to file tree',
     unavailableResources: 'Some resources could not be loaded', unavailableLink: 'This link cannot be opened',
     sourceTooLarge: 'HTML source larger than 4 MiB can be previewed and downloaded. Source editing is limited to 4 MiB.',
 }
@@ -31,7 +32,8 @@ const zh: Record<keyof typeof en, string> = {
     fit: '适合宽度', zoomIn: '放大', zoomOut: '缩小', previous: '上一页', next: '下一页',
     back: '返回', openPane: '在窗格中打开', removeReference: '移除', original: '最初读取的版本', diskVersion: '磁盘最新版本', mixedEndings: '文件包含混合换行符，暂以只读方式打开，以保留原始格式。',
     changedOnDisk: '原文件已变更或移除。当前选区和草稿已保留；重新读取可查看最新版本。',
-    downloadDraft: '下载草稿',
+    downloadDraft: '下载草稿', filePath: '文件路径', copyPath: '复制文件路径', pathCopied: '路径已复制',
+    pathCopyFailed: '复制路径失败，请选中路径手动复制。', backToTree: '返回文件树',
     unavailableResources: '部分资源无法读取', unavailableLink: '无法打开此链接',
     sourceTooLarge: '超过 4 MiB 的 HTML 支持预览和下载；源码编辑限于 4 MiB 以内。',
 }

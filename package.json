@@ -43,6 +43,8 @@
         "test:shared": "cd shared && bun run test",
         "test:e2e": "playwright test",
         "test:dependency-ui": "playwright test typing-replay.spec.ts workspace-lifecycle.spec.ts settings-responsive.spec.ts codex-session-dialog-layout.spec.ts native-attachments.spec.ts native-update.spec.ts",
+        "test:built-artifact": "node scripts/testing/built-artifact-smoke.mjs",
+        "test:realtime-cohort": "node scripts/testing/built-artifact-smoke.mjs --cohort",
         "test:e2e:tester-army": "cd tests/tester-army && npm test",
         "test:e2e:ui": "playwright test --ui",
         "test:mermaid-lightbox:playwright": "timeout 600 node scripts/dev/mermaid-lightbox-playwright.mjs",

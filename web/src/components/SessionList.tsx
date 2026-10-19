@@ -2432,6 +2432,7 @@ export function SessionList(props: {
             <NewTaskInput hub={props.hub} onContinue={() => props.onStartTask ? props.onStartTask(activeMachineFilter && activeMachineFilter !== UNKNOWN_MACHINE_ID ? activeMachineFilter : undefined) : props.onNewSession()} />
             {nativeSubagent && api ? <CodexSubagentDialog api={api} parentSessionId={nativeSubagent.parentSessionId}
                 threadId={nativeSubagent.agent.threadId} title={nativeSubagentTitle(nativeSubagent.agent)}
+                path={nativeSubagent.agent.path} role={nativeSubagent.agent.role}
                 isOpen={true} onClose={() => setNativeSubagent(null)} /> : null}
             <ConfirmDialog
                 isOpen={markAllReadOpen}

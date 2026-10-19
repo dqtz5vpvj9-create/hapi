@@ -18,6 +18,10 @@ export async function runDsh(opts: {
     /** Fresh machine-spawn stub (`--hapi-session-id`); adopt via bootstrapSession. */
     reservedSessionId?: string
     workingDirectory?: string
+    resumeSessionId?: string
+    model?: string
+    effort?: string
+    modelReasoningEffort?: string
 } = {}): Promise<void> {
     const workingDirectory = opts.workingDirectory ?? getInvokedCwd()
     const startedBy = opts.startedBy ?? 'terminal'
@@ -73,9 +77,14 @@ export async function runDsh(opts: {
         logPath: logger.getLogPath(),
         messageQueue: queue,
         onModeChange: () => {},
-        startedBy
+        startedBy,
+        sessionId: opts.resumeSessionId ?? session.getMetadata()?.dshSessionId ?? null
     })
-    const launcher = new DshRemoteLauncher(dshSession)
+    const launcher = new DshRemoteLauncher(dshSession, {
+        model: opts.model,
+        effort: opts.effort,
+        modelReasoningEffort: opts.modelReasoningEffort
+    })
     sessionRef.current = dshSession
     launcherRef.current = launcher
 

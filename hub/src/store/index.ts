@@ -1,6 +1,7 @@
 import { SpawnRequestStore, createSpawnRequestSchema } from './spawnRequestStore'
 import { ForkOperationStore, createForkOperationSchema } from './forkOperationStore'
 import { SessionPresenceStore, createSessionPresenceSchema } from './sessionPresenceStore'
+import { BackgroundTaskStore, createBackgroundTaskSchema } from './backgroundTaskStore'
 import { Database } from 'bun:sqlite'
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -48,13 +49,15 @@ export {
     WorkGraphValidationError
 } from './workGraph'
 
-const SCHEMA_VERSION: number = 32
+const SCHEMA_VERSION: number = 33
 const REQUIRED_TABLES = [
     'spawn_requests',
     'fork_operations',
     'fork_sources',
     'session_execution_versions',
     'session_read_states',
+    'session_background_tasks',
+    'session_background_task_fences',
     'sessions',
     'machines',
     'messages',
@@ -82,6 +85,7 @@ export class Store {
     readonly spawnRequests: SpawnRequestStore
     readonly forkOperations: ForkOperationStore
     readonly presence: SessionPresenceStore
+    readonly backgroundTasks: BackgroundTaskStore
     readonly sessions: SessionStore
     readonly machines: MachineStore
     readonly messages: MessageStore
@@ -141,6 +145,7 @@ export class Store {
         this.forkOperations = new ForkOperationStore(this.db)
         this.forkOperations.recoverInterrupted()
         this.presence = new SessionPresenceStore(this.db)
+        this.backgroundTasks = new BackgroundTaskStore(this.db)
         this.sessions = new SessionStore(this.db)
         this.machines = new MachineStore(this.db)
         this.messages = new MessageStore(this.db)
@@ -379,6 +384,7 @@ export class Store {
             29: () => createSessionPresenceSchema(this.db),
             30: () => createForkOperationSchema(this.db),
             31: () => createSpawnRequestSchema(this.db),
+            32: () => createBackgroundTaskSchema(this.db),
         })
 
         if (currentVersion === 0) {
@@ -633,6 +639,7 @@ export class Store {
         createMessageDependencySchema(this.db)
         createMessageOutlineSchema(this.db)
         createSessionPresenceSchema(this.db)
+        createBackgroundTaskSchema(this.db)
         createForkOperationSchema(this.db)
         createSpawnRequestSchema(this.db)
         createWorkspaceSchema(this.db)

@@ -5,7 +5,6 @@ import type { Store } from '../store'
 import { clampAliveTime } from './aliveTime'
 import { EventPublisher } from './eventPublisher'
 import { extractTodoWriteTodosFromMessageContent, TodosSchema } from './todos'
-import { extractBackgroundTaskDelta } from './backgroundTasks'
 import { resolveSessionIdleTimeoutMs, shouldClearKeepaliveIdle, shouldMarkKeepaliveIdle } from './sessionIdle'
 
 const QUEUED_MESSAGE_THINKING_GRACE_MS = 15_000
@@ -254,7 +253,7 @@ export class SessionCache {
             activeTurnStartedAt: existing?.activeTurnStartedAt ?? null,
             execution: existing?.execution ?? null,
             executionVersion: existing?.executionVersion ?? this.store.presence.executionVersion(sessionId),
-            backgroundTaskCount: existing?.backgroundTaskCount ?? 0,
+            backgroundTaskCount: (existing?.active ?? stored.active) ? this.store.backgroundTasks.runningCount(sessionId) : 0,
             todos,
             teamState,
             todosUpdatedAt: stored.todosUpdatedAt ?? 0,
@@ -303,6 +302,7 @@ export class SessionCache {
 
         const wasActive = session.active
         session.active = true
+        session.backgroundTaskCount = this.store.backgroundTasks.runningCount(sessionId)
         session.activeAt = Math.max(session.activeAt, t)
 
         this.lastBroadcastAtBySessionId.set(session.id, Date.now())
@@ -451,6 +451,7 @@ export class SessionCache {
             && this.store.messages.getImmediateQueuedLocalMessages(session.id).length > 0
 
         session.active = true
+        if (!wasActive) session.backgroundTaskCount = this.store.backgroundTasks.runningCount(session.id)
         session.activeAt = Math.max(session.activeAt, t)
         session.thinking = requestedThinking || preserveQueuedThinking
         session.thinkingAt = t
@@ -601,12 +602,12 @@ export class SessionCache {
         }
     }
 
-    applyBackgroundTaskDelta(sessionId: string, delta: { started: number; completed: number }): void {
+    refreshBackgroundTasks(sessionId: string): void {
         const session = this.sessions.get(sessionId)
         if (!session) return
 
         const prev = session.backgroundTaskCount ?? 0
-        const next = Math.max(0, prev + delta.started - delta.completed)
+        const next = session.active ? this.store.backgroundTasks.runningCount(sessionId) : 0
         if (next === prev) return
 
         session.backgroundTaskCount = next
@@ -798,6 +799,8 @@ export class SessionCache {
 
         const session = this.sessions.get(payload.sid) ?? this.refreshSession(payload.sid)
         if (!session) return
+
+        this.store.backgroundTasks.detach(session.id, t)
 
         if (!session.active && !session.thinking) {
             return
@@ -1383,6 +1386,7 @@ export class SessionCache {
             this.emitScratchlistChanged(oldSessionId)
         }
 
+        this.store.backgroundTasks.merge(oldSessionId, newSessionId)
         const mergedMetadata = this.mergeSessionMetadata(oldStored.metadata, newStored.metadata)
         if (mergedMetadata !== null && mergedMetadata !== newStored.metadata) {
             for (let attempt = 0; attempt < 2; attempt += 1) {

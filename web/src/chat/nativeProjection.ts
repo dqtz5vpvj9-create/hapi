@@ -55,6 +55,7 @@ export class NativeChatProjection {
     turnStates: ReadonlyMap<string, NativeExecution['turn']> = new Map()
     private nodes = new Map<string, NativeNode>()
     private sources = new Map<string, NodeSource>()
+    private dirtySources = new Set<string>()
     aliases = new Map<string, string>()
     private canonical = new WeakMap<ChatBlock, ChatBlock>()
     private input: readonly ChatBlock[] = []
@@ -110,13 +111,18 @@ export class NativeChatProjection {
         return changed
     }
     publish() {
+        // Snapshot before invoking listeners: a re-entrant update belongs to
+        // the next publication and must not be cleared by this one.
+        const dirty = [...this.dirtySources]
+        this.dirtySources.clear()
         if (this.publishedRuntimeBlocks !== this.runtimeBlocks) {
             this.publishedRuntimeBlocks = this.runtimeBlocks
             for (const listener of this.runtimeListeners) listener()
         }
-        for (const [key, source] of this.sources) {
-            source.publish()
-            if (!this.nodes.has(key)) this.sources.delete(key)
+        for (const key of dirty) {
+            const source = this.sources.get(key)
+            source?.publish()
+            if (!this.nodes.has(key) && this.sources.get(key) === source) this.sources.delete(key)
         }
     }
     update(input: readonly ChatBlock[], messages: readonly NormalizedMessage[], presentationChanged = false) {
@@ -223,6 +229,7 @@ export class NativeChatProjection {
         const groupKeys = new Set(grouped.map(group => group.key))
         for (const key of this.expandedGroups) if (!groupKeys.has(key)) this.expandedGroups.delete(key)
         const next = new Map<string, NativeNode>()
+        let layoutChanged = false
         for (const block of blocks) {
             const key = `${block.kind}:${block.id}`, native = executionOf(block)
             const process = processes.get(block.id)
@@ -230,14 +237,17 @@ export class NativeChatProjection {
             const hidden = Boolean(process && !process.open && !process.control)
                 || Boolean((!process || process.open) && group && !group.open && !group.control)
             const previous = this.nodes.get(key)
-            next.set(key, previous?.block === block && previous.hidden === hidden
+            const node: NativeNode = previous?.block === block && previous.hidden === hidden
                 && sameDisclosure(previous.process, process) && sameDisclosure(previous.group, group) ? previous : {
                 key, block, turnKey: native ? `${native.threadId}:${native.turnId}` : undefined, process, group, hidden,
-            })
+            }
+            next.set(key, node)
+            if (previous !== node) this.dirtySources.add(key)
+            if (previous?.hidden !== hidden) layoutChanged = true
         }
         const blockIds = new Set(blocks.map(block => block.id))
         for (const key of this.disclosureState.keys()) if (!blockIds.has(key)) this.disclosureState.delete(key)
-        if ([...next].some(([key, node]) => this.nodes.get(key)?.hidden !== node.hidden)) this.layoutVersion++
+        if (layoutChanged) this.layoutVersion++
         // DSH renders process groups as keyed seats. A partial history page can
         // prepend members into an existing group, so the seat cannot inherit
         // the identity of whichever tool currently happens to be first.
@@ -251,9 +261,11 @@ export class NativeChatProjection {
             const seat = seatKey(node)
             if (seat === key) continue
             const previous = this.nodes.get(seat)
-            next.set(seat, previous?.block === node.block && previous.hidden === node.hidden
+            const seated: NativeNode = previous?.block === node.block && previous.hidden === node.hidden
                 && previous.messageKey === key && sameDisclosure(previous.process, node.process)
-                && sameDisclosure(previous.group, node.group) ? previous : { ...node, key: seat, messageKey: key })
+                && sameDisclosure(previous.group, node.group) ? previous : { ...node, key: seat, messageKey: key }
+            next.set(seat, seated)
+            if (previous !== seated) this.dirtySources.add(seat)
             seats.set(key, seat)
         }
         const owners = new Map(seats)
@@ -264,6 +276,7 @@ export class NativeChatProjection {
         }
         for (const [alias, key] of this.aliases) this.aliases.set(alias, owners.get(key) ?? key)
         for (const [key, owner] of owners) this.aliases.set(key, owner)
+        for (const key of this.nodes.keys()) if (!next.has(key)) this.dirtySources.add(key)
         this.nodes = next
         // A collapsed disclosure needs only its header, not assistant-ui
         // message/composer runtimes for each hidden tool. The full bounded

@@ -39,7 +39,7 @@ describe('machine subagent history authorization', () => {
         allowed()
         expect(await request({ rootThreadId, threadId, limit: 12, before: 180 })).toMatchObject({ threadId })
         expect(lineage).toHaveBeenCalledWith([rootThreadId])
-        expect(readHistory).toHaveBeenCalledExactlyOnceWith(threadId, 12, 180)
+        expect(readHistory).toHaveBeenCalledExactlyOnceWith(threadId, 12, 180, undefined, { after: undefined, epoch: undefined })
     })
     it('rejects a different target and a missing root before reading any transcript', async () => {
         allowed()
@@ -57,6 +57,25 @@ describe('machine subagent history authorization', () => {
         expect(await request({ rootThreadId, threadId: '../private' })).toHaveProperty('error')
         expect(await request({ rootThreadId, threadId, limit: 1000 })).toHaveProperty('error')
         expect(lineage).not.toHaveBeenCalled()
+        expect(readHistory).not.toHaveBeenCalled()
+    })
+    it('forwards an epoch-bound incremental cursor and rejects ambiguous or unbound cursors', async () => {
+        allowed()
+        expect(await request({ rootThreadId, threadId, after: 180, epoch: 'native-epoch' })).toMatchObject({ threadId })
+        expect(readHistory).toHaveBeenCalledExactlyOnceWith(threadId, 40, undefined, undefined, { after: 180, epoch: 'native-epoch' })
+        readHistory.mockClear(); lineage.mockClear()
+        expect(await request({ rootThreadId, threadId, after: 180 })).toHaveProperty('error')
+        expect(await request({ rootThreadId, threadId, before: 100, after: 180, epoch: 'epoch' })).toHaveProperty('error')
+        expect(lineage).not.toHaveBeenCalled()
+        expect(readHistory).not.toHaveBeenCalled()
+    })
+    it('rejects cyclic descendant metadata without entering a loop or reading bytes', async () => {
+        const nested = randomUUID()
+        lineage.mockReturnValue([{ id: rootThreadId, cwd: workspace, codexSubagents: [
+            { threadId, parentThreadId: nested, path: workspace },
+            { threadId: nested, parentThreadId: threadId, path: workspace },
+        ] }])
+        expect(await request({ rootThreadId, threadId })).toHaveProperty('error')
         expect(readHistory).not.toHaveBeenCalled()
     })
 })

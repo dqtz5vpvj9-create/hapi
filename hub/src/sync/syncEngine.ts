@@ -3,6 +3,7 @@ import { ForkOperationService, isSharedCodexForkSource, type StartForkOperationR
 import type { ForkOperationCloseRequest } from '@hapi/protocol/forkOperations'
 import type { ForkConversationRequest } from '@hapi/protocol/apiTypes'
 import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
+import type { FileManagementRequest, FileManagementResponse, FileManagementUploadRequest } from '@hapi/protocol/fileManagement'
 import { CODEX_ARTIFACT_PREFIX, type ArtifactReadResponse } from '@hapi/protocol/artifacts'
 import type { CodexGoalRequest, CodexGoalResponse, NativeForkBoundary } from '@hapi/protocol/apiTypes'
 /**
@@ -698,8 +699,8 @@ export class SyncEngine {
         clearAgentTerminalBuffer(payload.sid)
     }
 
-    handleBackgroundTaskDelta(sessionId: string, delta: { started: number; completed: number }): void {
-        this.sessionCache.applyBackgroundTaskDelta(sessionId, delta)
+    handleBackgroundTasksChanged(sessionId: string): void {
+        this.sessionCache.refreshBackgroundTasks(sessionId)
     }
 
     recordSessionActivity(sessionId: string, updatedAt: number): void {
@@ -2972,9 +2973,8 @@ export class SyncEngine {
         if (flavor === 'kimi') return metadata.kimiSessionId ?? null
         if (flavor === 'copilot') return metadata.copilotSessionId ?? null
         if (flavor === 'pi') return metadata.piSessionId ?? null
-        // The official DSH ACP server creates fresh sessions only; never fall
-        // through to a stale Claude id and advertise a false resume path.
-        if (flavor === 'dsh') return null
+        // The CLI publishes this token only for an ACP server that advertises resume.
+        if (flavor === 'dsh') return metadata.dshSessionId ?? null
 
         return metadata.claudeSessionId ?? this.recoverClaudeSessionIdFromMessages(session.id, namespace)
     }
@@ -4497,6 +4497,18 @@ export class SyncEngine {
         return await this.rpcGateway.writeSessionFile(sessionId, data)
     }
 
+    async inspectSessionPath(sessionId: string, path: string): Promise<FileManagementResponse> {
+        return await this.rpcGateway.inspectSessionPath(sessionId, path)
+    }
+
+    async manageSessionFiles(sessionId: string, data: FileManagementRequest): Promise<FileManagementResponse> {
+        return await this.rpcGateway.manageSessionFiles(sessionId, data)
+    }
+
+    async uploadSessionFile(sessionId: string, data: FileManagementUploadRequest): Promise<FileManagementResponse> {
+        return await this.rpcGateway.uploadSessionFile(sessionId, data)
+    }
+
     async readArtifact(sessionId: string, artifactId: string): Promise<ArtifactReadResponse> {
         if (artifactId.startsWith(CODEX_ARTIFACT_PREFIX)) {
             return this.rpcGateway.readArtifact(sessionId, { id: artifactId })
@@ -4637,7 +4649,7 @@ export class SyncEngine {
             })
     }
 
-    async readCodexSubagentMessages(machineId: string, query: { rootThreadId: string; threadId: string; limit: number; before?: number }) {
+    async readCodexSubagentMessages(machineId: string, query: import('@hapi/protocol/apiTypes').ReadCodexSubagentMessagesRequest) {
         return await this.rpcGateway.readCodexSubagentMessages(machineId, query)
     }
 

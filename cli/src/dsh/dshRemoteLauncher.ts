@@ -1,7 +1,10 @@
 import React from 'react'
 import { logger } from '@/ui/logger'
 import { convertAgentMessage } from '@/agent/messageConverter'
-import type { AgentMessage, PromptContent } from '@/agent/types'
+import type { AgentMessage, McpServerHttp, PromptContent } from '@/agent/types'
+import { registerSessionConfigRpc } from '@/agent/sessionConfigRpc'
+import { buildHapiMcpBridge, type HapiMcpBridge } from '@/codex/utils/buildHapiMcpBridge'
+import { RPC_METHODS } from '@hapi/protocol/rpcMethods'
 import {
     RemoteLauncherBase,
     type RemoteLauncherDisplayContext,
@@ -11,23 +14,35 @@ import { RemoteModeDisplay } from '@/ui/ink/RemoteModeDisplay'
 import { AcpPermissionHandler } from '@/modules/common/permission/AcpPermissionHandler'
 import { createDshBackend } from './utils/dshBackend'
 import type { DshSession } from './session'
+import { DshSessionConfig, type DshConfigChange } from './dshSessionConfig'
 
 export class DshRemoteLauncher extends RemoteLauncherBase {
     private backend: ReturnType<typeof createDshBackend> | null = null
     private permissionHandler: AcpPermissionHandler | null = null
     private abortController = new AbortController()
+    private abortInFlight: Promise<void> | null = null
+    private launchInFlight: Promise<RemoteLauncherExitReason> | null = null
+    private shutdownInFlight: Promise<void> | null = null
+    private bridge: HapiMcpBridge | null = null
+    private config: DshSessionConfig | null = null
+    private activeSessionId: string | null = null
+    private activationInFlight: Promise<void> | null = null
 
-    constructor(private readonly session: DshSession) {
+    constructor(private readonly session: DshSession, private readonly initialConfig: DshConfigChange = {}) {
         super(process.env.DEBUG ? session.logPath : undefined)
     }
 
-    async launch(): Promise<RemoteLauncherExitReason> {
-        return this.start({ onExit: () => this.handleExitFromUi() })
+    launch(): Promise<RemoteLauncherExitReason> {
+        this.launchInFlight ??= this.start({ onExit: () => this.handleExitFromUi() })
+        return this.launchInFlight
     }
 
     async kill(): Promise<void> {
-        if (!this.backend) return
-        await this.handleAbort()
+        await this.requestExit('exit', async () => {
+            this.abortController.abort()
+            await this.shutdown()
+        })
+        await this.launchInFlight
     }
 
     protected createDisplay(context: RemoteLauncherDisplayContext): React.ReactElement {
@@ -38,6 +53,7 @@ export class DshRemoteLauncher extends RemoteLauncherBase {
     }
 
     protected async runMainLoop(): Promise<void> {
+        if (this.shouldExit) return
         const backend = createDshBackend()
         this.backend = backend
         backend.onStderrError((error) => {
@@ -45,32 +61,27 @@ export class DshRemoteLauncher extends RemoteLauncherBase {
             this.session.sendSessionEvent({ type: 'message', message: error.message })
             this.messageBuffer.addMessage(error.message, 'status')
         })
-
-        await backend.initialize()
-        const acpSessionId = await backend.newSession({
-            cwd: this.session.path,
-            // The official DSH ACP composition rejects non-empty MCP servers;
-            // its tools are configured by the DSH server itself.
-            mcpServers: []
-        })
-        this.session.sessionId = acpSessionId
-
         this.permissionHandler = new AcpPermissionHandler(
             this.session.client,
             backend,
             () => undefined
         )
-        this.setupAbortHandlers(this.session.client.rpcHandlerManager, {
-            onAbort: () => this.handleAbort(),
-            onSwitch: () => this.handleExitFromUi()
-        })
+        this.activationInFlight = this.activate(backend)
+        await this.activationInFlight
+        const acpSessionId = this.activeSessionId
+        if (this.shouldExit || !acpSessionId) return
 
         while (!this.shouldExit) {
-            const batch = await this.session.queue.waitForMessagesAndGetAsString(this.abortController.signal)
+            await this.abortInFlight
+            if (this.shouldExit) break
+            const signal = this.abortController.signal
+            const batch = await this.session.queue.waitForMessagesAndGetAsString(signal)
             if (!batch) {
-                if (this.abortController.signal.aborted && !this.shouldExit) continue
+                if (signal.aborted && !this.shouldExit) continue
                 break
             }
+            await this.config?.settled()
+            if (this.shouldExit || signal.aborted) continue
 
             this.session.onThinkingChange(true)
             this.messageBuffer.addMessage(batch.message, 'user')
@@ -78,6 +89,7 @@ export class DshRemoteLauncher extends RemoteLauncherBase {
             try {
                 await backend.prompt(acpSessionId, prompt, (message) => this.handleAgentMessage(message))
             } catch (error) {
+                if (this.shouldExit || this.abortInFlight) continue
                 const message = error instanceof Error ? error.message : String(error)
                 logger.warn('[dsh-acp] prompt failed', { message })
                 this.session.sendSessionEvent({ type: 'message', message: `DSH prompt failed: ${message}` })
@@ -85,19 +97,93 @@ export class DshRemoteLauncher extends RemoteLauncherBase {
             } finally {
                 this.session.onThinkingChange(false)
                 await this.permissionHandler?.cancelAll('Prompt finished')
-                if (this.session.queue.size() === 0 && !this.shouldExit) {
+                if (this.session.queue.size() === 0 && !this.shouldExit && !this.abortInFlight) {
                     this.session.sendSessionEvent({ type: 'ready' })
                 }
             }
         }
     }
 
+    private async activate(backend: ReturnType<typeof createDshBackend>): Promise<void> {
+        await backend.initialize()
+        if (this.shouldExit) return
+
+        const resumeId = this.session.sessionId
+        if (resumeId && !backend.supportsResumeSession()) {
+            throw new Error('This DSH ACP server does not advertise session/resume; the existing session was not replaced')
+        }
+        const mcpServers: McpServerHttp[] = []
+        if (backend.supportsHttpMcp()) {
+            this.bridge = await buildHapiMcpBridge(this.session.client, {
+                skillLookup: { workingDirectory: this.session.path, flavor: 'dsh' }
+            })
+            mcpServers.push({ type: 'http', name: 'hapi', url: this.bridge.server.url, headers: [] })
+        }
+        if (this.shouldExit) return
+        const sessionConfig = { cwd: this.session.path, mcpServers }
+        const acpSessionId = resumeId
+            ? await backend.resumeSession({ ...sessionConfig, sessionId: resumeId })
+            : await backend.newSession(sessionConfig)
+        this.activeSessionId = acpSessionId
+        this.session.publishSessionId(acpSessionId, backend.supportsResumeSession())
+        if (this.shouldExit) return
+        this.config = new DshSessionConfig(backend, this.session, acpSessionId)
+        await this.config.apply(this.initialConfig)
+        registerSessionConfigRpc({
+            rpcHandlerManager: this.session.client.rpcHandlerManager,
+            flavor: 'dsh',
+            modelMode: 'nullable',
+            effortMode: 'nullable',
+            modelReasoningEffortMode: 'nullable',
+            onApply: async (change) => {
+                if (this.shouldExit || !this.config) throw new Error('DSH session is closing')
+                await this.config.apply(change)
+            }
+        })
+        this.setupAbortHandlers(this.session.client.rpcHandlerManager, {
+            onAbort: () => this.handleAbort(),
+            onSwitch: () => this.handleExitFromUi()
+        })
+
+    }
+
     protected async cleanup(): Promise<void> {
         this.clearAbortHandlers(this.session.client.rpcHandlerManager)
-        await this.permissionHandler?.cancelAll('Session ended')
-        this.permissionHandler = null
-        await this.backend?.disconnect()
-        this.backend = null
+        this.session.client.rpcHandlerManager.registerHandler(RPC_METHODS.SetSessionConfig, async () => {
+            throw new Error('DSH session is closed')
+        })
+        await this.shutdown()
+    }
+
+    private shutdown(): Promise<void> {
+        this.shutdownInFlight ??= (async () => {
+            await this.activationInFlight?.catch(() => {})
+            this.config?.dispose()
+            await this.permissionHandler?.cancelAll('Session ended')
+            const backend = this.backend
+            try {
+                if (backend && this.activeSessionId) {
+                    if (backend.supportsCloseSession()) {
+                        await backend.closeSession(this.activeSessionId)
+                    } else {
+                        await backend.cancelPrompt(this.activeSessionId)
+                    }
+                }
+            } catch (error) {
+                logger.warn('[dsh-acp] session shutdown failed', { error: String(error) })
+            } finally {
+                try {
+                    await backend?.disconnect()
+                } finally {
+                    this.bridge?.server.stop()
+                    this.bridge = null
+                    this.backend = null
+                    this.permissionHandler = null
+                    this.session.onThinkingChange(false)
+                }
+            }
+        })()
+        return this.shutdownInFlight
     }
 
     private handleAgentMessage(message: AgentMessage): void {
@@ -130,20 +216,47 @@ export class DshRemoteLauncher extends RemoteLauncherBase {
         }
     }
 
-    private async handleAbort(): Promise<void> {
-        if (this.backend && this.session.sessionId) {
-            await this.backend.cancelPrompt(this.session.sessionId)
-        }
-        await this.permissionHandler?.cancelAll('User aborted')
-        this.session.sendSessionEvent({ type: 'message', message: 'Session aborted' })
+    private handleAbort(): Promise<void> {
+        if (this.abortInFlight) return this.abortInFlight
         this.session.queue.reset()
-        this.session.onThinkingChange(false)
         this.abortController.abort()
-        this.abortController = new AbortController()
-        this.messageBuffer.addMessage('Turn aborted', 'status')
+        this.abortInFlight = (async () => {
+            try {
+                if (this.backend && this.activeSessionId) {
+                    await this.backend.cancelPrompt(this.activeSessionId)
+                }
+                await this.permissionHandler?.cancelAll('User aborted')
+                let timeout: ReturnType<typeof setTimeout> | undefined
+                try {
+                    await Promise.race([
+                        this.backend?.waitForResponseComplete(),
+                        new Promise<never>((_, reject) => {
+                            timeout = setTimeout(() => reject(new Error('DSH did not finish cancelling within 10 seconds')), 10_000)
+                        })
+                    ])
+                } finally {
+                    if (timeout) clearTimeout(timeout)
+                }
+                this.session.sendSessionEvent({ type: 'message', message: 'Session aborted' })
+                this.messageBuffer.addMessage('Turn aborted', 'status')
+            } catch (error) {
+                this.shouldExit = true
+                this.exitReason = 'exit'
+                await this.shutdown()
+                throw error
+            } finally {
+                this.session.onThinkingChange(false)
+                if (!this.shouldExit) {
+                    this.abortController = new AbortController()
+                    if (this.session.queue.size() === 0) this.session.sendSessionEvent({ type: 'ready' })
+                }
+                this.abortInFlight = null
+            }
+        })()
+        return this.abortInFlight
     }
 
     private async handleExitFromUi(): Promise<void> {
-        await this.requestExit('exit', () => this.handleAbort())
+        await this.kill()
     }
 }

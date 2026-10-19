@@ -173,6 +173,7 @@ const AGENT_SESSION_ID_FIELD_BY_FLAVOR: Partial<Record<AgentFlavor, keyof Metada
     claude: 'claudeSessionId',
     codex: 'codexSessionId',
     gemini: 'geminiSessionId',
+    dsh: 'dshSessionId',
     opencode: 'opencodeSessionId',
     grok: 'grokSessionId',
     agy: 'agySessionId',

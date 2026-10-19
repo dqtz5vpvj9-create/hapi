@@ -28,9 +28,9 @@ describe('hasCapability', () => {
         expect(hasCapability('gemini', Capabilities.Effort)).toBe(false)
     })
 
-    test('dsh has no runtime model or effort switching', () => {
-        expect(hasCapability('dsh', Capabilities.ModelChange)).toBe(false)
-        expect(hasCapability('dsh', Capabilities.Effort)).toBe(false)
+    test('dsh supports runtime model and effort controls when advertised by the session', () => {
+        expect(hasCapability('dsh', Capabilities.ModelChange)).toBe(true)
+        expect(hasCapability('dsh', Capabilities.Effort)).toBe(true)
     })
 
     test('codex supports model-change but not effort', () => {

@@ -152,4 +152,17 @@ describe('buildSessionStatusData', () => {
             possibleTerminalCommands: ['bun run dev', 'bun test --watch']
         })
     })
+
+    it('deduplicates replayed tool cards by task ID and removes every copy on completion', () => {
+        const blocks = [
+            toolBlock({ name: 'Bash', tool: { result: 'Command running in background with ID: bg-1', startedAt: 10 } }),
+            toolBlock({ name: 'Bash', tool: { result: 'Command running in background with ID: bg-1', input: { command: 'bun run dev' }, startedAt: 20 } }),
+            toolBlock({ name: 'Bash', tool: { result: 'Command running in background with ID: bg-2', input: { command: 'bun test' }, startedAt: 30 } })
+        ]
+        const status = buildSessionStatusData({ goal: null, tasks: [], blocks, messages: [], backgroundTaskCount: 2 })
+        expect(status?.terminals.map(({ id, command }) => ({ id, command }))).toEqual([
+            { id: 'bg-1', command: 'bun run dev' }, { id: 'bg-2', command: 'bun test' }
+        ])
+        expect(buildSessionStatusData({ goal: null, tasks: [], blocks, messages: [taskNotification('bg-1')], backgroundTaskCount: 1 })?.terminals.map(item => item.id)).toEqual(['bg-2'])
+    })
 })

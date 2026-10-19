@@ -33,7 +33,8 @@
         "./conversationOutline": "./src/conversationOutline.ts",
         "./workspaces": "./src/workspaces.ts",
         "./terminals": "./src/terminals.ts",
-        "./documents": "./src/documents.ts"
+        "./documents": "./src/documents.ts",
+        "./fileManagement": "./src/fileManagement.ts"
     },
     "sideEffects": false,
     "scripts": {

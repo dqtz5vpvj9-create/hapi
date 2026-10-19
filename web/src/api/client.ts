@@ -1,6 +1,8 @@
 import { configureSessionReadSync, hydrateSessionReadStates } from '@/lib/sessionLastSeen'
 import { ForkOperationCloseResponseSchema, ForkOperationResponseSchema, ForkSourceStateSchema, type ForkOperationCloseResponse, type ForkOperationResponse, type ForkSourceState } from '@hapi/protocol/forkOperations'
 import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
+import type { FileManagementRequest, FileManagementResponse, FileManagementUploadRequest } from '@hapi/protocol/fileManagement'
+import type { CodexSubagentMessagesResponse } from '@hapi/protocol/apiTypes'
 import type {
     AttachmentMetadata,
     AuthResponse,
@@ -471,15 +473,12 @@ export class ApiClient {
     async getCodexSubagentMessages(
         parentSessionId: string,
         threadId: string,
-        options: { limit?: number; before?: number; signal?: AbortSignal } = {},
-    ): Promise<{
-        threadId: string
-        messages: Array<{ id: string; role: 'user' | 'assistant' | 'tool'; text: string; createdAt: number }>
-        before: number | null
-        hasMore: boolean
-    }> {
+        options: { limit?: number; before?: number; after?: number; epoch?: string; signal?: AbortSignal } = {},
+    ): Promise<CodexSubagentMessagesResponse> {
         const query = new URLSearchParams({ limit: String(options.limit ?? 40) })
         if (options.before !== undefined) query.set('before', String(options.before))
+        if (options.after !== undefined) query.set('after', String(options.after))
+        if (options.epoch !== undefined) query.set('epoch', options.epoch)
         return await this.request(`/api/sessions/${encodeURIComponent(parentSessionId)}/codex-subagents/${encodeURIComponent(threadId)}/messages?${query}`, { signal: options.signal })
     }
 
@@ -688,6 +687,28 @@ export class ApiClient {
         return this.request<FileWriteResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/file`, {
             method: 'PUT', body: JSON.stringify(data),
         })
+    }
+
+    async inspectSessionPath(sessionId: string, path: string): Promise<FileManagementResponse> {
+        return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/filesystem/entry?${new URLSearchParams({ path })}`,
+            { signal: AbortSignal.timeout(120_000) })
+    }
+
+    async manageSessionFiles(sessionId: string, data: FileManagementRequest): Promise<FileManagementResponse> {
+        return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/filesystem`, {
+            method: 'POST', body: JSON.stringify(data),
+        })
+    }
+
+    async uploadSessionFile(sessionId: string, data: FileManagementUploadRequest, signal?: AbortSignal): Promise<FileManagementResponse> {
+        return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/filesystem/upload`, {
+            method: 'POST', body: JSON.stringify(data), signal,
+        })
+    }
+
+    async downloadSessionFile(sessionId: string, path: string): Promise<Blob> {
+        return this.request(`/api/sessions/${encodeURIComponent(sessionId)}/filesystem/download?${new URLSearchParams({ path })}`,
+            { signal: AbortSignal.timeout(120_000) }, 0, undefined, undefined, 'blob')
     }
 
     async readSessionFile(sessionId: string, path: string): Promise<FileReadResponse> {

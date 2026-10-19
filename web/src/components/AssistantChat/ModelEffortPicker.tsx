@@ -18,6 +18,7 @@ export type ModelEffortPickerProps = {
     disabled?: boolean
     loading?: boolean
     error?: string | null
+    notice?: string
     modelControls?: ReactNode
     effortControls?: ReactNode
 }
@@ -53,6 +54,7 @@ export function ModelEffortPicker(props: ModelEffortPickerProps) {
                 </div>
                 {props.loading ? <div role="status" className="model-effort-notice">{t('loading')}</div> : null}
                 {props.error ? <div role="alert" className="model-effort-error">{props.error}</div> : null}
+                {props.notice ? <div role="status" className="model-effort-notice">{props.notice}</div> : null}
                 {page === 'model' ? <div className="model-effort-models">
                     {props.modelControls ?? props.models.map((option, index) => <div key={option.value ?? '__default'}>
                         {option.group && option.group !== props.models[index - 1]?.group ? <div className="model-effort-group">{option.group}</div> : null}

@@ -4,6 +4,7 @@ import { useOptionalAppContext } from '@/lib/app-context'
 import { encodeBase64, decodeBase64 } from '@/lib/utils'
 import type { DocumentRef } from '@hapi/protocol/documents'
 import type { ArtifactRef } from '@hapi/protocol/artifacts'
+import { useFileWorkbenchNavigation } from '@/file-workbench/context'
 
 export function artifactDocumentRef(artifact: ArtifactRef): DocumentRef {
     if (artifact.id.startsWith('session-file:')) {
@@ -16,8 +17,10 @@ export function useOpenDocument(sessionId: string | undefined) {
     const pane = usePane()
     const context = useOptionalAppContext()
     const router = useRouter({ warn: false })
+    const fileWorkbench = useFileWorkbenchNavigation()
     if (!sessionId || !context || (!pane && !router)) return undefined
     return (ref: DocumentRef) => {
+        if (fileWorkbench?.sessionId === sessionId) { fileWorkbench.open(ref); return }
         const options = { to: '/sessions/$sessionId/file' as const, params: { sessionId }, search: {
             path: ref.kind === 'file' ? encodeBase64(ref.path) : '', document: ref.kind === 'artifact' ? encodeBase64(JSON.stringify(ref)) : undefined, origin: 'chat' as const,
         } }

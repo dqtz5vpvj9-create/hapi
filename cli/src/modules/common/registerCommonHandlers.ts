@@ -13,6 +13,7 @@ import { registerKimiModelHandlers } from './handlers/kimiModels'
 import { registerDirectoryHandlers } from './handlers/directories'
 import { registerDifftasticHandlers } from './handlers/difftastic'
 import { registerFileHandlers } from './handlers/files'
+import { registerFileManagementHandlers } from './handlers/fileManagement'
 import { registerGitHandlers } from './handlers/git'
 import { registerRipgrepHandlers } from './handlers/ripgrep'
 import { registerSlashCommandHandlers } from './handlers/slashCommands'
@@ -31,6 +32,7 @@ export function registerCommonHandlers(rpcHandlerManager: RpcHandlerManager, wor
     registerCopilotModelHandlers(rpcHandlerManager)
     registerKimiModelHandlers(rpcHandlerManager)
     registerFileHandlers(rpcHandlerManager, workingDirectory)
+    registerFileManagementHandlers(rpcHandlerManager, workingDirectory)
     registerArtifactHandlers(rpcHandlerManager, workingDirectory)
     registerDirectoryHandlers(rpcHandlerManager, workingDirectory)
     registerRipgrepHandlers(rpcHandlerManager, workingDirectory)

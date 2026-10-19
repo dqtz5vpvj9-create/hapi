@@ -369,6 +369,15 @@ describe('buildCliArgs', () => {
         ])
     })
 
+    it('preserves DSH native resume and opaque model/effort arguments', () => {
+        expect(buildCliArgs('dsh', {
+            directory: '/tmp', resumeSessionId: 'dsh-root', model: '["provider","model"]', effort: 'high'
+        })).toEqual([
+            'dsh', '--resume', 'dsh-root', '--hapi-starting-mode', 'remote', '--started-by', 'runner',
+            '--model', '["provider","model"]', '--effort', 'high'
+        ])
+    })
+
     it('stamps --hapi-session-id for local HTTP sessionId hints (reap / adopt-stub)', () => {
         // sessionId alone is not reopen — that was the round-4 Major when we
         // collapsed everything onto --existing-session-id.

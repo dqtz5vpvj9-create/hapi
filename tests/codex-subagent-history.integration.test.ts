@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { readCodexSubagentMessages } from '../cli/src/codex/utils/codexSubagentHistory'
@@ -53,5 +53,66 @@ describe('bounded native subagent transcript reader', () => {
         const link = join(home, 'sessions', 'escape.jsonl'); symlinkSync(secret, link)
         database.query('INSERT INTO threads VALUES (?, ?)').run(threadId, link)
         expect(() => readCodexSubagentMessages(threadId, 10, undefined, home)).toThrow('outside')
+    })
+    test('preserves structured tool identities, inputs, outputs and readable reasoning', () => {
+        rollout([
+            { type: 'response_item', payload: { type: 'reasoning', summary: [{ type: 'summary_text', text: 'Check the failing boundary.' }], encrypted_content: 'private-ciphertext' } },
+            { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'native-command', arguments: JSON.stringify({ cmd: 'bun test', workdir: '/project' }) } },
+            { type: 'response_item', payload: { type: 'function_call_output', call_id: 'native-command', output: { stdout: 'test failed', exit_code: 1, is_error: true } } },
+            { type: 'response_item', payload: { type: 'reasoning', encrypted_content: 'never-render-this' } },
+        ])
+        const page = readCodexSubagentMessages(threadId, 10, undefined, home)
+        expect(page.messages).toHaveLength(3)
+        expect(page.messages[0]).toMatchObject({ kind: 'reasoning', text: 'Check the failing boundary.' })
+        expect(page.messages[1]).toMatchObject({ kind: 'tool-call', callId: 'native-command', toolName: 'exec_command', input: { cmd: 'bun test', workdir: '/project' } })
+        expect(page.messages[2]).toMatchObject({ kind: 'tool-result', callId: 'native-command', output: { stdout: 'test failed', exit_code: 1 }, isError: true })
+        expect(JSON.stringify(page)).not.toContain('ciphertext')
+        expect(JSON.stringify(page)).not.toContain('never-render-this')
+    })
+    test('reads committed appends once and waits for an incomplete UTF-8 line', () => {
+        const file = rollout([message('original')])
+        const initial = readCodexSubagentMessages(threadId, 2, undefined, home)
+        const partial = Buffer.from(JSON.stringify(message('新增😀记录')) + '\n')
+        const split = partial.indexOf(Buffer.from('😀')) + 2
+        appendFileSync(file, partial.subarray(0, split))
+        const waiting = readCodexSubagentMessages(threadId, 2, undefined, home, { after: initial.after, epoch: initial.epoch })
+        expect(waiting.messages).toEqual([])
+        expect(waiting.after).toBe(initial.after)
+        expect(waiting.hasLater).toBe(false)
+        appendFileSync(file, partial.subarray(split))
+        appendFileSync(file, JSON.stringify(message('final')) + '\n')
+        const first = readCodexSubagentMessages(threadId, 1, undefined, home, { after: waiting.after, epoch: waiting.epoch })
+        expect(first.messages.map(row => row.text)).toEqual(['新增😀记录'])
+        expect(first.hasLater).toBe(true)
+        const second = readCodexSubagentMessages(threadId, 1, undefined, home, { after: first.after, epoch: first.epoch })
+        expect(second.messages.map(row => row.text)).toEqual(['final'])
+        expect(second.hasLater).toBe(false)
+        const empty = readCodexSubagentMessages(threadId, 1, undefined, home, { after: second.after, epoch: second.epoch })
+        expect(empty.messages).toEqual([])
+        expect(empty.after).toBe(second.after)
+    })
+    test('does not mix a rewritten native transcript with a previous cursor', () => {
+        const file = rollout([message('old task'), message('old result')])
+        const before = readCodexSubagentMessages(threadId, 10, undefined, home)
+        writeFileSync(file, JSON.stringify(message('new task')) + '\n')
+        const current = readCodexSubagentMessages(threadId, 10, undefined, home, { after: before.after, epoch: before.epoch })
+        expect(current.reset).toBe(true)
+        expect(current.epoch).not.toBe(before.epoch)
+        expect(current.messages.map(row => row.text)).toEqual(['new task'])
+    })
+    test('marks oversized structured fields and advances past an oversized committed line within bounded reads', () => {
+        const file = rollout([message('start')])
+        const initial = readCodexSubagentMessages(threadId, 10, undefined, home)
+        appendFileSync(file, JSON.stringify(message('x'.repeat(3 * 1024 * 1024))) + '\n')
+        appendFileSync(file, JSON.stringify({ type: 'response_item', payload: { type: 'function_call_output', call_id: 'large', output: { content: 'y'.repeat(100_000) } } }) + '\n')
+        let page = readCodexSubagentMessages(threadId, 10, undefined, home, { after: initial.after, epoch: initial.epoch })
+        expect(page.truncated).toBe(true)
+        expect(page.hasLater).toBe(true)
+        expect(page.messages).toEqual([])
+        page = readCodexSubagentMessages(threadId, 10, undefined, home, { after: page.after, epoch: page.epoch })
+        expect(page.messages).toHaveLength(1)
+        expect(page.messages[0]).toMatchObject({ kind: 'tool-result', truncated: true })
+        expect(JSON.stringify(page).length).toBeLessThan(140_000)
+        expect(page.hasLater).toBe(false)
     })
 })

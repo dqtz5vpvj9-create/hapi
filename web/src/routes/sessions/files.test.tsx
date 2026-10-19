@@ -7,6 +7,7 @@ import { encodeBase64 } from '@/lib/utils'
 import FilesPage from './files'
 
 const mocks = vi.hoisted(() => ({
+    api: {},
     navigate: vi.fn(),
     fileSearch: vi.fn(),
     sessionId: 'session-1',
@@ -42,7 +43,7 @@ vi.mock('@/lib/composer-draft-transfer', () => ({
 }))
 
 vi.mock('@/lib/app-context', () => ({
-    useAppContext: () => ({ api: {} }),
+    useAppContext: () => ({ api: mocks.api }),
 }))
 
 vi.mock('@/hooks/useAppGoBack', () => ({

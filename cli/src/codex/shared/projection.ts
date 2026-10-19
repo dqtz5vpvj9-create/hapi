@@ -191,7 +191,10 @@ export class SharedCodexProjection {
             } else if (event.type === 'patch_apply_begin' && callId) {
                 send({ type: 'tool-call', name: 'CodexPatch', callId, input: { changes: event.changes, auto_approved: event.auto_approved } }, key);
             } else if (event.type === 'patch_apply_end' && callId) {
-                send({ type: 'tool-call-result', callId, output: { stdout: event.stdout, stderr: event.stderr, success: event.success } }, key);
+                send({ type: 'tool-call-result', callId,
+                    output: { stdout: event.stdout, stderr: event.stderr, success: event.success,
+                        ...(event.changes !== undefined ? { changes: event.changes } : {}) },
+                    is_error: event.success === false }, key);
             } else if (event.type === 'mcp_tool_call_begin' && callId) {
                 const invocation = record(event.invocation);
                 send({ type: 'tool-call', name: `mcp__${invocation.server}__${invocation.tool}`, callId, input: invocation.arguments ?? {} }, key);

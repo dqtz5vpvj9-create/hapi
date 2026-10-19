@@ -1,4 +1,5 @@
 import { DocumentRegistry, type DocumentSession } from '@/documents/documentSession'
+import { filePathSuffix, relocatedFilePath, sameFileMachine } from '@/documents/filePaths'
 import type { DocumentResource } from '@hapi/protocol/documents'
 import {
     applyWorkspaceCommand, panes, removePane, sameResource,
@@ -266,6 +267,24 @@ export class WorkspaceStore {
             },
         }
         this.commit({ ...this.state }, false)
+    }
+    /** A confirmed file operation applies to open documents in every window. */
+    relocateDocuments(owner: { sessionId: string; machineId?: string }, from: string, to: string) {
+        for (const pane of this.state.workspaces.flatMap(w => panes(w.root))) {
+            const resource = pane.resource
+            if (resource.kind !== 'document' || resource.document.kind !== 'file' || !sameFileMachine(resource, owner)) continue
+            const path = relocatedFilePath(resource.document.path, from, to)
+            if (path === null) continue
+            const next: DocumentResource = { ...resource, document: { ...resource.document, path } }
+            this.execute({ type: 'bind', paneId: pane.id, expected: resource, resource: next }, {}, false)
+        }
+    }
+    removeDeletedDocuments(owner: { sessionId: string; machineId?: string }, paths: string[]) {
+        for (const pane of this.state.workspaces.flatMap(w => panes(w.root))) {
+            const resource = pane.resource
+            if (resource.kind !== 'document' || resource.document.kind !== 'file' || !sameFileMachine(resource, owner)) continue
+            if (paths.some(path => filePathSuffix(resource.document.kind === 'file' ? resource.document.path : '', path) !== null)) this.removePaneNow(pane.id)
+        }
     }
     openDocument(sourcePaneId: string, expected: PaneResource, resource: DocumentResource, beside = false) {
         const all = this.state.workspaces.flatMap(w => panes(w.root))

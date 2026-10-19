@@ -7,6 +7,8 @@ import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { ChecklistList, extractTodoChecklist } from '@/components/ToolCard/checklist'
 import { basename, resolveDisplayPath } from '@/utils/path'
 import { getInputStringAny } from '@/lib/toolInputUtils'
+import { searchPresentation } from '../searchPresentation'
+import { SearchResultCard } from './SearchResultCard'
 import {
     getCodexAgentActivity,
     getCodexAgentTargets,
@@ -596,6 +598,8 @@ const LineListResultView: ToolViewComponent = (props: ToolViewProps) => {
     }
 
     const text = extractTextFromResult(result)
+    const search = searchPresentation(props.block.tool.name, props.block.tool.input, result, text, props.block.tool.state === 'error')
+    if (search) return <SearchResultCard key={props.block.tool.id} model={search} interactive={props.surface === 'dialog'} />
     if (!text) {
         return (
             <>
@@ -1042,6 +1046,8 @@ export const toolResultViewRegistry: Record<string, ToolViewComponent> = {
     Bash: BashResultView,
     Glob: LineListResultView,
     Grep: LineListResultView,
+    glob: LineListResultView,
+    grep: LineListResultView,
     LS: LineListResultView,
     Read: ReadResultView,
     Edit: MutationResultView,

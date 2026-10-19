@@ -7,11 +7,18 @@ on:
             - '**/bun.lock'
             - 'patches/**'
             - 'playwright.config.ts'
+            - 'scripts/testing/built-artifact-smoke.mjs'
+            - 'scripts/testing/realtime-cohort.mjs'
+            - 'scripts/testing/recent/lifecycle.mjs'
+            - 'e2e/file-workbench.spec.ts'
             - 'e2e/typing-replay.spec.ts'
             - 'e2e/workspace-lifecycle.spec.ts'
             - 'e2e/settings-responsive.spec.ts'
             - 'e2e/codex-session-dialog-layout.spec.ts'
             - 'web/e2e-fixtures/**'
+            - 'web/src/**'
+            - 'hub/src/**'
+            - 'shared/src/**'
             - '.github/dependabot.yml'
             - '.github/workflows/dependency-ui.yml'
     push:
@@ -21,11 +28,18 @@ on:
             - '**/bun.lock'
             - 'patches/**'
             - 'playwright.config.ts'
+            - 'scripts/testing/built-artifact-smoke.mjs'
+            - 'scripts/testing/realtime-cohort.mjs'
+            - 'scripts/testing/recent/lifecycle.mjs'
+            - 'e2e/file-workbench.spec.ts'
             - 'e2e/typing-replay.spec.ts'
             - 'e2e/workspace-lifecycle.spec.ts'
             - 'e2e/settings-responsive.spec.ts'
             - 'e2e/codex-session-dialog-layout.spec.ts'
             - 'web/e2e-fixtures/**'
+            - 'web/src/**'
+            - 'hub/src/**'
+            - 'shared/src/**'
             - '.github/dependabot.yml'
             - '.github/workflows/dependency-ui.yml'
     workflow_dispatch:
@@ -43,10 +57,12 @@ jobs:
               with:
                   bun-version-file: package.json
             - run: bun install --frozen-lockfile
-            - run: bun run build:web
+            - run: bun run build:hub
             - run: bunx playwright install --with-deps chromium
+            - name: Check the staged artifact and real streaming reconnect recovery
+              run: bun run test:realtime-cohort
             - name: Check streaming, DOM collection and mobile controls
-              run: bun run test:dependency-ui
+              run: bun run test:dependency-ui file-workbench.spec.ts
             - name: Upload browser report
               if: always()
               uses: actions/upload-artifact@v4
@@ -55,5 +71,6 @@ jobs:
                   path: |
                       playwright-report/
                       test-results/
+                      e2e-output/built-artifact/
                   if-no-files-found: ignore
                   retention-days: 14

@@ -10,7 +10,7 @@ export function DocumentLeaveDialog({ store }: { store: WorkspaceStore }) {
     useSyncExternalStore(store.subscribe, store.get)
     return <DocumentLeavePrompt request={store.leaveRequest} />
 }
-export function DocumentLeavePrompt({ request }: { request?: { sessions: DocumentSession[]; finish: (leave: boolean) => void } }) {
+export function DocumentLeavePrompt({ request }: { request?: { sessions: DocumentSession[]; sessionId?: string; finish: (leave: boolean) => void } }) {
     const { api } = useAppContext()
     const labels = useDocumentLabels()
     const [busy, setBusy] = useState(false)
@@ -21,8 +21,8 @@ export function DocumentLeavePrompt({ request }: { request?: { sessions: Documen
         try {
             for (const session of request.sessions) {
                 if (action === 'save') {
-                    await session.load(api)
-                    if (session.state.phase !== 'ready' || !await session.save(api) || session.state.dirty) throw new Error(session.state.error ?? 'Document changed during save. Save again to keep the latest edits.')
+                    await session.load(api, false, request.sessionId)
+                    if (session.state.phase !== 'ready' || !await session.save(api, request.sessionId) || session.state.dirty) throw new Error(session.state.error ?? 'Document changed during save. Save again to keep the latest edits.')
                 } else if (action === 'discard') await session.discard()
                 else if (session.state.dirty) await session.persist()
             }

@@ -103,10 +103,10 @@ describe('command summary and inline details', () => {
         expect(JSON.parse(vi.mocked(safeCopyToClipboard).mock.calls[0][0])).toEqual(input)
     })
 
-    it('previews two lines and expands the complete command/output without opening a modal', () => {
+    it('previews the head and latest line and expands the complete command/output without opening a modal', () => {
         render(ui(commandBlock()))
         const preview = screen.getByRole('region', { name: 'Output preview' })
-        expect(preview.textContent).toBe('FIRST_LINE\nSECOND_LINE')
+        expect(preview.textContent).toBe('FIRST_LINE\n…\nFINAL_LINE')
         expect(screen.queryByText('THIRD_LINE')).not.toBeInTheDocument()
         const toggle = screen.getByRole('button', { name: 'Show details +2 lines' })
         expect(toggle).toHaveAttribute('aria-expanded', 'false')
@@ -122,7 +122,7 @@ describe('command summary and inline details', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Hide details' }))
         expect(screen.queryByRole('region', { name: 'Command details' })).not.toBeInTheDocument()
-        expect(screen.getByRole('region', { name: 'Output preview' }).textContent).toBe('FIRST_LINE\nSECOND_LINE')
+        expect(screen.getByRole('region', { name: 'Output preview' }).textContent).toBe('FIRST_LINE\n…\nFINAL_LINE')
     })
 
     it('shows failed exit status, prioritizes stderr in the preview and retains every diagnostic in details', () => {
@@ -264,7 +264,7 @@ describe('command native dependency ownership', () => {
         expect(screen.getByRole('region', { name: 'Command details' })).toHaveTextContent('HYDRATED_LAST')
         expect(api.getMessageDependencies).toHaveBeenCalledWith('command-session', [seed.id], 1, signal)
         fireEvent.click(screen.getByRole('button', { name: 'Hide details' }))
-        expect(screen.getByRole('region', { name: 'Output preview' }).textContent).toBe('HYDRATED_FIRST\nHYDRATED_SECOND')
+        expect(screen.getByRole('region', { name: 'Output preview' }).textContent).toBe('HYDRATED_FIRST\n…\nHYDRATED_LAST')
         fireEvent.click(screen.getByRole('button', { name: /^Ran run-tests/ }))
         expect(screen.getByRole('region', { name: 'Command details' })).toHaveTextContent('HYDRATED_LAST')
         expect(api.getMessageDependencies).toHaveBeenCalledTimes(1)

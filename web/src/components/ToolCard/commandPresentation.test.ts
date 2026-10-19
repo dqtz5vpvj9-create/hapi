@@ -52,7 +52,7 @@ describe('command output and process outcome', () => {
         const value = present({ stdout: 'collecting\nrunning\nfinished\n', stderr: 'test failed\n', exit_code: 1, status: 'completed' })
         expect(value.isError).toBe(true)
         expect(value.exitCode).toBe(1)
-        expect(value.preview).toEqual({ text: 'test failed\ncollecting', hiddenLineCount: 2, truncated: true })
+        expect(value.preview).toEqual({ text: 'test failed\n…\nfinished', hiddenLineCount: 2, truncated: true })
         expect(value.output).toBe('collecting\nrunning\nfinished\ntest failed\n')
     })
 
@@ -82,7 +82,7 @@ describe('command output and process outcome', () => {
     it('retains a separate error diagnostic in full output and the remaining line count', () => {
         const value = present({ stdout: 'progress\n', stderr: 'warning\n', error: 'spawn failed\n' })
         expect(value.output).toBe('progress\nwarning\nspawn failed\n')
-        expect(value.preview).toEqual({ text: 'warning\nprogress', hiddenLineCount: 1, truncated: true })
+        expect(value.preview).toEqual({ text: 'warning\n…\nspawn failed', hiddenLineCount: 1, truncated: true })
     })
 
     it('keeps execution metadata from a wrapper while a sibling supplies its text', () => {
@@ -146,10 +146,10 @@ describe('command output and process outcome', () => {
 })
 
 describe('bounded output summaries', () => {
-    it('shows two lines with an exact remaining line count and retains the full output', () => {
+    it('shows the head and tail with an explicit gap, an exact hidden count and the full raw output', () => {
         const output = 'line one\nline two\nline three\nline four\n'
         const value = present(output)
-        expect(value.preview).toEqual({ text: 'line one\nline two', hiddenLineCount: 2, truncated: true })
+        expect(value.preview).toEqual({ text: 'line one\n…\nline four', hiddenLineCount: 2, truncated: true })
         expect(value.output).toBe(output)
     })
 
@@ -168,13 +168,13 @@ describe('bounded output summaries', () => {
     it('bounds huge lines without breaking a surrogate pair or deleting the raw result', () => {
         const output = `${'a'.repeat(299)}😀${'z'.repeat(20_000)}\nnext\nlast`
         const value = present(output)
-        expect(value.preview).toEqual({ text: `${'a'.repeat(299)}…\nnext`, hiddenLineCount: 1, truncated: true })
+        expect(value.preview).toEqual({ text: `${'a'.repeat(299)}…\n…\nlast`, hiddenLineCount: 1, truncated: true })
         expect(value.output).toBe(output)
     })
 
     it('counts large logs without retaining the omitted lines in the preview', () => {
         const value = present('line\n'.repeat(30_000))
-        expect(value.preview).toEqual({ text: 'line\nline', hiddenLineCount: 29_998, truncated: true })
+        expect(value.preview).toEqual({ text: 'line\n…\nline', hiddenLineCount: 29_998, truncated: true })
     })
 
     it('does not call missing or deferred result bodies empty', () => {
@@ -190,6 +190,15 @@ describe('bounded output summaries', () => {
         const value = getCommandPresentation({ input: {}, result: { stdout: 'partial output' }, state: 'running' }, { outputDeferred: true })
         expect(value.outputState).toBe('available')
         expect(value.preview?.text).toBe('partial output')
+    })
+
+    it('advances the tail as a running command produces newer output', () => {
+        const before = present({ stdout: 'started\nchecking\n50%' }, 'running')
+        const after = present({ stdout: 'started\nchecking\n50%\n100%\ncomplete' }, 'running')
+        expect(before.preview?.text).toBe('started\n…\n50%')
+        expect(after.preview?.text).toBe('started\n…\ncomplete')
+        expect(after.preview?.hiddenLineCount).toBe(3)
+        expect(after.output).toBe('started\nchecking\n50%\n100%\ncomplete')
     })
 
     it.each(['', { stdout: '', stderr: '', exit_code: 0 }, { status: 'completed', exit_code: 0 }, { content: [] }])('recognizes a confirmed empty completion: %j', result => {

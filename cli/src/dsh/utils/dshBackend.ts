@@ -39,6 +39,7 @@ export function createDshBackend(env: NodeJS.ProcessEnv = process.env): AcpSdkBa
         command,
         args,
         env: filterEnv(env),
-        flavor: 'dsh'
+        flavor: 'dsh',
+        retrySessionActivation: false
     })
 }

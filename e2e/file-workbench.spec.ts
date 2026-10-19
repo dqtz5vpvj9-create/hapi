@@ -1,0 +1,576 @@
+import { expect, test, type Page } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
+
+const root = '/mnt/cache/src/hapi'
+const tree = (page: Page) => page.getByRole('tree')
+const entry = (page: Page, path: string) => tree(page).locator(`[data-file-path="${path}"][data-file-kind]`)
+const surface = (page: Page) => page.locator('.document-surface:visible')
+const tabs = (page: Page) => page.getByRole('tablist', { name: 'Open files' })
+const fileTab = (page: Page, path: string) => tabs(page).locator(`[role="tab"][title="${root}/${path}"]`)
+
+async function openFilesFromChat(page: Page) {
+    await page.getByRole('button', { name: 'More actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Project files', exact: true }).click()
+}
+
+async function openWorkbench(page: Page, width = 1920) {
+    await page.setViewportSize({ width, height: width < 700 ? 844 : 1000 })
+    await page.goto('/e2e-fixtures/file-workbench-fixture.html?single=1')
+    await openFilesFromChat(page)
+    await expect(tree(page)).toBeVisible()
+}
+
+async function expand(page: Page, path: string) {
+    const disclosure = entry(page, path).locator('button[aria-expanded]').first()
+    if (await disclosure.getAttribute('aria-expanded') !== 'true') await disclosure.click()
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+}
+
+async function openFile(page: Page, path: string) {
+    const parts = path.split('/')
+    for (let depth = 1; depth < parts.length; depth++) await expand(page, parts.slice(0, depth).join('/'))
+    await entry(page, path).locator('button.app-file-tree-target').click()
+    await expect(fileTab(page, path)).toHaveAttribute('aria-selected', 'true')
+    await expect(surface(page)).toHaveAttribute('data-document-state', 'ready')
+}
+
+async function action(page: Page, path: string, name: string) {
+    await entry(page, path).getByRole('button', { name: `File actions for ${path.split('/').at(-1)}`, exact: true }).click()
+    await page.getByRole('menuitem', { name, exact: true }).click()
+}
+
+async function create(page: Page, kind: 'file' | 'folder', name: string) {
+    await page.getByRole('button', { name: kind === 'file' ? 'New file' : 'New folder', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: kind === 'file' ? 'New file' : 'New folder', exact: true })
+    await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill(name)
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click()
+    await expect(dialog).toHaveCount(0)
+}
+
+async function assertCleanBoundary(page: Page) {
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.unhandled)).toEqual([])
+    expect(await page.evaluate(() => window.__workspaceFixture.unhandled)).toEqual([])
+    expect(await page.evaluate(() => window.__workspaceFixture.sends)).toEqual([])
+}
+
+async function openSharedPaneDocument(page: Page, sessionId: string) {
+    const pane = page.locator(`[data-pane-id][data-session-id="${sessionId}"]`)
+    await expect(pane).toBeVisible()
+    const paneId = await pane.getAttribute('data-pane-id')
+    await page.locator(`[data-workspace-header="${paneId}"]`).getByRole('button', { name: 'Pane actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Project files', exact: true }).click()
+    const fileTree = pane.getByRole('tree')
+    for (const path of ['lazy', 'lazy/nested']) {
+        const disclosure = fileTree.locator(`[data-file-path="${path}"] button[aria-expanded]`).first()
+        if (await disclosure.getAttribute('aria-expanded') !== 'true') await disclosure.click()
+        await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+    }
+    await fileTree.locator('[data-file-path="lazy/nested/leaf.txt"] button.app-file-tree-target').click()
+    const document = pane.locator('.document-surface:visible')
+    await expect(document).toHaveAttribute('data-document-state', 'ready')
+    return { pane, document, editor: document.locator('.cm-content') }
+}
+
+test('loads directories lazily and keeps same-basename file tabs and bytes isolated by session', async ({ page }) => {
+    await openWorkbench(page)
+    await expect(entry(page, 'src')).toBeVisible()
+    const directoryReads = () => page.evaluate(() => window.__fileWorkbenchFixture.requests.filter(request => request.route === 'directory').map(request => request.path))
+    expect(await directoryReads()).not.toContain('src')
+    expect(await directoryReads()).not.toContain('lazy')
+    await expect(entry(page, '.hidden.txt')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Show hidden files', exact: true }).click()
+    await expect(entry(page, '.hidden.txt')).toBeVisible()
+
+    await openFile(page, 'src/README.md')
+    await expect(surface(page)).toContainText('chat-1 source document')
+    await openFile(page, 'docs/README.md')
+    await expect(surface(page)).toContainText('chat-1 documentation')
+    await expect(tabs(page).getByRole('tab')).toHaveCount(2)
+    await fileTab(page, 'src/README.md').click()
+    await expect(surface(page)).toContainText('chat-1 source document')
+    await openFile(page, 'src/README.md')
+    await expect(tabs(page).getByRole('tab')).toHaveCount(2)
+    expect(await directoryReads()).not.toContain('lazy')
+    expect(await directoryReads()).not.toContain('lazy/nested')
+
+    await page.locator('.app-session-sidebar-frame').getByText('Windows 终端集成', { exact: true }).click()
+    await openFilesFromChat(page)
+    await openFile(page, 'src/README.md')
+    await expect(tabs(page).getByRole('tab')).toHaveCount(1)
+    await expect(surface(page)).toContainText('chat-2 source document')
+    await expect(surface(page)).not.toContainText('chat-1')
+    await page.locator('.app-session-sidebar-frame').getByText('历史阅读优化', { exact: true }).click()
+    await openFilesFromChat(page)
+    await expect(tabs(page).getByRole('tab')).toHaveCount(2)
+    await expect(fileTab(page, 'src/README.md')).toHaveAttribute('aria-selected', 'true')
+    await expect(surface(page)).toContainText('chat-1 source document')
+    await assertCleanBoundary(page)
+})
+
+test('creates, saves, renames a dirty file, copies, moves and confirms deletion against real fixture bytes', async ({ page }) => {
+    test.setTimeout(60_000)
+    await openWorkbench(page)
+    await create(page, 'folder', 'drafts')
+    await expect(entry(page, 'drafts')).toBeVisible()
+    await create(page, 'file', 'note.md')
+    await expect(fileTab(page, 'note.md')).toHaveAttribute('aria-selected', 'true')
+    await expect(surface(page)).toHaveAttribute('data-document-state', 'ready')
+    await surface(page).getByRole('button', { name: 'Edit', exact: true }).click()
+    const editor = surface(page).locator('.cm-content')
+    await editor.click()
+    await editor.pressSequentially('# Managed document\n\nSaved file bytes.\n')
+    await surface(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(surface(page).locator('.document-status')).toHaveText('Saved')
+    const saved = await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'note.md'))
+    expect(saved).toContain('Saved file bytes.')
+    await editor.press('Control+End')
+    await editor.pressSequentially('\nUnsaved rename draft')
+
+    await action(page, 'note.md', 'Rename')
+    const rename = page.getByRole('dialog', { name: 'Rename', exact: true })
+    await rename.getByRole('textbox', { name: 'Name', exact: true }).fill('report.md')
+    await rename.getByRole('button', { name: 'Rename', exact: true }).click()
+    await expect(rename).toHaveCount(0)
+    await expect(fileTab(page, 'report.md')).toHaveAttribute('aria-selected', 'true')
+    await expect(fileTab(page, 'note.md')).toHaveCount(0)
+    await expect(surface(page).locator('.cm-content')).toContainText('Unsaved rename draft')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'note.md'))).toBeNull()
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'report.md'))).toBe(saved)
+    await surface(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(surface(page).locator('.document-status')).toHaveText('Saved')
+    const finalBytes = await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'report.md'))
+    expect(finalBytes).toContain('Unsaved rename draft')
+
+    await action(page, 'report.md', 'Copy…')
+    const copy = page.getByRole('dialog', { name: 'Copy', exact: true })
+    await copy.getByRole('textbox', { name: 'Destination path', exact: true }).fill('docs/report.md')
+    await copy.getByRole('button', { name: 'Copy', exact: true }).click()
+    await expect(copy).toHaveCount(0)
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'docs/report.md'))).toBe(finalBytes)
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'report.md'))).toBe(finalBytes)
+
+    await action(page, 'report.md', 'Move…')
+    const move = page.getByRole('dialog', { name: 'Move', exact: true })
+    await move.getByRole('textbox', { name: 'Destination path', exact: true }).fill('drafts/report.md')
+    await move.getByRole('button', { name: 'Move', exact: true }).click()
+    await expect(move).toHaveCount(0)
+    await expect(fileTab(page, 'drafts/report.md')).toHaveAttribute('aria-selected', 'true')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'report.md'))).toBeNull()
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'drafts/report.md'))).toBe(finalBytes)
+
+    await expand(page, 'docs')
+    await action(page, 'docs/report.md', 'Delete')
+    const deletion = page.getByRole('dialog', { name: 'Delete', exact: true })
+    await deletion.getByRole('button', { name: 'Cancel', exact: true }).click()
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'docs/report.md'))).toBe(finalBytes)
+    await action(page, 'docs/report.md', 'Delete')
+    await deletion.getByRole('button', { name: 'Delete', exact: true }).click()
+    await expect(deletion).toHaveCount(0)
+    await expect(entry(page, 'docs/report.md')).toHaveCount(0)
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'docs/report.md'))).toBeNull()
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'drafts/report.md'))).toBe(finalBytes)
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.paths('chat-2').some(path => path.endsWith('/report.md')))).toBe(false)
+    await assertCleanBoundary(page)
+})
+
+test('keeps both files after stale-source and existing-destination conflicts and rejects escaping names', async ({ page }) => {
+    await openWorkbench(page)
+    await expand(page, 'src')
+    await action(page, 'src/README.md', 'Rename')
+    const rename = page.getByRole('dialog', { name: 'Rename', exact: true })
+    await expect(rename.getByRole('button', { name: 'Rename', exact: true })).toBeEnabled()
+    await page.evaluate(() => window.__fileWorkbenchFixture.changeFile('chat-1', 'src/README.md', '# Concurrent source edit\n'))
+    await rename.getByRole('textbox', { name: 'Name', exact: true }).fill('renamed.md')
+    await rename.getByRole('button', { name: 'Rename', exact: true }).click()
+    await expect(rename.getByRole('alert')).toContainText(/changed|conflict/i)
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'src/README.md'))).toBe('# Concurrent source edit\n')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'src/renamed.md'))).toBeNull()
+    await rename.getByRole('button', { name: 'Cancel', exact: true }).click()
+
+    await expand(page, 'docs')
+    const original = await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'docs/README.md'))
+    await action(page, 'docs/README.md', 'Copy…')
+    const copy = page.getByRole('dialog', { name: 'Copy', exact: true })
+    await copy.getByRole('textbox', { name: 'Destination path', exact: true }).fill('src/README.md')
+    await copy.getByRole('button', { name: 'Copy', exact: true }).click()
+    await expect(copy.getByRole('alert')).toContainText(/exists|conflict/i)
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'src/README.md'))).toBe('# Concurrent source edit\n')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'docs/README.md'))).toBe(original)
+    await copy.getByRole('button', { name: 'Cancel', exact: true }).click()
+
+    const mutations = await page.evaluate(() => window.__fileWorkbenchFixture.mutations.length)
+    await page.getByRole('button', { name: 'New file', exact: true }).click()
+    const creation = page.getByRole('dialog', { name: 'New file', exact: true })
+    await creation.getByRole('textbox', { name: 'Name', exact: true }).fill('../outside.txt')
+    await creation.getByRole('button', { name: 'Create', exact: true }).click()
+    await expect(creation.getByRole('alert')).toContainText(/name|slash|parent/i)
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.mutations.length)).toBe(mutations)
+    await creation.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await assertCleanBoundary(page)
+})
+
+test('loads newly created bytes after deleting a previously opened file at the same path', async ({ page }) => {
+    await openWorkbench(page)
+    const path = 'replaceable.txt'
+    await create(page, 'file', path)
+    await expect(surface(page)).toHaveAttribute('data-document-state', 'ready')
+    await surface(page).locator('.cm-content').click()
+    await surface(page).locator('.cm-content').pressSequentially('Original bytes that will be deleted.')
+    await surface(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(surface(page).locator('.document-status')).toHaveText('Saved')
+    expect(await page.evaluate(path => window.__fileWorkbenchFixture.text('chat-1', path), path)).toBe('Original bytes that will be deleted.')
+
+    await action(page, path, 'Delete')
+    const deletion = page.getByRole('dialog', { name: 'Delete', exact: true })
+    await deletion.getByRole('button', { name: 'Delete', exact: true }).click()
+    await expect(deletion).toHaveCount(0)
+    await expect(fileTab(page, path)).toHaveCount(0)
+    expect(await page.evaluate(path => window.__fileWorkbenchFixture.text('chat-1', path), path)).toBeNull()
+
+    await create(page, 'file', path)
+    expect(await page.evaluate(path => window.__fileWorkbenchFixture.text('chat-1', path), path)).toBe('')
+    await expect(fileTab(page, path)).toHaveAttribute('aria-selected', 'true')
+    await expect(surface(page)).toHaveAttribute('data-document-state', 'ready')
+    await expect(surface(page).locator('.cm-content')).toHaveText('')
+    await expect(surface(page).getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+    await surface(page).locator('.cm-content').click()
+    await surface(page).locator('.cm-content').pressSequentially('Replacement bytes.')
+    await surface(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(surface(page).locator('.document-status')).toHaveText('Saved')
+    expect(await page.evaluate(path => window.__fileWorkbenchFixture.text('chat-1', path), path)).toBe('Replacement bytes.')
+
+    // A terminal/agent deletion does not close this UI's already mounted tab.
+    // Creating its path must re-read the invalidated session without depending
+    // on a tab remount or a manual Reload click.
+    const retainedTabId = await fileTab(page, path).getAttribute('id')
+    await page.evaluate(path => window.__fileWorkbenchFixture.removeFile('chat-1', path), path)
+    expect(await page.evaluate(path => window.__fileWorkbenchFixture.text('chat-1', path), path)).toBeNull()
+    await create(page, 'file', path)
+    await expect(fileTab(page, path)).toHaveAttribute('id', retainedTabId!)
+    await expect(tabs(page).getByRole('tab')).toHaveCount(1)
+    await expect(surface(page)).toHaveAttribute('data-document-state', 'ready')
+    await expect(surface(page).locator('.cm-content')).toHaveText('')
+    await surface(page).locator('.cm-content').click()
+    await surface(page).locator('.cm-content').pressSequentially('Recreated after an external deletion.')
+    await surface(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(surface(page).locator('.document-status')).toHaveText('Saved')
+    expect(await page.evaluate(path => window.__fileWorkbenchFixture.text('chat-1', path), path)).toBe('Recreated after an external deletion.')
+    await assertCleanBoundary(page)
+})
+
+test('keeps two editors of one physical file synchronized without dropping either draft', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1000 })
+    await page.goto('/e2e-fixtures/file-workbench-fixture.html?panes=2&sharedFiles')
+    const first = await openSharedPaneDocument(page, 'chat-1')
+    const second = await openSharedPaneDocument(page, 'chat-2')
+    await expect(first.editor).toContainText('Lazy bytes for chat-1.')
+    await expect(second.editor).toContainText('Lazy bytes for chat-1.')
+    await first.editor.click()
+    await first.editor.press('Control+End')
+    await first.editor.pressSequentially('\nDraft from first pane.')
+    await expect(second.editor).toContainText('Draft from first pane.')
+    await second.editor.click()
+    await second.editor.press('Control+End')
+    await second.editor.pressSequentially('\nDraft from second pane.')
+    await expect(first.editor).toContainText('Draft from first pane.')
+    await expect(first.editor).toContainText('Draft from second pane.')
+    await second.document.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(first.document.locator('.document-status')).toHaveText('Saved')
+    await expect(second.document.locator('.document-status')).toHaveText('Saved')
+    const bytes = await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-2', 'lazy/nested/leaf.txt'))
+    expect(bytes).toContain('Draft from first pane.')
+    expect(bytes).toContain('Draft from second pane.')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.mutations.filter(mutation => mutation.action === 'write').map(mutation => mutation.sessionId))).toEqual(['chat-2'])
+
+    // Let A own the retained editor state while B is unmounted. B's next
+    // keyboard Save must use its current API route, not A's retained closure.
+    await second.pane.getByRole('button', { name: 'Back to conversation', exact: true }).click()
+    await expect(second.document).toHaveCount(0)
+    await first.editor.click()
+    await first.editor.press('Control+End')
+    await first.editor.pressSequentially('\nEdit while second pane is unmounted.')
+    await first.document.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(first.document.locator('.document-status')).toHaveText('Saved')
+    const remounted = await openSharedPaneDocument(page, 'chat-2')
+    await expect(remounted.editor).toContainText('Edit while second pane is unmounted.')
+    await remounted.editor.click()
+    await remounted.editor.press('Control+End')
+    await remounted.editor.pressSequentially('\nRemounted second pane draft.')
+    await remounted.editor.press('Control+s')
+    await expect(remounted.document.locator('.document-status')).toHaveText('Saved')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.mutations.filter(mutation => mutation.action === 'write').map(mutation => mutation.sessionId))).toEqual(['chat-2', 'chat-1', 'chat-2'])
+    await expect(first.editor).toContainText('Remounted second pane draft.')
+    const readCount = await page.evaluate(() => window.__fileWorkbenchFixture.requests.length)
+    await remounted.document.getByRole('button', { name: 'Reload', exact: true }).click()
+    await expect.poll(() => page.evaluate(start => window.__fileWorkbenchFixture.requests.slice(start).filter(request => request.route === 'file' && request.method === 'GET').map(request => request.sessionId), readCount)).toEqual(['chat-2'])
+    await assertCleanBoundary(page)
+})
+
+test('references a shared physical file into the conversation that opened its workbench', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1000 })
+    await page.goto('/e2e-fixtures/file-workbench-fixture.html?single=1&sharedFiles')
+    await openFilesFromChat(page)
+    await openFile(page, 'lazy/nested/leaf.txt')
+    await page.locator('.app-session-sidebar-frame').getByText('Windows 终端集成', { exact: true }).click()
+    await openFilesFromChat(page)
+    await openFile(page, 'lazy/nested/leaf.txt')
+    await surface(page).locator('.cm-content').click()
+    await surface(page).locator('.cm-content').press('Control+A')
+    const selection = surface(page).getByRole('complementary', { name: 'Selected content', exact: true })
+    await expect(selection).toContainText('Windows 终端集成')
+    await expect(selection).not.toContainText('历史阅读优化')
+    await selection.getByRole('button', { name: 'Reference selection', exact: true }).click()
+    await expect(page.getByTestId('document-reference-drafts')).toContainText('leaf.txt')
+    await assertCleanBoundary(page)
+})
+
+test('retargets a shared file tab saved by an already unmounted workbench and preserves its draft', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1000 })
+    await page.goto('/e2e-fixtures/file-workbench-fixture.html?single=1&sharedFiles')
+    await openFilesFromChat(page)
+    const originalPath = 'lazy/nested/leaf.txt', movedPath = 'lazy/nested/shared-renamed.txt'
+    await openFile(page, originalPath)
+    await surface(page).locator('.cm-content').click()
+    await surface(page).locator('.cm-content').press('Control+End')
+    await surface(page).locator('.cm-content').pressSequentially('\nDraft from the unmounted workbench.')
+    await page.locator('.app-session-sidebar-frame').getByText('Windows 终端集成', { exact: true }).click()
+    await openFilesFromChat(page)
+    await openFile(page, originalPath)
+    await action(page, originalPath, 'Rename')
+    const rename = page.getByRole('dialog', { name: 'Rename', exact: true })
+    await rename.getByRole('textbox', { name: 'Name', exact: true }).fill('shared-renamed.txt')
+    await rename.getByRole('button', { name: 'Rename', exact: true }).click()
+    await expect(rename).toHaveCount(0)
+    await expect(fileTab(page, movedPath)).toHaveAttribute('aria-selected', 'true')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'lazy/nested/shared-renamed.txt'))).toBe('Lazy bytes for chat-1.\n')
+
+    await page.locator('.app-session-sidebar-frame').getByText('历史阅读优化', { exact: true }).click()
+    await openFilesFromChat(page)
+    await expect(fileTab(page, movedPath)).toHaveAttribute('aria-selected', 'true')
+    await expect(fileTab(page, originalPath)).toHaveCount(0)
+    await expect(surface(page).locator('.cm-content')).toContainText('Draft from the unmounted workbench.')
+    await expect(surface(page).locator('.document-path-row code')).toHaveText(`${root}/${movedPath}`)
+    await surface(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(surface(page).locator('.document-status')).toHaveText('Saved')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-2', 'lazy/nested/shared-renamed.txt'))).toContain('Draft from the unmounted workbench.')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.mutations.filter(mutation => mutation.action === 'write').map(mutation => mutation.sessionId))).toEqual(['chat-1'])
+    await assertCleanBoundary(page)
+})
+
+test('settles an in-flight rename after leaving its workbench without navigating away from the next session', async ({ page }) => {
+    await openWorkbench(page)
+    const path = 'lazy/nested/leaf.txt'
+    const movedPath = 'lazy/nested/renamed.txt'
+    await openFile(page, 'README.md')
+    await openFile(page, path)
+    await surface(page).locator('.cm-content').click()
+    await surface(page).locator('.cm-content').press('Control+End')
+    await surface(page).locator('.cm-content').pressSequentially('\nKeep this in-flight rename draft.')
+    await action(page, path, 'Rename')
+    const rename = page.getByRole('dialog', { name: 'Rename', exact: true })
+    await rename.getByRole('textbox', { name: 'Name', exact: true }).fill('renamed.txt')
+    await page.evaluate(path => window.__fileWorkbenchFixture.holdMutation('chat-1', 'rename', path), path)
+    await rename.getByRole('button', { name: 'Rename', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => window.__fileWorkbenchFixture.mutations.filter(mutation => mutation.action === 'rename').length)).toBe(1)
+
+    // The fixture's memory-history navigation models a route change while a
+    // network request is outstanding; the workbench and its modal unmount.
+    await page.evaluate(() => window.__workspaceFixture.navigate('/sessions/chat-2'))
+    await openFilesFromChat(page)
+    await openFile(page, path)
+    await expect(surface(page)).toContainText('Lazy bytes for chat-2.')
+
+    // Revisit A while the original instance's request is still outstanding.
+    // This newer instance changes the durable layout and then unmounts too;
+    // the old request must reconcile these references instead of restoring
+    // its stale tabs, active selection, and tree width.
+    await page.locator('.app-session-sidebar-frame').getByText('历史阅读优化', { exact: true }).click()
+    await openFilesFromChat(page)
+    await expect(tabs(page).getByRole('tab')).toHaveCount(2)
+    await expect(surface(page).locator('.cm-content')).toContainText('Keep this in-flight rename draft.')
+    await tabs(page).locator(`[data-path="${root}/README.md"]`).getByRole('button', { name: 'Close README.md', exact: true }).click()
+    await expect(fileTab(page, 'README.md')).toHaveCount(0)
+    await openFile(page, 'docs/README.md')
+    const resizer = page.getByRole('separator', { name: 'Resize file tree', exact: true })
+    await resizer.press('ArrowRight')
+    await resizer.press('ArrowRight')
+    await expect(resizer).toHaveAttribute('aria-valuenow', '360')
+    const readLayout = () => page.evaluate(() => {
+        const key = Object.keys(localStorage).find(key => key.endsWith(':files:v1:chat-1'))
+        if (!key) throw new Error('The first session has no saved file layout.')
+        const stored = JSON.parse(localStorage.getItem(key)!) as {
+            tabs: Array<{ id: string; resource: { document: { path: string } } }>
+            activeId: string | null
+            treeWidth: number
+        }
+        return { tabs: stored.tabs.map(tab => ({ id: tab.id, path: tab.resource.document.path })), activeId: stored.activeId, treeWidth: stored.treeWidth }
+    })
+    const latestLayout = await readLayout()
+    expect(latestLayout.tabs.map(tab => tab.path)).toEqual([`${root}/${path}`, `${root}/docs/README.md`])
+    expect(latestLayout.activeId).toBe(latestLayout.tabs[1].id)
+    expect(latestLayout.treeWidth).toBe(360)
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.mutations.filter(mutation => mutation.action === 'rename').map(mutation => mutation.success))).toEqual([false])
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'lazy/nested/leaf.txt'))).toBe('Lazy bytes for chat-1.\n')
+
+    await page.locator('.app-session-sidebar-frame').getByText('Windows 终端集成', { exact: true }).click()
+    await openFilesFromChat(page)
+    await openFile(page, path)
+    await expect(fileTab(page, path)).toHaveAttribute('aria-selected', 'true')
+    await expect(surface(page)).toContainText('Lazy bytes for chat-2.')
+    await page.evaluate(() => window.__fileWorkbenchFixture.releaseMutations())
+    await expect.poll(readLayout).toEqual({
+        ...latestLayout,
+        tabs: latestLayout.tabs.map(tab => tab.path === `${root}/${path}` ? { ...tab, path: `${root}/${movedPath}` } : tab),
+    })
+    // Observe settled rendering, not just the first frame before the old
+    // callback has had an opportunity to navigate.
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    expect(await page.evaluate(() => window.__workspaceFixture.pathname())).toBe('/sessions/chat-2/file')
+    await expect(surface(page)).toContainText('Lazy bytes for chat-2.')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'lazy/nested/leaf.txt'))).toBeNull()
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'lazy/nested/renamed.txt'))).toBe('Lazy bytes for chat-1.\n')
+
+    await page.locator('.app-session-sidebar-frame').getByText('历史阅读优化', { exact: true }).click()
+    await openFilesFromChat(page)
+    await expect(tabs(page).getByRole('tab')).toHaveCount(2)
+    await expect(fileTab(page, 'README.md')).toHaveCount(0)
+    await expect(fileTab(page, 'docs/README.md')).toHaveAttribute('aria-selected', 'true')
+    await expect(surface(page)).toContainText('chat-1 documentation')
+    await expect(resizer).toHaveAttribute('aria-valuenow', '360')
+    await fileTab(page, movedPath).click()
+    await expect(fileTab(page, movedPath)).toHaveAttribute('aria-selected', 'true')
+    await expect(fileTab(page, path)).toHaveCount(0)
+    await expect(surface(page).locator('.cm-content')).toContainText('Keep this in-flight rename draft.')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.mutations.filter(mutation => mutation.action === 'write'))).toEqual([])
+    await surface(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(surface(page).locator('.document-status')).toHaveText('Saved')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'lazy/nested/renamed.txt'))).toBe('Lazy bytes for chat-1.\n\nKeep this in-flight rename draft.')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.mutations.filter(mutation => mutation.action === 'write').map(mutation => ({ sessionId: mutation.sessionId, path: mutation.path, success: mutation.success })))).toEqual([
+        { sessionId: 'chat-1', path: `${root}/${movedPath}`, success: true },
+    ])
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-2', 'lazy/nested/leaf.txt'))).toBe('Lazy bytes for chat-2.\n')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-2', 'lazy/nested/renamed.txt'))).toBeNull()
+    await assertCleanBoundary(page)
+})
+
+test('uploads and downloads exact binary bytes and refuses to overwrite an existing upload', async ({ page }) => {
+    await openWorkbench(page)
+    const original = [0, 255, 1, 128, 10, 13, 60, 62, 0, 240, 159, 146, 190]
+    const picker = page.locator('input[type="file"][aria-label="Upload files"]')
+    await picker.setInputFiles({ name: 'payload.bin', mimeType: 'application/octet-stream', buffer: Buffer.from(original) })
+    await expect(entry(page, 'payload.bin')).toBeVisible()
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.bytes('chat-1', 'payload.bin'))).toEqual(original)
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.bytes('chat-2', 'payload.bin'))).toBeNull()
+
+    const downloadEvent = page.waitForEvent('download')
+    await entry(page, 'payload.bin').getByRole('button', { name: 'Download payload.bin', exact: true }).click()
+    const download = await downloadEvent
+    expect(download.suggestedFilename()).toBe('payload.bin')
+    expect(Array.from(await readFile((await download.path())!))).toEqual(original)
+
+    await picker.setInputFiles({ name: 'payload.bin', mimeType: 'application/octet-stream', buffer: Buffer.from('do not overwrite') })
+    await expect.poll(() => page.evaluate(() => window.__fileWorkbenchFixture.mutations.filter(mutation => mutation.action === 'upload').map(mutation => [mutation.success, mutation.code]))).toEqual([[true, undefined], [false, 'conflict']])
+    await expect(page.getByRole('alert').filter({ hasText: /exists|conflict/i })).toBeVisible()
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.bytes('chat-1', 'payload.bin'))).toEqual(original)
+    await assertCleanBoundary(page)
+})
+
+test('retains dirty tabs through phone tree switches and reload while polling only the visible document', async ({ page }) => {
+    await page.clock.install()
+    await openWorkbench(page)
+    await openFile(page, 'src/README.md')
+    await openFile(page, 'docs/README.md')
+    await surface(page).getByRole('button', { name: 'Edit', exact: true }).click()
+    await surface(page).locator('.cm-content').click()
+    await surface(page).locator('.cm-content').press('Control+End')
+    await surface(page).locator('.cm-content').pressSequentially('\nRetained mobile draft')
+    await expect(surface(page).locator('.document-status')).toHaveText('Unsaved changes')
+    await page.waitForFunction(async () => {
+        const database = await new Promise<IDBDatabase>(resolve => { const request = indexedDB.open('hapi-document-drafts'); request.onsuccess = () => resolve(request.result) })
+        return new Promise<boolean>(resolve => {
+            const transaction = database.transaction('drafts'), request = transaction.objectStore('drafts').getAll()
+            transaction.oncomplete = () => { database.close(); resolve(request.result.some(draft => draft.text.includes('Retained mobile draft'))) }
+        })
+    })
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(surface(page).locator('.cm-content')).toContainText('Retained mobile draft')
+    await page.getByRole('button', { name: 'Show file tree', exact: true }).click()
+    await expect(tree(page)).toBeVisible()
+    await expect(surface(page)).toHaveCount(0)
+    await openFile(page, 'src/README.md')
+    await expect(surface(page)).toContainText('chat-1 source document')
+    const before = await page.evaluate(() => window.__fileWorkbenchFixture.requests.length)
+    await page.clock.fastForward(21_000)
+    await expect.poll(() => page.evaluate(start => window.__fileWorkbenchFixture.requests.slice(start).filter(request => request.route === 'file-info').map(request => request.path), before)).toContain(`${root}/src/README.md`)
+    const checked = await page.evaluate(start => window.__fileWorkbenchFixture.requests.slice(start).filter(request => request.route === 'file-info').map(request => request.path), before)
+    expect(checked).not.toContain(`${root}/docs/README.md`)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+
+    await fileTab(page, 'docs/README.md').click()
+    await expect(surface(page).locator('.cm-content')).toContainText('Retained mobile draft')
+    page.on('dialog', dialog => dialog.accept())
+    await page.reload()
+    await openFilesFromChat(page)
+    await expect(tree(page)).toBeVisible()
+    await page.getByRole('button', { name: 'Show file', exact: true }).click()
+    await expect(tabs(page).getByRole('tab')).toHaveCount(2)
+    await expect(fileTab(page, 'docs/README.md')).toHaveAttribute('aria-selected', 'true')
+    await expect(surface(page)).toContainText('Retained mobile draft')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.mutations.filter(mutation => mutation.action === 'write'))).toEqual([])
+    await page.setViewportSize({ width: 1920, height: 1000 })
+    await expect(tree(page)).toBeVisible()
+    await expect(surface(page)).toBeVisible()
+    await assertCleanBoundary(page)
+})
+
+test('keeps a copyable full path visible and returns a dirty mobile document to its expanded, selected tree row', async ({ page, context }, testInfo) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await openWorkbench(page, 390)
+    const path = 'lazy/nested/leaf.txt'
+    await openFile(page, path)
+    const documentPath = surface(page).locator('.document-path-row code')
+    await expect(documentPath).toBeVisible()
+    await expect(documentPath).toHaveText(`${root}/${path}`)
+    await surface(page).getByRole('button', { name: 'Copy file path', exact: true }).click()
+    await expect(surface(page).getByRole('status').filter({ hasText: 'Path copied' })).toHaveText('Path copied')
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${root}/${path}`)
+    await page.screenshot({ path: testInfo.outputPath('file-workbench-mobile.png') })
+
+    const editor = surface(page).locator('.cm-content')
+    await editor.click()
+    await editor.press('Control+End')
+    await editor.pressSequentially('\nKeep this tree-return draft')
+    await expect(surface(page).locator('.document-status')).toHaveText('Unsaved changes')
+    await expect(documentPath).toBeVisible()
+    await surface(page).getByRole('button', { name: 'Back to file tree', exact: true }).click()
+    await expect(tree(page)).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(surface(page)).toHaveCount(0)
+
+    // Collapse the remembered branch before returning again. Retaining the old
+    // expansion alone cannot satisfy this assertion: the active file must be
+    // revealed, its ancestors expanded, and its row scrolled into view.
+    await page.getByRole('button', { name: 'Collapse folders', exact: true }).click()
+    await expect(entry(page, 'lazy').locator('button[aria-expanded]').first()).toHaveAttribute('aria-expanded', 'false')
+    await page.getByRole('button', { name: 'Show file', exact: true }).click()
+    await expect(surface(page).locator('.cm-content')).toContainText('Keep this tree-return draft')
+    await expect(surface(page).locator('.document-path-row code')).toHaveText(`${root}/${path}`)
+    await surface(page).getByRole('button', { name: 'Back to file tree', exact: true }).click()
+    await expect(tree(page)).toBeVisible()
+    await expect(entry(page, 'lazy').locator('button[aria-expanded]').first()).toHaveAttribute('aria-expanded', 'true')
+    await expect(entry(page, 'lazy/nested').locator('button[aria-expanded]').first()).toHaveAttribute('aria-expanded', 'true')
+    await expect(entry(page, path).locator('button.app-file-tree-target')).toHaveAttribute('aria-current', 'true')
+    await expect(entry(page, path)).toBeInViewport()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath('file-workbench-mobile-tree.png') })
+    await openFile(page, path)
+    await expect(surface(page).locator('.cm-content')).toContainText('Keep this tree-return draft')
+    expect(await page.evaluate(() => window.__fileWorkbenchFixture.text('chat-1', 'lazy/nested/leaf.txt'))).toBe('Lazy bytes for chat-1.\n')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.setViewportSize({ width: 1920, height: 1000 })
+    await expect(tree(page)).toBeVisible()
+    await expect(surface(page)).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath('file-workbench-desktop.png') })
+    await assertCleanBoundary(page)
+})

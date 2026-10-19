@@ -1,5 +1,6 @@
 import { ForkOperationResponseSchema, type ForkOperationRpcRequest, type ForkOperationRpcResponse } from '@hapi/protocol/forkOperations'
 import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
+import type { FileManagementRequest, FileManagementResponse, FileManagementUploadRequest } from '@hapi/protocol/fileManagement'
 import type { ArtifactReadResponse } from '@hapi/protocol/artifacts'
 import type { CodexGoalRequest, CodexGoalResponse } from '@hapi/protocol/apiTypes'
 import { CodexSubagentMessagesResponseSchema } from '@hapi/protocol/apiTypes'
@@ -407,6 +408,18 @@ export class RpcGateway {
         return await this.sessionRpc(sessionId, RPC_METHODS.WriteFile, data) as FileWriteResponse
     }
 
+    async inspectSessionPath(sessionId: string, path: string): Promise<FileManagementResponse> {
+        return await this.sessionRpc(sessionId, RPC_METHODS.InspectSessionPath, { path }, 120_000) as FileManagementResponse
+    }
+
+    async manageSessionFiles(sessionId: string, data: FileManagementRequest): Promise<FileManagementResponse> {
+        return await this.sessionRpc(sessionId, RPC_METHODS.ManageSessionFiles, data, 120_000) as FileManagementResponse
+    }
+
+    async uploadSessionFile(sessionId: string, data: FileManagementUploadRequest): Promise<FileManagementResponse> {
+        return await this.sessionRpc(sessionId, RPC_METHODS.UploadSessionFile, data, 120_000) as FileManagementResponse
+    }
+
     async readArtifact(sessionId: string, data: { id: string } | { path: string; sessionId: string; mimeType?: string }): Promise<ArtifactReadResponse> {
         return await this.sessionRpc(sessionId, RPC_METHODS.ReadArtifact, data) as ArtifactReadResponse
     }
@@ -472,7 +485,7 @@ export class RpcGateway {
         return await this.machineRpc(machineId, RPC_METHODS.ConnectCodexSession, { threadId }, 30_000)
     }
 
-    async readCodexSubagentMessages(machineId: string, query: { rootThreadId: string; threadId: string; limit: number; before?: number }) {
+    async readCodexSubagentMessages(machineId: string, query: import('@hapi/protocol/apiTypes').ReadCodexSubagentMessagesRequest) {
         return CodexSubagentMessagesResponseSchema.parse(await this.machineRpc(machineId, RPC_METHODS.ReadCodexSubagentMessages, query, 15_000))
     }
 

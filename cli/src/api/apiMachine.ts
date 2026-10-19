@@ -361,7 +361,7 @@ export class ApiMachineClient {
         })
 
         this.rpcHandlerManager.registerHandler(RPC_METHODS.ReadCodexSubagentMessages, async (raw: unknown) => {
-            const { rootThreadId, threadId, limit, before } = ReadCodexSubagentMessagesRequestSchema.parse(raw)
+            const { rootThreadId, threadId, limit, before, after, epoch } = ReadCodexSubagentMessagesRequestSchema.parse(raw)
             const parent = lookupCodexSessionLineage([rootThreadId])[0]
             const child = parent?.codexSubagents?.find(item => item.threadId === threadId)
             if (!parent || !child || !await this.isLocalSessionWithinWorkspaceRoots(parent)
@@ -370,14 +370,17 @@ export class ApiMachineClient {
             }
             const descendants = new Map((parent.codexSubagents ?? []).map(item => [item.threadId, item]))
             let ancestor = child
+            const visited = new Set<string>()
             while (ancestor.parentThreadId !== rootThreadId) {
+                if (visited.has(ancestor.threadId)) throw new Error('Subagent lineage contains a cycle')
+                visited.add(ancestor.threadId)
                 const next = descendants.get(ancestor.parentThreadId)
                 if (!next || !await this.isLocalSessionWithinWorkspaceRoots({ cwd: next.path })) {
                     throw new Error('Subagent is unavailable or outside workspace roots')
                 }
                 ancestor = next
             }
-            return readCodexSubagentMessages(threadId, limit, before)
+            return readCodexSubagentMessages(threadId, limit, before, undefined, { after, epoch })
         })
 
         this.rpcHandlerManager.registerHandler(RPC_METHODS.CodexSessionLineage, async (params: unknown) => {

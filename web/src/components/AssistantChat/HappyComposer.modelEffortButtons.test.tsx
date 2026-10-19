@@ -145,6 +145,48 @@ function openPicker(name = 'Sonnet 4 · High') {
 }
 
 describe('HappyComposer unified model/effort picker', () => {
+    it('uses only DSH advertised values and maps its provider default to null during a running turn', () => {
+        runtime.snapshot.thread.isRunning = true
+        const change = vi.fn()
+        renderComposer('dsh', { active: true, thinking: true, model: 'opaque:v4', effort: 'deep',
+            availableModelOptions: [{ value: 'opaque:v4', label: 'DeepSeek / V4' }],
+            availableEffortOptions: [{ value: '', name: 'Provider default' }, { value: 'deep', name: 'Deep reasoning' }],
+            onEffortChange: change })
+        const trigger = openPicker('DeepSeek / V4 · Deep reasoning')
+        expect(trigger).not.toBeDisabled()
+        expect(screen.getByRole('status')).toHaveTextContent('Changes apply to the next message')
+        expect(screen.queryByRole('button', { name: 'High' })).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Provider default' }))
+        expect(change).toHaveBeenCalledExactlyOnceWith(null)
+    })
+
+    it('replaces a DSH catalog without reintroducing the removed model, effort or default', () => {
+        const change = vi.fn()
+        const common = { sessionId: 'dsh-replace', disabled: false, active: true, agentFlavor: 'dsh', model: 'old', effort: 'old-effort', onModelChange: change, onEffortChange: vi.fn() }
+        const view = render(<I18nProvider><HappyComposer {...common}
+            availableModelOptions={[{ value: 'old', label: 'Old model' }]}
+            availableEffortOptions={[{ value: 'old-effort', name: 'Old effort' }]} /></I18nProvider>)
+        view.rerender(<I18nProvider><HappyComposer {...common}
+            availableModelOptions={[{ value: 'new', label: 'New model' }]}
+            availableEffortOptions={[{ value: 'new-effort', name: 'New effort' }]} /></I18nProvider>)
+        openPicker('old · old-effort')
+        expect(screen.queryByRole('button', { name: 'Old effort' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Default' })).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'New effort' })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'old' }))
+        expect(screen.queryByRole('button', { name: 'Old model' })).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'New model' }))
+        expect(change).toHaveBeenCalledExactlyOnceWith('new')
+    })
+
+    it('hides DSH settings without advertised options and leaves its keyboard shortcut inert', () => {
+        const change = vi.fn()
+        renderComposer('dsh', { active: true, availableModelOptions: undefined, availableEffortOptions: undefined, onModelChange: change })
+        expect(screen.queryByRole('button', { name: /claude-sonnet|Sonnet|High/ })).not.toBeInTheDocument()
+        fireEvent.keyDown(window, { key: 'm', ctrlKey: true })
+        expect(change).not.toHaveBeenCalled()
+    })
+
     beforeEach(() => {
         localStorage.setItem('hapi.fue.v1.rich-composer-mentions', '1')
         runtime.cancelRun.mockClear()

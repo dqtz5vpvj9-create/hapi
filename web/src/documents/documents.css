@@ -7,6 +7,10 @@
 .document-surface button:disabled { opacity:.45; cursor:default; }
 .document-surface .document-primary { color:var(--app-link); font-weight:600; }
 .document-status { color:var(--app-hint); font-size:12px; }
+.document-path-row { display:flex; align-items:center; flex-shrink:0; min-width:0; gap:6px; padding:4px 8px; border-bottom:1px solid var(--app-border); font-size:12px; }
+.document-path-row code { display:block; flex:1; min-width:0; padding:7px 2px; overflow-x:auto; white-space:pre; scrollbar-width:thin; user-select:text; overscroll-behavior-x:contain; }
+.document-path-row button { flex-shrink:0; min-height:36px; font-size:12px; color:var(--app-hint); }
+@media (max-width:600px) { .document-path-row { flex-wrap:wrap; gap:2px; } .document-path-row code { order:-1; flex-basis:100%; } .document-path-row button:last-of-type { margin-left:auto; } }
 .document-body { flex:1; min-height:0; min-width:0; overflow:hidden; position:relative; }
 .document-body > p { padding:20px; }
 .document-editor { height:100%; }

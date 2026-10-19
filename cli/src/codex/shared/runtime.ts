@@ -198,12 +198,16 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                 ...(parent || forkedFromSessionId ? { forkedFrom: parent?.session.sessionId ?? forkedFromSessionId } : {}) } } as const;
         // reservedSessionId names one preallocated hub row — single-use. A second
         // create()/fork must mint a fresh row, not re-adopt (#1911 Opus Major).
-        const reservedSessionId = operationSessionId ?? (existingSessionId ? undefined : takeReservedSessionId(options));
+        const reservedSessionId = existingSessionId || operationSessionId ? undefined : takeReservedSessionId(options);
         const bootstrap = existingSessionId
             ? await bootstrapExistingSession({ ...shared, sessionId: existingSessionId })
             : await bootstrapSession({
                 ...shared,
                 reservedSessionId,
+                // A fork journal allocates an ID, not a Hub machine-spawn stub.
+                // Create that exact row before native dispatch; later recovery
+                // reopens the acknowledged row instead of creating a replacement.
+                newSessionId: operationSessionId,
                 ...(nativeThread ? { tag: `codex-native:${home}:${nativeThread.id}` } : {}),
                 agentState: { controlledByUser: false },
             });
