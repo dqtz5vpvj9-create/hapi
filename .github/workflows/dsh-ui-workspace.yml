@@ -15,20 +15,11 @@ jobs:
         with:
           ref: 64904a13f5ea10e375d105ec0af761620e4ea226
           persist-credentials: false
-      - name: Export the fixed source baseline without Git credentials
-        run: |
-          git archive --format=tar HEAD | gzip > "$RUNNER_TEMP/hapi-source.tar.gz"
-          sha256sum "$RUNNER_TEMP/hapi-source.tar.gz"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hapi-dsh-source
-          path: ${{ runner.temp }}/hapi-source.tar.gz
-          retention-days: 3
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
       - run: bun install --frozen-lockfile
-      - name: Prepare offline test dependencies only
+      - name: Prepare size-bounded offline test dependencies
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/hapi-toolchain"
@@ -39,12 +30,44 @@ jobs:
           done
           tar -czf "$RUNNER_TEMP/hapi-dependencies.tar.gz" -T "$RUNNER_TEMP/dependency-paths"
           gzip "$RUNNER_TEMP/hapi-toolchain/bun"
-          sha256sum "$RUNNER_TEMP/hapi-dependencies.tar.gz" "$RUNNER_TEMP/hapi-toolchain/bun.gz"
+          split -b 90M "$RUNNER_TEMP/hapi-dependencies.tar.gz" "$RUNNER_TEMP/dependencies.part-"
+          sha256sum "$RUNNER_TEMP/hapi-dependencies.tar.gz" "$RUNNER_TEMP/hapi-toolchain/bun.gz" "$RUNNER_TEMP"/dependencies.part-* | tee "$RUNNER_TEMP/hapi-toolchain/checksums.txt"
       - uses: actions/upload-artifact@v4
         with:
-          name: hapi-dsh-test-dependencies
-          path: |
-            ${{ runner.temp }}/hapi-dependencies.tar.gz
-            ${{ runner.temp }}/hapi-toolchain/bun.gz
+          name: hapi-dsh-dependencies-aa
+          path: ${{ runner.temp }}/dependencies.part-aa
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hapi-dsh-dependencies-ab
+          path: ${{ runner.temp }}/dependencies.part-ab
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hapi-dsh-dependencies-ac
+          path: ${{ runner.temp }}/dependencies.part-ac
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hapi-dsh-dependencies-ad
+          path: ${{ runner.temp }}/dependencies.part-ad
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: 687f282e8625c6b8d11ff58211a90524be2e4317
+          path: upstream-dsh
+          persist-credentials: false
+      - name: Export upstream protocol source for verification
+        run: |
+          git -C upstream-dsh archive --format=tar HEAD packages/acp/acp packages/llm/llm-deepseek packages/mcp/mcp-client packages/client/connection | gzip > "$RUNNER_TEMP/hapi-toolchain/dsh-protocol-source.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hapi-dsh-toolchain
+          path: ${{ runner.temp }}/hapi-toolchain/
           compression-level: 0
           retention-days: 3
