@@ -22,7 +22,11 @@ export function resolveAgentSessionIdFromMetadata(
         case 'kimi': return metadata.kimiSessionId ?? undefined
         case 'copilot': return metadata.copilotSessionId ?? undefined
         case 'pi': return metadata.piSessionId ?? undefined
-        case 'dsh': return undefined
+        // Hub `resolveAgentResumeId` treats dsh like any other ACP resume id and
+        // needs `dshSessionId` to spawn `session/resume`. Returning undefined
+        // here made archived dsh sessions look non-resumable in the web UI even
+        // though `POST /sessions/:id/reopen` succeeds.
+        case 'dsh': return metadata.dshSessionId ?? undefined
         default: return metadata.claudeSessionId ?? undefined
     }
 }

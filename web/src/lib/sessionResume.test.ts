@@ -57,6 +57,29 @@ describe('sessionResume', () => {
         })).toBe('claude-1')
     })
 
+    it('resolveAgentSessionIdFromMetadata returns the dsh resume id', () => {
+        expect(resolveAgentSessionIdFromMetadata({
+            path: '/p',
+            host: 'h',
+            flavor: 'dsh',
+            dshSessionId: 'dsh-1',
+            claudeSessionId: 'claude-1',
+        })).toBe('dsh-1')
+    })
+
+    it('inactiveSessionCanResume reopens an archived dsh session with history', () => {
+        const session = makeSession({
+            metadata: {
+                path: '/home/chris',
+                host: 'localhost',
+                flavor: 'dsh',
+                dshSessionId: 'dsh-1',
+                lifecycleState: 'archived',
+            },
+        })
+        expect(inactiveSessionCanResume(session, 12)).toBe(true)
+    })
+
     it('inactiveSessionCanResume is true for active sessions', () => {
         expect(inactiveSessionCanResume(makeSession({ active: true }), 0)).toBe(true)
     })
