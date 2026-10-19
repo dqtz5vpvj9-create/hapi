@@ -15,7 +15,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, ty
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import type { CodexDuplicateSessionGroup, CodexLocalSessionSummary, Machine, PiLocalSessionSummary } from '@/types/api'
-import { getPermissionModeLabel } from '@hapi/protocol'
+import { getAgentConfigDescriptor, getPermissionModeLabel } from '@hapi/protocol'
 import type { CodexCollaborationMode, GrokPermissionMode, PermissionMode, CopilotAgentMode } from '@hapi/protocol'
 import { codexModelAdvertisesFastTier } from '@/components/AssistantChat/codexFastMode'
 import { usePlatform } from '@/hooks/usePlatform'
@@ -2099,6 +2099,9 @@ export function NewSession(props: {
         : []
     const taskEffort = agent === 'codex' || agent === 'opencode' ? modelReasoningEffort
         : agent === 'cursor' ? cursorEffortSelectValue : effort
+    const taskPermissionLabel = getAgentConfigDescriptor(agent).fields.some(field => field.id === 'permission' && field.kind === 'status')
+        ? t('newSession.permission.managedTitle')
+        : getPermissionModeLabel(agent === 'grok' ? grokPermissionMode : usesNativePermissionSelect(agent) ? nativePermissionMode : yoloMode ? 'yolo' : 'default')
     const invalidTaskSelection = props.initialTask !== undefined && (
         (agent === 'codex' && !codexModelsState.isLoading && !codexModelsState.error && model !== 'auto' && !codexModelsState.models.some(candidate => candidate.id === model))
         || (agent === 'codex' && modelReasoningEffort !== 'default' && Boolean(codexSupportedReasoningEfforts) && !codexSupportedReasoningEfforts?.includes(modelReasoningEffort))
@@ -2151,16 +2154,18 @@ export function NewSession(props: {
                                 event.target.value = ''
                             }} />
                             <button type="button" aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady} onClick={() => fileInputRef.current?.click()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] disabled:opacity-50"><Plus size={20} /></button></>}
-                            <button type="button" aria-label={t('misc.permissionMode')} aria-expanded={permissionOpen} onClick={() => setPermissionOpen(value => !value)} className="flex min-h-11 min-w-11 items-center gap-1 rounded-full px-2 py-2 text-xs hover:bg-[var(--app-secondary-bg)]"><Shield size={16} /><span className="hidden sm:inline">{getPermissionModeLabel(agent === 'grok' ? grokPermissionMode : usesNativePermissionSelect(agent) ? nativePermissionMode : yoloMode ? 'yolo' : 'default')}</span><span>⌄</span></button>
+                            <button type="button" aria-label={t('misc.permissionMode')} aria-expanded={permissionOpen} onClick={() => setPermissionOpen(value => !value)} className="flex min-h-11 min-w-11 items-center gap-1 rounded-full px-2 py-2 text-xs hover:bg-[var(--app-secondary-bg)]"><Shield size={16} /><span className="hidden sm:inline">{taskPermissionLabel}</span><span>⌄</span></button>
                             <div className="ml-auto min-w-0">
-                                <ModelEffortPicker models={taskModels} model={agent === 'cursor' && cursorPicker.mode === 'dual' ? cursorBaseSelectValue : agent === 'agy' ? agySelectedModel ?? 'auto' : agent === 'opencode' ? opencodeSelectedModel ?? 'auto' : model}
+                                {agent === 'dsh' ? <span className="block truncate px-2 py-2 text-sm text-[var(--app-hint)]" title={t('newSession.dshManagedModelHint')}>
+                                    {t('newSession.dshManagedModel')}
+                                </span> : <ModelEffortPicker models={taskModels} model={agent === 'cursor' && cursorPicker.mode === 'dual' ? cursorBaseSelectValue : agent === 'agy' ? agySelectedModel ?? 'auto' : agent === 'opencode' ? opencodeSelectedModel ?? 'auto' : model}
                                     onModelChange={value => { if (agent === 'agy') { agyModelPickedByUserRef.current = value !== 'auto'; setAgySelectedModel(value === 'auto' ? null : value); } else if (agent === 'opencode') setOpencodeSelectedModel(value === 'auto' ? null : value); else if (agent === 'cursor' && cursorPicker.mode === 'dual') handleCursorBaseChange(value ?? 'auto'); else setModel(value ?? 'auto') }}
                                     efforts={taskEfforts} effort={taskEffort}
                                     onEffortChange={value => { if (agent === 'codex' || agent === 'opencode') setModelReasoningEffort(value ?? 'default'); else if (agent === 'cursor') handleCursorEffortChange(value ?? 'auto'); else setEffort(value ?? 'auto') }}
                                     fast={serviceTier === 'fast'} onFastChange={showCodexFastMode ? value => setServiceTier(value ? 'fast' : 'standard') : undefined}
                                     disabled={isCreating || deliveryPending} loading={isLaunchPreferenceValidationPending}
                                     error={agent === 'codex' ? codexModelsState.error : agent === 'grok' ? grokModelsState.error : agent === 'copilot' ? copilotModelsState.error : agent === 'kimi' ? kimiModelsState.error : agent === 'pi' ? piModelsState.error : null}
-                                />
+                                />}
                             </div>
                             <button type="button" aria-label={deliveryPending ? t('newTask.retryDelivery') : t('composer.send')} title={createLabel} disabled={!taskCanSend} onClick={() => void handleCreate()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-fg)] text-[var(--app-bg)] disabled:opacity-30"><ArrowUp size={22} /></button>
                         </div>
@@ -2213,9 +2218,13 @@ export function NewSession(props: {
             />
 </div> : null}
                     {settingsOpen ? <div className="mt-2 rounded-2xl border border-[var(--app-border)]">            <AgentSelector
+                key={machineId}
                 agent={agent}
                 agents={availableAgents}
+                availability={agentAvailability.agents}
                 isDisabled={isFormDisabled || agentAvailability.isLoading || Boolean(agentAvailability.error)}
+                isRefreshing={agentAvailability.isFetching}
+                onRefresh={agentAvailability.refetch}
                 onAgentChange={handleAgentChange}
             />
              <SessionTypeSelector
@@ -2322,9 +2331,13 @@ export function NewSession(props: {
                 onWorktreeNameChange={setWorktreeName}
             />
             <AgentSelector
+                key={machineId}
                 agent={agent}
                 agents={availableAgents}
+                availability={agentAvailability.agents}
                 isDisabled={isFormDisabled || agentAvailability.isLoading || Boolean(agentAvailability.error)}
+                isRefreshing={agentAvailability.isFetching}
+                onRefresh={agentAvailability.refetch}
                 onAgentChange={handleAgentChange}
             />
             {agentAvailability.isLoading ? (

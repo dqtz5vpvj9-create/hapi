@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import * as codexExecutable from '@/codex/utils/codexExecutable'
 import { executableCandidates, getAgentLaunchCommand, resolveExecutable } from './agentLaunchCommand'
-import { getAgentAvailability } from './agentAvailability'
+import { getAgentAvailability, getAgentAvailabilityResponse } from './agentAvailability'
 
 async function makeExecutable(directory: string, name: string): Promise<string> {
     const path = join(directory, name)
@@ -91,7 +91,7 @@ describe('agent executable resolution', () => {
 
     it('rejects malformed or missing DSH static configuration', async () => {
         const directory = await mkdtemp(join(tmpdir(), 'hapi-agent-path-'))
-        await makeExecutable(directory, 'dsh-acp-demo')
+        await makeExecutable(directory, 'dsh')
         expect(getAgentAvailability('dsh', {
             PATH: directory,
             HAPI_DSH_ACP_ARGS_JSON: 'not json',
@@ -100,12 +100,48 @@ describe('agent executable resolution', () => {
             PATH: directory,
             HAPI_DSH_ACP_CONFIG: join(directory, 'missing.yml'),
         }).reason).toBe('invalid_configuration')
+        expect(getAgentAvailability('dsh', {
+            PATH: directory,
+            HAPI_DSH_ACP_CONFIG: 'relative.yml',
+        }).reason).toBe('invalid_configuration')
 
         const config = join(directory, 'cordis.yml')
         await writeFile(config, 'agents: []\n')
         expect(getAgentAvailability('dsh', {
             PATH: directory,
             HAPI_DSH_ACP_CONFIG: config,
+        })).toEqual({ agent: 'dsh', available: true })
+    })
+
+    it('reports an installed official dsh binary in the machine catalog', async () => {
+        const directory = await mkdtemp(join(tmpdir(), 'hapi-agent-path-'))
+        await makeExecutable(directory, 'dsh')
+
+        expect(getAgentLaunchCommand('dsh', {})).toBe('dsh')
+        expect(getAgentAvailabilityResponse({ PATH: directory }).agents)
+            .toContainEqual({ agent: 'dsh', available: true })
+    })
+
+    it('does not mistake a retired demo binary for the official default launcher', async () => {
+        const directory = await mkdtemp(join(tmpdir(), 'hapi-agent-path-'))
+        const demo = await makeExecutable(directory, 'dsh-acp-demo')
+
+        expect(getAgentAvailability('dsh', { PATH: directory })).toEqual({
+            agent: 'dsh', available: false, reason: 'not_found'
+        })
+        expect(getAgentAvailability('dsh', { PATH: directory, HAPI_DSH_ACP_COMMAND: demo }))
+            .toEqual({ agent: 'dsh', available: true })
+    })
+
+    it.each(['[]', '["--profile", "custom-acp"]'])('ignores overridden DSH config when JSON arguments are %s', async (args) => {
+        const directory = await mkdtemp(join(tmpdir(), 'hapi-agent-path-'))
+        const command = await makeExecutable(directory, 'custom-acp')
+
+        expect(getAgentAvailability('dsh', {
+            PATH: '',
+            HAPI_DSH_ACP_COMMAND: command,
+            HAPI_DSH_ACP_ARGS_JSON: args,
+            HAPI_DSH_ACP_CONFIG: join(directory, 'missing.yml'),
         })).toEqual({ agent: 'dsh', available: true })
     })
 
