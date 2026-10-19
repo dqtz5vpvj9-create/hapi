@@ -1,0 +1,50 @@
+name: DSH repair workspace
+on:
+  push:
+    branches: [work/dsh-ui-audit-20261019]
+    paths: [.github/workflows/dsh-ui-workspace.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    if: github.repository == 'dqtz5vpvj9-create/hapi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 64904a13f5ea10e375d105ec0af761620e4ea226
+          persist-credentials: false
+      - name: Export the fixed source baseline without Git credentials
+        run: |
+          git archive --format=tar HEAD | gzip > "$RUNNER_TEMP/hapi-source.tar.gz"
+          sha256sum "$RUNNER_TEMP/hapi-source.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hapi-dsh-source
+          path: ${{ runner.temp }}/hapi-source.tar.gz
+          retention-days: 3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - name: Prepare offline test dependencies only
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/hapi-toolchain"
+          cp "$(command -v bun)" "$RUNNER_TEMP/hapi-toolchain/bun"
+          printf '%s\n' node_modules > "$RUNNER_TEMP/dependency-paths"
+          for package in cli shared hub web mobile website docs relay; do
+            if test -d "$package/node_modules"; then printf '%s/node_modules\n' "$package" >> "$RUNNER_TEMP/dependency-paths"; fi
+          done
+          tar -czf "$RUNNER_TEMP/hapi-dependencies.tar.gz" -T "$RUNNER_TEMP/dependency-paths"
+          gzip "$RUNNER_TEMP/hapi-toolchain/bun"
+          sha256sum "$RUNNER_TEMP/hapi-dependencies.tar.gz" "$RUNNER_TEMP/hapi-toolchain/bun.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hapi-dsh-test-dependencies
+          path: |
+            ${{ runner.temp }}/hapi-dependencies.tar.gz
+            ${{ runner.temp }}/hapi-toolchain/bun.gz
+          compression-level: 0
+          retention-days: 3
