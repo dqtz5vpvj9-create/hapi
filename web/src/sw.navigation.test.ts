@@ -19,7 +19,7 @@ describe('PWA launch navigation', () => {
 
     it('uses the current network entry for online launches and refreshes', async () => {
         const current = new Response('current build')
-        const navigation = { handle: vi.fn(async () => current) }
+        const navigation = { handle: vi.fn(async (_context: any) => current) }
         const cached = vi.fn()
         const result = await handleAppNavigation({ request: new Request(origin) }, navigation, cached, appRoot)
         expect(result).toBe(current)
@@ -28,7 +28,7 @@ describe('PWA launch navigation', () => {
     })
 
     it('falls back to the installed entry when offline with no newer navigation cached', async () => {
-        const navigation = { handle: vi.fn(async () => { throw new Error('offline') }) }
+        const navigation = { handle: vi.fn(async (_context: any) => { throw new Error('offline') }) }
         const cached = vi.fn(async () => new Response('offline build'))
         const response = await handleAppNavigation({ request: new Request(origin) }, navigation, cached, appRoot)
         expect(await response.text()).toBe('offline build')

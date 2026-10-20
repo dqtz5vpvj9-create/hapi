@@ -9,8 +9,8 @@ export function isAppNavigationRequest(
 }
 
 export async function handleAppNavigation(
-    context: { request: Request },
-    navigation: { handle: (context: { request: Request }) => Promise<Response> },
+    context: any,
+    navigation: { handle: (context: any) => Promise<Response> },
     matchPrecache: (url: string) => Promise<Response | undefined>,
     appRoot: string,
 ): Promise<Response> {
