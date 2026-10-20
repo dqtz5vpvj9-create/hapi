@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { createNewTaskDelivery, loadNewTaskDelivery, saveNewTaskDelivery, sendNewTaskDelivery } from './newTaskDelivery'
-import { ArrowUp, Plus, MoreHorizontal, Folder, Monitor, Shield } from './TaskIcons'
+import { Plus, Folder, Monitor, Shield, Sparkles, ChevronUp } from './TaskIcons'
+import { AgentFlavorIcon } from '@/components/AgentFlavorIcon'
 import { ModelEffortPicker } from '@/components/AssistantChat/ModelEffortPicker'
 import { NativeAttachmentButton } from '@/components/NativeAttachmentButton'
 import { isNativePlatform } from '@/lib/platform'
@@ -13,11 +14,11 @@ import { MAX_UPLOAD_BYTES } from '@/lib/attachmentAdapter'
 import type { AttachmentMetadata } from '@/types/api'
 import { randomId } from '@/lib/randomId'
 import { CodexDeviceLogin } from '@/components/CodexDeviceLogin'
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import type { CodexDuplicateSessionGroup, CodexLocalSessionSummary, Machine, PiLocalSessionSummary } from '@/types/api'
-import { getAgentConfigDescriptor, getPermissionModeLabel } from '@hapi/protocol'
+import { getAgentConfigDescriptor, getFlavorLabel, getPermissionModeLabel } from '@hapi/protocol'
 import type { CodexCollaborationMode, GrokPermissionMode, PermissionMode, CopilotAgentMode } from '@hapi/protocol'
 import { codexModelAdvertisesFastTier } from '@/components/AssistantChat/codexFastMode'
 import { usePlatform } from '@/hooks/usePlatform'
@@ -77,6 +78,7 @@ import { DirectoryPicker } from './DirectoryPicker'
 import { CopilotAgentModeSelector } from './CopilotAgentModeSelector'
 import { FastModeSelector } from './FastModeSelector'
 import { MachineSelector } from './MachineSelector'
+import { LaunchControl } from './LaunchControl'
 import { RunnerSetupHint } from '@/components/RunnerSetupHint'
 import { ModelSelector } from './ModelSelector'
 import { OpencodeModelSelector } from './OpencodeModelSelector'
@@ -105,9 +107,7 @@ import { formatRunnerSpawnError } from '../../utils/formatRunnerSpawnError'
 import { markCodexSessionsImported } from '@/lib/codexImportedSessions'
 import { useToast } from '@/lib/toast-context'
 import { queryKeys } from '@/lib/query-keys'
-
-
-
+import './new-task.css'
 
 export function NewSession(props: {
     api: ApiClient
@@ -132,8 +132,9 @@ export function NewSession(props: {
     const fileInputRef = useRef<HTMLInputElement>(null)
     const nativeAttachmentScope = useMemo(() => ({}), [draftKey, props.api])
     const [contextOpen, setContextOpen] = useState<'directory' | null>(null)
-    const [settingsOpen, setSettingsOpen] = useState(false)
-    const [permissionOpen, setPermissionOpen] = useState(false)
+    const [moreOptionsOpen, setMoreOptionsOpen] = useState(false)
+    const moreOptionsId = useId()
+    const taskDisabledReasonId = useId()
     const deliveryRef = useRef(loadNewTaskDelivery(draftKey))
     const acceptedShareRef = useRef<string | undefined>(deliveryRef.current?.shareTransferId)
     const createdSessionRef = useRef<string | null>(deliveryRef.current?.sessionId ?? null)
@@ -2250,13 +2251,32 @@ export function NewSession(props: {
     )
     const taskText = deliveryPending ? deliveryRef.current?.text ?? props.initialTask : props.initialTask
     const taskCanSend = (canCreate || deliveryPending) && !isCreating && (deliveryPending || !invalidTaskSelection) && filesReady && Boolean(deliveryPending || taskText?.trim() || files.length)
+    let taskDisabledReason: string | null = null
+    if (!taskCanSend) {
+        if (isCreating || isPending) taskDisabledReason = t('newTask.sending')
+        else if (!filesReady) taskDisabledReason = error ?? t('newTask.restoringAttachments')
+        else if (props.isLoading) taskDisabledReason = t('loading.machines')
+        else if (!selectedMachine) taskDisabledReason = t('newTask.machineRequired')
+        else if (!trimmedDirectory) taskDisabledReason = t('newSession.directoryRequired')
+        else if (directoryOutsideWorkspaceRoots || missingWorktreeDirectory) taskDisabledReason = directoryStatusMessage
+        else if (agentAvailability.isLoading) taskDisabledReason = t('newSession.agentAvailabilityLoading')
+        else if (agentAvailability.error) taskDisabledReason = t('newSession.agentAvailabilityFailed')
+        else if (!selectedAgentAvailable) taskDisabledReason = t('newSession.agentUnavailable')
+        else if (isLaunchPreferenceValidationPending || fastModeSelectionPending) taskDisabledReason = t('newTask.checkingSettings')
+        else if (invalidTaskSelection) taskDisabledReason = t('newTask.invalidSelection')
+        else if (isFormDisabled) taskDisabledReason = t('newTask.sessionBusy')
+        else taskDisabledReason = t('newTask.taskRequired')
+    }
+    const taskModelLabel = taskEfforts.length > 1 || sessionManagedModel
+        ? `${t('newSession.model')} · ${t('misc.reasoningEffort')}`
+        : t('newSession.model')
 
     return (
         <div className="app-new-session-form flex flex-col">
             {props.initialTask !== undefined ? (
-                <section className="mx-auto flex w-full max-w-3xl flex-col px-4 pb-8 pt-5 sm:pt-12 sm:px-6" data-testid="new-task-composer">
-                    <h1 className="mb-4 text-left text-xl font-semibold tracking-tight sm:mb-6 sm:text-3xl">{t('newTask.heading')}</h1>
-                    <div className="rounded-3xl border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-sm sm:p-4">
+                <section className="new-task-composer" data-testid="new-task-composer">
+                    <h1 className="new-task-heading">{t('newTask.heading')}</h1>
+                    <div className="new-task-card">
                         <label htmlFor="new-session-initial-task" className="sr-only">{t('sessions.task.initial')}</label>
                         <textarea id="new-session-initial-task" rows={3} value={taskText}
                             onChange={event => props.onInitialTaskChange?.(event.target.value)}
@@ -2268,18 +2288,129 @@ export function NewSession(props: {
                                     void handleCreate()
                                 }
                             }}
-                            className="min-h-24 w-full resize-none border-0 bg-transparent p-2 text-base text-[var(--app-fg)] outline-none sm:min-h-32" />
+                            className="new-task-textarea" />
                         {files.length > 0 ? <ul className="mb-3 flex flex-wrap gap-2" aria-label="Attachments">
                             {files.map(item => <li key={item.id} className="flex max-w-full items-center gap-2 rounded-xl bg-[var(--app-secondary-bg)] px-3 py-2 text-xs">
-                                <span className="truncate">{item.file.name}</span><button type="button" className="min-h-11 min-w-11" disabled={isCreating || deliveryPending} aria-label={`Remove ${item.file.name}`} onClick={() => setFiles(current => current.filter(file => file.id !== item.id))}>×</button>
+                                <span className="truncate">{item.file.name}</span><button type="button" className="min-h-11 min-w-11 shrink-0" disabled={isCreating || deliveryPending} aria-label={`Remove ${item.file.name}`} onClick={() => setFiles(current => current.filter(file => file.id !== item.id))}>×</button>
                             </li>)}
                         </ul> : null}
-                        <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+                        <div className="new-task-controls">
+                            <LaunchControl label={t('newSession.agent')} value={getFlavorLabel(agent)}
+                                className="new-task-agent" icon={<AgentFlavorIcon flavor={agent} />}
+                                disabled={isFormDisabled}>
+                                <AgentSelector
+                                    agent={agent}
+                                    agents={availableAgents}
+                                    availability={agentAvailability.agents}
+                                    isDisabled={isFormDisabled || agentAvailability.isLoading || Boolean(agentAvailability.error)}
+                                    isRefreshing={agentAvailability.isFetching}
+                                    onRefresh={agentAvailability.refetch}
+                                    onAgentChange={handleAgentChange}
+                                />
+                            </LaunchControl>
+                            <div className="new-task-field new-task-model" role="group" aria-label={taskModelLabel}>
+                                <span className="new-task-model-icon" aria-hidden="true"><Sparkles size={16} /></span>
+                                {sessionManagedModel ? (
+                                    <div className="new-task-pill" role="status" title={sessionManagedModelHintKey ? t(sessionManagedModelHintKey) : undefined}>
+                                        <span className="new-task-pill-value">{t('newTask.agentManaged')}</span>
+                                    </div>
+                                ) : (
+                                    <ModelEffortPicker
+                                        models={taskModels}
+                                        model={agent === 'cursor' && cursorPicker.mode === 'dual' ? cursorBaseSelectValue : agent === 'agy' ? agySelectedModel ?? 'auto' : agent === 'opencode' ? opencodeSelectedModel ?? 'auto' : model}
+                                        onModelChange={value => {
+                                            if (agent === 'agy') {
+                                                agyModelPickedByUserRef.current = value !== 'auto'
+                                                setAgySelectedModel(value === 'auto' ? null : value)
+                                            } else if (agent === 'opencode') setOpencodeSelectedModel(value === 'auto' ? null : value)
+                                            else if (agent === 'cursor' && cursorPicker.mode === 'dual') handleCursorBaseChange(value ?? 'auto')
+                                            else setModel(value ?? 'auto')
+                                        }}
+                                        efforts={taskEfforts} effort={taskEffort}
+                                        onEffortChange={value => {
+                                            if (agent === 'codex' || agent === 'opencode') setModelReasoningEffort(value ?? 'default')
+                                            else if (agent === 'cursor') handleCursorEffortChange(value ?? 'auto')
+                                            else setEffort(value ?? 'auto')
+                                        }}
+                                        fast={serviceTier === 'fast'} onFastChange={showCodexFastMode ? value => setServiceTier(value ? 'fast' : 'standard') : undefined}
+                                        disabled={isFormDisabled} loading={isLaunchPreferenceValidationPending}
+                                        error={agent === 'codex' ? codexModelsState.error : agent === 'grok' ? grokModelsState.error : agent === 'copilot' ? copilotModelsState.error : agent === 'kimi' ? kimiModelsState.error : agent === 'pi' ? piModelsState.error : null}
+                                    />
+                                )}
+                            </div>
+                            <LaunchControl label={t('misc.permissionMode')} value={taskPermissionLabel} icon={<Shield size={16} />} disabled={isFormDisabled}>
+                                <PermissionField
+                                    agent={agent}
+                                    nativeValue={agent === 'grok' ? grokPermissionMode : nativePermissionMode}
+                                    yoloMode={yoloMode}
+                                    autoPermissionModeSupported={agent === 'grok' ? grokModelsState.autoPermissionModeSupported : null}
+                                    isDisabled={isFormDisabled}
+                                    onNativeChange={(mode) => {
+                                        if (agent === 'grok') setGrokPermissionMode(mode as GrokPermissionMode)
+                                        else setNativePermissionMode(mode)
+                                    }}
+                                    onYoloToggle={setYoloMode}
+                                />
+                            </LaunchControl>
+                            <div className="new-task-field new-task-machine">
+                                <span className="new-task-machine-icon" aria-hidden="true"><Monitor size={16} /></span>
+                                <MachineSelector compact machines={props.machines} machineId={machineId}
+                                    isLoading={props.isLoading} isDisabled={isFormDisabled}
+                                    onChange={handleMachineChange} />
+                            </div>
+                            <div className="new-task-field">
+                                <Dialog.Root open={contextOpen === 'directory'} onOpenChange={open => setContextOpen(open ? 'directory' : null)}>
+                                    <Dialog.Trigger asChild>
+                                        <button type="button" className="new-task-pill" disabled={isFormDisabled}
+                                            aria-label={`${t('newSession.directory')}: ${directory || t('newSession.browse')}`} title={directory}>
+                                            <span className="new-task-pill-icon" aria-hidden="true"><Folder size={16} /></span>
+                                            <span className="new-task-pill-value">{directory.split(/[\\/]/).filter(Boolean).pop() || directory || t('newSession.browse')}</span>
+                                            <span className="new-task-pill-chevron" aria-hidden="true"><ChevronUp size={12} /></span>
+                                        </button>
+                                    </Dialog.Trigger>
+                                    <Dialog.Portal>
+                                        <Dialog.Overlay className="fixed inset-0 z-[119] bg-black/20" />
+                                        <Dialog.Content aria-describedby={undefined}
+                                            onEscapeKeyDown={event => { if (event.isComposing || event.keyCode === 229) event.preventDefault() }}
+                                            className="new-task-directory-dialog fixed left-1/2 bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-[120] w-[calc(100vw-24px)] max-w-xl -translate-x-1/2 max-h-[65dvh] overflow-auto rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)] p-2 shadow-xl">
+                                            <Dialog.Title className="sr-only">{t('newSession.directory')}</Dialog.Title>
+                                            <Dialog.Close className="ml-auto block min-h-11 px-3">{t('button.close')}</Dialog.Close>
+                                            <DirectoryPicker
+                                                api={props.api}
+                                                machineId={machineId}
+                                                workspaceRoots={selectedMachine?.metadata?.workspaceRoots ?? []}
+                                                initialPath={trimmedDirectory}
+                                                recentPaths={recentPaths}
+                                                statusMessage={directoryStatusMessage}
+                                                statusTone={directoryStatusTone}
+                                                onSelect={(path) => {
+                                                    setDirectory(path)
+                                                    setContextOpen(null)
+                                                }}
+                                            />
+                                        </Dialog.Content>
+                                    </Dialog.Portal>
+                                </Dialog.Root>
+                            </div>
+                            <LaunchControl label={t('newSession.type')}
+                                value={sessionType === 'worktree' && worktreeName.trim() ? `${t('newSession.type.worktree')} · ${worktreeName}` : t(`newSession.type.${sessionType}`)}
+                                disabled={isFormDisabled}>
+                                <SessionTypeSelector
+                                    sessionType={sessionType}
+                                    worktreeName={worktreeName}
+                                    worktreeInputRef={worktreeInputRef}
+                                    isDisabled={isFormDisabled}
+                                    onSessionTypeChange={setSessionType}
+                                    onWorktreeNameChange={setWorktreeName}
+                                />
+                            </LaunchControl>
+                        </div>
+                        <div className="new-task-actions">
                             {isNativePlatform() ? <NativeAttachmentButton
                                 aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady}
                                 selectionScope={nativeAttachmentScope}
                                 onFiles={picked => setFiles(current => [...current, ...picked.map(file => ({ id: randomId(), file }))])}
-                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] disabled:opacity-50">
+                                className="new-task-attach">
                                 <Plus size={20} />
                             </NativeAttachmentButton> : <><input ref={fileInputRef} type="file" multiple className="hidden" onChange={event => {
                                 const picked = Array.from(event.target.files ?? [])
@@ -2287,136 +2418,70 @@ export function NewSession(props: {
                                 setFiles(current => [...current, ...picked.map(file => ({ id: randomId(), file }))])
                                 event.target.value = ''
                             }} />
-                            <button type="button" aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady} onClick={() => fileInputRef.current?.click()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] disabled:opacity-50"><Plus size={20} /></button></>}
-                            <button type="button" aria-label={t('newSession.advanced')} aria-expanded={permissionOpen} onClick={() => setPermissionOpen(value => !value)} className="flex min-h-11 min-w-11 items-center gap-1 rounded-full px-2 py-2 text-xs hover:bg-[var(--app-secondary-bg)]"><Shield size={16} /><span className="hidden sm:inline">{t('newSession.advanced')} · {taskPermissionLabel}</span><span>⌄</span></button>
-                            <div className="ml-auto min-w-0">
-                                {sessionManagedModel ? null : <ModelEffortPicker models={taskModels} model={agent === 'cursor' && cursorPicker.mode === 'dual' ? cursorBaseSelectValue : agent === 'agy' ? agySelectedModel ?? 'auto' : agent === 'opencode' ? opencodeSelectedModel ?? 'auto' : model}
-                                    onModelChange={value => { if (agent === 'agy') { agyModelPickedByUserRef.current = value !== 'auto'; setAgySelectedModel(value === 'auto' ? null : value); } else if (agent === 'opencode') setOpencodeSelectedModel(value === 'auto' ? null : value); else if (agent === 'cursor' && cursorPicker.mode === 'dual') handleCursorBaseChange(value ?? 'auto'); else setModel(value ?? 'auto') }}
-                                    efforts={taskEfforts} effort={taskEffort}
-                                    onEffortChange={value => { if (agent === 'codex' || agent === 'opencode') setModelReasoningEffort(value ?? 'default'); else if (agent === 'cursor') handleCursorEffortChange(value ?? 'auto'); else setEffort(value ?? 'auto') }}
-                                    fast={serviceTier === 'fast'} onFastChange={showCodexFastMode ? value => setServiceTier(value ? 'fast' : 'standard') : undefined}
-                                    disabled={isCreating || deliveryPending} loading={isLaunchPreferenceValidationPending}
-                                    error={agent === 'codex' ? codexModelsState.error : agent === 'grok' ? grokModelsState.error : agent === 'copilot' ? copilotModelsState.error : agent === 'kimi' ? kimiModelsState.error : agent === 'pi' ? piModelsState.error : null}
-                                />}
+                            <button type="button" aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady} onClick={() => fileInputRef.current?.click()} className="new-task-attach"><Plus size={20} /></button></>}
+                            <button type="button" disabled={!taskCanSend} aria-busy={isCreating}
+                                aria-describedby={taskDisabledReason ? taskDisabledReasonId : undefined}
+                                onClick={() => void handleCreate()}
+                                className="new-task-submit">
+                                {isCreating ? t('newTask.sending') : deliveryPending ? t('newTask.retryDelivery') : createLabel ?? t('newTask.createAndSend')}
+                            </button>
+                        </div>
+                        {taskDisabledReason ? <p id={taskDisabledReasonId} role="status" className="mt-2 px-1 text-sm text-[var(--app-hint)]">{taskDisabledReason}</p> : null}
+                    </div>
+                    {agent === 'codex' || agent === 'pi' || agent === 'copilot' || sessionManagedModel ? <div className="new-task-more-options">
+                        <button type="button" className="new-task-more-toggle" aria-expanded={moreOptionsOpen}
+                            aria-controls={moreOptionsId} onClick={() => setMoreOptionsOpen(open => !open)}>
+                            {t('newTask.moreSettings')}
+                            <span className="new-task-pill-chevron" aria-hidden="true"><ChevronUp size={14} /></span>
+                        </button>
+                        <div id={moreOptionsId} hidden={!moreOptionsOpen}>
+                            <div className="new-task-secondary-controls">
+                                {sessionManagedModelHintKey ? <p className="px-3 py-3 text-xs text-[var(--app-hint)]">{t(sessionManagedModelHintKey)}</p> : null}
+                                {agent === 'codex' ? (
+                                    <CodexImportActions
+                                        selectedSession={selectedCodexImportSession}
+                                        isLoading={isLoadingCodexImportSessions}
+                                        isDisabled={isFormDisabled || !selectedMachine}
+                                        error={codexImportError}
+                                        onChooseHistory={() => {
+                                            codexSearchRef.current = { search: '', cwd: null }
+                                            setCodexNextCursor(null)
+                                            setIsCodexImportDialogOpen(true)
+                                            void loadCodexImportSessions()
+                                        }}
+                                        onClear={() => setSelectedCodexImportSessionId(null)}
+                                    />
+                                ) : null}
+                                {agent === 'pi' ? (
+                                    <PiImportActions
+                                        selectedSession={selectedPiImportSession}
+                                        isLoading={isLoadingPiImportSessions}
+                                        isDisabled={isFormDisabled}
+                                        error={piImportError}
+                                        onChooseHistory={() => {
+                                            setIsPiImportDialogOpen(true)
+                                            void loadPiImportSessions()
+                                        }}
+                                        onClear={() => setSelectedPiImportSessionId(null)}
+                                    />
+                                ) : null}
+                                <CollaborationModeSelector
+                                    agent={agent} value={collaborationMode} isDisabled={isFormDisabled} onChange={setCollaborationMode}
+                                />
+                                <CopilotAgentModeSelector
+                                    agent={agent} value={copilotAgentMode} isDisabled={isFormDisabled} onChange={setCopilotAgentMode}
+                                />
                             </div>
-                            <button type="button" aria-label={deliveryPending ? t('newTask.retryDelivery') : t('composer.send')} title={createLabel} disabled={!taskCanSend} onClick={() => void handleCreate()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-fg)] text-[var(--app-bg)] disabled:opacity-30"><ArrowUp size={22} /></button>
                         </div>
-                        {sessionManagedModelHintKey ? <p className="px-2 pt-2 text-xs text-[var(--app-hint)]">{t(sessionManagedModelHintKey)}</p> : null}
-                        {permissionOpen ? <div className="mt-2 rounded-xl bg-[var(--app-secondary-bg)]">            <PermissionField
-                agent={agent}
-                nativeValue={agent === 'grok' ? grokPermissionMode : nativePermissionMode}
-                yoloMode={yoloMode}
-                autoPermissionModeSupported={agent === 'grok' ? grokModelsState.autoPermissionModeSupported : null}
-                isDisabled={isFormDisabled}
-                onNativeChange={(mode) => {
-                    if (agent === 'grok') {
-                        setGrokPermissionMode(mode as GrokPermissionMode)
-                    } else {
-                        setNativePermissionMode(mode)
-                    }
-                }}
-                onYoloToggle={setYoloMode}
-            />
-</div> : null}
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-1 rounded-xl bg-[var(--app-secondary-bg)] px-2 py-1 text-sm">
-                        <div className="flex min-w-0 max-w-full items-center gap-1">
-                            <span className="shrink-0"><Monitor size={17} /></span>
-                            <MachineSelector compact machines={props.machines} machineId={machineId}
-                                isLoading={props.isLoading} isDisabled={isFormDisabled}
-                                onChange={handleMachineChange} />
-                        </div>
-                        <span className="h-5 border-l border-[var(--app-border)]" />
-                        <button type="button" className="flex min-h-11 min-w-11 items-center gap-2 rounded-lg px-2 py-1" onClick={() => setContextOpen(contextOpen === 'directory' ? null : 'directory')} aria-expanded={contextOpen === 'directory'} title={directory}><Folder size={17} /><span className="max-w-[260px] truncate">{directory.split(/[\\/]/).filter(Boolean).pop() || t('newSession.directory')}</span><span>⌄</span></button>
-                        <button type="button" className="ml-auto flex min-h-11 min-w-11 items-center justify-center rounded-full p-2" aria-label={t('newTask.moreSettings')} aria-expanded={settingsOpen} onClick={() => setSettingsOpen(value => !value)}><MoreHorizontal size={20} /></button>
-                    </div>
-                    {!trimmedDirectory ? <p className="px-2 pt-1 text-xs text-[var(--app-hint)]">{t('newSession.directoryRequired')}</p> : null}
-                    {contextOpen === 'directory' ? <Dialog.Root open onOpenChange={open => { if (!open) setContextOpen(null) }}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-[119] bg-black/20" /><Dialog.Content aria-describedby={undefined} className="fixed left-1/2 bottom-4 z-[120] w-[calc(100vw-24px)] max-w-xl -translate-x-1/2 max-h-[65dvh] overflow-auto rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)] p-2 shadow-xl"><Dialog.Title className="sr-only">{t('newSession.directory')}</Dialog.Title><button type="button" className="ml-auto block min-h-11 px-3" onClick={() => setContextOpen(null)}>{t('button.close')}</button>            <DirectoryPicker
-                api={props.api}
-                machineId={machineId}
-                workspaceRoots={selectedMachine?.metadata?.workspaceRoots ?? []}
-                initialPath={trimmedDirectory}
-                recentPaths={recentPaths}
-                statusMessage={directoryStatusMessage}
-                statusTone={directoryStatusTone}
-                onSelect={(path) => {
-                    setDirectory(path)
-                    setContextOpen(null)
-                }}
-            />
-</Dialog.Content></Dialog.Portal></Dialog.Root> : null}
-                    {settingsOpen ? <div className="mt-2 rounded-2xl border border-[var(--app-border)]">            <AgentSelector
-                agent={agent}
-                agents={availableAgents}
-                availability={agentAvailability.agents}
-                isDisabled={isFormDisabled || agentAvailability.isLoading || Boolean(agentAvailability.error)}
-                isRefreshing={agentAvailability.isFetching}
-                onRefresh={agentAvailability.refetch}
-                onAgentChange={handleAgentChange}
-            />
-             <SessionTypeSelector
-                sessionType={sessionType}
-                worktreeName={worktreeName}
-                worktreeInputRef={worktreeInputRef}
-                isDisabled={isFormDisabled}
-                onSessionTypeChange={setSessionType}
-                onWorktreeNameChange={setWorktreeName}
-            />
-             {agent === 'codex' ? (
-                <CodexImportActions
-                    selectedSession={selectedCodexImportSession}
-                    isLoading={isLoadingCodexImportSessions}
-                    isDisabled={isFormDisabled || !selectedMachine}
-                    error={codexImportError}
-                    onChooseHistory={() => {
-                        codexSearchRef.current = { search: '', cwd: null }
-                        setCodexNextCursor(null)
-                        setIsCodexImportDialogOpen(true)
-                        void loadCodexImportSessions()
-                    }}
-                    onClear={() => setSelectedCodexImportSessionId(null)}
-                />
-            ) : null}
-            {agent === 'pi' ? (
-                <PiImportActions
-                    selectedSession={selectedPiImportSession}
-                    isLoading={isLoadingPiImportSessions}
-                    isDisabled={isFormDisabled}
-                    error={piImportError}
-                    onChooseHistory={() => {
-                        setIsPiImportDialogOpen(true)
-                        void loadPiImportSessions()
-                    }}
-                    onClear={() => setSelectedPiImportSessionId(null)}
-                />
-            ) : null}
-             <CollaborationModeSelector
-                agent={agent}
-                value={collaborationMode}
-                isDisabled={isFormDisabled}
-                onChange={setCollaborationMode}
-            />
-            <CopilotAgentModeSelector
-                agent={agent}
-                value={copilotAgentMode}
-                isDisabled={isFormDisabled}
-                onChange={setCopilotAgentMode}
-            />
-            <FastModeSelector
-                visible={showCodexFastMode}
-                value={serviceTier}
-                isDisabled={isFormDisabled}
-                onChange={setServiceTier}
-            />
-</div> : null}
+                    </div> : null}
                     {!selectedMachine && !props.isLoading ? <RunnerSetupHint /> : null}
-                    {agentAvailability.isLoading ? <p className="mt-3 text-xs text-[var(--app-hint)]">{t('newSession.agentAvailabilityLoading')}</p> : null}
-                    {agentAvailability.error ? <button type="button" className="mt-3 text-left text-sm text-red-600" onClick={agentAvailability.refetch}>{t('newSession.agentAvailabilityFailed')} · {t('button.retry')}</button> : null}
+                    {agentAvailability.isLoading && taskDisabledReason !== t('newSession.agentAvailabilityLoading') ? <p className="mt-3 text-xs text-[var(--app-hint)]">{t('newSession.agentAvailabilityLoading')}</p> : null}
+                    {agentAvailability.error ? <button type="button" className="mt-3 min-h-11 text-left text-sm text-red-600" onClick={agentAvailability.refetch}>{t('newSession.agentAvailabilityFailed')} · {t('button.retry')}</button> : null}
                     {deliveryPending ? <p role="status" className="mt-3 text-xs text-[var(--app-hint)]">{t('newTask.pendingDelivery')}</p> : null}
-                    {invalidTaskSelection ? <p role="alert" className="mt-3 text-sm text-red-600">{t('newTask.invalidSelection')}</p> : null}
+                    {invalidTaskSelection && taskDisabledReason !== t('newTask.invalidSelection') ? <p role="alert" className="mt-3 text-sm text-red-600">{t('newTask.invalidSelection')}</p> : null}
                     {serviceTier === 'fast' && !showCodexFastMode && !deliveryPending ? <button type="button" className="mt-2 min-h-11 self-start rounded-lg px-3 text-sm text-[var(--app-link)]" disabled={isCreating} onClick={() => setServiceTier('standard')}>{t('newTask.clearFast')}</button> : null}
-                    {directoryStatusMessage ? <p className="mt-3 text-xs text-[var(--app-hint)]">{directoryStatusMessage}</p> : null}
-                    {(error ?? spawnError) ? <p role="alert" className="mt-3 text-sm text-red-600">{error ?? spawnError}</p> : null}
+                    {directoryStatusMessage && taskDisabledReason !== directoryStatusMessage ? <p className="mt-3 text-xs text-[var(--app-hint)]">{directoryStatusMessage}</p> : null}
+                    {(error ?? spawnError) && taskDisabledReason !== (error ?? spawnError) ? <p role="alert" className="mt-3 text-sm text-red-600">{error ?? spawnError}</p> : null}
                 </section>
             ) : <>
             <MachineSelector

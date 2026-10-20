@@ -32,6 +32,9 @@ const mocks = vi.hoisted(() => ({
     ].map((agent) => ({ agent, available: true })) as Array<{ agent: string; available: boolean; reason?: 'not_found' | 'invalid_configuration' }>,
     refreshAgentAvailability: vi.fn(),
     agentAvailabilityFetching: false,
+    agentAvailabilityLoading: false,
+    agentAvailabilityError: null as string | null,
+    outsideWorkspaceRoots: [] as string[],
     codexModelsLoading: false,
     agyModelsLoading: false,
     agyModels: [{ modelId: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)' }],
@@ -94,16 +97,16 @@ vi.mock('@/hooks/useRecentPaths', () => ({
 vi.mock('@/hooks/useMachinePathsExists', () => ({
     useMachinePathsExists: () => ({
         pathExistence: { 'C:\\repo': mocks.directoryExists },
-        outsideWorkspaceRoots: new Set<string>(),
+        outsideWorkspaceRoots: new Set(mocks.outsideWorkspaceRoots),
         checkPathsExists: mocks.checkPathsExists
     })
 }))
 vi.mock('@/hooks/queries/useAgentAvailability', () => ({
     useAgentAvailability: () => ({
         agents: mocks.availableAgents,
-        isLoading: false,
+        isLoading: mocks.agentAvailabilityLoading,
         isFetching: mocks.agentAvailabilityFetching,
-        error: null,
+        error: mocks.agentAvailabilityError,
         upgradeRequired: false,
         refetch: mocks.refreshAgentAvailability
     })
@@ -232,38 +235,6 @@ vi.mock('@/components/PiSessionImportDialog', () => ({
     ) : null
 }))
 vi.mock('./DirectorySection', () => ({ DirectorySection: () => null }))
-vi.mock('./MachineSelector', () => ({
-    MachineSelector: (props: { machines: Machine[]; machineId: string | null; isDisabled: boolean; onChange: (machineId: string) => void }) => (
-        <select
-            aria-label="machine-selector"
-            value={props.machineId ?? ''}
-            disabled={props.isDisabled}
-            onChange={(event) => props.onChange(event.target.value)}
-        >
-            {props.machines.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.id}</option>)}
-        </select>
-    )
-}))
-vi.mock('./SessionTypeSelector', () => ({ SessionTypeSelector: () => null }))
-vi.mock('./PermissionField', () => ({
-    PermissionField: (props: {
-        agent: string
-        nativeValue: string
-        yoloMode: boolean
-        isDisabled: boolean
-        onNativeChange: (mode: string) => void
-        onYoloToggle: (value: boolean) => void
-    }) => (
-        <>
-            <button type="button" data-testid="permission-mode" onClick={() => props.onNativeChange('yolo')}>
-                {props.nativeValue}
-            </button>
-            <button type="button" data-testid="permission-mode-plan" onClick={() => props.onNativeChange('plan')}>
-                {props.nativeValue}
-            </button>
-        </>
-    )
-}))
 vi.mock('./CopilotAgentModeSelector', () => ({ CopilotAgentModeSelector: () => null }))
 vi.mock('./OpencodeModelSelector', () => ({
     OpencodeModelSelector: (props: { selectedModel: string | null | undefined; onModelChange: (model: string | null) => void }) => (
@@ -342,6 +313,9 @@ describe('NewSession launch preferences', () => {
         )
         mocks.refreshAgentAvailability.mockReset()
         mocks.agentAvailabilityFetching = false
+        mocks.agentAvailabilityLoading = false
+        mocks.agentAvailabilityError = null
+        mocks.outsideWorkspaceRoots = []
         mocks.codexModelsLoading = false
         mocks.agyModelsLoading = false
         mocks.agyModels = [{ modelId: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)' }]
@@ -397,6 +371,176 @@ describe('NewSession launch preferences', () => {
         })))
     })
 
+    it('shows the launch controls and a named primary action without opening settings', async () => {
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory={'C:\\repo'}
+            initialTask="Inspect the project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+
+        const create = screen.getByRole('button', { name: 'newTask.createAndSend' })
+        await waitFor(() => expect(create).toBeEnabled())
+        expect(create).toHaveTextContent('newTask.createAndSend')
+        expect(screen.getByRole('button', { name: 'newSession.agent: Codex' })).toBeVisible()
+        expect(screen.getByRole('button', { name: 'misc.permissionMode: Default' })).toBeVisible()
+        expect(screen.getByRole('button', { name: 'newSession.directory: C:\\repo' })).toBeVisible()
+        expect(screen.getByRole('combobox', { name: 'newSession.machine' })).toBeVisible()
+        expect(screen.getByRole('button', { name: 'newSession.type: newSession.type.simple' })).toBeVisible()
+        const model = screen.getByRole('group', { name: 'newSession.model · misc.reasoningEffort' })
+        expect(within(model).getByRole('button')).toBeVisible()
+        expect(within(model).queryByText('newSession.model · misc.reasoningEffort')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'newTask.moreSettings' })).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.queryByRole('button', { name: 'codexConnect.choose' })).not.toBeInTheDocument()
+        expect(screen.getByText('newSession.collaborationMode')).not.toBeVisible()
+        expect(screen.queryByRole('button', { name: 'newSession.advanced' })).not.toBeInTheDocument()
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+    })
+
+    it('reveals secondary options and preserves their selections after collapsing', async () => {
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'planned-task' })
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory={'C:\\repo'}
+            initialTask="Plan the changes" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+
+        const more = screen.getByRole('button', { name: 'newTask.moreSettings' })
+        const options = document.getElementById(more.getAttribute('aria-controls')!)!
+        expect(options).not.toBeVisible()
+        fireEvent.click(more)
+        expect(more).toHaveAttribute('aria-expanded', 'true')
+        expect(within(options).getByRole('button', { name: 'codexConnect.choose' })).toBeVisible()
+        fireEvent.change(within(options).getByRole('combobox'), { target: { value: 'plan' } })
+        fireEvent.click(more)
+        expect(options).not.toBeVisible()
+        fireEvent.click(more)
+        expect(within(options).getByRole('combobox')).toHaveValue('plan')
+        fireEvent.click(more)
+
+        const create = screen.getByRole('button', { name: 'newTask.createAndSend' })
+        await waitFor(() => expect(create).toBeEnabled())
+        fireEvent.click(create)
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
+            agent: 'codex', collaborationMode: 'plan'
+        })))
+    })
+
+    it('edits the visible model, effort and permission controls and sends the selected launch settings', async () => {
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'configured-task' })
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory={'C:\\repo'}
+            initialTask="Inspect the project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        const model = screen.getByRole('group', { name: 'newSession.model · misc.reasoningEffort' })
+        await waitFor(() => expect(within(model).getByRole('button')).toBeEnabled())
+        fireEvent.click(within(model).getByRole('button'))
+        fireEvent.click(screen.getByRole('button', { name: 'Default' }))
+        fireEvent.click(screen.getByRole('button', { name: 'GPT-5.6 Terra' }))
+        fireEvent.click(screen.getByRole('button', { name: 'max' }))
+        fireEvent.click(screen.getByRole('button', { name: 'composer.modelPicker.close' }))
+        expect(within(model).getByRole('button')).toHaveTextContent('GPT-5.6 Terra · max')
+
+        fireEvent.click(screen.getByRole('button', { name: 'misc.permissionMode: Default' }))
+        fireEvent.change(screen.getByRole('combobox', { name: 'misc.permissionMode' }), { target: { value: 'yolo' } })
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+        expect(screen.getByRole('button', { name: 'misc.permissionMode: Yolo' })).toBeVisible()
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.createAndSend' }))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
+            agent: 'codex', model: 'gpt-5.6-terra', modelReasoningEffort: 'max', permissionMode: 'yolo'
+        })))
+    })
+
+    it('edits the agent, directory and worktree using the existing controls', async () => {
+        const taskApi = { ...api, listMachineDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }) } as unknown as ApiClient
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'worktree-task' })
+        render(<NewSession api={taskApi} machines={[machine]} initialMachineId="machine-1" initialDirectory={'C:\\repo'}
+            initialTask="Inspect the project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        const agent = screen.getByRole('button', { name: 'newSession.agent: Codex' })
+        await waitFor(() => expect(agent).toBeEnabled())
+        fireEvent.click(agent)
+        fireEvent.click(screen.getByRole('radio', { name: 'Claude' }))
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+        expect(screen.getByRole('button', { name: 'newSession.agent: Claude' })).toBeVisible()
+
+        const directory = screen.getByRole('button', { name: 'newSession.directory: C:\\repo' })
+        fireEvent.click(directory)
+        await waitFor(() => expect(taskApi.listMachineDirectory).toHaveBeenCalled())
+        fireEvent.change(screen.getByRole('textbox', { name: 'newSession.directory' }), { target: { value: '/project' } })
+        fireEvent.click(screen.getByRole('button', { name: 'directoryPicker.selectNamed' }))
+        expect(screen.getByRole('button', { name: 'newSession.directory: /project' })).toBeVisible()
+        await waitFor(() => expect(directory).toHaveFocus())
+
+        fireEvent.click(screen.getByRole('button', { name: 'newSession.type: newSession.type.simple' }))
+        fireEvent.click(screen.getByRole('radio', { name: 'newSession.type.worktree' }))
+        const worktree = screen.getByPlaceholderText('newSession.type.worktree.placeholder')
+        expect(worktree).toHaveFocus()
+        fireEvent.change(worktree, { target: { value: 'feature-ui' } })
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+        expect(screen.getByRole('button', { name: 'newSession.type: newSession.type.worktree · feature-ui' })).toBeVisible()
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.createAndSend' }))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
+            agent: 'claude', directory: '/project', sessionType: 'worktree', worktreeName: 'feature-ui'
+        })))
+    })
+
+    it.each([
+        ['empty task', 'newTask.taskRequired'],
+        ['no directory', 'newSession.directoryRequired'],
+        ['offline machine', 'newTask.machineRequired'],
+        ['loading machines', 'loading.machines'],
+        ['loading agents', 'newSession.agentAvailabilityLoading'],
+        ['failed agent discovery', 'newSession.agentAvailabilityFailed'],
+        ['unavailable agent', 'newSession.agentUnavailable'],
+        ['outside workspace', 'newSession.directoryOutsideWorkspaceRoots'],
+        ['restoring attachments', 'newTask.restoringAttachments'],
+        ['validating model', 'newTask.checkingSettings'],
+    ])('explains a disabled primary action for %s', async (state, reason) => {
+        if (state === 'loading agents') mocks.agentAvailabilityLoading = true
+        if (state === 'failed agent discovery') mocks.agentAvailabilityError = 'offline'
+        if (state === 'unavailable agent') mocks.availableAgents.splice(0)
+        if (state === 'outside workspace') mocks.outsideWorkspaceRoots = ['C:\\repo']
+        if (state === 'restoring attachments') vi.spyOn(attachmentDrafts, 'getDraftAttachments').mockReturnValue(new Promise(() => {}))
+        if (state === 'validating model') {
+            mocks.codexModelsLoading = true
+            savePreferredLaunchSettings('machine-1', 'codex', { model: 'gpt-5.6-terra', cursorSelectedBase: 'auto', effort: 'auto', modelReasoningEffort: 'max' })
+        }
+        render(<NewSession api={api} machines={state === 'offline machine' ? [] : [machine]} initialMachineId="machine-1"
+            initialDirectory={state === 'no directory' ? '' : 'C:\\repo'} isLoading={state === 'loading machines'}
+            initialTask={state === 'empty task' ? '' : 'Inspect the project'} onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        const create = screen.getByRole('button', { name: 'newTask.createAndSend' })
+        await waitFor(() => expect(create).toHaveAccessibleDescription(reason))
+        expect(create).toBeDisabled()
+        expect(document.getElementById(create.getAttribute('aria-describedby')!)).toBeVisible()
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+    })
+
+    it('shows progress as the disabled action reason while creating', async () => {
+        mocks.checkPathsExists.mockReturnValue(new Promise(() => {}))
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory={'C:\\repo'}
+            initialTask="Inspect the project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.createAndSend' }))
+        const create = screen.getByRole('button', { name: 'newTask.sending' })
+        expect(create).toBeDisabled()
+        expect(create).toHaveAccessibleDescription('newTask.sending')
+        expect(document.getElementById(create.getAttribute('aria-describedby')!)).toBeVisible()
+        expect(screen.getByRole('button', { name: 'newSession.directory: C:\\repo' })).toBeDisabled()
+    })
+
+    it('keeps missing-directory confirmation and explains why a missing worktree cannot launch', async () => {
+        mocks.directoryExists = false
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'new-folder-task' })
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory={'C:\\repo'}
+            initialTask="Inspect the project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'newSession.type: newSession.type.simple' }))
+        fireEvent.click(screen.getByRole('radio', { name: 'newSession.type.worktree' }))
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+        expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toHaveAccessibleDescription('session.directoryMissingWorktree')
+        fireEvent.click(screen.getByRole('button', { name: 'newSession.type: newSession.type.worktree' }))
+        fireEvent.click(screen.getByRole('radio', { name: /newSession.type.simple/ }))
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.createAndSend' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'session.createAndCreateDirectory' })).toBeEnabled())
+        expect(mocks.spawnSession).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('button', { name: 'session.createAndCreateDirectory' }))
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('new-folder-task'))
+    })
+
     it('keeps the initial task on launch failure and sends it before navigating after success', async () => {
         const onCreated = vi.fn(), onChange = vi.fn()
         render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo"
@@ -406,9 +550,9 @@ describe('NewSession launch preferences', () => {
         expect(task).toHaveValue('Inspect the list')
         fireEvent.change(task, { target: { value: 'Inspect the list and children' } })
         expect(onChange).toHaveBeenCalledWith('Inspect the list and children')
-        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeEnabled())
         mocks.spawnSession.mockResolvedValueOnce({ type: 'error', message: 'Synthetic failure' })
-        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.createAndSend' }))
         await waitFor(() => expect(screen.getByText('Synthetic failure')).toBeTruthy())
         expect(onCreated).not.toHaveBeenCalled()
         expect(mocks.onSuccess).not.toHaveBeenCalled()
@@ -426,8 +570,8 @@ describe('NewSession launch preferences', () => {
         const props = { api: taskApi, machines: [machine], initialMachineId: 'machine-1', initialDirectory: '/project', initialTask: 'Keep exact text', draftKey: 'reload-test', onSuccess: mocks.onSuccess, onCancel: () => {} }
         mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'created-once' })
         const view = render(<NewSession {...props} />)
-        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
-        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.createAndSend' }))
         await waitFor(() => expect(screen.getByText('Send timeout')).toBeTruthy())
         expect(screen.getByRole('textbox', { name: 'sessions.task.initial' })).toHaveValue('Keep exact text')
         expect(mocks.onSuccess).not.toHaveBeenCalled()
@@ -461,7 +605,7 @@ describe('NewSession launch preferences', () => {
         mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'shared-session' })
         render(<NewSession api={{ uploadFile, sendMessage } as unknown as ApiClient} machines={[machine]} draftKey="share-file-test" shareTransferId="transfer-1" initialMachineId="machine-1" initialDirectory="/project" initialTask="" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
         await waitFor(() => expect(screen.getByText('notes.txt')).toBeTruthy())
-        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.createAndSend' }))
         await waitFor(() => expect(screen.getByText('Upload failed')).toBeTruthy())
         expect(screen.getByText('notes.txt')).toBeTruthy()
         fireEvent.click(screen.getByRole('button', { name: 'newTask.retryDelivery' }))
@@ -495,7 +639,7 @@ describe('NewSession launch preferences', () => {
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
         expect(screen.getByText('IMG_0007.HEIC')).toBeInTheDocument()
 
-        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.createAndSend' }))
         await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('native-task'))
         expect(uploadFile).toHaveBeenCalledWith('native-task', 'IMG_0007.HEIC', btoa('original image bytes'), 'image/heic')
         expect(sendMessage).toHaveBeenCalledWith('native-task', 'Inspect this photo', expect.any(String), [expect.objectContaining({
@@ -509,7 +653,7 @@ describe('NewSession launch preferences', () => {
         const flush = vi.spyOn(attachmentDrafts, 'flushDraftAttachmentWrites').mockImplementation(() => new Promise<void>(resolve => { finish = resolve }))
         render(<NewSession api={api} machines={[machine]} draftKey="native-update-task" initialMachineId="machine-1"
             initialDirectory="C:\\repo" initialTask="Keep the current new task" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
-        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeEnabled())
         let prepared = false
         const preparing = nativeUpdateReload.prepareNativeUpdateReload().then(() => { prepared = true })
         await waitFor(() => expect(flush).toHaveBeenCalledWith('native-update-task'))
@@ -528,7 +672,7 @@ describe('NewSession launch preferences', () => {
             initialMachineId: 'machine-1', initialDirectory: 'C:\\repo', onSuccess: mocks.onSuccess, onCancel: () => {},
         }
         const view = render(<NewSession {...props} />)
-        fireEvent.change(screen.getByRole('combobox', { name: 'machine-selector' }), { target: { value: 'machine-2' } })
+        fireEvent.change(screen.getByRole('combobox', { name: 'newSession.machine' }), { target: { value: 'machine-2' } })
         view.rerender(<NewSession {...props} initialDirectory="/chosen-folder" />)
         fireEvent.click(screen.getByTestId('model'))
         fireEvent.click(screen.getByTestId('reasoning'))
@@ -541,7 +685,7 @@ describe('NewSession launch preferences', () => {
         nativeUpdateReload.restoreNativeUpdateRoute()
         render(<NewSession {...props} />)
         await waitFor(() => expect(screen.getByTestId('model')).toHaveTextContent('gpt-5.6-terra'))
-        expect(screen.getByRole('combobox', { name: 'machine-selector' })).toHaveValue('machine-2')
+        expect(screen.getByRole('combobox', { name: 'newSession.machine' })).toHaveValue('machine-2')
         expect(screen.getByTestId('reasoning')).toHaveTextContent('max')
         expect(loadNativeUpdateNewSessionDraft('native-update-form')).toBeNull()
         fireEvent.click(screen.getByTestId('create'))
@@ -555,7 +699,7 @@ describe('NewSession launch preferences', () => {
         vi.spyOn(attachmentDrafts, 'flushDraftAttachmentWrites').mockRejectedValue(new Error('Attachment transaction failed'))
         render(<NewSession api={api} machines={[machine]} draftKey="native-update-write-error" initialMachineId="machine-1"
             initialDirectory="C:\\repo" initialTask="Keep this task" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
-        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeEnabled())
         await expect(nativeUpdateReload.prepareNativeUpdateReload()).rejects.toThrow('Attachment transaction failed')
         expect(loadNativeUpdateNewSessionDraft('native-update-write-error')).toBeNull()
         expect(sessionStorage.getItem('hapi:native-update-route')).toBeNull()
@@ -576,8 +720,8 @@ describe('NewSession launch preferences', () => {
         mocks.spawnSession.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
         render(<NewSession api={api} machines={[machine]} draftKey="native-update-pending" initialMachineId="machine-1"
             initialDirectory="C:\\repo" initialTask="Keep this task" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
-        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
-        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.createAndSend' }))
         await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalledTimes(1))
         await expect(nativeUpdateReload.prepareNativeUpdateReload()).rejects.toThrow('pending session operation')
         await act(async () => { finish({ type: 'success', sessionId: 'finished-after-update-abort' }) })
@@ -607,7 +751,7 @@ describe('NewSession launch preferences', () => {
         saveNewSessionFormDraft({ agent, model: 'missing-model', cursorSelectedBase: 'auto', machineId: 'machine-1', effort: 'auto', modelReasoningEffort: 'default', serviceTier: 'standard', collaborationMode: 'default', copilotAgentMode: 'interactive', yoloMode: false, nativePermissionMode: 'default', grokPermissionMode: 'default', sessionType: 'simple', worktreeName: '' })
         render(<NewSession api={api} machines={[machine]} draftKey={`unsupported-${agent}`} initialMachineId="machine-1" initialDirectory={'C:\\repo'} initialTask="Keep the selected model" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
         await waitFor(() => expect(screen.getByText('newTask.invalidSelection')).toBeTruthy())
-        expect(screen.getByRole('button', { name: 'composer.send' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeDisabled()
         const capsule = screen.getByRole('button', { name: /missing-model/ })
         fireEvent.click(capsule)
         fireEvent.click(screen.getByRole('button', { name: /missing-model/ }))
@@ -618,7 +762,7 @@ describe('NewSession launch preferences', () => {
 
     it('does not submit IME confirmation Enter or Shift+Enter', async () => {
         render(<NewSession api={api} machines={[machine]} draftKey="ime-test" initialMachineId="machine-1" initialDirectory="/project" initialTask="Draft" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
-        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeEnabled())
         const input = screen.getByRole('textbox', { name: 'sessions.task.initial' })
         fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 })
         fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
@@ -636,7 +780,7 @@ describe('NewSession launch preferences', () => {
             resumeSession: vi.fn()
         } as unknown as ApiClient
         render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" initialTask="Keep this task" onCreated={onCreated} onSuccess={mocks.onSuccess} onCancel={() => {}} />)
-        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
         await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
@@ -658,12 +802,11 @@ describe('NewSession launch preferences', () => {
             getCodexDuplicateSessions: vi.fn().mockResolvedValue({ success: true, duplicates: [] })
         } as unknown as ApiClient;
         render(<NewSession api={codexApi} machines={[machine, { ...machine, id: 'machine-2' }]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />);
-        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
         await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }));
         await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled());
         fireEvent.click(screen.getByTestId('import-codex'));
-        fireEvent.change(screen.getByRole('combobox', { name: 'machine-selector' }), { target: { value: 'machine-2' } });
+        fireEvent.change(screen.getByRole('combobox', { name: 'newSession.machine' }), { target: { value: 'machine-2' } });
         await act(async () => resolve({ sessionId: 'late-binding', threadId: 'native-1', connectionState: 'attached' }));
         expect(mocks.onSuccess).not.toHaveBeenCalled();
     });
@@ -677,7 +820,6 @@ describe('NewSession launch preferences', () => {
         const props = { api: codexApi, initialMachineId: 'machine-1', initialDirectory: '/project', onSuccess: mocks.onSuccess, onCancel: vi.fn() }
         const otherMachine = { ...machine, id: 'machine-2' }
         const view = render(<NewSession {...props} machines={[machine, otherMachine]} />)
-        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
         await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
@@ -688,7 +830,7 @@ describe('NewSession launch preferences', () => {
         expect(screen.getByTestId('codex-list-error')).toHaveTextContent('Selected Runner disconnected')
         expect(mocks.onSuccess).not.toHaveBeenCalled()
         view.rerender(<NewSession {...props} machines={[machine, otherMachine]} />)
-        expect(screen.getByRole('combobox', { name: 'machine-selector' })).toHaveValue('machine-1')
+        expect(screen.getByRole('combobox', { name: 'newSession.machine' })).toHaveValue('machine-1')
     })
 
     it('opens the confirmed binding when a directory update arrives during connection', async () => {
@@ -699,7 +841,6 @@ describe('NewSession launch preferences', () => {
         } as unknown as ApiClient
         const props = { api: codexApi, machines: [machine], initialMachineId: 'machine-1', onSuccess: mocks.onSuccess, onCancel: vi.fn() }
         const view = render(<NewSession {...props} initialDirectory="/project" />)
-        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
         await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
@@ -718,7 +859,6 @@ describe('NewSession launch preferences', () => {
         const props = { api: codexApi, initialMachineId: 'machine-1', onSuccess: mocks.onSuccess, onCancel: vi.fn() }
         const otherMachine = { ...machine, id: 'machine-2' }
         const view = render(<NewSession {...props} machines={[machine, otherMachine]} />)
-        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
         await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('import-codex')).toBeEnabled())
@@ -735,7 +875,6 @@ describe('NewSession launch preferences', () => {
         render(<NewSession api={codexApi} machines={[{ ...machine, active: true }]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
         await waitFor(() => expect(codexApi.getCodexSessions).toHaveBeenCalledTimes(1))
         expect(screen.queryByTestId('codex-search-results')).not.toBeInTheDocument()
-        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
         await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await act(async () => finish({ success: true, sessions: [{ id: 'warm' }], nextCursor: null }))
@@ -752,7 +891,6 @@ describe('NewSession launch preferences', () => {
                 .mockResolvedValue({ success: true, sessions: [{ id: 'old-o-debug' }], nextCursor: null })
         } as unknown as ApiClient
         render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
-        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
         await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('codex-more')).toBeEnabled())
@@ -775,7 +913,6 @@ describe('NewSession launch preferences', () => {
                 .mockResolvedValueOnce({ success: true, sessions: [{ id: 'first' }, { id: 'second' }], nextCursor: null })
         } as unknown as ApiClient
         render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
-        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
         await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('codex-more')).toBeEnabled())
@@ -786,7 +923,6 @@ describe('NewSession launch preferences', () => {
     it('surfaces an unavailable Codex list in the dialog and retries successfully', async () => {
         const codexApi = { getCodexSessions: vi.fn().mockRejectedValueOnce(new Error('Runner unavailable')).mockResolvedValueOnce({ success: true, sessions: [{ id: 'native-1' }] }) } as unknown as ApiClient
         render(<NewSession api={codexApi} machines={[machine]} initialMachineId="machine-1" initialDirectory="/project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
-        if (screen.queryByTestId('new-task-composer')) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
         await waitFor(() => expect(screen.getByRole('button', { name: 'codexConnect.choose' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'codexConnect.choose' }))
         await waitFor(() => expect(screen.getByTestId('codex-list-error')).toHaveTextContent('Runner unavailable'))
@@ -827,7 +963,10 @@ describe('NewSession launch preferences', () => {
         )
         render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo"
             initialTask={newTask ? 'Inspect project' : undefined} onSuccess={mocks.onSuccess} onCancel={() => {}} />)
-        if (newTask) fireEvent.click(screen.getByRole('button', { name: 'newTask.moreSettings' }))
+        if (newTask) {
+            await waitFor(() => expect(screen.getByRole('button', { name: 'newSession.agent: Claude' })).toBeEnabled())
+            fireEvent.click(screen.getByRole('button', { name: 'newSession.agent: Claude' }))
+        }
 
         expect(screen.queryByText('DeepSeek Harness (DSH)')).not.toBeInTheDocument()
         await waitFor(() => expect(screen.getByRole('button', { name: 'newSession.otherAgents' })).toBeEnabled())
@@ -888,7 +1027,7 @@ describe('NewSession launch preferences', () => {
         await waitFor(() => {
             expect(screen.getByTestId('model')).toHaveTextContent('gpt-5.6-sol')
             expect(screen.getByTestId('reasoning')).toHaveTextContent('xhigh')
-            expect(screen.getByTestId('permission-mode')).toHaveTextContent('default')
+            expect(screen.getByRole('combobox', { name: 'misc.permissionMode' })).toHaveValue('default')
         })
     })
 
@@ -910,7 +1049,7 @@ describe('NewSession launch preferences', () => {
         fireEvent.click(screen.getByDisplayValue('codex'))
 
         await waitFor(() => {
-            expect(screen.getByTestId('permission-mode')).toHaveTextContent('default')
+            expect(screen.getByRole('combobox', { name: 'misc.permissionMode' })).toHaveValue('default')
         })
     })
 
@@ -930,7 +1069,7 @@ describe('NewSession launch preferences', () => {
         )
 
         await waitFor(() => {
-            expect(screen.getByTestId('permission-mode')).toHaveTextContent('yolo')
+            expect(screen.getByRole('combobox', { name: 'misc.permissionMode' })).toHaveValue('yolo')
         })
     })
 
@@ -1150,7 +1289,7 @@ describe('NewSession launch preferences', () => {
         expect(loadPreferredLaunchSettings('machine-1', 'codex')).toBeNull()
         fireEvent.click(screen.getByTestId('model'))
         fireEvent.click(screen.getByTestId('reasoning'))
-        fireEvent.click(screen.getByTestId('permission-mode'))
+        fireEvent.change(screen.getByRole('combobox', { name: 'misc.permissionMode' }), { target: { value: 'yolo' } })
         expect(loadPreferredLaunchSettings('machine-1', 'codex')).toBeNull()
         fireEvent.click(screen.getByTestId('create'))
 
@@ -1235,7 +1374,7 @@ describe('NewSession launch preferences', () => {
         }))
     })
 
-    it('explains DSH model selection and exposes permissions under Advanced', async () => {
+    it('shows DSH managed model and effort status with a visible permission control', async () => {
         savePreferredAgent('dsh')
         savePreferredYoloMode(true)
         mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'dsh-task' })
@@ -1245,10 +1384,10 @@ describe('NewSession launch preferences', () => {
         const model = screen.getByText('newSession.dshManagedModel')
         expect(model.closest('button')).toBeNull()
         expect(screen.queryByRole('button', { name: 'auto · auto' })).not.toBeInTheDocument()
-        expect(screen.getByRole('button', { name: 'newSession.advanced' })).toHaveTextContent('Default')
-        expect(screen.getByRole('button', { name: 'newSession.advanced' })).not.toHaveTextContent('Yolo')
-        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
-        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        expect(screen.getByRole('button', { name: 'misc.permissionMode: Default' })).toHaveTextContent('Default')
+        expect(screen.getByRole('button', { name: 'misc.permissionMode: Default' })).not.toHaveTextContent('Yolo')
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.createAndSend' }))
         await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('dsh-task'))
         expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
             agent: 'dsh', model: undefined, effort: undefined, yolo: undefined, permissionMode: 'default'
@@ -1278,8 +1417,8 @@ describe('NewSession launch preferences', () => {
 
         const hint = screen.getByText('newSession.qoderManagedModel')
         expect(hint.closest('button')).toBeNull()
-        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
-        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'newTask.createAndSend' }))
         await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('qoder-task'))
         expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
             agent: 'qoder', model: undefined, yolo: undefined, permissionMode: 'default'
@@ -1291,7 +1430,7 @@ describe('NewSession launch preferences', () => {
         mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'claude-session' })
         render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
 
-        fireEvent.click(screen.getByTestId('permission-mode-plan'))
+        fireEvent.change(screen.getByRole('combobox', { name: 'misc.permissionMode' }), { target: { value: 'plan' } })
         fireEvent.click(screen.getByTestId('create'))
 
         await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('claude-session'))
@@ -1311,7 +1450,7 @@ describe('NewSession launch preferences', () => {
         // shared nativePermissionMode state to 'yolo', a value 'claude' does
         // not carry in its own permission catalog.
         await waitFor(() => expect(screen.getByDisplayValue('codex')).toBeChecked())
-        fireEvent.click(screen.getByTestId('permission-mode'))
+        fireEvent.change(screen.getByRole('combobox', { name: 'misc.permissionMode' }), { target: { value: 'yolo' } })
         fireEvent.click(screen.getByDisplayValue('claude'))
         await waitFor(() => expect(screen.getByDisplayValue('claude')).toBeChecked())
         fireEvent.click(screen.getByTestId('create'))
@@ -1330,7 +1469,7 @@ describe('NewSession launch preferences', () => {
         render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
 
         await waitFor(() => {
-            expect(screen.getByTestId('permission-mode')).toHaveTextContent('bypassPermissions')
+            expect(screen.getByRole('combobox', { name: 'misc.permissionMode' })).toHaveValue('bypassPermissions')
         })
     })
 
@@ -1348,7 +1487,7 @@ describe('NewSession launch preferences', () => {
         fireEvent.click(screen.getByDisplayValue('claude'))
 
         await waitFor(() => {
-            expect(screen.getByTestId('permission-mode')).toHaveTextContent('default')
+            expect(screen.getByRole('combobox', { name: 'misc.permissionMode' })).toHaveValue('default')
         })
     })
 
@@ -1549,7 +1688,7 @@ describe('NewSession launch preferences', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'piImport.inline.choose' }))
         fireEvent.click(screen.getByTestId('close-pi-history'))
-        fireEvent.change(screen.getByLabelText('machine-selector'), { target: { value: machineB.id } })
+        fireEvent.change(screen.getByLabelText('newSession.machine'), { target: { value: machineB.id } })
         fireEvent.click(screen.getByRole('button', { name: 'piImport.inline.choose' }))
         await act(async () => {
             resolveMachineB({
@@ -1877,7 +2016,7 @@ describe('NewSession launch preferences', () => {
     })
 })
 
- it('does not show model or directory configuration before a machine is selected', () => {
+ it('keeps the task draft and setup hint before a machine is selected', () => {
     mocks.spawnSession.mockClear()
     render(<NewSession api={api} machines={[]} initialTask="keep my draft" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
     expect(screen.getByText('setup.title')).toBeTruthy()

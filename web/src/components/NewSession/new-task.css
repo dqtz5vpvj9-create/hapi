@@ -1,0 +1,316 @@
+.new-task-composer {
+    width: 100%;
+    max-width: 1024px;
+    min-width: 0;
+    margin-inline: auto;
+    padding: 48px 20px calc(env(safe-area-inset-bottom) + 32px);
+}
+
+.new-task-heading {
+    margin: 0 0 24px;
+    color: var(--app-fg);
+    font-size: 26px;
+    font-weight: 500;
+    letter-spacing: -0.04em;
+    line-height: 1.3;
+}
+
+.new-task-card {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--app-border);
+    border-radius: 26px;
+    background: var(--app-bg);
+    box-shadow: 0 2px 8px #00000004, 0 12px 32px #00000003;
+}
+
+.new-task-textarea {
+    display: block;
+    width: 100%;
+    min-height: 100px;
+    margin-bottom: 12px;
+    padding: 8px;
+    resize: none;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--app-fg);
+    font-size: 16px;
+    line-height: 1.5;
+}
+
+.new-task-textarea::placeholder {
+    color: var(--app-hint);
+}
+
+.new-task-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.new-task-field {
+    position: relative;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: calc((100% - 6px) / 2);
+}
+
+.new-task-agent {
+    max-width: 100px;
+}
+
+.new-task-model {
+    max-width: calc(100% - 106px);
+}
+
+.new-task-pill,
+.new-task-model .model-effort-capsule,
+.new-task-machine select {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    min-height: 44px;
+    min-width: 44px;
+    max-width: 100%;
+    border: 1px solid color-mix(in srgb, var(--app-border) 55%, transparent);
+    border-radius: 999px;
+    padding: 8px 10px;
+    background: color-mix(in srgb, var(--app-secondary-bg) 75%, var(--app-bg));
+    color: var(--app-fg);
+    font-size: 13px;
+    line-height: 20px;
+    white-space: nowrap;
+    text-align: start;
+}
+
+.new-task-pill {
+    width: 100%;
+}
+
+.new-task-pill-value,
+.new-task-model .model-effort-caption,
+.new-task-machine select {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+}
+
+.new-task-pill-icon,
+.new-task-pill-chevron {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--app-hint);
+}
+
+.new-task-pill-chevron {
+    margin-inline-start: auto;
+    transform: rotate(180deg);
+}
+
+.new-task-pill[aria-expanded="true"] .new-task-pill-chevron,
+.new-task-more-toggle[aria-expanded="true"] .new-task-pill-chevron {
+    transform: none;
+}
+
+.new-task-model-icon,
+.new-task-machine-icon {
+    position: absolute;
+    z-index: 1;
+    inset-inline-start: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--app-hint);
+    pointer-events: none;
+}
+
+.new-task-model .model-effort-capsule,
+.new-task-model .new-task-pill,
+.new-task-machine select {
+    padding-inline-start: 32px;
+}
+
+.new-task-model .model-effort-capsule > span:last-child {
+    flex-shrink: 0;
+    color: var(--app-hint);
+}
+
+.new-task-machine select {
+    padding-inline-end: 26px;
+}
+
+.new-task-machine select + svg {
+    right: 10px;
+    width: 12px;
+    color: var(--app-hint);
+}
+
+.new-task-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 12px;
+    border-top: 1px solid var(--app-divider);
+    padding-top: 10px;
+}
+
+.new-task-attach {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    color: var(--app-hint);
+}
+
+.new-task-submit {
+    min-height: 44px;
+    margin-inline-start: auto;
+    border-radius: 999px;
+    padding: 10px 20px;
+    background: var(--app-button);
+    color: var(--app-button-text);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.new-task-more-options {
+    margin-top: 8px;
+}
+
+.new-task-more-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    border-radius: 999px;
+    padding-inline: 12px;
+    color: var(--app-hint);
+    font-size: 13px;
+}
+
+.new-task-secondary-controls {
+    display: grid;
+    min-width: 0;
+    margin-top: 4px;
+    border: 1px solid var(--app-border);
+    border-radius: 20px;
+}
+
+.new-task-pill:hover:not(:disabled),
+.new-task-model .model-effort-capsule:hover:not(:disabled),
+.new-task-machine select:hover:not(:disabled),
+.new-task-attach:hover:not(:disabled),
+.new-task-more-toggle:hover {
+    background: var(--app-secondary-bg);
+}
+
+.new-task-pill:disabled,
+.new-task-attach:disabled,
+.new-task-submit:disabled {
+    opacity: 0.5;
+}
+
+.new-task-pill:focus-visible,
+.new-task-attach:focus-visible,
+.new-task-submit:focus-visible,
+.new-task-more-toggle:focus-visible {
+    outline: 2px solid var(--app-link);
+    outline-offset: 2px;
+}
+
+@media (min-width: 640px) {
+    .new-task-composer {
+        padding-top: clamp(48px, 22dvh, 240px);
+    }
+
+    .new-task-heading {
+        margin-bottom: 32px;
+        font-size: 32px;
+        text-align: center;
+    }
+
+    .new-task-card {
+        padding: 18px;
+        border-radius: 28px;
+    }
+
+    .new-task-textarea {
+        min-height: 112px;
+        padding: 8px 6px;
+        font-size: 18px;
+    }
+
+    .new-task-controls {
+        gap: 8px;
+    }
+
+    .new-task-field {
+        max-width: 200px;
+    }
+
+    .new-task-model {
+        max-width: 300px;
+    }
+
+    .new-task-secondary-controls {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.new-task-control-popover {
+    z-index: 110;
+    width: min(360px, calc(100vw - 24px));
+    max-height: min(70dvh, var(--radix-popover-content-available-height));
+    overflow: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--app-border);
+    border-radius: 16px;
+    background: var(--app-bg);
+    color: var(--app-fg);
+    box-shadow: 0 8px 28px #0002;
+}
+
+.new-task-control-popover select,
+.new-task-control-popover input[type="text"],
+.new-task-control-popover .app-new-session-choice-target,
+.new-task-control-popover label:has(> input[type="checkbox"]),
+.new-task-secondary-controls button,
+.new-task-secondary-controls select,
+.new-task-directory-dialog button,
+.new-task-directory-dialog input[type="text"],
+.new-task-directory-dialog label:has(> input[type="checkbox"]) {
+    min-height: 44px;
+}
+
+.new-task-control-popover label:has(> input[type="checkbox"]) {
+    min-width: 44px;
+}
+
+.new-task-control-popover label:has(> input[type="checkbox"]) > span:first-of-type {
+    inset-block: 12px;
+}
+
+.new-task-control-popover input[type="checkbox"]:checked ~ span:last-of-type {
+    translate: 24px;
+}
+
+.new-task-control-popover input[type="checkbox"]:focus-visible + span {
+    outline: 2px solid var(--app-link);
+    outline-offset: 2px;
+}
+
+.new-task-directory-dialog button[aria-label] {
+    min-width: 44px;
+}
+
+/* The shared picker uses a portal; scope its touch sizing to this page. */
+body:has(.new-task-composer) .model-effort-stops button {
+    min-height: 44px;
+}

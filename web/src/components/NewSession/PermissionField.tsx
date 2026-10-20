@@ -5,6 +5,7 @@ import {
     resolveHapiYoloPermissionMode,
     type PermissionMode
 } from '@hapi/protocol'
+import { useId } from 'react'
 import { useTranslation } from '@/lib/use-translation'
 import { usesNativePermissionSelect } from '@/lib/codexFamilyPermissionAgents'
 import type { AgentType } from './types'
@@ -36,6 +37,7 @@ export type PermissionFieldProps = {
  */
 export function PermissionField(props: PermissionFieldProps) {
     const { t } = useTranslation()
+    const controlId = useId()
     const descriptor = getAgentConfigDescriptor(props.agent)
     const field = descriptor.fields.find((candidate) => candidate.id === 'permission')
     if (!field) {
@@ -64,10 +66,11 @@ export function PermissionField(props: PermissionFieldProps) {
         const options = getLaunchPermissionModesForFlavor(props.agent)
         return (
             <div className="flex flex-col gap-1.5 px-3 py-3">
-                <label className="text-xs font-medium text-[var(--app-hint)]">
+                <label htmlFor={controlId} className="text-xs font-medium text-[var(--app-hint)]">
                     {t('misc.permissionMode')}
                 </label>
                 <SelectControl
+                    id={controlId}
                     value={props.nativeValue}
                     onChange={(event) => props.onNativeChange(event.target.value as PermissionMode)}
                     disabled={props.isDisabled}
