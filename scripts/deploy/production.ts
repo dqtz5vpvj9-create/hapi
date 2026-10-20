@@ -263,7 +263,7 @@ function main(): void {
     prepareSource(sourceDirectory, commit, options.workingTree)
     testAndBuild(sourceDirectory, releaseDirectory, components, options.skipTests)
 
-    if (needsWindowsPreflight(components)) windowsPreflight(sourceDirectory)
+    if (!options.skipWindows && needsWindowsPreflight(components)) windowsPreflight(sourceDirectory)
     const rollback: { previousWrapper?: string; previousGateway?: string } = {}
     let windowsActivated = false
     try {
@@ -272,7 +272,7 @@ function main(): void {
             deployWindows(sourceDirectory, releaseDirectory, releaseId)
             windowsActivated = true
         }
-        if (needsWindowsPreflight(components)) windowsPreflight(sourceDirectory)
+        if (!options.skipWindows && needsWindowsPreflight(components)) windowsPreflight(sourceDirectory)
     } catch (error) {
         if (windowsActivated) rollbackWindows(releaseId)
         if (Object.keys(rollback).length > 0) rollbackLinux(rollback, components)
