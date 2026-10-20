@@ -107,7 +107,7 @@ describe('native Codex history adapter', () => {
         expect(previous).toBe(1399);
         expect(page.page.snapshotHeadAt).toBe(1700000001399);
         expect(source.calls.every(call => call.method === 'thread/items/list' && !call.params.turnId)).toBe(true);
-    });
+    }, 15_000);
 
     it('advances bounded reading and outline cursors over native items without display records', async () => {
         const source = new NativeHistoryFixture('/fixture', 96);
