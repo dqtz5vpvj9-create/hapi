@@ -1,3 +1,4 @@
+import { prepareAcpPrompt } from './promptImages';
 import type { AgentFlavor } from '@hapi/protocol';
 import type { AgentBackend, AgentMessage, AgentSessionConfig, PermissionRequest, PermissionResponse, PromptContent } from '@/agent/types';
 import { asString, isObject } from '@hapi/protocol';
@@ -273,6 +274,11 @@ export class AcpSdkBackend implements AgentBackend {
             // Cursor advertises cursor_login but may not implement _client/authenticate yet.
             logger.debug(`[ACP] authenticate skipped (${methodId})`, error);
         }
+    }
+
+    supportsImageInput(): boolean {
+        const capabilities = this.initializeResult?.agentCapabilities?.promptCapabilities;
+        return isObject(capabilities) && capabilities.image === true;
     }
 
     supportsLoadSession(): boolean {
@@ -649,6 +655,34 @@ export class AcpSdkBackend implements AgentBackend {
             || /^(?:New|Child) session - \d{4}-\d{2}-\d{2}T/.test(normalizedTitle);
     }
 
+    /**
+     * Join one user message to the turn already streaming.
+     *
+     * Steering is an extension: agents that do not implement `session/followup`
+     * answer with an unknown-method error, and the caller keeps the message
+     * queued instead of losing it.
+     */
+    async followup(
+        sessionId: string,
+        content: PromptContent[]
+    ): Promise<{ messageId: string | null }> {
+        if (!this.transport) {
+            throw new Error('ACP transport not initialized');
+        }
+        const prepared = await prepareAcpPrompt(content, this.supportsImageInput());
+        if (prepared.warnings.length > 0) {
+            throw new Error(prepared.warnings[0]);
+        }
+        const response = await this.transport.sendRequest('session/followup', {
+            sessionId,
+            prompt: prepared.prompt
+        }, { timeoutMs: 30_000 });
+        // DSH returns the id of the user message joined to the running turn.
+        // Keeping it gives the steer path a receipt for logs and future
+        // reconciliation instead of discarding the accepted identity.
+        return { messageId: isObject(response) ? asString(response.messageId) : null };
+    }
+
     async prompt(
         sessionId: string,
         content: PromptContent[],
@@ -658,6 +692,9 @@ export class AcpSdkBackend implements AgentBackend {
             throw new Error('ACP transport not initialized');
         }
 
+        const prepared = await prepareAcpPrompt(content, this.supportsImageInput());
+        for (const warning of prepared.warnings) onUpdate({ type: 'error', message: warning });
+        content = prepared.prompt;
         this.activeSessionId = sessionId;
         // Single-phase handler swap: drain any chunks still buffered in the
         // previous turn's handler so they emit via that turn's onUpdate, then
@@ -798,7 +835,7 @@ export class AcpSdkBackend implements AgentBackend {
         try {
             await this.transport.sendRequest('session/prompt', {
                 sessionId,
-                prompt: content
+                prompt: (await prepareAcpPrompt(content, this.supportsImageInput())).prompt
             }, { timeoutMs: Infinity });
         } finally {
             this.finishPromptRequest(promptRequestEpoch);
@@ -823,13 +860,14 @@ export class AcpSdkBackend implements AgentBackend {
 
         const transport = this.transport;
         const promptRequestEpoch = this.beginPromptRequest();
-        const request = transport.sendRequestWithDispatch('session/prompt', {
-            sessionId,
-            prompt: content
-        }, { timeoutMs: Infinity, dispatchTimeoutMs: 20_000 });
+        const dispatch = (prompt: PromptContent[]) => transport.sendRequestWithDispatch('session/prompt',
+            { sessionId, prompt }, { timeoutMs: Infinity, dispatchTimeoutMs: 20_000 });
+        const request = content.some(block => block.type === 'image' || block.attachments?.length)
+            ? prepareAcpPrompt(content, this.supportsImageInput()).then(prepared => dispatch(prepared.prompt))
+            : Promise.resolve(dispatch(content.map(block => block.type === 'text' ? { type: 'text', text: block.text } : block)));
         const completed = (async () => {
             try {
-                await request.completed;
+                await (await request).completed;
             } finally {
                 try {
                     await this.waitForSessionUpdateQuiet(
@@ -849,7 +887,7 @@ export class AcpSdkBackend implements AgentBackend {
             logger.warn('[ACP] soft-steer session/prompt failed', error);
         });
 
-        return { dispatched: request.dispatched, completed };
+        return { dispatched: request.then(value => value.dispatched), completed };
     }
 
     async respondToPermission(

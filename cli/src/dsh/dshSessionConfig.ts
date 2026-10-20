@@ -26,6 +26,12 @@ export class DshSessionConfig {
         await this.tail
     }
 
+    /** Resolve a nullable model change against the catalog's initial model. */
+    resolveModel(change?: string | null): string | undefined {
+        if (change === undefined) return this.option('model')?.currentValue
+        return change ?? this.initialModel ?? this.option('model')?.currentValue
+    }
+
     apply(change: DshConfigChange): Promise<void> {
         if (this.disposed) return Promise.reject(new Error('DSH session is closed'))
         const apply = this.tail.then(() => this.applyNow(change))

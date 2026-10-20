@@ -28,3 +28,9 @@ describe('DSH advertised settings', () => {
         expect(getNextModelForFlavor('dsh', 'opaque-current')).toBe('opaque-current')
     })
 })
+
+it('formats JSON model pairs without changing the wire value or inventing a version', () => {
+    const value = '["deepseek-official","deepseek-v4-flash"]'
+    expect(dshSessionOptions([{ id: 'model', category: 'model', options: [{ value }] }]).models)
+        .toEqual([{ value, label: 'DeepSeek-V4-Flash · deepseek-official' }])
+})

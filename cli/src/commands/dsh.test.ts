@@ -17,10 +17,9 @@ describe('parseDshCommandOptions', () => {
             .toMatchObject({ resumeSessionId: 'native-id', model: '["provider","model"]', effort: 'high', startingMode: 'remote' })
     })
 
-    it('rejects HAPI permission controls and local mode', () => {
-        expect(() => parseDshCommandOptions(['--yolo']))
-            .toThrow('permission policy')
-        expect(() => parseDshCommandOptions(['--permission-mode', 'default'])).toThrow()
+    it('accepts HAPI permissions and rejects local mode', () => {
+        expect(parseDshCommandOptions(['--yolo']).permissionMode).toBe('yolo')
+        expect(parseDshCommandOptions(['--permission-mode', 'default']).permissionMode).toBe('default')
         expect(() => parseDshCommandOptions(['--hapi-starting-mode', 'local'])).toThrow()
     })
 })

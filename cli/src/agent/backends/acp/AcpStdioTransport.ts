@@ -16,6 +16,16 @@ import {
 } from './agentCliGuard';
 import { matchesAcpHttp2Cancel, matchesAcpRetryBackoff } from './acpStderrErrors';
 
+/** Explicit JSON-RPC error response. Unlike transport failures, the request
+ * was rejected by the agent, so replaying it is safe only if the caller chooses
+ * to do so. Keep the protocol code and data for diagnostics. */
+export class AcpRpcError extends Error {
+    constructor(readonly code: number, message: string, readonly data?: unknown) {
+        super(message);
+        this.name = 'AcpRpcError';
+    }
+}
+
 /** Marks transport-level failures whose request outcome is unknown (unlike an
  * explicit JSON-RPC error response). */
 export const ACP_INDETERMINATE_SYMBOL = Symbol('acp-indeterminate');
@@ -542,7 +552,7 @@ export class AcpStdioTransport {
         this.pending.delete(response.id);
 
         if (response.error) {
-            pending.reject(new Error(response.error.message));
+            pending.reject(new AcpRpcError(response.error.code, response.error.message, response.error.data));
             return;
         }
 
@@ -687,7 +697,7 @@ export class AcpStdioTransport {
             lowerText.includes('authentication')) {
             this.stderrErrorHandler({
                 type: 'authentication',
-                message: 'Authentication failed. Please check your credentials or run "gemini auth login".',
+                message: 'Authentication failed. Please check the credentials for the agent or tool that reported this error.',
                 raw: text
             });
             return 'reported-complete';

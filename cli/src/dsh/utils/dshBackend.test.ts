@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { getAgentAvailability } from '@/agent/agentAvailability'
-import { createDshBackend, resolveDshAcpCommand } from './dshBackend'
+import { createDshBackend, isOfficialDshAcpCommand, resolveDshAcpCommand } from './dshBackend'
 
 describe('resolveDshAcpCommand', () => {
     it('starts the official dsh executable in its ACP profile by default', () => {
@@ -68,6 +68,22 @@ describe('resolveDshAcpCommand', () => {
             .toThrow('HAPI_DSH_ACP_ARGS_JSON must be a JSON array of strings')
         expect(() => resolveDshAcpCommand({ HAPI_DSH_ACP_ARGS_JSON: '["pnpm", 1]' }))
             .toThrow('HAPI_DSH_ACP_ARGS_JSON must be a JSON array of strings')
+    })
+})
+
+describe('DSH runtime selection', () => {
+    it('recognizes the official runtime and supports an explicit wrapper opt-in', () => {
+        expect(isOfficialDshAcpCommand('dsh')).toBe(true)
+        expect(isOfficialDshAcpCommand('/opt/deepseek/bin/dsh')).toBe(true)
+        expect(isOfficialDshAcpCommand('pnpm')).toBe(false)
+        expect(isOfficialDshAcpCommand('pnpm', { HAPI_DSH_ACP_OFFICIAL: '1' })).toBe(true)
+        expect(isOfficialDshAcpCommand('dsh', { HAPI_DSH_ACP_OFFICIAL: '0' })).toBe(false)
+    })
+
+    it('uses delta text chunks so repeated committed DSH messages both survive', () => {
+        const backend = createDshBackend({ HAPI_DSH_ACP_COMMAND: 'dsh' })
+        const options = (backend as unknown as { options: { textChunkMode?: string } }).options
+        expect(options.textChunkMode).toBe('delta')
     })
 })
 

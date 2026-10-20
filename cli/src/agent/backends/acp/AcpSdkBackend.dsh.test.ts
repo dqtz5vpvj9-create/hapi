@@ -111,3 +111,14 @@ describe('DSH ACP capabilities and configuration', () => {
         expect(backend.supportsCloseSession()).toBe(false)
     })
 })
+
+it.each([true, false])('honors negotiated image capability on the ACP wire: %s', async image => {
+    const { backend, internal, transport } = fixture({ promptCapabilities: { image } })
+    Object.assign(internal, { isProcessingMessage: true })
+    expect(backend.supportsImageInput()).toBe(image)
+    await backend.softSteerPrompt('session', [{ type: 'image', mimeType: 'image/png', data: 'AP8BAg==' }])
+    const request = transport.sendRequest.mock.calls[0]?.[1] as { prompt: Array<{ type: string; data?: string }> }
+    expect(request.prompt.some(block => block.type === 'image')).toBe(image)
+    if (image) expect(request.prompt[0]?.data).toBe('AP8BAg==')
+    else expect(JSON.stringify(request.prompt)).toContain('未声明图片输入')
+})

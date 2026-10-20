@@ -16,6 +16,7 @@ export class DshSession extends AgentSessionBase<DshMode> {
         messageQueue: MessageQueue2<DshMode>
         onModeChange: (mode: 'local' | 'remote') => void
         startedBy: 'runner' | 'terminal'
+        permissionMode?: 'default' | 'read-only' | 'yolo'
         sessionId?: string | null
     }) {
         super({
@@ -27,11 +28,17 @@ export class DshSession extends AgentSessionBase<DshMode> {
             messageQueue: opts.messageQueue,
             onModeChange: opts.onModeChange,
             mode: 'remote',
+            permissionMode: opts.permissionMode ?? 'default',
             sessionLabel: 'DshSession',
             sessionIdLabel: 'DeepSeek Harness ACP',
             applySessionIdToMetadata: (metadata, sessionId) => ({ ...metadata, dshSessionId: sessionId })
         })
         this.startedBy = opts.startedBy
+    }
+
+    publishPermissionMode(mode: 'default' | 'read-only' | 'yolo'): void {
+        this.permissionMode = mode
+        this.pushKeepAlive()
     }
 
     publishSessionId(sessionId: string, resumable: boolean): void {

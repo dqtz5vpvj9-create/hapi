@@ -6,10 +6,7 @@ import { parseRemoteAgentCommandOptions } from './agentCommandOptions'
 import type { CommandDefinition } from './types'
 
 export function parseDshCommandOptions(commandArgs: string[]) {
-    const options = parseRemoteAgentCommandOptions(commandArgs, [], ['remote'])
-    if (commandArgs.includes('--yolo')) {
-        throw new Error('DeepSeek Harness permission policy is configured by the ACP server')
-    }
+    const options = parseRemoteAgentCommandOptions(commandArgs, ['default', 'read-only', 'yolo'] as const, ['remote'])
     return { ...options, startingMode: 'remote' as const }
 }
 

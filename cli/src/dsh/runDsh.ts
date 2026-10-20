@@ -1,3 +1,4 @@
+import { formatDshError } from './dshErrors'
 import { hashObject } from '@/utils/deterministicJson'
 import { MessageQueue2 } from '@/utils/MessageQueue2'
 import { registerKillSessionHandler } from '@/claude/registerKillSessionHandler'
@@ -19,6 +20,7 @@ export async function runDsh(opts: {
     reservedSessionId?: string
     workingDirectory?: string
     resumeSessionId?: string
+    permissionMode?: 'default' | 'read-only' | 'yolo'
     model?: string
     effort?: string
     modelReasoningEffort?: string
@@ -48,7 +50,8 @@ export async function runDsh(opts: {
     const { api, session } = bootstrap
     setControlledByUser(session, startingMode)
 
-    const queue = new MessageQueue2<DshMode>((mode) => hashObject(mode))
+    // DSH 一轮只接一条用户消息：排队消息逐条处理，不要合并成一个 prompt。
+    const queue = new MessageQueue2<DshMode>((mode) => hashObject(mode), null, { maxBatchSize: 1 })
     const sessionRef: { current: DshSession | null } = { current: null }
     const launcherRef: { current: DshRemoteLauncher | null } = { current: null }
 
@@ -56,7 +59,8 @@ export async function runDsh(opts: {
         queue.push(
             formatMessageWithAttachments(message.content.text, message.content.attachments),
             'dsh',
-            localId
+            localId,
+            message.content.attachments
         )
     })
     session.onCancelQueuedMessage((localId) => queue.cancelByLocalId(localId))
@@ -78,6 +82,7 @@ export async function runDsh(opts: {
         messageQueue: queue,
         onModeChange: () => {},
         startedBy,
+        permissionMode: opts.permissionMode,
         sessionId: opts.resumeSessionId ?? session.getMetadata()?.dshSessionId ?? null
     })
     const launcher = new DshRemoteLauncher(dshSession, {
@@ -93,6 +98,7 @@ export async function runDsh(opts: {
         await launcher.launch()
     } catch (error) {
         crashed = true
+        session.sendSessionEvent({ type: 'error', ...formatDshError(error) })
         lifecycle.markCrash(error)
     } finally {
         if (!crashed) lifecycle.setSessionEndReason('completed')

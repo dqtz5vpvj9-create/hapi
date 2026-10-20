@@ -38,6 +38,13 @@ describe('DshSessionConfig', () => {
         expect(options()[1]?.currentValue).toBe('')
     })
 
+    it('resolves an omitted or null model to the catalog default before preflight', () => {
+        const { config } = fixture()
+        expect(config.resolveModel()).toBe('["provider","a"]')
+        expect(config.resolveModel(null)).toBe('["provider","a"]')
+        expect(config.resolveModel('["provider","b"]')).toBe('["provider","b"]')
+    })
+
     it('serializes changes and refreshes effort choices after switching model', async () => {
         const { config, backend, options } = fixture()
         await Promise.all([config.apply({ model: '["provider","b"]' }), config.apply({ effort: 'medium' })])
