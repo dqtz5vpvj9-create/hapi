@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
     QODER_LOGIN_MESSAGE,
     configOptionsWithModels,
+    defaultQoderModel,
     formatQoderError,
     qoderEffortOption,
     qoderPermissionModeId,
@@ -54,6 +55,25 @@ describe('Qoder CN command resolution', () => {
 
     it('keeps the canonical command when neither binary is installed', () => {
         expect(resolveQoderCommand({ PATH: '' })).toBe('qoderclicn')
+    })
+})
+
+describe('Qoder default model selection', () => {
+    it('picks the advertised free default instead of a paid current model', () => {
+        expect(defaultQoderModel([
+            { modelId: 'qfmodel', name: 'Qwen3.8-Flash (default)' },
+            { modelId: 'dfmodel', name: 'DeepSeek-Flash' },
+            { modelId: 'bailian/qwen3.8-max-tp', name: 'Qwen-3.8-Max (Alibaba Cloud Model Studio)' },
+        ], 'bailian/qwen3.8-max-tp')).toBe('qfmodel')
+    })
+
+    it('falls back to the current model when no preferred default is advertised', () => {
+        expect(defaultQoderModel([{ modelId: 'custom', name: 'Custom' }], 'custom')).toBe('custom')
+    })
+
+    it('turns an entitlement denial into an actionable message', () => {
+        expect(formatQoderError(new Error('Access to model denied. Please make sure you are eligible for using the model.')).message)
+            .toBe('This Qoder CN account is not eligible for the selected model. Choose Qwen3.8-Flash (default) or another available model.')
     })
 })
 

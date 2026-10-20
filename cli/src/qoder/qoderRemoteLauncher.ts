@@ -16,6 +16,7 @@ import { AcpPermissionHandler } from '@/modules/common/permission/AcpPermissionH
 import {
     createQoderBackend,
     configOptionsWithModels,
+    defaultQoderModel,
     formatQoderError,
     qoderEffortOption,
     resolveQoderEffortValue,
@@ -182,18 +183,32 @@ export class QoderRemoteLauncher extends RemoteLauncherBase {
         this.publishConfigOptions()
 
         const requestedModel = this.session.getModel() ?? null
-        if (requestedModel && requestedModel !== this.currentBackendModel) {
-            try {
-                await this.applyModel(acpSessionId, requestedModel)
-            } catch (error) {
-                const failure = formatQoderError(error)
-                logger.warn('[qoder-acp] initial model switch failed', { message: failure.message })
-                this.session.sendSessionEvent({ type: 'error', ...failure })
-                this.messageBuffer.addMessage(failure.message, 'status')
-                this.session.publishModel(this.currentBackendModel)
+        if (requestedModel) {
+            if (requestedModel !== this.currentBackendModel) {
+                try {
+                    await this.applyModel(acpSessionId, requestedModel)
+                } catch (error) {
+                    const failure = formatQoderError(error)
+                    logger.warn('[qoder-acp] initial model switch failed', { message: failure.message })
+                    this.session.sendSessionEvent({ type: 'error', ...failure })
+                    this.messageBuffer.addMessage(failure.message, 'status')
+                    this.session.publishModel(this.currentBackendModel)
+                }
             }
-        } else if (!requestedModel && this.currentBackendModel) {
-            this.session.publishModel(this.currentBackendModel)
+        } else {
+            const models = backend.getSessionModelsMetadata(acpSessionId)?.availableModels ?? []
+            const preferred = defaultQoderModel(models, this.currentBackendModel)
+            if (preferred && preferred !== this.currentBackendModel) {
+                try {
+                    await this.applyModel(acpSessionId, preferred)
+                } catch (error) {
+                    const failure = formatQoderError(error)
+                    logger.warn('[qoder-acp] default model switch failed', { message: failure.message })
+                    this.session.sendSessionEvent({ type: 'error', ...failure })
+                    this.messageBuffer.addMessage(failure.message, 'status')
+                }
+            }
+            if (this.currentBackendModel) this.session.publishModel(this.currentBackendModel)
         }
 
         const effortOption = qoderEffortOption(backend.getSessionConfigOptions(acpSessionId))

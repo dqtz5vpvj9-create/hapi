@@ -75,6 +75,21 @@ export function qoderPermissionModeId(mode: PermissionMode | undefined): string 
     return QODER_PERMISSION_MODE_CANDIDATES[mode ?? 'default'][0]
 }
 
+/**
+ * Qoder CN 1.1.27 advertises `bailian/qwen3.8-max-tp` as the current model even
+ * when the account is only entitled to the free default. Pick the advertised
+ * default explicitly before the first turn instead of trusting currentModelId.
+ */
+export function defaultQoderModel(
+    models: readonly { modelId: string; name?: string }[],
+    current: string | null
+): string | null {
+    const preferred = models.find(model => /\(default\)/i.test(model.name ?? ''))
+        ?? models.find(model => /qwen3\.8-flash/i.test(model.name ?? ''))
+        ?? models.find(model => /deepseek-flash/i.test(model.name ?? ''))
+    return preferred?.modelId ?? current ?? models[0]?.modelId ?? null
+}
+
 export function createQoderBackend(env: QoderAcpEnvironment = process.env): AcpSdkBackend {
     const { command, args } = resolveQoderAcpCommand(env)
     return new AcpSdkBackend({
@@ -190,6 +205,12 @@ export function formatQoderError(
     if (details.includes(QODER_LOGIN_MESSAGE)) return { message: QODER_LOGIN_MESSAGE, details }
     if (/authentication required|not logged in|not signed in|please run \/login|qoderclicn\s+login/i.test(details)) {
         return { message: QODER_LOGIN_MESSAGE, details }
+    }
+    if (/Access to model denied|not eligible for using the model/i.test(details)) {
+        return {
+            message: 'This Qoder CN account is not eligible for the selected model. Choose Qwen3.8-Flash (default) or another available model.',
+            details
+        }
     }
     if (/does not declare image input|does not support image/i.test(base)) {
         return {
