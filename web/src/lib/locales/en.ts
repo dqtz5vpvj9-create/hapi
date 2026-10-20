@@ -1657,6 +1657,7 @@ export default {
   'share.preview.empty': '(empty share)',
   'share.preview.files': '{n} files',
   'share.noActiveSessions': 'No active sessions. Pick "New session" below.',
+  'sessions.refresh.button': 'Refresh sessions',
   'sessions.refresh.pull': 'Pull to refresh',
   'sessions.refresh.release': 'Release to refresh',
   'sessions.refresh.refreshing': 'Refreshing…',

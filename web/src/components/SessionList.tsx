@@ -552,6 +552,26 @@ function PlusIcon(props: { className?: string }) {
     )
 }
 
+function RefreshIcon(props: { className?: string; spinning?: boolean }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className={cn(props.className, props.spinning && 'animate-spin')}
+        >
+            <path d="M21 12a9 9 0 1 1-3-6.7M21 3v6h-6" />
+        </svg>
+    )
+}
+
 function ChevronIcon(props: { className?: string; collapsed?: boolean }) {
     return (
         <svg
@@ -2125,6 +2145,21 @@ export function SessionList(props: {
         onRefreshRef.current = props.onRefresh
     }, [props.onRefresh])
 
+    // Shared by the touch pull gesture and the desktop toolbar button.
+    const refreshSessions = useCallback(() => {
+        if (isRefreshingRef.current) {
+            return
+        }
+        isRefreshingRef.current = true
+        setIsRefreshing(true)
+        void Promise.resolve(onRefreshRef.current()).then(() => {
+            refreshOrderRef.current()
+        }).finally(() => {
+            isRefreshingRef.current = false
+            setIsRefreshing(false)
+        })
+    }, [])
+
     useEffect(() => {
         const container = scrollContainerRef.current
         if (!container) return
@@ -2137,20 +2172,6 @@ export function SessionList(props: {
             }
             pullStateRef.current = state
             setPullState(state)
-        }
-
-        const triggerRefresh = () => {
-            if (isRefreshingRef.current) {
-                return
-            }
-            isRefreshingRef.current = true
-            setIsRefreshing(true)
-            void Promise.resolve(onRefreshRef.current()).then(() => {
-                refreshOrderRef.current()
-            }).finally(() => {
-                isRefreshingRef.current = false
-                setIsRefreshing(false)
-            })
         }
 
         const handleTouchStart = (event: TouchEvent) => {
@@ -2182,7 +2203,7 @@ export function SessionList(props: {
             pullStartY = null
             updatePullState('idle')
             if (shouldRefresh) {
-                triggerRefresh()
+                refreshSessions()
             }
         }
 
@@ -2201,7 +2222,7 @@ export function SessionList(props: {
             container.removeEventListener('touchend', handleTouchEnd)
             container.removeEventListener('touchcancel', handleTouchCancel)
         }
-    }, [])
+    }, [refreshSessions])
 
     return (
         <MachineIdentityProvider machines={machinesById} labels={machineLabelsById}>
@@ -2231,6 +2252,20 @@ export function SessionList(props: {
                         {!(showSearch && searchExpanded) ? (
                             <>
                                 <div className="flex-1" />
+                                {!narrowViewport ? (
+                                    <button
+                                        type="button"
+                                        onClick={refreshSessions}
+                                        disabled={isRefreshing}
+                                        data-list-refresh
+                                        aria-busy={isRefreshing}
+                                        title={t('sessions.refresh.button')}
+                                        aria-label={t('sessions.refresh.button')}
+                                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--app-hint)] transition-colors hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:opacity-60"
+                                    >
+                                        <RefreshIcon className="h-5 w-5" spinning={isRefreshing} />
+                                    </button>
+                                ) : null}
                                 {showMachineFilterBar ? (
                                     <MachineFilterMenu
                                         machines={machineFilterItems}

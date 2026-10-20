@@ -1655,6 +1655,7 @@ export default {
   'share.preview.empty': '(空分享)',
   'share.preview.files': '{n} 个文件',
   'share.noActiveSessions': '没有活跃会话。请在下方选择"新建会话"。',
+  'sessions.refresh.button': '刷新会话列表',
   'sessions.refresh.pull': '下拉即可刷新',
   'sessions.refresh.release': '释放即可刷新',
   'sessions.refresh.refreshing': '正在刷新…',
