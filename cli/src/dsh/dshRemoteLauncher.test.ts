@@ -21,6 +21,12 @@ const harness = vi.hoisted(() => ({
     })),
     promptChild: vi.fn(async () => ({ messageId: 'child-message-1' })),
     interruptChild: vi.fn(async () => ({ accepted: true })),
+    externalRecord: vi.fn(async (_root: string, childSessionId: string) => ({
+        sessionId: childSessionId, epoch: 'external:root', messages: [
+            { id: `${childSessionId}:0`, seq: 0, role: 'user', kind: 'message', text: 'delegated task', createdAt: 1 },
+            { id: `${childSessionId}:1`, seq: 1, role: 'assistant', kind: 'message', text: 'delegated result', createdAt: 2 }
+        ], before: null, hasMore: false, after: 2, hasLater: false, reset: false, truncated: false
+    })),
     sessionInfoUpdateListener: null as ((update: { sessionId: string | null; title: string | null }) => void) | null,
     events: [] as string[]
 }))
@@ -76,6 +82,7 @@ vi.mock('./utils/dshControl', () => ({
         preflight: vi.fn(async () => {}),
         subagents: harness.subagents,
         transcript: harness.transcript,
+        externalRecord: harness.externalRecord,
         prompt: harness.promptChild,
         interrupt: harness.interruptChild,
         dispose: vi.fn(async () => {})
@@ -163,6 +170,7 @@ describe('DshRemoteLauncher', () => {
         harness.promptChild.mockResolvedValue({ messageId: 'child-message-1' })
         harness.interruptChild.mockReset()
         harness.interruptChild.mockResolvedValue({ accepted: true })
+        harness.externalRecord.mockReset()
         harness.sessionInfoUpdateListener = null
         harness.events = []
     })
@@ -508,19 +516,29 @@ describe('DshRemoteLauncher', () => {
         harness.official = true
         harness.subagents.mockResolvedValue([
             { sessionId: 'child-1', mode: 'continuable', createdAt: 10, activity: 'inactive' },
-            { sessionId: 'child-2', mode: 'one-shot', createdAt: 20, activity: 'inactive' }
+            { sessionId: 'child-2', mode: 'one-shot', createdAt: 20, activity: 'inactive' },
+            { sessionId: 'child-3', mode: 'external', createdAt: 30, activity: 'inactive' }
         ])
         const session = createSession(true)
         session.queue.push('first', 'dsh')
         const launcher = new DshRemoteLauncher(session as never)
         const run = launcher.launch()
         await vi.waitFor(() => expect(harness.backend?.prompt).toHaveBeenCalledOnce())
-        await vi.waitFor(() => expect(session.client.getMetadata()?.dshSubagents).toHaveLength(2))
+        await vi.waitFor(() => expect(session.client.getMetadata()?.dshSubagents).toHaveLength(3))
 
         const read = session.handlers.get(RPC_METHODS.ReadDshSubagentMessages)!
         await expect(read({ sessionId: 'child-1', limit: 5, before: 3 })).resolves.toMatchObject({ sessionId: 'child-1' })
         expect(harness.transcript).toHaveBeenCalledWith('child-1', expect.objectContaining({ limit: 5, before: 3 }))
         await expect(read({ sessionId: 'intruder' })).rejects.toThrow('not a direct child')
+        // External children never read a local session; their record comes from
+        // the parent-side delegation call and settlement message.
+        harness.externalRecord.mockResolvedValueOnce({
+            sessionId: 'child-3', epoch: 'external:root', messages: [
+                { id: 'child-3:0', seq: 0, role: 'user', kind: 'message', text: 'delegated task', createdAt: 1 }
+            ], before: null, hasMore: false, after: 1, hasLater: false, reset: false, truncated: false
+        })
+        await expect(read({ sessionId: 'child-3' })).resolves.toMatchObject({ sessionId: 'child-3', messages: [{ text: 'delegated task' }] })
+        expect(harness.externalRecord).toHaveBeenCalledWith('dsh-session-1', 'child-3')
 
         const prompt = session.handlers.get(RPC_METHODS.PromptDshSubagent)!
         await expect(prompt({ sessionId: 'child-2', text: 'hi', delivery: 'queue', requestId: 'r1' })).rejects.toThrow('read-only')

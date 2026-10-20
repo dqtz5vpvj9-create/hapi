@@ -61,16 +61,9 @@ export function SubagentSessionPage() {
     const sourceKey = row ? `${row.flavor}:${row.id}:${row.mode ?? ''}` : ''
     const source = useMemo(() => {
         if (!row) return null
-        const created = createSubagentSource(api, toRef(sessionId, row), api.getAuthToken())
-        // External providers keep no local DSH transcript, so the page renders an
-        // empty read-only conversation instead of probing a session that does not exist.
-        if (row.flavor === 'dsh' && row.mode === 'external') {
-            return {
-                ref: created.ref,
-                read: async () => ({ sessionId: row.id, messages: [], before: null, hasMore: false }),
-            }
-        }
-        return created
+        // External rows read the parent-side delegation record through the same
+        // transcript channel; the CLI resolves it from the root session.
+        return createSubagentSource(api, toRef(sessionId, row), api.getAuthToken())
         // The identity fields captured by sourceKey are the ones the source reads.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [api, sessionId, sourceKey])

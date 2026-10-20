@@ -142,6 +142,77 @@ function pageTranscript(sessionId, snapshot, options) {
         hasMore: start > 0, after: messages.length, hasLater: false, reset: reset, truncated: truncated };
 }
 
+/** HAPI projection of one external delegation: the task call plus DSH's final settlement. */
+function externalDelegationRecord(rootSessionId, childId, snapshot) {
+    const events = Array.isArray(snapshot.events) ? snapshot.events : [];
+    const inherited = typeof snapshot.inheritedEventCount === 'number' ? snapshot.inheritedEventCount : 0;
+    const calls = new Map();
+    const results = new Map();
+    let taskText = '';
+    let taskTime = 0;
+    let outputText = '';
+    let outputTime = 0;
+    let summaryText = '';
+    for (const event of events) {
+        if (!event || typeof event.seq !== 'number' || event.seq < inherited) continue;
+        const data = event.data;
+        if (event.type === 'tool/call' && data && typeof data.callId === 'string') {
+            calls.set(data.callId, { name: typeof data.name === 'string' ? data.name : 'Tool', arguments: data.arguments, time: event.time });
+        } else if (event.type === 'tool/result') {
+            const message = data && data.message;
+            const callId = message && typeof message.toolCallId === 'string' ? message.toolCallId : undefined;
+            if (callId) results.set(callId, blocksText(contentBlocks(message)));
+        } else if (event.type === 'user/message') {
+            const source = data && data.source;
+            const isSettlement = (source && source.senderSessionId === childId)
+                || blocksText(contentBlocks(data)).includes(childId);
+            if (!isSettlement) continue;
+            const texts = contentBlocks(data)
+                .filter(function (block) { return block.type === 'text' && typeof block.text === 'string'; })
+                .map(function (block) { return block.text; });
+            summaryText = texts[0] || '';
+            const closing = texts.indexOf('Its closing message:');
+            outputText = closing >= 0 ? texts.slice(closing + 1).join('\n') : texts.slice(1).join('\n');
+            outputTime = typeof event.time === 'number' ? event.time : 0;
+        }
+    }
+    // The provider's start result names the durable child id, which is the only
+    // exact link between a catalog row and its delegation tool call.
+    for (const pair of results) {
+        if (!pair[1].includes(childId)) continue;
+        const call = calls.get(pair[0]);
+        if (!call) continue;
+        const args = parseArguments(call.arguments);
+        taskText = typeof args === 'object' && args !== null && typeof args.prompt === 'string'
+            ? args.prompt : (typeof args === 'string' ? args : JSON.stringify(args));
+        taskTime = typeof call.time === 'number' ? call.time : 0;
+        break;
+    }
+    if (!taskText) {
+        // Older logs may omit the child id from the start result; fall back to
+        // the first external-provider call that carries a delegation prompt.
+        for (const entry of calls) {
+            const call = entry[1];
+            if (!/^subagent_/.test(call.name)) continue;
+            const args = parseArguments(call.arguments);
+            if (typeof args !== 'object' || args === null || typeof args.prompt !== 'string') continue;
+            taskText = args.prompt;
+            taskTime = typeof call.time === 'number' ? call.time : 0;
+            break;
+        }
+    }
+    const messages = [];
+    if (taskText) {
+        messages.push({ id: childId + ':0', seq: 0, role: 'user', kind: 'message', text: taskText, createdAt: taskTime });
+    }
+    const resultText = outputText || summaryText;
+    if (resultText) {
+        messages.push({ id: childId + ':1', seq: 1, role: 'assistant', kind: 'message', text: resultText, createdAt: outputTime });
+    }
+    return { sessionId: childId, epoch: 'external:' + rootSessionId, messages: messages,
+        before: null, hasMore: false, after: messages.length, hasLater: false, reset: false, truncated: false };
+}
+
 /** Direct child catalog with live turn timing and Agent Team roster identity. */
 async function listSubagentChildren(ctx, sessionId) {
     const subagents = ctx.get('subagents');
@@ -264,6 +335,13 @@ export function apply(ctx) {
                 if (!query || typeof query.readSession !== 'function') throw new Error('This DSH composition does not mount the session query service');
                 const snapshot = await query.readSession(command.sessionId);
                 payload = Object.assign({ ok: true }, pageTranscript(command.sessionId, snapshot, command));
+            } else if (command.operation === 'external-record') {
+                if (typeof command.rootSessionId !== 'string' || command.rootSessionId === '') throw new Error('rootSessionId is required');
+                if (typeof command.childSessionId !== 'string' || command.childSessionId === '') throw new Error('childSessionId is required');
+                const query = ctx.get('sessionQuery');
+                if (!query || typeof query.readSession !== 'function') throw new Error('This DSH composition does not mount the session query service');
+                const rootSnapshot = await query.readSession(command.rootSessionId);
+                payload = Object.assign({ ok: true }, externalDelegationRecord(command.rootSessionId, command.childSessionId, rootSnapshot));
             } else if (command.operation === 'prompt') {
                 if (typeof command.rootSessionId !== 'string' || command.rootSessionId === '') throw new Error('rootSessionId is required');
                 if (typeof command.childSessionId !== 'string' || command.childSessionId === '') throw new Error('childSessionId is required');
@@ -404,6 +482,23 @@ export async function createDshControl(root = join(resolveHapiHomeDir(), 'runtim
             return {
                 sessionId: result.sessionId,
                 epoch: result.epoch,
+                messages: Array.isArray(result.messages) ? result.messages : [],
+                before: result.before ?? null,
+                hasMore: result.hasMore === true,
+                after: typeof result.after === 'number' ? result.after : 0,
+                hasLater: result.hasLater === true,
+                reset: result.reset === true,
+                truncated: result.truncated === true
+            }
+        },
+        /** Read the parent-side record of one external delegation (task + final settlement). */
+        externalRecord: async (rootSessionId: string, childSessionId: string): Promise<DshControlTranscriptPage> => {
+            const result = await request<DshControlTranscriptPage & { ok?: boolean }>({
+                operation: 'external-record', rootSessionId, childSessionId
+            }, 15000)
+            return {
+                sessionId: typeof result.sessionId === 'string' ? result.sessionId : childSessionId,
+                epoch: typeof result.epoch === 'string' ? result.epoch : `external:${rootSessionId}`,
                 messages: Array.isArray(result.messages) ? result.messages : [],
                 before: result.before ?? null,
                 hasMore: result.hasMore === true,

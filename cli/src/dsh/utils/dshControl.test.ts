@@ -206,6 +206,33 @@ describe('HAPI DSH session adapter', () => {
         const next = await control.transcript('session-child', { limit: 2, after: forward.after, epoch: forward.epoch })
         expect(next.messages.map(message => message.text)).toEqual(['I will inspect it', 'bash\n{"command":"git diff"}'])
     })
+    it('reconstructs an external delegation from the parent task call and settlement', async () => {
+        const snapshot = {
+            session: { id: 'root-session', createdAt: 1_700_000_000_000 },
+            inheritedEventCount: 0,
+            events: [
+                { type: 'tool/call', seq: 5, time: 5000, data: { turn: 1, step: 1, callId: 'call-x', name: 'subagent_codex',
+                    arguments: JSON.stringify({ description: 'Liveness probe', prompt: 'Use bash to run sleep 25, then reply DONE.' }) } },
+                { type: 'tool/result', seq: 6, time: 6000, data: { turn: 1, step: 1,
+                    message: { role: 'tool', toolCallId: 'call-x', content: [{ type: 'text', text: 'started subagent child-ext' }] } } },
+                { type: 'user/message', seq: 9, time: 9000, data: { role: 'user',
+                    content: [
+                        { type: 'text', text: 'Background subagent child-ext finished. It cannot receive follow-up messages.' },
+                        { type: 'text', text: 'Its closing message:' },
+                        { type: 'text', text: 'DONE' }
+                    ],
+                    source: { kind: 'subagent-settled', senderSessionId: 'child-ext' } } }
+            ]
+        }
+        const { control } = await setup({ snapshot })
+        const page = await control.externalRecord('root-session', 'child-ext')
+        expect(page.messages.map(message => [message.role, message.text])).toEqual([
+            ['user', 'Use bash to run sleep 25, then reply DONE.'],
+            ['assistant', 'DONE']
+        ])
+        expect(page.epoch).toBe('external:root-session')
+        expect(page.after).toBe(2)
+    })
     it('reports reset when the transcript epoch changes', async () => {
         const { control } = await setup({ snapshot: snapshotWithEvents() })
         const page = await control.transcript('session-child', { after: 1, epoch: 'another-log' })

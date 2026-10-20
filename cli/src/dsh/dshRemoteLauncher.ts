@@ -56,6 +56,7 @@ export class DshRemoteLauncher extends RemoteLauncherBase {
     private subagentRefresh: Promise<void> | null = null
     private subagentCatalogKey = ''
     private readonly subagentModes = new Map<string, DshSubagent['mode']>()
+    private subagentRows: DshSubagent[] = []
     private static readonly SUBAGENT_REFRESH_MS = 3000
 
     constructor(private readonly session: DshSession, private readonly initialConfig: DshConfigChange = {}) {
@@ -414,8 +415,12 @@ export class DshRemoteLauncher extends RemoteLauncherBase {
             const control = this.control
             if (!control) throw new Error('This DSH runtime does not expose live subagent control')
             const { sessionId, limit, before, after, epoch } = parsed.data
-            await this.ensureSubagentCatalog(acpSessionId, sessionId)
-            const page = await control.transcript(sessionId, { limit, before, after, epoch })
+            const mode = await this.ensureSubagentCatalog(acpSessionId, sessionId)
+            // External providers keep no local child session; their durable record
+            // is the parent-side delegation call plus the settlement message.
+            const page = mode === 'external'
+                ? await control.externalRecord(acpSessionId, sessionId)
+                : await control.transcript(sessionId, { limit, before, after, epoch })
             if (page.sessionId !== sessionId) throw new Error('The response belongs to another subagent')
             return {
                 sessionId: page.sessionId,
@@ -504,6 +509,7 @@ export class DshRemoteLauncher extends RemoteLauncherBase {
             .filter((child): child is DshSubagent => child !== null)
             .sort((a, b) => a.createdAt - b.createdAt || a.sessionId.localeCompare(b.sessionId))
         this.subagentModes.clear()
+        this.subagentRows = next
         for (const child of next) this.subagentModes.set(child.sessionId, child.mode)
         const key = JSON.stringify(next)
         if (key === this.subagentCatalogKey) return

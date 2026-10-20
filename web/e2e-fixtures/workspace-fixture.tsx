@@ -26,6 +26,7 @@ const paneCount = [1, 2, 4].includes(benchmarkPanes) ? benchmarkPanes : params.h
 const token = params.get('workspaceToken') ?? `${btoa('{}')}.${btoa(JSON.stringify({ uid: 'workspace-fixture', ns: 'fixture', exp: Math.floor(Date.now() / 1000) + 86400 }))}.fixture`
 localStorage.setItem(`hapi_access_token::${location.origin}`, 'fixture')
 localStorage.setItem('hapi-appearance', new URLSearchParams(location.search).get('appearance') ?? 'light')
+if (params.get('lang')) localStorage.setItem('hapi-lang', params.get('lang')!)
 localStorage.setItem('hapi-color-theme', new URLSearchParams(location.search).get('theme') ?? 'codex')
 if (!params.has('unseenFeatures')) localStorage.setItem('hapi.fue.v1.rich-composer-mentions', '1')
 localStorage.setItem('hapi.fue.v1.scratchlist-toggle', '1')
@@ -79,6 +80,7 @@ if (params.has('dshSubagents')) {
         dshSubagents: [
             { sessionId: 'session-ada', name: 'Ada', label: '核对子代理 UI', mode: 'continuable', activity: 'running', teamStatus: 'running', provider: 'spawn', createdAt, settledMs: 12_500, openSince: Date.now() - 42_000 },
             { sessionId: 'session-ops', label: '一次性侦察', mode: 'one-shot', activity: 'inactive', createdAt, settledMs: 3_100, lastTurnCompleted: true },
+            { sessionId: 'session-ext', label: '外部 Codex 评审', mode: 'external', activity: 'inactive', createdAt },
         ],
     }
     target.model = 'deepseek-flash'
@@ -284,7 +286,12 @@ window.fetch = async (input, init) => {
         else if (session && params.has('dshSubagents') && /^\/dsh-subagents\//.test(suffix)) {
             const action = suffix.split('/')[3]
             const childId = decodeURIComponent(suffix.split('/')[2] ?? '')
-            const childMessages = childId === 'session-ops'
+            const childMessages = childId === 'session-ext'
+                ? [
+                    { id: 'session-ext:0', role: 'user', kind: 'message', createdAt: createdAt + 1_000, text: '评审 HAPI DSH 集成设计：核对子代理入口、外部 provider 的记录展示，以及移动端布局。可读代码：web/src/components/SubagentChat、web/src/components/ToolCard。' },
+                    { id: 'session-ext:1', role: 'assistant', kind: 'message', createdAt: createdAt + 2_000, text: '结论：子代理入口、外部 provider 的委派记录和移动端布局都已可用；外部运行没有逐步转录，但任务与最终结果可以从父会话记录里还原。建议保留只读提示。' },
+                ]
+                : childId === 'session-ops'
                 ? [
                     { id: 'session-ops:0', role: 'user', kind: 'message', createdAt: createdAt + 1_000, text: '跑一次侦察：确认 sessionQuery 在 ACP profile 里挂载。' },
                     { id: 'session-ops:1', role: 'assistant', kind: 'message', createdAt: createdAt + 2_000, text: '一次性侦察结论：`session-query-sqlite` 由 `dsh-base` 挂载，`openAt: never` 只禁用全文搜索，精确读取（`readSession`）仍然可用。' },
@@ -449,5 +456,5 @@ if (paneCount && !params.has('join') && !localStorage.getItem(workspaceStorageKe
     }
     if (params.has('savedSingle')) store.leave()
 }
-const router = createAppRouter(createMemoryHistory({ initialEntries: [params.has('singleDocument') ? `/sessions/chat-1/file?path=${encodeURIComponent(btoa('/mnt/cache/src/hapi/PLAN.md'))}` : params.has('list') ? '/sessions?view=list' : params.has('subagent') ? `/sessions/chat-1/subagents/${params.get('subagent') === 'ops' ? 'session-ops' : 'session-ada'}` : params.has('single') ? '/sessions/chat-1' : params.has('dshSubagents') ? '/sessions/chat-1' : paneCount ? '/sessions/workspace' : '/sessions'] }))
+const router = createAppRouter(createMemoryHistory({ initialEntries: [params.has('singleDocument') ? `/sessions/chat-1/file?path=${encodeURIComponent(btoa('/mnt/cache/src/hapi/PLAN.md'))}` : params.has('list') ? '/sessions?view=list' : params.has('subagent') ? `/sessions/chat-1/subagents/${params.get('subagent') === 'ops' ? 'session-ops' : params.get('subagent') === 'ext' ? 'session-ext' : 'session-ada'}` : params.has('single') ? '/sessions/chat-1' : params.has('dshSubagents') ? '/sessions/chat-1' : paneCount ? '/sessions/workspace' : '/sessions'] }))
 createRoot(document.getElementById('root')!).render(<React.StrictMode><I18nProvider><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RouterProvider router={router} /></QueryClientProvider></I18nProvider></React.StrictMode>)

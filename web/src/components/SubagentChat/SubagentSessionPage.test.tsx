@@ -182,13 +182,26 @@ describe('SubagentSessionPage', () => {
         expect(screen.getByText('This subagent accepts no further input; the transcript is read-only.')).toBeTruthy()
     })
 
-    it('shows the external notice without reading a transcript', async () => {
+    it('shows the external delegation record as a read-only conversation', async () => {
         state.subagentId = 'session-ext'
-        const api = makeApi()
+        const externalPage = {
+            sessionId: 'session-ext',
+            messages: [
+                { id: 'session-ext:0', role: 'user' as const, kind: 'message' as const, text: 'Delegated: run sleep 25 then reply DONE', createdAt: 1 },
+                { id: 'session-ext:1', role: 'assistant' as const, kind: 'message' as const, text: 'DONE', createdAt: 2 },
+            ],
+            before: null, hasMore: false, after: 2, epoch: 'external:root', hasLater: false,
+        }
+        const api = makeApi({ getDshSubagentMessages: vi.fn(async () => externalPage) })
         renderPage(api)
-        expect(await screen.findByText('External subagents keep no local transcript in DSH, so only the catalog entry is available.')).toBeTruthy()
+        expect(await screen.findByText('Delegated: run sleep 25 then reply DONE')).toBeTruthy()
+        expect(await screen.findByText('DONE')).toBeTruthy()
+        expect(api.getDshSubagentMessages).toHaveBeenCalledWith('parent', 'session-ext', expect.anything())
+        expect(screen.getByText(/no step-by-step local transcript/)).toBeTruthy()
+        // No input, and no paging/follow controls over a fixed record.
         expect(screen.queryByPlaceholderText('Message this subagent…')).toBeNull()
-        expect(api.getDshSubagentMessages).not.toHaveBeenCalled()
+        expect(screen.queryByRole('button', { name: 'Latest' })).toBeNull()
+        expect(screen.queryByText('Following')).toBeNull()
     })
 
     it('opens a Codex native child through the same view in read-only mode', async () => {

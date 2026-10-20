@@ -70,6 +70,11 @@ export function SubagentConversation(props: {
     onBack: () => void
 }) {
     const { api, parentSessionId, metadata, parentTitle, row, source, onBack } = props
+    // External children keep no step-by-step local transcript; the readable
+    // record is the parent-side delegation call plus DSH's settlement message.
+    // It is still a conversation, so it renders through the same thread while
+    // paging and follow controls stay hidden.
+    const external = row.flavor === 'dsh' && row.mode === 'external'
     const { t } = useTranslation()
     const { terminalToolDisplayMode } = useTerminalToolDisplayMode()
     const history = useMemo(() => createSubagentHistory(source), [source])
@@ -150,7 +155,7 @@ export function SubagentConversation(props: {
                     </div>
                     {state.loading ? <Spinner size="sm" label={null} /> : null}
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
+                {external ? null : <div className="flex flex-wrap items-center gap-2 text-xs">
                     {state.page?.hasMore ? (
                         <Button size="sm" variant="outline" disabled={state.loading} onClick={() => void history.loadEarlier()}>
                             {t('sessions.subagentLoadEarlier')}
@@ -162,13 +167,13 @@ export function SubagentConversation(props: {
                     <span className="text-[var(--app-hint)]" data-subagent-following={state.following || undefined}>
                         {t(state.following ? 'sessions.subagentFollowing' : 'sessions.subagentHistoryPaused')}
                     </span>
-                </div>
+                </div>}
                 {state.error ? <p role="alert" className="text-sm text-red-600">{state.error}</p> : null}
                 {state.bounded ? <p className="text-xs text-[var(--app-hint)]">{t('sessions.subagentBounded')}</p> : null}
                 {state.restarted ? <p role="status" className="text-xs text-[var(--app-hint)]">{t('sessions.subagentRestarted')}</p> : null}
             </header>
             <div className="min-h-0 flex-1 overflow-hidden">
-                <HappyChatProvider value={chatContext}>
+                {<HappyChatProvider value={chatContext}>
                     <AssistantRuntimeProvider runtime={runtime}>
                         <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col">
                             <ThreadPrimitive.Viewport className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3">
@@ -185,7 +190,7 @@ export function SubagentConversation(props: {
                             </ThreadPrimitive.Viewport>
                         </ThreadPrimitive.Root>
                     </AssistantRuntimeProvider>
-                </HappyChatProvider>
+                </HappyChatProvider>}
             </div>
             {showComposer ? (
                 <SubagentComposer source={source} running={running} />

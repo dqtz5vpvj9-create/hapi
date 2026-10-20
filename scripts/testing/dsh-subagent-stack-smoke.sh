@@ -79,6 +79,39 @@ done
 [ "$ACTIVE" = "true" ] || { echo "[stack] session never became active"; tail -40 "$TMP/runner.log"; exit 1; }
 echo "[stack] session active"
 
+if [ "${SMOKE_PHASE:-team}" = "external" ]; then
+    EXTERNAL_TASK='Use the subagent_codex tool exactly once with description "Stack external probe" and prompt "Reply with the single word PONG and nothing else. Do not use any tools." Then reply with one short sentence reporting its answer.'
+    curl -s -X POST -H "$AUTH" -H 'content-type: application/json' -d "$(jq -nc --arg t "$EXTERNAL_TASK" '{text:$t}')" \
+        "http://127.0.0.1:$PORT/api/sessions/$SESSION/messages" > /dev/null
+    echo "[stack] external task delivered; waiting for the external catalog row"
+    EXTERNAL=""
+    for _ in $(seq 1 600); do
+        SUMMARY=$(curl -s -H "$AUTH" "http://127.0.0.1:$PORT/api/sessions" | jq -c --arg id "$SESSION" '.sessions[] | select(.id==$id)')
+        EXTERNAL=$(echo "$SUMMARY" | jq -r '[.metadata.dshSubagents[]? | select(.mode=="external")][0].sessionId // empty')
+        [ -n "$EXTERNAL" ] && break
+        sleep 0.5
+    done
+    [ -n "$EXTERNAL" ] || { echo "[stack] no external DSH child appeared"; echo "$SUMMARY" | jq '.metadata.dshSubagents'; tail -40 "$TMP/runner.log"; exit 1; }
+    echo "[stack] external child $EXTERNAL"
+    RECORD=""
+    for _ in $(seq 1 240); do
+        RECORD=$(curl -s -H "$AUTH" "http://127.0.0.1:$PORT/api/sessions/$SESSION/dsh-subagents/$EXTERNAL/messages?limit=20")
+        COUNT=$(echo "$RECORD" | jq -r '.messages | length // 0')
+        [ "$COUNT" -ge 2 ] && break
+        sleep 0.5
+    done
+    COUNT=$(echo "$RECORD" | jq -r '.messages | length // 0')
+    [ "$COUNT" -ge 2 ] || { echo "[stack] external record incomplete: $RECORD"; exit 1; }
+    echo "[stack] external record: $(echo "$RECORD" | jq -c '[.messages[] | {role, kind, head: (.text[0:120])}]')"
+    echo "$RECORD" | jq -e '[.messages[] | select(.role=="user")] | length > 0' >/dev/null || { echo "[stack] external record has no task"; exit 1; }
+    echo "$RECORD" | jq -e '[.messages[] | select(.role=="assistant")] | length > 0' >/dev/null || { echo "[stack] external record has no result"; exit 1; }
+    echo "[stack] external phase ok child=$EXTERNAL"
+    STACK_SMOKE_OK=external
+    trap - EXIT
+    cleanup
+    echo "STACK_SMOKE_OK external child=$EXTERNAL"
+    exit 0
+fi
 TASK='Use the spawn_teammate tool exactly once with name "stack-ajax" and task "Use the bash tool to run `sleep 3`, then reply with the single word PONG and nothing else. Do not use any other tools." Then call wait_agent once with a 60 second timeout and reply with one short sentence.'
 curl -s -X POST -H "$AUTH" -H 'content-type: application/json' -d "$(jq -nc --arg t "$TASK" '{text:$t}')" \
     "http://127.0.0.1:$PORT/api/sessions/$SESSION/messages" > /dev/null

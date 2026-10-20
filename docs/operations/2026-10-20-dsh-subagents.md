@@ -220,3 +220,25 @@ DSH 会话在 HAPI 里只能看到根会话：DSH 的 ACP 服务端在 `session/
   transcript is read-only.”，没有输入框。
 - 运行中的最后一条 assistant 文本带有 assistant-ui 的流式光标（截断是平滑流式动画的中间帧，等待后文本完整），
   与主会话行为一致。
+
+### 外部子代理的委派记录（真实使用反馈）
+
+外部 provider（`subagent_codex`、`subagent_claude_code`）不落本地会话：Codex 用 `ephemeral: true` 的
+一次性 thread，Claude Code 用 `persistSession: false`，所以没有逐步转录可读。但它们留下了两份真实记录：
+父会话里的委派工具调用（任务 prompt），以及 DSH 注入父会话的 settlement 消息（`source.kind =
+'subagent-settled'` / `senderSessionId`，含最终输出或失败诊断）。
+
+外部子代理页现在从父会话日志重建这两段内容，用同一套聊天组件渲染成只读两段式对话：
+
+- 任务：匹配「tool 结果里带 `started subagent <childId>`」的调用，读取其 `prompt`；老日志没有该 id
+  时回退到第一个带 prompt 的 `subagent_*` 调用；
+- 结果：按 `senderSessionId === childId`（或文本含 childId）找 settlement，取 `Its closing message:`
+  之后的内容；失败子代显示失败摘要与诊断；
+- 页面隐藏分页/跟随控件（记录是固定的），底部说明这里只有委派任务与最终结果，没有外部 provider 的
+  逐步转录；工具卡的「打开子代理」入口对外部子代恢复可用。
+
+真实数据验证：用户截图里的会话 `29607a91…`（`/home/chris`）与子代 `e8166336…`（label
+`Review HAPI DSH integration design`）经 `cli/scripts/smoke-dsh-subagents.ts <cwd> <root> <child>`
+读出 2 条消息：任务 prompt 全文与最终结论（「建议保留现有 ACP 接入方式…」）；另一个失败子代
+`b668c488…` 正确显示 `It left no closing message.` 与 `Product subagent failure (…)` 诊断。
+截图：`dsh-external-record-mobile-zh.png`、`dsh-external-record-desktop-zh.png`。

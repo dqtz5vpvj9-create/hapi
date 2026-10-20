@@ -47,18 +47,19 @@ export function matchSubagentToolTargets(
     block: ToolCallBlock,
     subagents: readonly DshSubagent[],
 ): DshSubagent[] {
-    if (!SUBAGENT_DELEGATION_TOOL_NAMES.has(block.tool.name) || subagents.length === 0) {
+    const linked = subagents
+    if (!SUBAGENT_DELEGATION_TOOL_NAMES.has(block.tool.name) || linked.length === 0) {
         return []
     }
     const haystack = haystackFor(block)
     if (!haystack) {
         return []
     }
-    const idMatches = subagents.filter(agent => haystack.includes(agent.sessionId))
+    const idMatches = linked.filter(agent => haystack.includes(agent.sessionId))
     if (idMatches.length > 0) {
         return idMatches
     }
-    return subagents.filter(agent => {
+    return linked.filter(agent => {
         const name = agent.name ?? agent.label
         return Boolean(name && name.trim().length >= 2 && haystack.includes(name))
     })

@@ -18,12 +18,24 @@ import { createDshControl } from '../src/dsh/utils/dshControl'
 const cwd = process.argv[2] ?? process.cwd()
 /** Optional durable child session to read instead of creating a fresh root. */
 const transcriptSessionId = process.argv[3]
+/** Optional external child: read the parent-side delegation record for it. */
+const externalChildId = process.argv[4]
 const control = await createDshControl()
 const backend = createDshBackend({ ...process.env, ...control.env }, 'default', control.patch)
 let root: string | undefined
 try {
     await backend.initialize()
-    if (transcriptSessionId) {
+    if (transcriptSessionId && externalChildId) {
+        const record = await control.externalRecord(transcriptSessionId, externalChildId)
+        console.log(`[smoke] external record: ${record.messages.length} messages epoch=${record.epoch}`)
+        for (const message of record.messages) {
+            console.log(`[smoke]   ${message.role}/${message.kind}: ${message.text.slice(0, 200).replaceAll('\n', ' ')}`)
+        }
+        if (record.messages.length < 2) throw new Error('external record is missing the task or the settlement')
+        if (!record.messages.some(message => message.role === 'user')) throw new Error('external record has no delegated task')
+        if (!record.messages.some(message => message.role === 'assistant')) throw new Error('external record has no settlement output')
+        console.log('[smoke] ok')
+    } else if (transcriptSessionId) {
         // Tail window: the default read has no cursors.
         const head = await control.transcript(transcriptSessionId, { limit: 12 })
         const kinds = head.messages.reduce<Record<string, number>>((counts, message) => {
