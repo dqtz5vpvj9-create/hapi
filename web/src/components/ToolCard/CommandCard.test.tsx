@@ -221,6 +221,24 @@ describe('command summary and inline details', () => {
         expect(details).not.toHaveTextContent('(no output)')
     })
 
+    it('keeps only the live DSH command open and folds completed commands', async () => {
+        const completed = commandBlock()
+        const provider = (block: ToolCallBlock) => <I18nProvider><HappyChatProvider value={{
+            api: {} as ApiClient, sessionId: 'command-session', metadata: { flavor: 'dsh' } as never,
+            terminalToolDisplayMode: 'detailed', showSessionSummaryInChat: false,
+            disabled: false, onRefresh: () => {}, hasMoreMessages: false, isSyncingTail: false,
+            isLoadingMoreMessages: false, loadOlderMessagesPreservingScroll: async () => 'terminal-stop'
+        }}>{card(block)}</HappyChatProvider></I18nProvider>
+        const view = render(provider(completed))
+        expect(screen.queryByRole('region', { name: 'Output preview' })).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Show details +2 lines' })).toBeInTheDocument()
+        const running = commandBlock({ state: 'running', result: undefined, completedAt: null })
+        view.rerender(provider(running))
+        await waitFor(() => expect(screen.getByRole('region', { name: 'Command details' })).toBeInTheDocument())
+        view.rerender(provider(completed))
+        await waitFor(() => expect(screen.queryByRole('region', { name: 'Command details' })).not.toBeInTheDocument())
+    })
+
     it('preserves disclosure when a native virtual row unmounts and returns', () => {
         const disclosureState = new Map<string, boolean>()
         const block = commandBlock()

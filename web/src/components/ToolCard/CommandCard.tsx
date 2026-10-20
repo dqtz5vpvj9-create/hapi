@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ToolCallBlock } from '@/chat/types'
 import { formatDuration } from '@/chat/presentation'
 import { useChatDisclosure, useOptionalHappyChatContext } from '@/components/AssistantChat/context'
@@ -116,8 +116,20 @@ export function CommandCard(props: CommandCardProps) {
     const displayBlock = resolved?.source === props.block ? resolved.block : props.block
     const command = useMemo(() => getCommandPresentation(displayBlock.tool), [displayBlock.tool])
     const summaryCommand = getCodexCommandText(displayBlock.tool.input) ?? command.command ?? props.block.tool.name
-    const active = useOptionalHappyChatContext()?.activeExecutionToolId === props.block.id
+    const chat = useOptionalHappyChatContext()
+    const active = chat?.activeExecutionToolId === props.block.id
     const state = command.isError ? 'error' : displayBlock.tool.state
+    // DSH emits every command as its own card. Keep its live command open and
+    // fold completed ones, while Codex retains its existing grouped behavior.
+    const compactCompleted = chat?.metadata?.flavor === 'dsh'
+    const running = compactCompleted && (state === 'running' || active)
+    const wasRunning = useRef(running)
+    useEffect(() => {
+        if (!compactCompleted) return
+        if (running) setExpanded(true)
+        else if (wasRunning.current) setExpanded(false)
+        wasRunning.current = running
+    }, [compactCompleted, running, setExpanded])
     const prefix = state === 'error' ? t('tool.command.failed')
         : state === 'running' ? t('tool.command.running')
             : state === 'pending' ? t('tool.command.pending') : t('tool.command.ran')
@@ -154,7 +166,7 @@ export function CommandCard(props: CommandCardProps) {
                 </time>
             </button>
 
-            {!expanded && props.showSummary ? <div data-hapi-share-exclude="true" className="ml-6 min-w-0 border-l border-[var(--app-border)] pl-3">
+            {!expanded && props.showSummary && (!compactCompleted || running) ? <div data-hapi-share-exclude="true" className="ml-6 min-w-0 border-l border-[var(--app-border)] pl-3">
                 {command.preview ? <div
                     role="region"
                     aria-label={t('tool.command.preview')}
