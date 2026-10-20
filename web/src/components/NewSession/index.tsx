@@ -2338,7 +2338,7 @@ export function NewSession(props: {
                                     />
                                 )}
                             </div>
-                            <LaunchControl label={t('misc.permissionMode')} value={taskPermissionLabel} icon={<Shield size={16} />} disabled={isFormDisabled}>
+                            <LaunchControl label={t('misc.permissionMode')} className="new-task-permission" value={taskPermissionLabel} icon={<Shield size={16} />} disabled={isFormDisabled}>
                                 <PermissionField
                                     agent={agent}
                                     nativeValue={agent === 'grok' ? grokPermissionMode : nativePermissionMode}
@@ -2358,7 +2358,7 @@ export function NewSession(props: {
                                     isLoading={props.isLoading} isDisabled={isFormDisabled}
                                     onChange={handleMachineChange} />
                             </div>
-                            <div className="new-task-field">
+                            <div className="new-task-field new-task-directory">
                                 <Dialog.Root open={contextOpen === 'directory'} onOpenChange={open => setContextOpen(open ? 'directory' : null)}>
                                     <Dialog.Trigger asChild>
                                         <button type="button" className="new-task-pill" disabled={isFormDisabled}
@@ -2392,7 +2392,7 @@ export function NewSession(props: {
                                     </Dialog.Portal>
                                 </Dialog.Root>
                             </div>
-                            <LaunchControl label={t('newSession.type')}
+                            <LaunchControl label={t('newSession.type')} className="new-task-type"
                                 value={sessionType === 'worktree' && worktreeName.trim() ? `${t('newSession.type.worktree')} · ${worktreeName}` : t(`newSession.type.${sessionType}`)}
                                 disabled={isFormDisabled}>
                                 <SessionTypeSelector

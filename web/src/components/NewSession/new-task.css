@@ -314,3 +314,79 @@
 body:has(.new-task-composer) .model-effort-stops button {
     min-height: 44px;
 }
+
+/* Final composition pass: keep the launch strip calm and scannable. */
+@media (min-width: 641px) {
+    .new-task-composer {
+        max-width: 900px;
+        padding-top: 40px;
+    }
+
+    .new-task-heading {
+        margin-bottom: 28px;
+        font-size: 30px;
+        font-weight: 450;
+        letter-spacing: -0.045em;
+        text-align: center;
+    }
+
+    .new-task-card {
+        padding: 16px;
+        border-radius: 28px;
+    }
+}
+
+@media (max-width: 640px) {
+    .new-task-composer {
+        padding: 34px 16px calc(env(safe-area-inset-bottom) + 24px);
+    }
+
+    .new-task-heading {
+        margin-bottom: 20px;
+        font-size: 26px;
+        line-height: 1.25;
+    }
+
+    .new-task-card {
+        padding: 14px;
+        border-radius: 24px;
+    }
+
+    .new-task-textarea {
+        min-height: 96px;
+        padding: 6px;
+    }
+
+    .new-task-controls {
+        gap: 6px;
+    }
+
+    .new-task-field {
+        max-width: none;
+    }
+
+    .new-task-agent { max-width: 104px; }
+    .new-task-model { max-width: 176px; }
+    .new-task-permission { max-width: 108px; }
+    .new-task-machine { max-width: 138px; }
+    .new-task-directory { max-width: 92px; }
+    .new-task-type { max-width: 88px; }
+
+    .new-task-pill,
+    .new-task-model .model-effort-capsule,
+    .new-task-machine select {
+        padding: 7px 9px;
+        font-size: 12px;
+    }
+
+    .new-task-model .model-effort-capsule,
+    .new-task-model .new-task-pill,
+    .new-task-machine select {
+        padding-inline-start: 30px;
+    }
+
+    .new-task-actions {
+        margin-top: 10px;
+        padding-top: 9px;
+    }
+}
