@@ -32,8 +32,9 @@ import {
 import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
+import { lazy, Suspense } from 'react'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
-import { CodexHomeMigrationDialog } from '@/components/CodexHomeMigrationDialog'
+const CodexHomeMigrationDialog = lazy(() => import('@/components/CodexHomeMigrationDialog').then(module => ({ default: module.CodexHomeMigrationDialog })))
 import { SessionExportDialog } from '@/components/SessionExportDialog'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -1172,7 +1173,7 @@ function SessionItem(props: {
                 anchorPoint={menuAnchorPoint}
             />
 
-            {api && migrateOpen ? <CodexHomeMigrationDialog api={api} session={s} isOpen={migrateOpen} onClose={() => setMigrateOpen(false)} /> : null}
+            {api && migrateOpen ? <Suspense fallback={null}><CodexHomeMigrationDialog api={api} session={s} isOpen={migrateOpen} onClose={() => setMigrateOpen(false)} /></Suspense> : null}
 
             {reopenError ? (
                 <ConfirmDialog

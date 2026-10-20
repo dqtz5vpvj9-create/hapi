@@ -1,11 +1,12 @@
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense } from 'react'
+const CodexHomeMigrationDialog = lazy(() => import('@/components/CodexHomeMigrationDialog').then(module => ({ default: module.CodexHomeMigrationDialog })))
 import { useIsMutating, useQueryClient } from '@tanstack/react-query'
 import type { Session } from '@/types/api'
 import type { ApiClient } from '@/api/client'
 import { isTelegramApp } from '@/hooks/useTelegram'
 import { sessionModelMutationKey, useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
-import { CodexHomeMigrationDialog } from '@/components/CodexHomeMigrationDialog'
 import { SessionExportDialog } from '@/components/SessionExportDialog'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -564,7 +565,7 @@ export function SessionHeader(props: {
                 menuId={menuId}
             />
 
-            {api && migrateOpen ? <CodexHomeMigrationDialog api={api} session={session as unknown as import('@/types/api').SessionSummary} isOpen={migrateOpen} onClose={() => setMigrateOpen(false)} /> : null}
+            {api && migrateOpen ? <Suspense fallback={null}><CodexHomeMigrationDialog api={api} session={session as unknown as import('@/types/api').SessionSummary} isOpen={migrateOpen} onClose={() => setMigrateOpen(false)} /></Suspense> : null}
 
             {reopenError ? (
                 <ConfirmDialog
