@@ -242,3 +242,35 @@ DSH 会话在 HAPI 里只能看到根会话：DSH 的 ACP 服务端在 `session/
 读出 2 条消息：任务 prompt 全文与最终结论（「建议保留现有 ACP 接入方式…」）；另一个失败子代
 `b668c488…` 正确显示 `It left no closing message.` 与 `Product subagent failure (…)` 诊断。
 截图：`dsh-external-record-mobile-zh.png`、`dsh-external-record-desktop-zh.png`。
+
+## 上线与生产验证（2026-10-20）
+
+用户反馈 external 子代理页仍为 "No messages yet"。根因不是最新代码，而是线上构建停留在中途快照：
+
+- 当时 hub/runner 是 release `20261020T103332Z-f692c41921`（git HEAD `f692c419`）。该 commit 在功能改到一半时
+  被另一个会话提交：`SubagentSessionPage` 的 external 分支还是伪造空转录（`messages: []`），CLI 也没有
+  `external-record`，所以页面只能显示空记录；
+- 正在查看的会话 `c44dcdb6` 由更早的构建 `20261020T064319Z-10fc78db40-working` 启动，其注入的 control 插件
+  （`dsh-control-bE75ui`）只有 `subagents/transcript/prompt/interrupt`，没有 `external-record`；插件在 DSH
+  进程启动时生成，无法热更新，所以即使只部署新代码也必须重启会话才能生效；
+- 父会话在 hub 消息库里只有 "started subagent …" 的 tool 结果，没有 settlement 文本（旧 CLI 未转发注入消息），
+  因此不能靠 hub 侧重建；必须由新插件从 DSH 父会话日志读取。
+
+处理：
+
+- 提交 `879ebb4f`（12 个文件，全部为本功能）。
+- 发布 release `20261020T110758Z-879ebb4f80`，组件 hub+runner；Windows 组件本轮跳过（SSH 认证失败，
+  `--skip-windows`），Windows 上的 runner 仍是旧版。
+- 停掉 `c44dcdb6` 的孤儿旧进程并用 `POST /api/sessions/:id/resume` 重启它和 `cb8b5d1e`；两个新进程都来自新构建。
+
+生产验证：
+
+- `GET /api/sessions/c44dcdb6…/dsh-subagents/e8166336…/messages` 返回 2 条：`Review HAPI DSH integration
+  design` 的完整任务 prompt + 最终结论「建议保留现有 ACP 接入方式…」；
+- `cb8b5d1e…/509918ed…` 返回 "Use bash to run sleep 25, then reply DONE." + "DONE"；
+- 用 webshot 注入 access token 截取线上页面：`prod-external-mobile-zh.png`、`prod-external-desktop-zh.png`
+  显示真实内容（长结论、优先级表、三个 PR 建议），底部为外部委派记录说明。
+
+注意：早于本次发布创建的其它 DSH 会话若也有 external 子代，需要各自 resume/重启一次才会加载新插件；本次发布后
+新建的会话自动具备。`subagent_codex` 本身当前在本机持续以 `access-policy` 失败（本地栈测试同样复现），记录页会把
+这类失败如实显示为失败摘要 + 诊断。
