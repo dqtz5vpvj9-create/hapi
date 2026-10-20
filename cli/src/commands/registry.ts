@@ -14,6 +14,7 @@ import { copilotCommand } from './copilot'
 import { grokCommand } from './grok'
 import { opencodeCommand } from './opencode'
 import { piCommand } from './pi'
+import { qoderCommand } from './qoder'
 import { hookForwarderCommand } from './hookForwarder'
 import { mcpCommand } from './mcp'
 import { mcpProxyCommand } from './mcpProxy'
@@ -53,6 +54,7 @@ const COMMANDS: CommandDefinition[] = [
     copilotCommand,
     opencodeCommand,
     piCommand,
+    qoderCommand,
     mcpCommand,
     mcpProxyCommand,
     hubCommand,

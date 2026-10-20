@@ -125,7 +125,23 @@
                 "tone": "danger"
             }
         ],
-        "dsh": [],
+        "dsh": [
+            {
+                "label": "Default",
+                "mode": "default",
+                "tone": "neutral"
+            },
+            {
+                "label": "Read Only",
+                "mode": "read-only",
+                "tone": "warning"
+            },
+            {
+                "label": "Yolo",
+                "mode": "yolo",
+                "tone": "danger"
+            }
+        ],
         "gemini": [
             {
                 "label": "Default",
@@ -209,6 +225,28 @@
                 "tone": "danger"
             }
         ],
-        "pi": []
+        "pi": [],
+        "qoder": [
+            {
+                "label": "Default",
+                "mode": "default",
+                "tone": "neutral"
+            },
+            {
+                "label": "Accept Edits",
+                "mode": "acceptEdits",
+                "tone": "warning"
+            },
+            {
+                "label": "Plan Mode",
+                "mode": "plan",
+                "tone": "info"
+            },
+            {
+                "label": "Yolo",
+                "mode": "bypassPermissions",
+                "tone": "danger"
+            }
+        ]
     }
 }

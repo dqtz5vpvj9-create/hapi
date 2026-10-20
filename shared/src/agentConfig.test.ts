@@ -27,19 +27,19 @@ describe('agent config descriptors', () => {
         }))
     })
 
-    test('reports DSH permission as managed by its ACP composition', () => {
+    test('exposes DSH permissions through the HAPI adapter', () => {
         const descriptor = getAgentConfigDescriptor('dsh')
         expect(descriptor.fields).toContainEqual(expect.objectContaining({
             id: 'permission',
-            kind: 'status',
-            availability: 'managed'
+            kind: 'select',
+            availability: 'both'
         }))
         for (const id of ['model', 'effort']) {
             expect(descriptor.fields).toContainEqual(expect.objectContaining({
                 id, optionSource: 'session', availability: 'session'
             }))
         }
-        expect(resolveHapiYoloPermissionMode('dsh')).toBeNull()
+        expect(resolveHapiYoloPermissionMode('dsh')).toBe('yolo')
     })
 
     test('reports Pi permission as managed rather than pretending YOLO applies', () => {
@@ -98,4 +98,30 @@ describe('agent config descriptors', () => {
 test('runner capabilities carry descriptors for every built-in agent', async () => {
     const { RUNNER_CAPABILITIES } = await import('./runnerCapabilities')
     expect(RUNNER_CAPABILITIES.agentConfigs.map((descriptor) => descriptor.flavor)).toContain('cursor')
+})
+
+describe('Qoder CN descriptor', () => {
+    test('models are session-discovered and permission is a static selector', () => {
+        const descriptor = getAgentConfigDescriptor('qoder')
+        expect(descriptor.fields).toContainEqual(expect.objectContaining({
+            id: 'model',
+            optionSource: 'session',
+            availability: 'session'
+        }))
+        expect(descriptor.fields).toContainEqual(expect.objectContaining({
+            id: 'effort',
+            kind: 'dependent-select',
+            optionSource: 'session',
+            availability: 'session'
+        }))
+        expect(descriptor.fields).toContainEqual(expect.objectContaining({
+            id: 'permission',
+            kind: 'select',
+            availability: 'both'
+        }))
+    })
+
+    test('maps HAPI YOLO to Qoder bypass_permissions', () => {
+        expect(resolveHapiYoloPermissionMode('qoder')).toBe('bypassPermissions')
+    })
 })

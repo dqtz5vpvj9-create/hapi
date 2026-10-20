@@ -22,6 +22,7 @@ agent's integration; their supported syntax varies by agent.
 | DeepSeek Harness | `hapi dsh` | ACP (`dsh --profile acp` or configured server) | — | ✓ | Managed by DSH ACP composition | When advertised |
 | Antigravity (agy) | `hapi agy` | Headless print mode (per-turn `agy -p` + NDJSON) | — | ✓ | `request-review` `always-proceed` | ✓ |
 | Pi | `hapi pi` | `pi --mode rpc` (JSON-line RPC over stdio) | — | ✓ | none (always auto-approve) | ✓ |
+| Qoder CN | `hapi qoder` | ACP (`qoderclicn --acp`) | — | ✓ | `default` `acceptEdits` `plan` `bypassPermissions` | ✓ |
 | Gemini CLI | — | **Removed** — Google sunset the consumer Gemini CLI (2026-06-18) | — | — | — | — |
 
 Gemini is no longer launchable: `hapi gemini` is kept as a tombstone command that prints a clear error, and existing Gemini sessions remain viewable in the web UI but cannot be resumed.
@@ -30,7 +31,7 @@ Gemini is no longer launchable: `hapi gemini` is kept as a tombstone command tha
 
 ### ACP
 
-Most remote integrations speak the [Agent Client Protocol](https://agentclientprotocol.com) (ACP) over stdio through a shared HAPI backend. ACP gives remote sessions bidirectional permission approval, plan/todo updates, question UI, model catalogs, and session resume. Cursor, Grok, Copilot, Kimi, OpenCode, and DeepSeek Harness remote sessions all run over ACP. DSH uses advertised `session/resume` and `session/close` capabilities; the other integrations retain their `session/load` flows. DSH's model/effort controls and HTTP MCP bridge are enabled when the connected server advertises them.
+Most remote integrations speak the [Agent Client Protocol](https://agentclientprotocol.com) (ACP) over stdio through a shared HAPI backend. ACP gives remote sessions bidirectional permission approval, plan/todo updates, question UI, model catalogs, and session resume. Cursor, Grok, Copilot, Kimi, OpenCode, DeepSeek Harness, and Qoder CN remote sessions all run over ACP. DSH uses advertised `session/resume` and `session/close` capabilities; Qoder CN resumes when the connected CLI advertises ACP resume; the other integrations retain their `session/load` flows. DSH's model/effort controls and HTTP MCP bridge are enabled when the connected server advertises them.
 
 ### Permission modes
 
@@ -38,7 +39,7 @@ Permission modes are per-agent — each flavor exposes its own set (see the matr
 
 ### Local and remote mode
 
-Work **locally** in the terminal or **remotely** from web/phone, keeping the same conversation when you hand off. The support matrix shows which interfaces each agent offers; DSH, Pi, and Antigravity accept input only through HAPI's remote interface.
+Work **locally** in the terminal or **remotely** from web/phone, keeping the same conversation when you hand off. The support matrix shows which interfaces each agent offers; DSH, Pi, Antigravity, and Qoder CN accept input only through HAPI's remote interface.
 
 - **Remote → local:** continue in the terminal. If it shows the remote-control screen, press double-space to return to local input.
 - **Local → remote:** send a message from the web UI or phone; HAPI handles the handoff.
@@ -52,7 +53,7 @@ hapi resume                # Interactive picker of resumable sessions on this ma
 hapi resume <session-id>   # Resume a specific HAPI session
 ```
 
-`hapi resume` reopens the conversation on this machine, including active sessions you were using from your phone. Gemini cannot be resumed. DSH sessions with a server-advertised resume token can be resumed after stopping the active wrapper; older fresh-only DSH sessions cannot. DSH, Pi, and Antigravity resume with input still controlled from HAPI rather than the terminal.
+`hapi resume` reopens the conversation on this machine, including active sessions you were using from your phone. Gemini cannot be resumed. DSH sessions with a server-advertised resume token can be resumed after stopping the active wrapper; older fresh-only DSH sessions cannot. Qoder CN sessions can be resumed when the connected CLI advertises ACP resume. DSH, Pi, Antigravity, and Qoder CN resume with input still controlled from HAPI rather than the terminal.
 
 ### Mathematical formulas in HAPI Markdown
 
@@ -307,6 +308,66 @@ default reasoning values are supported. Changes affect the next admitted turn.
 An HTTP-capable server receives HAPI's MCP bridge for HAPI tools. Tool progress,
 reasoning, usage, and pending one-shot permissions use the standard HAPI UI;
 the ACP composition owns the overall permission policy.
+
+## Qoder CN
+
+HAPI can run the [Qoder CN CLI](https://qoder.cn) and control the same coding session remotely from the Web/PWA. The integration speaks ACP over stdio to the CLI's `qoder-cli-cn` agent (`qoderclicn --acp`), so remote sessions get HAPI's permission prompts, model catalog, and resume support. Qoder CN sessions are remote-only.
+
+### Prerequisites
+
+Install the Qoder CN CLI by following the instructions at [qoder.cn](https://qoder.cn). The binary is `qoderclicn`; some older installs expose it as `qodercn`.
+
+Sign in once on the machine that runs the HAPI runner:
+
+```bash
+qoderclicn login
+```
+
+If your install uses the older binary name, run `qodercn login` instead. Unattended runners can authenticate with a personal access token instead: export `QODERCN_PERSONAL_ACCESS_TOKEN` before starting the runner. HAPI passes the runner's environment to the Qoder CN process, so no extra configuration is needed.
+
+Verify the installation:
+
+```bash
+qoderclicn --version
+```
+
+HAPI launches `qoderclicn` from `PATH`. Set `HAPI_QODER_PATH` to an absolute path to use a different executable.
+
+If a remote session reports an authentication failure, run the same login command on the runner machine and retry. HAPI does not start the sign-in flow.
+
+### Usage
+
+```bash
+hapi qoder                          # Start Qoder CN session
+hapi qoder --permission-mode acceptEdits
+hapi qoder --yolo                   # Shortcut for --permission-mode bypassPermissions
+hapi qoder --model <model>          # Choose a model at launch
+hapi qoder --effort <level>         # Choose a reasoning-effort level at launch
+hapi qoder --resume <session-id>    # Resume a specific session
+```
+
+A session started with `hapi qoder` runs in remote mode: there is no local TUI input path, so every message, approval, and mode change comes from the web app or native app.
+
+### Permission modes
+
+| HAPI mode | Qoder ACP mode |
+|-----------|-----------------|
+| `default` | `default` |
+| `acceptEdits` | `acceptEdits` |
+| `plan` | `plan` |
+| `bypassPermissions` | `bypassPermissions` |
+
+Set the mode at launch with `--permission-mode <mode>`, or use `--yolo` as a shortcut for `bypassPermissions`. You can switch it between turns from the web UI. Use `bypassPermissions` only in a trusted workspace.
+
+### Model selection
+
+The ACP session advertises Qoder's model catalog after it starts, so the available models depend on the signed-in account; the catalog can include DeepSeek models such as `DeepSeek-V4.1-Flash-1017`. Choose a model at launch with `--model <model>`, or switch between turns in the web composer.
+
+The same session also advertises its reasoning-effort levels (for example `xhigh`, `medium`, `low`, and `none`). Set one at launch with `--effort <level>`, or change it in the composer; like model changes, a new effort applies from the next turn.
+
+### Resume
+
+HAPI stores the native Qoder CN session ID when the connected CLI advertises ACP resume, and `hapi resume` can reopen those sessions on this machine. `hapi qoder --resume <session-id>` starts directly from a stored Qoder CN session. A CLI build that does not advertise resume cannot reopen its sessions; start a new one instead.
 
 ## Other agents
 

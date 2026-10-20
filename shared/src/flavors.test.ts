@@ -152,3 +152,18 @@ describe('convenience functions', () => {
         expect(supportsEffort(null)).toBe(false)
     })
 })
+
+describe('Qoder CN flavor', () => {
+    test('supports runtime model change and session-advertised effort control', () => {
+        expect(hasCapability('qoder', Capabilities.ModelChange)).toBe(true)
+        expect(hasCapability('qoder', Capabilities.Effort)).toBe(true)
+    })
+
+    test('has a display label', () => {
+        expect(getFlavorLabel('qoder')).toBe('Qoder CN')
+    })
+
+    test('is a known flavor', () => {
+        expect(isKnownFlavor('qoder')).toBe(true)
+    })
+})

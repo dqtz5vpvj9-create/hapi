@@ -7,7 +7,7 @@ import { z } from 'zod'
  */
 export const AGENT_MESSAGE_PAYLOAD_TYPE = 'codex' as const
 
-export const AGENT_FLAVORS = ['agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'gemini', 'grok', 'kimi', 'opencode', 'pi'] as const
+export const AGENT_FLAVORS = ['agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'gemini', 'grok', 'kimi', 'opencode', 'pi', 'qoder'] as const
 export type AgentFlavor = typeof AGENT_FLAVORS[number]
 export const AgentFlavorSchema = z.enum(AGENT_FLAVORS)
 
@@ -48,6 +48,14 @@ export type OpencodePermissionMode = typeof OPENCODE_PERMISSION_MODES[number]
 
 export const CURSOR_PERMISSION_MODES = ['default', 'plan', 'ask', 'debug', 'autoReview', 'yolo'] as const
 export type CursorPermissionMode = typeof CURSOR_PERMISSION_MODES[number]
+
+// Qoder CN's ACP `session/new` advertises these session mode ids:
+// default / acceptEdits / bypassPermissions / plan (verified against
+// qoderclicn 1.1.27). They already match HAPI's cross-agent camelCase ids, so
+// the launcher forwards them verbatim. The CLI's own `--permission-mode`
+// vocabulary differs (snake_case plus auto/dont_ask) but HAPI drives ACP.
+export const QODER_PERMISSION_MODES = ['default', 'acceptEdits', 'plan', 'bypassPermissions'] as const
+export type QoderPermissionMode = typeof QODER_PERMISSION_MODES[number]
 
 export const PERMISSION_MODES = [
     'default',
@@ -140,7 +148,7 @@ export function getPermissionModesForFlavor(flavor?: string | null): readonly Pe
         return KIMI_PERMISSION_MODES
     }
     if (flavor === 'dsh') {
-        return []
+        return ['default', 'read-only', 'yolo']
     }
     if (flavor === 'copilot') {
         return COPILOT_PERMISSION_MODES
@@ -156,6 +164,9 @@ export function getPermissionModesForFlavor(flavor?: string | null): readonly Pe
     }
     if (flavor === 'cursor') {
         return CURSOR_PERMISSION_MODES
+    }
+    if (flavor === 'qoder') {
+        return QODER_PERMISSION_MODES
     }
     if (flavor === 'pi') {
         // Pi RPC mode has no runtime permission switching (always auto-approve);
@@ -220,7 +231,13 @@ export function isSteeringSupportedForSession(metadata?: {
     flavor?: string | null
     cursorSessionId?: string | null
     cursorSessionProtocol?: 'acp' | 'stream-json' | null
+    dshCapabilities?: { steering?: boolean } | null
 } | null): boolean {
+    if (metadata?.flavor === 'dsh') {
+        // Only the exact runtime that stamped the extension may advertise it.
+        // Older sessions predate the stamp and their runner has no followup RPC.
+        return metadata.dshCapabilities?.steering === true
+    }
     if (metadata?.flavor === 'codex' || metadata?.flavor === 'pi') {
         return true
     }

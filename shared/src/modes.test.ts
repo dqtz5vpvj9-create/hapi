@@ -41,7 +41,7 @@ describe('getPermissionModesForFlavor', () => {
     })
 
     test("returns no HAPI mode selector for DSH's server-owned permission policy", () => {
-        expect(getPermissionModesForFlavor('dsh')).toEqual([])
+        expect(getPermissionModesForFlavor('dsh')).toEqual(['default', 'read-only', 'yolo'])
     })
 
     test("returns [] for flavor 'pi' (RPC mode has no runtime permission switching)", () => {
@@ -76,7 +76,7 @@ describe('isPermissionModeAllowedForFlavor', () => {
         expect(isPermissionModeAllowedForFlavor('acceptEdits', 'grok')).toBe(false)
         expect(isPermissionModeAllowedForFlavor('auto', 'grok')).toBe(true)
         expect(isPermissionModeAllowedForFlavor('yolo', 'grok')).toBe(false)
-        expect(isPermissionModeAllowedForFlavor('read-only', 'dsh')).toBe(false)
+        expect(isPermissionModeAllowedForFlavor('read-only', 'dsh')).toBe(true)
         expect(isPermissionModeAllowedForFlavor('plan', 'dsh')).toBe(false)
     })
 
@@ -151,9 +151,14 @@ describe('isSteeringSupportedForFlavor', () => {
 })
 
 describe('isSteeringSupportedForSession', () => {
-    it('supports codex and pi sessions', () => {
+    it('supports codex, pi, and legacy dsh sessions', () => {
         expect(isSteeringSupportedForSession({ flavor: 'codex' })).toBe(true)
         expect(isSteeringSupportedForSession({ flavor: 'pi' })).toBe(true)
+        // Sessions recorded before the capability stamp are not steerable:
+        // their runner may not implement the extension at all.
+        expect(isSteeringSupportedForSession({ flavor: 'dsh' })).toBe(false)
+        expect(isSteeringSupportedForSession({ flavor: 'dsh', dshCapabilities: { steering: true } })).toBe(true)
+        expect(isSteeringSupportedForSession({ flavor: 'dsh', dshCapabilities: { steering: false } })).toBe(false)
     })
 
     it('supports Cursor ACP sessions', () => {
@@ -180,5 +185,23 @@ describe('isSteeringSupportedForSession', () => {
     it('rejects non-steerable flavors', () => {
         expect(isSteeringSupportedForSession({ flavor: 'claude' })).toBe(false)
         expect(isSteeringSupportedForSession(null)).toBe(false)
+    })
+})
+
+describe('Qoder CN ACP flavor', () => {
+    test('is a creatable flavor', () => {
+        expect(AGENT_FLAVORS).toContain('qoder')
+        expect(CREATABLE_AGENT_FLAVORS).toContain('qoder')
+        expect(AgentFlavorSchema.safeParse('qoder').success).toBe(true)
+    })
+
+    test('exposes the Qoder ACP permission modes without inheriting Claude defaults', () => {
+        expect(getPermissionModesForFlavor('qoder')).toEqual([
+            'default',
+            'acceptEdits',
+            'plan',
+            'bypassPermissions'
+        ])
+        expect(getPermissionModesForFlavor('qoder')).not.toEqual(getPermissionModesForFlavor('claude'))
     })
 })

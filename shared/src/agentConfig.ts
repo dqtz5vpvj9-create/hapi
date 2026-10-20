@@ -69,7 +69,7 @@ const BUILTIN_DESCRIPTORS: Record<AgentFlavor, AgentConfigFieldDescriptor[]> = {
     dsh: fields(
         { ...MODEL, optionSource: 'session', availability: 'session' },
         { id: 'effort', section: 'effort', kind: 'dependent-select', optionSource: 'session', availability: 'session' },
-        MANAGED_PERMISSION
+        PERMISSION
     ),
     copilot: fields({ ...MODEL, optionSource: 'directory' }, PERMISSION),
     cursor: fields({ id: 'model', section: 'model', kind: 'dependent-select', optionSource: 'machine', availability: 'both' }, PERMISSION),
@@ -89,6 +89,13 @@ const BUILTIN_DESCRIPTORS: Record<AgentFlavor, AgentConfigFieldDescriptor[]> = {
         { id: 'model', section: 'model', kind: 'grouped-select', optionSource: 'machine', availability: 'both' },
         { id: 'effort', section: 'effort', kind: 'select', optionSource: 'static', availability: 'both' },
         MANAGED_PERMISSION
+    ),
+    qoder: fields(
+        // The ACP session publishes the model and reasoning-effort catalogs;
+        // nothing is known before session/new, so both are session-only like DSH.
+        { ...MODEL, optionSource: 'session', availability: 'session' },
+        { id: 'effort', section: 'effort', kind: 'dependent-select', optionSource: 'session', availability: 'session' },
+        PERMISSION
     )
 }
 
@@ -104,6 +111,7 @@ export function resolveHapiYoloPermissionMode(flavor: AgentFlavor): PermissionMo
     switch (flavor) {
         case 'claude':
         case 'grok':
+        case 'qoder':
             return 'bypassPermissions'
         case 'agy':
             return 'always-proceed'
@@ -113,8 +121,8 @@ export function resolveHapiYoloPermissionMode(flavor: AgentFlavor): PermissionMo
         case 'gemini':
         case 'kimi':
         case 'opencode':
-            return 'yolo'
         case 'dsh':
+            return 'yolo'
         case 'pi':
             return null
     }
