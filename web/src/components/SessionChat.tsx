@@ -1477,9 +1477,11 @@ function SessionChatInner(props: SessionChatProps) {
         () => buildVisibleChatBlocks(reconciled.blocks, {
             hasMoreMessages: props.hasMoreMessages,
             previousGroups: visibleGroupsRef.current,
-            codexExplorationCollapsed
+            codexExplorationCollapsed,
+            foldProcess: props.session.metadata?.flavor === 'dsh',
+            activeTurn: props.session.thinking
         }),
-        [reconciled.blocks, props.hasMoreMessages, codexExplorationCollapsed]
+        [reconciled.blocks, props.hasMoreMessages, codexExplorationCollapsed, props.session.metadata?.flavor, props.session.thinking]
     )
 
     // Fork-current must compare against assistant-ui message ids (`kind:id`),

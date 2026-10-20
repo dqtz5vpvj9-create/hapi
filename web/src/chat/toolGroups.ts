@@ -38,7 +38,15 @@ export type ToolGroupBlock = {
     summary: ToolGroupSummary
 }
 
-export type VisibleChatBlock = ChatBlock | ToolGroupBlock
+export type ProcessGroupBlock = {
+    kind: 'process-group'
+    id: string
+    createdAt: number
+    invokedAt?: number | null
+    members: ChatBlock[]
+}
+
+export type VisibleChatBlock = ChatBlock | ToolGroupBlock | ProcessGroupBlock
 
 export type VisibleChatBlockRole = 'user' | 'assistant' | 'system'
 
@@ -58,6 +66,10 @@ type ToolGroupingOptions = {
     hasMoreMessages: boolean
     previousGroups?: ToolGroupBlock[]
     codexExplorationCollapsed?: boolean
+    /** Fold a completed agent turn's reasoning and tool calls behind one Process disclosure. */
+    foldProcess?: boolean
+    /** A live turn stays flat; completed turns may still fold. */
+    activeTurn?: boolean
 }
 
 const PLAN_TOOL_NAMES = new Set([
@@ -268,6 +280,74 @@ export function isToolGroupBlock(block: VisibleChatBlock | ChatBlock): block is 
     return block.kind === 'tool-group'
 }
 
+function isProcessMember(block: ChatBlock): boolean {
+    if (block.kind === 'agent-reasoning') return true
+    if (block.kind === 'tool-call') return isEligibleForToolGrouping(block)
+    return false
+}
+
+function makeProcessBlock(members: ChatBlock[]): ProcessGroupBlock {
+    return {
+        kind: 'process-group',
+        id: `process-group:${members[0].id}`,
+        createdAt: members[0].createdAt,
+        invokedAt: members[0].invokedAt,
+        members,
+    }
+}
+
+/** DSH/ACP transcripts arrive as flat reasoning and tool-call blocks. Group
+ * the completed turn's process under one disclosure, leaving the final answer
+ * (and any unresolved interaction) directly reachable. */
+function buildFlatProcessBlocks(blocks: ChatBlock[], options: ToolGroupingOptions): VisibleChatBlock[] {
+    const visible: VisibleChatBlock[] = []
+    let index = 0
+    while (index < blocks.length) {
+        const block = blocks[index]
+        if (block.kind !== 'user-text') {
+            visible.push(block)
+            index += 1
+            continue
+        }
+        visible.push(block)
+        let end = index + 1
+        while (end < blocks.length && blocks[end].kind !== 'user-text') end += 1
+        const completed = end < blocks.length || options.activeTurn === false
+        if (!completed) {
+            for (let cursor = index + 1; cursor < end; cursor += 1) visible.push(blocks[cursor])
+            index = end
+            continue
+        }
+        const turn = blocks.slice(index + 1, end)
+        let answer = -1
+        for (let cursor = turn.length - 1; cursor >= 0; cursor -= 1) {
+            if (turn[cursor].kind === 'agent-text') { answer = cursor; break }
+        }
+        if (answer < 0) {
+            visible.push(...turn)
+            index = end
+            continue
+        }
+        let members: ChatBlock[] = []
+        const flush = () => {
+            if (members.length >= 2) visible.push(makeProcessBlock(members))
+            else visible.push(...members)
+            members = []
+        }
+        for (let cursor = 0; cursor < answer; cursor += 1) {
+            const candidate = turn[cursor]
+            // Agent text before the final answer is commentary from the same
+            // process. The last agent-text remains the visible answer.
+            if (isProcessMember(candidate) || candidate.kind === 'agent-text') members.push(candidate)
+            else { flush(); visible.push(candidate) }
+        }
+        flush()
+        visible.push(...turn.slice(answer))
+        index = end
+    }
+    return visible
+}
+
 /**
  * Whether a user block is still waiting for invocation behind the active turn.
  * These belong to the composer's queue bar; rendering them in the transcript as
@@ -281,6 +361,8 @@ export function buildVisibleChatBlocks(
     blocks: ChatBlock[],
     options: ToolGroupingOptions
 ): VisibleChatBlock[] {
+    if (options.foldProcess) return buildFlatProcessBlocks(blocks, options)
+
     const visibleBlocks: VisibleChatBlock[] = []
     const previousGroups = options.previousGroups ?? []
 

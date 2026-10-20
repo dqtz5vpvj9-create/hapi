@@ -15,7 +15,7 @@ import { safeStringify } from '@hapi/protocol'
 import { renderEventLabel } from '@/chat/presentation'
 import type { ChatBlock, CliOutputBlock, CodexReview, RoundSummary, UsageData } from '@/chat/types'
 import type { AgentEvent, ToolCallBlock } from '@/chat/types'
-import type { ToolGroupBlock, VisibleChatBlock } from '@/chat/toolGroups'
+import type { ProcessGroupBlock, ToolGroupBlock, VisibleChatBlock } from '@/chat/toolGroups'
 import { visibleBlockRole } from '@/chat/toolGroups'
 import type { AttachmentMetadata, MessageStatus as HappyMessageStatus, Session } from '@/types/api'
 import { orderItemsById } from '@/lib/attachmentOrder'
@@ -98,6 +98,12 @@ export function getBlockPresentationTimestamp(block: VisibleChatBlock): number {
             block.createdAt
         )
     }
+    if (block.kind === 'process-group') {
+        return block.members.reduce(
+            (latest, member) => Math.max(latest, getBlockPresentationTimestamp(member)),
+            block.createdAt
+        )
+    }
     if (block.kind === 'tool-call') {
         return Math.max(block.createdAt, block.tool.completedAt ?? block.createdAt)
     }
@@ -162,6 +168,9 @@ function turnSourcesFromBlock(block: VisibleChatBlock): TurnSource[] {
             usage: tool.usage,
             createdAt: tool.createdAt
         }))
+    }
+    if (block.kind === 'process-group') {
+        return block.members.flatMap(member => turnSourcesFromBlock(member))
     }
     if (
         block.kind === 'agent-text'
@@ -321,9 +330,11 @@ export function aggregateResponseGroups(
 
         const roundSummary = block.kind === 'tool-group'
             ? block.roundSummary
-            : block.kind === 'user-text' || block.kind === 'agent-event'
-                ? undefined
-                : block.roundSummary
+            : block.kind === 'process-group'
+                ? block.members.map(member => member.kind === 'user-text' || member.kind === 'agent-event' ? undefined : member.roundSummary).find(summary => summary !== undefined)
+                : block.kind === 'user-text' || block.kind === 'agent-event'
+                    ? undefined
+                    : block.roundSummary
         groupRoundSummary ??= roundSummary
 
         for (const turn of turnSourcesFromBlock(block)) {
@@ -676,6 +687,29 @@ function toThreadMessageLike(
                     kind: 'tool',
                     toolCallId: groupBlock.id,
                     invokedAt: groupBlock.invokedAt ?? null
+                } satisfies HappyChatMessageMetadata
+            }
+        }
+    }
+
+    if (block.kind === 'process-group') {
+        const processBlock: ProcessGroupBlock = block
+        return {
+            role: 'assistant',
+            id: threadMessageId,
+            createdAt: new Date(timestamp),
+            content: [{
+                type: 'tool-call',
+                toolCallId: processBlock.id,
+                toolName: 'ProcessGroup',
+                argsText: '',
+                artifact: processBlock
+            }],
+            metadata: {
+                custom: {
+                    kind: 'tool',
+                    toolCallId: processBlock.id,
+                    invokedAt: processBlock.invokedAt ?? null
                 } satisfies HappyChatMessageMetadata
             }
         }

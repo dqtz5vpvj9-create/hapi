@@ -129,6 +129,11 @@ export function projectChatBlock(block: ChatBlock): JsonObject {
  * needsOlderHistory, activityTitle, presentationMode, summary) is dropped.
  */
 export function projectVisibleChatBlock(block: VisibleChatBlock): JsonObject {
+    if (block.kind === 'process-group') {
+        const projected = projectBlockBase(block)
+        projected.members = block.members.map(projectChatBlock)
+        return projected
+    }
     if (block.kind !== 'tool-group') {
         return projectChatBlock(block)
     }

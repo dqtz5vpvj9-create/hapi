@@ -532,3 +532,44 @@ describe('transcript visibility', () => {
         expect(visible.map((block) => block.id)).toEqual(['invoked', 'failed'])
     })
 })
+
+
+describe('foldProcess', () => {
+    function makeUser(id: string): ChatBlock {
+        return { kind: 'user-text', id, localId: null, createdAt: 1, invokedAt: 1, text: 'hello' }
+    }
+
+    function makeReasoning(id: string): ChatBlock {
+        return { kind: 'agent-reasoning', id, localId: null, createdAt: 1, invokedAt: 1, text: 'thinking', durationMs: undefined }
+    }
+
+    it('folds a completed turn reasoning and tools under one Process block', () => {
+        const visible = buildVisibleChatBlocks([
+            makeUser('u1'), makeReasoning('r1'), makeToolBlock('t1', 'Read'), makeToolBlock('t2', 'Grep'), makeTextBlock('a1', 'answer'),
+            makeUser('u2'), makeReasoning('r2'), makeToolBlock('t3', 'Read'), makeTextBlock('a2', 'answer 2')
+        ], { hasMoreMessages: false, foldProcess: true, activeTurn: false })
+
+        expect(visible.map(block => block.kind)).toEqual(['user-text', 'process-group', 'agent-text', 'user-text', 'process-group', 'agent-text'])
+        const first = visible[1]
+        if (first.kind !== 'process-group') throw new Error('expected process group')
+        expect(first.members.map(member => member.id)).toEqual(['r1', 't1', 't2'])
+    })
+
+    it('keeps the live turn flat but folds earlier completed turns', () => {
+        const visible = buildVisibleChatBlocks([
+            makeUser('u1'), makeReasoning('r1'), makeToolBlock('t1', 'Read'), makeTextBlock('a1', 'answer'),
+            makeUser('u2'), makeReasoning('r2'), makeToolBlock('t2', 'Read')
+        ], { hasMoreMessages: false, foldProcess: true, activeTurn: true })
+
+        expect(visible.map(block => block.kind)).toEqual(['user-text', 'process-group', 'agent-text', 'user-text', 'agent-reasoning', 'tool-call'])
+    })
+
+    it('does not fold a subagent control into the process', () => {
+        const visible = buildVisibleChatBlocks([
+            makeUser('u1'), makeReasoning('r1'), makeToolBlock('sub', 'spawn_agent'),
+            makeToolBlock('t1', 'Read'), makeToolBlock('t2', 'Grep'), makeTextBlock('a1', 'answer')
+        ], { hasMoreMessages: false, foldProcess: true, activeTurn: false })
+
+        expect(visible.map(block => block.kind)).toEqual(['user-text', 'agent-reasoning', 'tool-call', 'process-group', 'agent-text'])
+    })
+})

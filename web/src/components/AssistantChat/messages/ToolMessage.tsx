@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { ToolCallMessagePartProps } from '@assistant-ui/react'
 import type { ChatBlock } from '@/chat/types'
 import type { GeneratedImageBlock, ToolCallBlock } from '@/chat/types'
-import type { ToolGroupBlock } from '@/chat/toolGroups'
+import type { ProcessGroupBlock, ToolGroupBlock } from '@/chat/toolGroups'
 import { isObject, safeStringify } from '@hapi/protocol'
 import { isSubagentToolName } from '@/chat/subagentTool'
 import { ToolGroupCard } from '@/components/ToolCard/ToolGroupCard'
@@ -34,6 +34,14 @@ function isToolCallBlock(value: unknown): value is ToolCallBlock {
     if (!('input' in value.tool)) return false
     if (value.tool.description !== null && typeof value.tool.description !== 'string') return false
     if (value.tool.state !== 'pending' && value.tool.state !== 'running' && value.tool.state !== 'completed' && value.tool.state !== 'error') return false
+    return true
+}
+
+function isProcessGroupBlock(value: unknown): value is ProcessGroupBlock {
+    if (!isObject(value)) return false
+    if (value.kind !== 'process-group') return false
+    if (typeof value.id !== 'string') return false
+    if (!Array.isArray(value.members)) return false
     return true
 }
 
@@ -229,7 +237,7 @@ function splitTaskChildren(block: ToolCallBlock): { pending: ChatBlock[]; rest: 
     return { pending, rest }
 }
 
-function HappyNestedBlockList(props: {
+export function HappyNestedBlockList(props: {
     blocks: ChatBlock[]
 }) {
     const ctx = useHappyChatContext()
@@ -284,6 +292,14 @@ function HappyNestedBlockList(props: {
                     return (
                         <div key={`generated-image:${block.id}`} className="px-1">
                             <GeneratedImageCard block={block} />
+                        </div>
+                    )
+                }
+
+                if (block.kind === 'agent-reasoning') {
+                    return (
+                        <div key={`reasoning:${block.id}`} className="py-1">
+                            <MarkdownRenderer content={block.text} />
                         </div>
                     )
                 }
@@ -354,9 +370,33 @@ function HappyNestedBlockList(props: {
     )
 }
 
+function ProcessGroupCard(props: { block: ProcessGroupBlock }) {
+    const { t } = useTranslation()
+    const [open, setOpen] = useState(false)
+    const count = props.block.members.length
+    return (
+        <div data-hapi-share-exclude="true" className="py-1 min-w-0 max-w-full overflow-x-hidden">
+            <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}
+                className="flex min-h-11 max-w-full items-center gap-1.5 rounded-lg pr-2 text-left text-xs text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)]">
+                <span aria-hidden="true" className="w-3 shrink-0">{open ? '⌄' : '›'}</span>
+                <span className="truncate">{t('nativeChat.process', { count })}</span>
+            </button>
+            {open ? (
+                <div className="mt-1 ml-1.5 border-l border-[var(--app-divider)] pl-3">
+                    <HappyNestedBlockList blocks={props.block.members} />
+                </div>
+            ) : null}
+        </div>
+    )
+}
+
 export function HappyToolMessage(props: ToolCallMessagePartProps) {
     const ctx = useHappyChatContext()
     const artifact = props.artifact
+
+    if (isProcessGroupBlock(artifact)) {
+        return <ProcessGroupCard block={artifact} />
+    }
 
     if (isToolGroupBlock(artifact)) {
         return (
