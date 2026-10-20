@@ -11,6 +11,7 @@ import { useSession } from '@/hooks/queries/useSession'
 import { usePaneNavigate } from '@/workspace/PaneContext'
 import { getSessionTitle } from '@/lib/sessionTitle'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
+import { DocumentMarkdownAnchor, DocumentMarkdownLinkProvider } from './documentMarkdownLink'
 import { DocumentRegistry, base64Bytes, decodeDocumentText, encodeDocumentText, type TextFormat } from './documentSession'
 import { DocumentLeavePrompt } from './DocumentLeaveDialog'
 import { DocumentEditor } from './DocumentEditor'
@@ -36,6 +37,10 @@ const markdownBlocks = Object.fromEntries(['p', 'li', 'h1', 'h2', 'h3', 'h4', 'b
     ({ node, ...props }: HTMLAttributes<HTMLElement> & ExtraProps) => createElement(tag, { ...props,
         'data-source-from': node?.position?.start.offset, 'data-source-to': node?.position?.end.offset }),
 ]))
+
+// Stable component map: relative links inside a document open the referenced
+// file in the reader instead of rendering as inert text (see documentMarkdownLink).
+const markdownComponents = { ...markdownBlocks, a: DocumentMarkdownAnchor }
 
 export function DocumentSurface({ resource, foreground = true, onBack, backLabel, onClose, onCloseOthers }: {
     resource: DocumentResource
@@ -100,13 +105,23 @@ export function DocumentSurface({ resource, foreground = true, onBack, backLabel
         if (!selection && !session.state.selection) return
         setAttached(false); session.patch({ selection })
     }
+    // A document link opens beside its source (like report links) so an index
+    // stays visible while its targets are read.
+    const openDocumentFile = (path: string) => {
+        const ref = { kind: 'file' as const, path, ...(resource.document.kind === 'file' ? { machineId: resource.document.machineId } : {}) }
+        if (workspace && pane) workspace.openDocument(pane.paneId, resource, { kind: 'document', sessionId: resource.sessionId, document: ref }, true)
+        else void navigate({ to: '/sessions/$sessionId/file', params: { sessionId: resource.sessionId }, search: { path: encodeBase64(path), origin: 'chat' } })
+    }
     const openHtmlLink = (link: HtmlLink) => {
         if (link.kind === 'external') { window.open(link.url, '_blank', 'noopener,noreferrer'); return }
         if (link.kind !== 'file') return
-        const ref = { kind: 'file' as const, path: link.path, ...(resource.document.kind === 'file' ? { machineId: resource.document.machineId } : {}) }
-        if (workspace && pane) workspace.openDocument(pane.paneId, resource, { kind: 'document', sessionId: resource.sessionId, document: ref }, true)
-        else void navigate({ to: '/sessions/$sessionId/file', params: { sessionId: resource.sessionId }, search: { path: encodeBase64(link.path), origin: 'chat' } })
+        openDocumentFile(link.path)
     }
+    const markdownLinkContext = useMemo(() => ({
+        sessionId: resource.sessionId,
+        sourcePath: resource.document.kind === 'file' ? resource.document.path : undefined,
+        onOpenFile: openDocumentFile,
+    }), [resource, workspace, pane, navigate])
     const reference = async () => {
         const selection = session.state.selection
         if (!selection) return
@@ -208,7 +223,9 @@ export function DocumentSurface({ resource, foreground = true, onBack, backLabel
                     : sheet ? <SheetDocument key={state.contentRevision} blob={state.blob!} session={session} foreground={foreground} onSelect={select} />
                     : mime.startsWith('image/') ? <ImageDocument key={state.contentRevision} blob={state.blob!} onSelect={select} />
                     : markdown && state.textual && state.mode === 'preview' ? <div ref={preview} className="document-markdown" onScroll={event => { session.previewScrollTop = event.currentTarget.scrollTop }} onPointerUp={event => selectMarkdown(event.currentTarget)} onKeyUp={event => selectMarkdown(event.currentTarget)}>
-                        <MarkdownRenderer content={state.text} standalone components={markdownBlocks} />
+                        <DocumentMarkdownLinkProvider value={markdownLinkContext}>
+                            <MarkdownRenderer content={state.text} standalone components={markdownComponents} />
+                        </DocumentMarkdownLinkProvider>
                     </div> : html && state.textual && state.mode === 'preview' ? null : html && (state.blob?.size ?? 0) > MAX_EDITABLE_FILE_BYTES ? <p>{labels.sourceTooLarge}</p> : state.textual ? <DocumentEditor key={`${editorRevision}:${state.contentRevision}:${state.writable}`} session={session} onSave={() => void session.save(api)} findRevision={find} /> : <p>{labels.binary}</p>}
             </Suspense> : null}
         </div>
