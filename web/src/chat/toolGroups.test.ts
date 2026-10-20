@@ -549,10 +549,10 @@ describe('foldProcess', () => {
             makeUser('u2'), makeReasoning('r2'), makeToolBlock('t3', 'Read'), makeTextBlock('a2', 'answer 2')
         ], { hasMoreMessages: false, foldProcess: true, activeTurn: false })
 
-        expect(visible.map(block => block.kind)).toEqual(['user-text', 'process-group', 'agent-text', 'user-text', 'process-group', 'agent-text'])
-        const first = visible[1]
+        expect(visible.map(block => block.kind)).toEqual(['user-text', 'agent-reasoning', 'process-group', 'agent-text', 'user-text', 'agent-reasoning', 'process-group', 'agent-text'])
+        const first = visible[2]
         if (first.kind !== 'process-group') throw new Error('expected process group')
-        expect(first.members.map(member => member.id)).toEqual(['r1', 't1', 't2'])
+        expect(first.members.map(member => member.id)).toEqual(['t1', 't2'])
     })
 
     it('folds the live turn without swapping it when the turn settles', () => {
@@ -561,8 +561,8 @@ describe('foldProcess', () => {
             makeUser('u2'), makeReasoning('r2'), makeToolBlock('t2', 'Read')
         ], { hasMoreMessages: false, foldProcess: true, activeTurn: true })
 
-        expect(visible.map(block => block.kind)).toEqual(['user-text', 'process-group', 'agent-text', 'user-text', 'process-group'])
-        const live = visible[4]
+        expect(visible.map(block => block.kind)).toEqual(['user-text', 'agent-reasoning', 'process-group', 'agent-text', 'user-text', 'agent-reasoning', 'process-group'])
+        const live = visible[6]
         if (live.kind !== 'process-group') throw new Error('expected live process group')
         expect(live.running).toBe(true)
     })
@@ -573,6 +573,6 @@ describe('foldProcess', () => {
             makeToolBlock('t1', 'Read'), makeToolBlock('t2', 'Grep'), makeTextBlock('a1', 'answer')
         ], { hasMoreMessages: false, foldProcess: true, activeTurn: false })
 
-        expect(visible.map(block => block.kind)).toEqual(['user-text', 'process-group', 'tool-call', 'process-group', 'agent-text'])
+        expect(visible.map(block => block.kind)).toEqual(['user-text', 'agent-reasoning', 'tool-call', 'process-group', 'agent-text'])
     })
 })

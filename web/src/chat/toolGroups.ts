@@ -282,9 +282,9 @@ export function isToolGroupBlock(block: VisibleChatBlock | ChatBlock): block is 
 }
 
 function isProcessMember(block: ChatBlock): boolean {
-    if (block.kind === 'agent-reasoning') return true
-    if (block.kind === 'tool-call') return isEligibleForToolGrouping(block)
-    return false
+    // Reasoning is deliberately not a Process member: its own disclosure stays
+    // visible as the familiar one-line live preview.
+    return block.kind === 'tool-call' && isEligibleForToolGrouping(block)
 }
 
 function makeProcessBlock(members: ChatBlock[], running: boolean): ProcessGroupBlock {
@@ -334,9 +334,7 @@ function buildFlatProcessBlocks(blocks: ChatBlock[], options: ToolGroupingOption
         }
         for (let cursor = 0; cursor < limit; cursor += 1) {
             const candidate = turn[cursor]
-            // Agent text before the final answer is commentary from the same
-            // process; the final answer itself remains outside the disclosure.
-            if (isProcessMember(candidate) || candidate.kind === 'agent-text') members.push(candidate)
+            if (isProcessMember(candidate)) members.push(candidate)
             else { flush(); visible.push(candidate) }
         }
         flush()
