@@ -729,6 +729,7 @@ export default {
   'newSession.runnerUpgradeRequired': 'Upgrade and restart this machine\'s HAPI runner before creating sessions.',
   'newSession.noAvailableAgents': 'No supported Agents are installed on this machine.',
   'newSession.agentUnavailable': 'The selected Agent is no longer available on this machine. Refresh and choose another Agent.',
+  'newSession.directoryRequired': 'Choose a working directory to start.',
   'newSession.directoryOutsideWorkspaceRoots': 'Directory must be inside one of this machine\'s workspace roots.',
   'newSession.model': 'Model',
   'newSession.effort': 'Effort',

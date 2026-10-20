@@ -383,6 +383,20 @@ describe('NewSession launch preferences', () => {
         expect(mocks.onSuccess).toHaveBeenCalledWith('new-shared-session')
     })
 
+    it('defaults a regular machine to its home directory instead of leaving create disabled', async () => {
+        const home = 'C:\\Users\\lixinrui'
+        const scopedMachine = { ...machine, metadata: { host: 'Lis-iMac', platform: 'win32', happyCliVersion: '1',
+            workspaceRoots: [home], homeDir: home } } as Machine
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'new-home-session' })
+        mocks.checkPathsExists.mockResolvedValue({ exists: { [home]: true } })
+        render(<NewSession api={api} machines={[scopedMachine]} initialMachineId="machine-1" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByTestId('create')).not.toBeDisabled())
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
+            machineId: machine.id, directory: home
+        })))
+    })
+
     it('keeps the initial task on launch failure and sends it before navigating after success', async () => {
         const onCreated = vi.fn(), onChange = vi.fn()
         render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo"

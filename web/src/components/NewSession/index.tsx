@@ -398,6 +398,18 @@ export function NewSession(props: {
         [machineId, props.machines]
     )
     const codexAccounts = useCodexAccounts(props.api, machineId, agent === 'codex')
+    const machineDefaultDirectory = selectedMachine?.metadata?.homeDir?.trim()
+        || selectedMachine?.metadata?.workspaceRoots?.find(root => root.trim())?.trim()
+        || ''
+    const defaultedDirectoryMachine = useRef<string | null>(null)
+    useEffect(() => {
+        if (!selectedMachine || props.initialDirectory || directory.trim() || !machineDefaultDirectory) return
+        // A machine always has a home or workspace root. Without this fallback
+        // the mobile create button stays disabled with no path and no reason.
+        if (defaultedDirectoryMachine.current === selectedMachine.id) return
+        defaultedDirectoryMachine.current = selectedMachine.id
+        setDirectory(machineDefaultDirectory)
+    }, [selectedMachine, props.initialDirectory, directory, machineDefaultDirectory])
 
     useEffect(() => {
         setCodexAccountId('')
@@ -2318,6 +2330,7 @@ export function NewSession(props: {
                         <button type="button" className="flex min-h-11 min-w-11 items-center gap-2 rounded-lg px-2 py-1" onClick={() => setContextOpen(contextOpen === 'directory' ? null : 'directory')} aria-expanded={contextOpen === 'directory'} title={directory}><Folder size={17} /><span className="max-w-[260px] truncate">{directory.split(/[\\/]/).filter(Boolean).pop() || t('newSession.directory')}</span><span>⌄</span></button>
                         <button type="button" className="ml-auto flex min-h-11 min-w-11 items-center justify-center rounded-full p-2" aria-label={t('newTask.moreSettings')} aria-expanded={settingsOpen} onClick={() => setSettingsOpen(value => !value)}><MoreHorizontal size={20} /></button>
                     </div>
+                    {!trimmedDirectory ? <p className="px-2 pt-1 text-xs text-[var(--app-hint)]">{t('newSession.directoryRequired')}</p> : null}
                     {contextOpen === 'directory' ? <Dialog.Root open onOpenChange={open => { if (!open) setContextOpen(null) }}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-[119] bg-black/20" /><Dialog.Content aria-describedby={undefined} className="fixed left-1/2 bottom-4 z-[120] w-[calc(100vw-24px)] max-w-xl -translate-x-1/2 max-h-[65dvh] overflow-auto rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)] p-2 shadow-xl"><Dialog.Title className="sr-only">{t('newSession.directory')}</Dialog.Title><button type="button" className="ml-auto block min-h-11 px-3" onClick={() => setContextOpen(null)}>{t('button.close')}</button>            <DirectoryPicker
                 api={props.api}
                 machineId={machineId}
