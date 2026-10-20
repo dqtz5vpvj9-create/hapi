@@ -201,6 +201,7 @@ export function NewSession(props: {
     const [serviceTier, setServiceTier] = useState<NewSessionServiceTier>('standard')
     const [collaborationMode, setCollaborationMode] = useState<CodexCollaborationMode>('default')
     const [codexAccountId, setCodexAccountId] = useState('')
+    const [codexAccountTouched, setCodexAccountTouched] = useState(false)
     const [codexHome, setCodexHome] = useState('')
     const [codexHomeId, setCodexHomeId] = useState('')
     const [codexKeyProfileId, setCodexKeyProfileId] = useState('')
@@ -399,15 +400,8 @@ export function NewSession(props: {
     const codexAccounts = useCodexAccounts(props.api, machineId, agent === 'codex')
 
     useEffect(() => {
-        if (agent !== 'codex' || codexAccountId || !codexAccounts.data) return
-        const preferred = codexAccounts.data.currentAccountId
-            ?? codexAccounts.data.accounts?.find(account => account.enabled)?.id
-            ?? ''
-        setCodexAccountId(preferred)
-    }, [agent, codexAccountId, codexAccounts.data])
-
-    useEffect(() => {
         setCodexAccountId('')
+        setCodexAccountTouched(false)
         setCodexAccountError(null)
     }, [machineId])
 
@@ -453,16 +447,44 @@ export function NewSession(props: {
             return true
         })
     }, [codexHomeCatalog.data?.homes, selectedMachine?.metadata?.codexHomes])
+    const selectedCodexHome = useMemo(
+        () => codexHomePresets.find(home => home.id === codexHomeId),
+        [codexHomeId, codexHomePresets],
+    )
+    // A custom home or a registered non-official home cannot switch accounts:
+    // the runner rejects an account bound to an isolated CODEX_HOME.
+    const codexHomeIsIsolated = Boolean(codexHome.trim()) && selectedCodexHome?.official !== true
+
     useEffect(() => {
-        if (codexHomePresets.length <= 1) return
+        if (agent !== 'codex' || !codexAccounts.data) return
+        if (codexHomeIsIsolated) {
+            if (codexAccountId) setCodexAccountId('')
+            return
+        }
+        if (codexAccountTouched || codexAccountId) return
+        const preferred = codexAccounts.data.currentAccountId
+            ?? codexAccounts.data.accounts?.find(account => account.enabled)?.id
+            ?? ''
+        setCodexAccountId(preferred)
+    }, [agent, codexAccountId, codexAccounts.data, codexHomeIsIsolated, codexAccountTouched])
+
+    const codexHomeCatalogKey = `${machineId}\0${codexHomePresets.map(home => `${home.id}:${home.path}`).join('\0')}`
+    const lastCodexHomeCatalogKey = useRef('')
+    useEffect(() => {
+        if (codexHomePresets.length === 0) return
+        // Reconcile path on machine/catalog changes, including two machines
+        // that share the preset id `default` but have different paths.
+        const catalogChanged = lastCodexHomeCatalogKey.current !== codexHomeCatalogKey
+        lastCodexHomeCatalogKey.current = codexHomeCatalogKey
+        if (!catalogChanged) return
         const preferred = codexHomePresets.find(home => home.id === codexHomeId)
             ?? codexHomePresets.find(home => home.official === true)
             ?? codexHomePresets[0]
-        if (preferred && preferred.id !== codexHomeId) {
+        if (preferred) {
             setCodexHomeId(preferred.id)
             setCodexHome(preferred.path)
         }
-    }, [codexHomePresets, codexHomeId])
+    }, [codexHomeCatalogKey, codexHomePresets, codexHomeId])
     const sharedProjectRoot = selectedMachine?.metadata?.capabilities?.includes('shared-project')
         ? selectedMachine.metadata.workspaceRoots?.[0] : undefined
     useEffect(() => {
@@ -1979,7 +2001,7 @@ export function NewSession(props: {
                             ? { permissionMode: nativePermissionMode }
                             : undefined
                     )
-                    if (codexAccountId) {
+                    if (!codexHomeIsIsolated && codexAccountId) {
                         const switched = await props.api.switchSessionCodexAccount(resumedSessionId, codexAccountId)
                         if (!switched.success) throw new Error(switched.error || t('newSession.codexAccount.switchFailed'))
                     }
@@ -2059,7 +2081,7 @@ export function NewSession(props: {
                 serviceTier: resolvedServiceTier,
                 collaborationMode: resolvedCollaborationMode,
                 copilotAgentMode: agent === 'copilot' ? copilotAgentMode : undefined,
-                codexAccountId: agent === 'codex' ? (codexAccountId || undefined) : undefined,
+                codexAccountId: agent === 'codex' && !codexHomeIsIsolated ? (codexAccountId || undefined) : undefined,
                 codexHome: agent === 'codex' ? (codexHome.trim() || undefined) : undefined,
                 codexKeyProfileId: agent === 'codex' ? (codexKeyProfileId || undefined) : undefined,
             }
@@ -2464,6 +2486,7 @@ export function NewSession(props: {
                                 const selected = codexHomePresets.find(home => home.id === event.target.value)
                                 setCodexHomeId(event.target.value)
                                 setCodexHome(selected?.path ?? '')
+                                setCodexAccountTouched(false)
                             }}
                             disabled={isFormDisabled || !selectedMachine}
                             className="rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1.5 text-sm text-[var(--app-fg)]"
@@ -2476,7 +2499,7 @@ export function NewSession(props: {
                         <input
                             type="text"
                             value={codexHome}
-                            onChange={(event) => setCodexHome(event.target.value)}
+                            onChange={(event) => { setCodexHome(event.target.value); setCodexAccountTouched(false) }}
                             placeholder={t('newSession.codexHome.placeholder')}
                             disabled={isFormDisabled || !selectedMachine}
                             className="rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1.5 text-sm text-[var(--app-fg)]"
@@ -2504,9 +2527,9 @@ export function NewSession(props: {
                     value={codexAccountId}
                     currentAccountId={codexAccounts.data?.currentAccountId ?? null}
                     isLoading={codexAccounts.isLoading}
-                    isDisabled={isFormDisabled || !selectedMachine}
+                    isDisabled={isFormDisabled || !selectedMachine || codexHomeIsIsolated}
                     error={codexAccountError ?? (codexAccounts.error instanceof Error ? codexAccounts.error.message : null)}
-                    onChange={setCodexAccountId}
+                    onChange={(accountId) => { setCodexAccountTouched(true); setCodexAccountId(accountId) }}
                     onImportCurrent={async () => {
                         try { await importCurrentAccount() } catch (error) {
                             setCodexAccountError(error instanceof Error ? error.message : t('newSession.codexAccount.importFailed'))
