@@ -1,39 +1,55 @@
 import { ForkOperationRpcRequestSchema, type ForkOperationRpcRequest, type ForkOperationRpcResponse } from '@hapi/protocol/forkOperations';
 import { ForkJournal, type ForkPlan, type ForkJournalEntry, type ForkOperationOrigin } from './forkJournal';
 import { SharedForkOperations } from './forkOperations';
-import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
+import { spawn, execFile, type ChildProcess } from 'node:child_process';
+
 import { createServer } from 'node:net';
+import { promisify } from 'node:util';
 import { mkdir, mkdtemp, chmod, rm, realpath } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { configuration } from '@/configuration';
 import { bootstrapSession, bootstrapExistingSession } from '@/agent/sessionFactory';
 import { notifyRunnerSessionStarted } from '@/runner/controlClient';
-import { getProcessStartMarker, killProcessByChildProcess } from '@/utils/process';
+import { getProcessStartMarkerAsync, killProcessByChildProcess } from '@/utils/process';
 import { logger } from '@/ui/logger';
 import { CodexAppServerClient, isIndeterminateError } from '../codexAppServerClient';
 import { codexHome, saveRuntime, runtimeDirectory, runtimeAuthHash, findColdBinding, withThreadOwnership, type CodexRuntimeRecord } from './registry';
+import { resolveCodexHome, resolveLaunchCodexHome } from '../utils/codexHome';
 import { startCodexGateway, record, string, type Envelope } from './gateway';
 import { resolveSharedCodex, sharedLaunchConfig, initializeSharedClient, checkSharedCapabilities, takeReservedSessionId, type SharedLaunchOptions } from './launch';
 import { SharedCodexRoot } from './root';
+import { SessionStartupTrace } from './startupTrace';
 import { listLoadedNativeThreads, requireLoadedNativeThread, readResumableNativeRoot } from './nativeDiscovery';
+import { AsyncLock } from '@/utils/lock';
+import {
+    activeCodexRuntimeAccountId,
+    activeCodexRuntimeHome,
+    adoptRuntimeCodexAuth,
+    loadFreshCodexAccount,
+    persistActiveCodexAccount,
+    readCodexLiveAccountId,
+} from '@/codex/accounts/accountManager';
+import type { SwitchCodexAccountResponse } from '@hapi/protocol/apiTypes';
 
 export type RuntimeReady = { sessionId: string; runtime: CodexRuntimeRecord };
 type Reservation = { root: SharedCodexRoot; resumeId?: string; fork?: { journal: ForkJournal; request: ForkOperationRpcRequest; sourceThreadId: string } };
 
-function gitInfo(cwd: string): { sha: string | null; branch: string | null; originUrl: string | null } {
-    const git = (...args: string[]) => {
-        try { return execFileSync('git', args, { cwd, encoding: 'utf8', timeout: 3_000, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; }
+const execFileAsync = promisify(execFile);
+async function gitInfo(cwd: string): Promise<{ sha: string | null; branch: string | null; originUrl: string | null }> {
+    const git = async (...args: string[]) => {
+        try { return (await execFileAsync('git', args, { cwd, encoding: 'utf8', timeout: 3_000, windowsHide: true })).stdout.trim() || null; }
         catch { return null; }
     };
-    let originUrl = git('remote', 'get-url', 'origin');
+    let [sha, branch, originUrl] = await Promise.all([git('rev-parse', 'HEAD'), git('symbolic-ref', '--short', 'HEAD'), git('remote', 'get-url', 'origin')]);
     if (originUrl && /^https?:/.test(originUrl)) {
         try { const url = new URL(originUrl); url.username = ''; url.password = ''; url.search = ''; url.hash = ''; originUrl = url.toString(); }
         catch { originUrl = null; }
     }
-    return { sha: git('rev-parse', 'HEAD'), branch: git('symbolic-ref', '--short', 'HEAD'), originUrl };
+    return { sha, branch, originUrl };
 }
+
 async function freePort(): Promise<number> {
     const server = createServer();
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
@@ -44,13 +60,23 @@ async function freePort(): Promise<number> {
 
 /** One ordinary CLI execution owns one private engine, with concurrent frontends. */
 export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (ready: RuntimeReady) => void, abortSignal?: AbortSignal): Promise<void> {
+    const trace = new SessionStartupTrace();
+    trace.mark('runtime.enter');
     abortSignal?.throwIfAborted();
     const external = Boolean(options.nativeEndpoint);
-    const command = resolveSharedCodex();
+    const command = await trace.measure('native.version', async () => resolveSharedCodex());
     const launch = sharedLaunchConfig(options, options.workingDirectory ?? process.cwd());
+    // Start optional repository inspection before native initialization; consume once.
+    let initialGit = !external && !options.resumeSessionId && !options.resumeLast
+        ? trace.measure('git.inspect', () => gitInfo(launch.cwd)) : undefined;
     const id = randomUUID();
-    await mkdir(codexHome(), { recursive: true, mode: 0o700 });
-    const home = await realpath(codexHome());
+    let home: string;
+    if (options.codexHome?.trim()) {
+        home = resolveLaunchCodexHome(options.codexHome, options.workingDirectory ?? process.cwd());
+    } else {
+        await mkdir(codexHome(), { recursive: true, mode: 0o700 });
+        home = await realpath(codexHome());
+    }
     await mkdir(runtimeDirectory(), { recursive: true, mode: 0o700 });
     // Unix sockaddr_un has a small path limit; don't nest sockets under CODEX_HOME.
     const sockets = await mkdtemp(join(tmpdir(), 'hapi-cx-')); await chmod(sockets, 0o700);
@@ -58,6 +84,16 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
     const upstream = options.nativeEndpoint ?? (process.platform === 'win32' ? `ws://127.0.0.1:${await freePort()}` : `unix://${join(sockets, 'engine.sock')}`);
     const upstreamToken = !external && process.platform === 'win32' ? randomBytes(32).toString('hex') : undefined;
     const env: NodeJS.ProcessEnv = { ...process.env, CODEX_HOME: home };
+    // A custom home owns its auth and SQLite store. Inherited Codex keys or a
+    // shared SQLite path would silently defeat that isolation.
+    const defaultHome = resolveCodexHome(process.env);
+    let resolvedDefaultHome = defaultHome;
+    try { resolvedDefaultHome = await realpath(defaultHome); } catch { /* first run */ }
+    if (options.codexHome?.trim() && resolve(home) !== resolve(resolvedDefaultHome)) {
+        delete env.CODEX_SQLITE_HOME;
+        delete env.CODEX_API_KEY;
+        delete env.CODEX_ACCESS_TOKEN;
+    }
     // Every thread injects its own identity. A launch from another agent must not inherit that root's identity.
     delete env.HAPI_SESSION_ID;
     let server: ChildProcess | undefined;
@@ -78,6 +114,8 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
     const done = new Promise<void>(resolve => { finish = resolve; });
     const ending = new Set<SharedCodexRoot>();
     const roots = new Map<string, SharedCodexRoot>();
+    const accountSwitchLock = new AsyncLock();
+    let activeAccountId = activeCodexRuntimeAccountId();
     const prepared = new Set<SharedCodexRoot>();
     const reservations = new Map<string, Reservation>();
     const forkObservers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -91,7 +129,8 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         }, 320_000);
         timer.unref(); forkObservers.set(key, timer);
     };
-    const runtime: CodexRuntimeRecord = { id, pid: process.pid, marker: getProcessStartMarker(process.pid) ?? '',
+    const runtime: CodexRuntimeRecord = { id, pid: process.pid, marker: await getProcessStartMarkerAsync(process.pid) ?? '',
+
         ...(options.nativeEndpoint ? { nativeEndpoint: options.nativeEndpoint } : {}),
         endpoint: '', command: command.command, args: command.args, codexHome: home, hub: configuration.apiUrl, authHash: runtimeAuthHash(), sessions: {} };
     if (!runtime.marker) throw new Error('Cannot verify the runtime process generation');
@@ -141,14 +180,17 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         stopping = true; failure = error; clearInterval(discoveryTimer);
         for (const key of forkObservers.keys()) clearForkObserver(key);
         if (error) logger.debug('[Codex shared] runtime stopped', error);
+        trace.mark('shutdown.begin');
         control.setTransportAbandonedHandler(null);
         for (const root of prepared) root.stopAccepting();
         shutdownPromise = (async () => {
             // Close frontend admission first, then drain binding/startup work.
             // No root may materialize after cleanup took its snapshot.
             await gateway?.close().catch(() => {});
+            trace.mark('shutdown.gateway');
             await startup.catch(() => {});
             while (operations.size) await Promise.allSettled([...operations]);
+            trace.mark('shutdown.operations');
             let timer: ReturnType<typeof setTimeout> | undefined;
             try {
                 await Promise.race([
@@ -156,9 +198,11 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                     new Promise<void>(resolve => { timer = setTimeout(resolve, 5_000); })
                 ]);
             } finally { clearTimeout(timer); }
+            trace.mark('shutdown.suspended');
             await control.disconnect();
             if (server && server.exitCode === null && server.signalCode === null) {
-                if (!await killProcessByChildProcess(server)) throw new Error('Codex engine did not stop; ownership retained for orphan recovery');
+                const engine = server;
+                if (!await trace.measure('shutdown.engine', () => killProcessByChildProcess(engine))) throw new Error('Codex engine did not stop; ownership retained for orphan recovery');
             }
             // Release ownership only after the engine is dead, BEFORE inactive
             // reaches the hub. Web may immediately resume through the Runner.
@@ -170,6 +214,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             logger.debug('[Codex shared] shutdown', error);
         }).finally(async () => {
             await Promise.allSettled([...prepared].map(root => root.close(ending.has(root))));
+            trace.mark('shutdown.roots');
             await rm(sockets, { recursive: true, force: true }).catch(error => logger.debug('[Codex shared] socket cleanup', error));
             finish();
         });
@@ -190,31 +235,63 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
             }).catch(error => logger.debug('[Codex shared] root cleanup', error));
         }, 100);
     };
-    const prepare = async (cwd: string, existingSessionId?: string, parent?: SharedCodexRoot, nativeThread?: Record<string, unknown>, operationSessionId?: string, forkedFromSessionId?: string): Promise<SharedCodexRoot> => {
+    const switchAccount = async (_root: SharedCodexRoot, accountId: string): Promise<SwitchCodexAccountResponse> => {
+        return await accountSwitchLock.inLock(async () => {
+            try {
+                if ([...roots.values()].some(root => root.isBusy())) {
+                    return { success: false, applied: false, persisted: false, error: 'Finish active Codex turns before switching accounts' };
+                }
+                if (activeAccountId) await adoptRuntimeCodexAuth(activeAccountId, activeCodexRuntimeHome());
+                const { account, auth } = await loadFreshCodexAccount(accountId);
+                const tokens = auth.tokens as Record<string, unknown>;
+                await control.request('account/login/start', {
+                    type: 'chatgptAuthTokens',
+                    accessToken: tokens.access_token,
+                    chatgptAccountId: account.chatgptAccountId,
+                });
+                const liveAccountId = readCodexLiveAccountId(await control.request('account/read', {}));
+                if (liveAccountId !== account.chatgptAccountId) {
+                    throw new Error(liveAccountId
+                        ? `Codex adopted account ${liveAccountId} instead of ${account.chatgptAccountId}`
+                        : 'Codex did not report the active account after switching');
+                }
+                await persistActiveCodexAccount(accountId, auth);
+                activeAccountId = account.id;
+                for (const root of roots.values()) root.applyAccountMetadata(account);
+                await persist();
+                await Promise.allSettled([...roots.values()].map(root => root.session.flush()));
+                return { success: true, account, applied: true, persisted: true };
+            } catch (error) {
+                return { success: false, applied: false, persisted: false, error: error instanceof Error ? error.message : 'Codex account switch failed' };
+            }
+        });
+    };
+    const prepare = async (cwd: string, existingSessionId?: string, parent?: SharedCodexRoot, nativeThread?: Record<string, unknown>, operationSessionId?: string, forkedFromSessionId?: string, nativeReady?: Promise<void>): Promise<SharedCodexRoot> => {
+
         assertRunning();
         const shared = { flavor: 'codex', startedBy: options.startedBy ?? 'terminal', workingDirectory: cwd,
-            exportSessionEnv: false, reportStarted: false, metadataOverrides: { ...(external ? { codexNativeSession: true } : {}),
+            exportSessionEnv: false, reportStarted: false, metadataOverrides: { codexStoreId: home, codexHome: home, ...(options.codexKeyProfileId ? { codexKeyProfileId: options.codexKeyProfileId } : {}), ...(external ? { codexNativeSession: true } : {}),
                 ...(!existingSessionId && nativeThread ? { name: string(nativeThread.name) ?? string(nativeThread.preview)?.slice(0, 120) } : {}), capabilities: { terminal: true, concurrentClients: true },
                 ...(parent || forkedFromSessionId ? { forkedFrom: parent?.session.sessionId ?? forkedFromSessionId } : {}) } } as const;
         // reservedSessionId names one preallocated hub row — single-use. A second
         // create()/fork must mint a fresh row, not re-adopt (#1911 Opus Major).
-        const reservedSessionId = existingSessionId || operationSessionId ? undefined : takeReservedSessionId(options);
-        const bootstrap = existingSessionId
+        const reservedSessionId = operationSessionId ?? (existingSessionId ? undefined : takeReservedSessionId(options));
+        const bootstrap = await trace.measure('hub.bootstrap', async () => existingSessionId
+
             ? await bootstrapExistingSession({ ...shared, sessionId: existingSessionId })
             : await bootstrapSession({
                 ...shared,
                 reservedSessionId,
-                // A fork journal allocates an ID, not a Hub machine-spawn stub.
-                // Create that exact row before native dispatch; later recovery
-                // reopens the acknowledged row instead of creating a replacement.
-                newSessionId: operationSessionId,
+                inlineMachineRegistration: true,
                 ...(nativeThread ? { tag: `codex-native:${home}:${nativeThread.id}` } : {}),
                 agentState: { controlledByUser: false },
-            });
+            }));
         const root = new SharedCodexRoot(bootstrap, { directory: join(runtimeDirectory(), 'queues'), generation: id, endpoint: upstream, token: upstreamToken, external, codexHome: home,
-            settingsFor: threadId => nativeSettings.get(threadId), create, end, forkOperation });
+            codexProvider: options.codexProvider, codexModel: options.codexModel,
+            trace, settingsFor: threadId => nativeSettings.get(threadId), create, end, forkOperation, switchAccount });
+
         prepared.add(root);
-        try { assertRunning(); await root.prepare(); assertRunning(); return root; }
+        try { await nativeReady; assertRunning(); await trace.measure('root.prepare', () => root.prepare()); assertRunning(); return root; }
         catch (error) { await root.close(!stopping && !existingSessionId); prepared.delete(root); throw error; }
     };
     const reserveRecord = async (root: SharedCodexRoot, threadId: string) => {
@@ -226,42 +303,46 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         runtime.pendingCreations = runtime.pendingCreations?.filter(sid => sid !== root.session.sessionId); await persist();
     };
     const reserve = async (root: SharedCodexRoot, threadId: string) => withThreadOwnership(home, threadId, id, () => reserveRecord(root, threadId), 'created');
-    const bind = async (root: SharedCodexRoot, response: Record<string, unknown>, subscribe: boolean, initialOptions?: SharedLaunchOptions, requireAcknowledgement = false) => {
+    const bind = async (root: SharedCodexRoot, response: Record<string, unknown>, subscribe: boolean, initialOptions?: SharedLaunchOptions, fresh = false, git?: Promise<Awaited<ReturnType<typeof gitInfo>>>, requireAcknowledgement = false) => {
+
         assertRunning();
         const threadId = string(record(response.thread).id);
         if (!threadId) throw new Error('Codex lifecycle response has no thread ID');
         const reserved = runtime.sessions[root.session.sessionId];
         if (reserved && reserved.threadId !== threadId) throw new Error('Codex retargeted a reserved thread');
-        if (!reserved) await reserve(root, threadId);
+        if (!reserved) await trace.measure('ownership.reserve', () => reserve(root, threadId));
         // No fake user turn/name. Metadata write materializes an empty legacy rollout for native resume.
-        if (!external) await control.request('thread/metadata/update', { threadId, gitInfo: gitInfo(string(record(response.thread).cwd) ?? root.bootstrap.workingDirectory) });
+        if (!external) await trace.measure('native.materialize', async () => control.request('thread/metadata/update', { threadId, gitInfo: await (git ?? gitInfo(string(record(response.thread).cwd) ?? root.bootstrap.workingDirectory)) }));
         assertRunning();
         roots.set(threadId, root);
-        await root.bind(threadId, response, subscribe);
+        await trace.measure('root.bind', () => root.bind(threadId, response, subscribe, fresh));
         assertRunning();
-        // Cold-resumed threads predate the control connection's automatic
-        // new-thread subscription. Subscribe once without changing settings.
+        // The root client or frontend owns the start subscription. The control
+        // observer needs its own subscription to preserve reconnect settings.
         if (!external || root.session.getMetadata()?.codexNativeConnection === 'attached')
-            await control.request('thread/resume', { threadId, ...(external ? { excludeTurns: true } : {}) });
-        await root.activate(initialOptions);
-        const flushed = await root.session.flush();
+            await trace.measure('control.subscribe', () => control.request('thread/resume', { threadId, ...(external ? { excludeTurns: true } : {}) }));
+        await trace.measure('root.activate', () => root.activate(initialOptions));
+        const flushed = await trace.measure('hub.flush', () => root.session.flush());
         if (requireAcknowledgement && flushed !== true) throw new Error('HAPI child metadata acknowledgement is pending');
-        await persist();
-        // Runner notification is advisory; failure must never erase a ready native child.
-        await notifyRunnerSessionStarted(root.session.sessionId, root.session.getMetadata() ?? root.bootstrap.metadata)
-            .catch(error => logger.debug('[Codex shared] runner notification', error));
+        await trace.measure('binding.persist', persist);
+        await trace.measure('runner.notify', () => notifyRunnerSessionStarted(root.session.sessionId, root.session.getMetadata() ?? root.bootstrap.metadata).catch(error => logger.debug('[Codex shared] runner notification', error)));
+        trace.mark('session.ready');
     };
-    const create = (method: 'thread/start' | 'thread/fork', params: Record<string, unknown>, parent?: SharedCodexRoot, initialOptions?: SharedLaunchOptions): Promise<SharedCodexRoot> => operation(async () => {
+    const create = (method: 'thread/start' | 'thread/fork', params: Record<string, unknown>, parent?: SharedCodexRoot, initialOptions?: SharedLaunchOptions, preparedRoot?: Promise<SharedCodexRoot>): Promise<SharedCodexRoot> => operation(async () => {
         if (method === 'thread/fork') throw new Error('Shared native forks require a durable fork operation');
-        const root = await prepare(string(params.cwd) ?? launch.cwd, undefined, parent);
+        const cwd = string(params.cwd) ?? launch.cwd;
+        const git = cwd === launch.cwd && initialGit ? initialGit : trace.measure('git.inspect', () => gitInfo(cwd));
+        initialGit = undefined;
+        const root = await (preparedRoot ?? prepare(cwd, undefined, parent));
         let nativeSucceeded = false;
         try {
             runtime.pendingCreations = [...runtime.pendingCreations ?? [], root.session.sessionId]; await persist();
-            // External roots read native history on demand; fork only needs the
-            // new thread identity/settings, not a second full transcript.
-            const response = record(await root.client.request(method, root.config(params)));
+            const response = record(await trace.measure(method, () => root.client.request(method, root.config(params))));
+
             nativeSucceeded = true;
-            await bind(root, response, true, initialOptions); return root;
+            const fresh = method === 'thread/start' && Array.isArray(record(response.thread).turns)
+                && (record(response.thread).turns as unknown[]).length === 0 && !record(response.thread).parentThreadId;
+            await bind(root, response, !fresh, initialOptions, fresh, git); return root;
         } catch (error) {
             // A timed-out native mutation may have succeeded. Never replay it or kill unrelated roots.
             if (!nativeSucceeded && !isIndeterminateError(error)) {
@@ -314,7 +395,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                 ? record(await child.client.request('thread/resume', { threadId, ...(external ? { excludeTurns: true } : {}) }))
                 : record(nativeResponse);
             if (string(record(response.thread).id) !== threadId) throw new Error('Fork recovery returned a different native child');
-            await bind(child, response, true, undefined, true);
+            await bind(child, response, true, undefined, false, undefined, true);
             await child.applyForkSettings(entry.dispatch.plan.settings);
             if (await child.session.flush() !== true) throw new Error('HAPI child settings acknowledgement is pending');
         } catch (error) {
@@ -507,7 +588,12 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                 runtime.pendingCreations = runtime.pendingCreations?.filter(sid => sid !== reservation.root.session.sessionId);
                 await persist(); prepared.delete(reservation.root); await reservation.root.close(true); return;
             }
-            await bind(reservation.root, record(response.result), true);
+            const result = record(response.result);
+            const fresh = request.method === 'thread/start' && Array.isArray(record(result.thread).turns)
+                && (record(result.thread).turns as unknown[]).length === 0 && !record(result.thread).parentThreadId;
+            // The frontend issued this start, not root.client. Its independent
+            // subscription is required even though the new transcript is empty.
+            await bind(reservation.root, result, true, undefined, fresh);
         } else if (request.method === 'thread/archive' && !response.error) {
             const root = roots.get(string(record(request.params).threadId) ?? ''); if (root) await end(root, false);
         } else if (request.method === 'thread/queue/delete' && !response.error && record(response.result).deleted === true) {
@@ -538,19 +624,28 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
         server.once('error', error => { void shutdown(error); });
         server.once('exit', (code, sig) => { void shutdown(new Error(`app-server exited (${code}, ${sig})`)); });
         runtime.serverPid = server.pid;
-        runtime.serverMarker = server.pid ? getProcessStartMarker(server.pid) ?? undefined : undefined;
+        trace.mark('native.spawned');
+        runtime.serverMarker = server.pid ? await getProcessStartMarkerAsync(server.pid) ?? undefined : undefined;
         if (!runtime.serverPid || !runtime.serverMarker) throw new Error('Cannot verify app-server generation');
         await persist();
         }
-        const deadline = Date.now() + 20_000;
-        for (;;) {
-            try { await initializeSharedClient(control); break; }
-            catch (error) { if (Date.now() > deadline || stopping) throw error; await new Promise(resolve => setTimeout(resolve, 100)); }
-        }
-        assertRunning();
-        control.setTransportAbandonedHandler(reconnectControl);
-        await checkSharedCapabilities(control);
-        assertRunning();
+        const initialization = (async () => {
+            const deadline = Date.now() + 20_000;
+            for (;;) {
+                try { await trace.measure('control.initialize', () => initializeSharedClient(control)); break; }
+                catch (error) { if (Date.now() > deadline || stopping) throw error; await new Promise(resolve => setTimeout(resolve, 100)); }
+            }
+            assertRunning();
+            control.setTransportAbandonedHandler(reconnectControl);
+            await trace.measure('native.capabilities', () => checkSharedCapabilities(control));
+            assertRunning();
+        })();
+        // Hub materialization can overlap native initialization. Track it as an
+        // operation so shutdown drains even a late bootstrap before closing roots.
+        const earlyRoot = !external && !options.resumeSessionId && !options.resumeLast
+            ? operation(() => prepare(launch.cwd, undefined, undefined, undefined, undefined, undefined, initialization)) : undefined;
+        void earlyRoot?.catch(() => {});
+        await initialization;
         gateway = await startCodexGateway({ upstream, upstreamToken, path: process.platform === 'win32' ? undefined : join(sockets, 'clients.sock'), token,
             hooks: { before, after, disconnected: connection => {
                 for (const [key, reservation] of reservations) {
@@ -646,7 +741,7 @@ export async function runSharedRuntime(options: SharedLaunchOptions, onReady?: (
                 response = record(await root.client.request('thread/resume', params));
             }
             await bind(root, response, false, options);
-        } else root = await create('thread/start', { ...launch.threadParams, cwd: launch.cwd }, undefined, options);
+        } else root = await create('thread/start', { ...launch.threadParams, cwd: launch.cwd }, undefined, options, earlyRoot);
         assertRunning();
         onReady?.({ sessionId: root.session.sessionId, runtime });
     })();

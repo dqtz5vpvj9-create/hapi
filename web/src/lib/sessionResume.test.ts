@@ -67,6 +67,29 @@ describe('sessionResume', () => {
         })).toBe('dsh-1')
     })
 
+    it('resolveAgentSessionIdFromMetadata returns the qoder resume id', () => {
+        expect(resolveAgentSessionIdFromMetadata({
+            path: '/p',
+            host: 'h',
+            flavor: 'qoder',
+            qoderSessionId: 'qoder-1',
+            claudeSessionId: 'claude-1',
+        })).toBe('qoder-1')
+    })
+
+    it('inactiveSessionCanResume reopens an archived qoder session with history', () => {
+        const session = makeSession({
+            metadata: {
+                path: '/home/chris',
+                host: 'localhost',
+                flavor: 'qoder',
+                qoderSessionId: 'qoder-1',
+                lifecycleState: 'archived',
+            },
+        })
+        expect(inactiveSessionCanResume(session, 12)).toBe(true)
+    })
+
     it('inactiveSessionCanResume reopens an archived dsh session with history', () => {
         const session = makeSession({
             metadata: {

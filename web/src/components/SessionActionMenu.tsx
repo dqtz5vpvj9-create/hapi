@@ -1,4 +1,6 @@
-import { type ReactNode, useCallback, useId } from 'react'
+import { type ReactNode, useCallback, useId, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { usePane } from '@/workspace/PaneContext'
 import { useGlassSurface } from '@/themes/glass/GlassScene'
 import { useTranslation } from '@/lib/use-translation'
 import { HoverTooltip } from '@/components/HoverTooltip'
@@ -6,6 +8,7 @@ import { safeCopyToClipboard } from '@/lib/clipboard'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useAnchoredMenu } from '@/hooks/useAnchoredMenu'
 import { CopyIcon } from '@/components/icons'
+import { isTerminalInterfaceEnabled } from '@/utils/terminalSupport'
 
 type SessionActionMenuProps = {
     extraItems?: ReactNode
@@ -30,8 +33,11 @@ type SessionActionMenuProps = {
     onExport?: () => void
     onMarkUnread?: () => void
     onSyncCodex?: () => void
+    onMigrateCodexHome?: () => void
     onSyncPi?: () => void
     onArchive: () => void
+    /** Restart the live agent process; absent when the session is inactive. */
+    onRestart?: () => void
     onReopen?: () => void
     reopenDisabledReason?: string
     /** Soft-fail tip when reopen is allowed but chat-store probe could not verify. */
@@ -198,6 +204,7 @@ function TrashIcon(props: { className?: string }) {
 export function SessionActionMenu(props: SessionActionMenuProps) {
     const { t } = useTranslation()
     const { haptic } = usePlatform()
+    const pane = usePane()
     const {
         isOpen,
         onClose,
@@ -211,8 +218,10 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onExport,
         onMarkUnread,
         onSyncCodex,
+        onMigrateCodexHome,
         onSyncPi,
         onArchive,
+        onRestart,
         onReopen,
         reopenDisabledReason,
         reopenHint,
@@ -229,6 +238,14 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const internalId = useId()
     const resolvedMenuId = menuId ?? `session-action-menu-${internalId}`
     const headingId = `${resolvedMenuId}-heading`
+
+    // Portaled menus no longer inherit a retained pane's hidden state.
+    // Use the same lifecycle that saves its reader before focus/window changes.
+    useLayoutEffect(() => {
+        if (!isOpen || !pane) return
+        pane.beforeHide.add(onClose)
+        return () => { pane.beforeHide.delete(onClose) }
+    }, [isOpen, pane?.beforeHide, onClose])
 
     const handleRename = () => {
         onClose()
@@ -255,6 +272,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onArchive()
     }
 
+    const handleRestart = () => {
+        onClose()
+        onRestart?.()
+    }
+
     const handleReopen = () => {
         onClose()
         onReopen?.()
@@ -275,6 +297,11 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
         onSyncCodex?.()
     }
 
+    const handleMigrateCodexHome = () => {
+        onClose()
+        onMigrateCodexHome?.()
+    }
+
     const handleSyncPi = () => {
         onClose()
         onSyncPi?.()
@@ -292,7 +319,10 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
     const baseItemClassName =
         'flex min-h-11 w-full items-center gap-3 rounded-md py-2 pl-3 pr-[42px] text-left text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]'
 
-    return (
+    // The anchor and clamping use viewport coordinates. Pane headers sit under
+    // layout/paint containment, which changes the containing block for fixed
+    // descendants; keep this floating surface outside that subtree.
+    return createPortal(
         <div
             ref={panelRef}
             className="app-glass app-floating-panel fixed z-50 box-border w-max max-w-[calc(100vw-16px)] max-h-[calc(var(--app-viewport-height,100dvh)-16px)] overflow-y-auto rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] p-1 shadow-lg animate-menu-pop"
@@ -331,7 +361,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     <div role="separator" className="my-1 h-px bg-[var(--app-divider)]" />
                 </> : null}
                 {props.onOpenFiles || props.onOpenTerminal ? <div role="group" aria-label={t('session.workspace.title')}>
-                    {props.onOpenTerminal ? <button type="button" role="menuitem"
+                    {props.onOpenTerminal && isTerminalInterfaceEnabled() ? <button type="button" role="menuitem"
                         aria-disabled={!!props.terminalDisabledReason}
                         className={`${baseItemClassName} min-h-11 hover:bg-[var(--app-subtle-bg)] ${props.terminalDisabledReason ? 'opacity-50' : ''}`}
                         onClick={props.terminalDisabledReason ? undefined : () => { onClose(); props.onOpenTerminal?.() }}>
@@ -358,6 +388,18 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     </button> : null}
                     <div role="separator" className="my-1 h-px bg-[var(--app-divider)]" />
                 </div> : null}
+                {onRestart ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleRestart}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" className="text-[var(--app-hint)]"><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></svg>
+                        {t('session.action.restart')}
+                    </button>
+                ) : null}
+
                 <button
                     type="button"
                     role="menuitem"
@@ -449,6 +491,18 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     </button>
                 ) : null}
 
+                {onMigrateCodexHome ? (
+                    <button
+                        type="button"
+                        role="menuitem"
+                        className={`${baseItemClassName} hover:bg-[var(--app-subtle-bg)]`}
+                        onClick={handleMigrateCodexHome}
+                    >
+                        <SyncIcon className="text-[var(--app-hint)]" />
+                        {t('session.action.migrateCodexHome')}
+                    </button>
+                ) : null}
+
                 {onSyncPi ? (
                     <button
                         type="button"
@@ -515,6 +569,7 @@ export function SessionActionMenu(props: SessionActionMenuProps) {
                     </>
                 )}
             </div>
-        </div>
+        </div>,
+        document.body
     )
 }

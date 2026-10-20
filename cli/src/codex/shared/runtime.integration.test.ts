@@ -151,6 +151,9 @@ describe.skipIf(process.env.HAPI_RUN_SHARED_CODEX_TESTS !== '1')('installed Code
             const nextSession = [...state.sessions.values()].find(session => session.metadata.codexSessionId === next)!;
             expect(web.metadata.codexSessionId).toBe(initial);
             expect(process.env.HAPI_SESSION_ID).toBe('parent-must-not-leak');
+            nextSession.user?.({ content: { text: 'HELLO FROM NEW WEB ROOT' } }, 'new-web-1');
+            await vi.waitFor(() => expect(nextSession.messages).toContainEqual(expect.objectContaining({ type: 'message', message: 'MOCK ANSWER' })), { timeout: 15_000 });
+            expect(web.consumed).not.toContain('new-web-1');
             await first.request('thread/archive', { threadId: next }); roots = [initial];
             await vi.waitFor(() => expect(nextSession.dead).toBe(true)); expect(web.dead).toBe(false);
             await second.request('turn/start', { threadId: initial, model: 'second-mock', input: [{ type: 'text', text: 'HELLO FROM TERMINAL', text_elements: [] }], clientUserMessageId: 'native-1' });

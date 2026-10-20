@@ -1,4 +1,6 @@
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { resolveCodexCommand, type CodexCommand } from '../utils/codexExecutable';
@@ -12,6 +14,11 @@ export const SharedLaunchSchema = z.object({
     nativeEndpoint: z.string().optional(),
     codexArgs: z.array(z.string()).optional(),
     permissionMode: z.enum(['default', 'read-only', 'safe-yolo', 'yolo']).optional(),
+    /** Persistent per-execution Codex home. Omitted = process default (~/.codex). */
+    codexHome: z.string().min(1).optional(),
+    codexProvider: z.string().min(1).optional(),
+    codexModel: z.string().min(1).optional(),
+    codexKeyProfileId: z.string().min(1).optional(),
     resumeSessionId: z.string().optional(), resumeLast: z.boolean().optional(), resumeAll: z.boolean().optional(),
     existingSessionId: z.string().optional(),
     /** Hub-preallocated stub — create/adopt, not reopen. */
@@ -32,16 +39,30 @@ export function takeReservedSessionId(options: SharedLaunchOptions): string | un
     return id;
 }
 
-/** Resolve once: a desktop server and a different PATH TUI are never mixed. */
-export function resolveSharedCodex(): CodexCommand {
+const execFileAsync = promisify(execFile);
+let checkedVersion: { key: string; result: Promise<CodexCommand> } | undefined;
+
+/** Validate asynchronously and reuse a check only while the executable is unchanged. */
+export async function resolveSharedCodex(): Promise<CodexCommand> {
     const command = resolveCodexCommand();
-    const version = execFileSync(command.command, [...command.args, '--version'], {
-        encoding: 'utf8', timeout: 10_000, windowsHide: true
-    }).match(/codex-cli (\d+)\.(\d+)\.(\d+)/);
-    if (!version || Number(version[1]) === 0 && Number(version[2]) < 154) {
-        throw new Error('Shared sessions require Codex >= 0.154.0. Upgrade the Codex executable on PATH.');
+    const files = await Promise.all([command.command, ...command.args].map(path => stat(path).catch(() => undefined)));
+    const key = files.every(Boolean) ? JSON.stringify([command, files.map(file => [file!.mtimeMs, file!.size])]) : undefined;
+    if (key && checkedVersion?.key === key) return checkedVersion.result;
+    const result = (async () => {
+        const { stdout } = await execFileAsync(command.command, [...command.args, '--version'], {
+            encoding: 'utf8', timeout: 10_000, windowsHide: true
+        });
+        const version = stdout.match(/codex-cli (\d+)\.(\d+)\.(\d+)/);
+        if (!version || Number(version[1]) === 0 && Number(version[2]) < 154) {
+            throw new Error('Shared sessions require Codex >= 0.154.0. Upgrade the Codex executable on PATH.');
+        }
+        return command;
+    })();
+    if (key) {
+        checkedVersion = { key, result };
+        void result.catch(() => { if (checkedVersion?.result === result) checkedVersion = undefined; });
     }
-    return command;
+    return result;
 }
 
 export function sharedLaunchConfig(options: SharedLaunchOptions, cwd: string): {
@@ -160,7 +181,8 @@ export async function initializeSharedClient(client: CodexAppServerClient): Prom
 
 /** Invalid IDs only: no probes may create turns, mutate threads or call a model. */
 export async function checkSharedCapabilities(client: CodexAppServerClient): Promise<void> {
-    for (const method of ['thread/queue/list', 'thread/queue/add', 'thread/queue/delete', 'thread/queue/start', 'turn/steer', 'thread/settings/update', 'thread/metadata/update', 'thread/fork', 'thread/turns/list']) {
-        if (!await client.supportsMethod(method)) throw new Error(`Codex lacks ${method}; upgrade to a compatible >= 0.154.0 build`);
-    }
+    const methods = ['thread/queue/list', 'thread/queue/add', 'thread/queue/delete', 'thread/queue/start', 'turn/steer', 'thread/settings/update', 'thread/metadata/update', 'thread/fork', 'thread/turns/list'];
+    const supported = await Promise.all(methods.map(method => client.supportsMethod(method)));
+    const missing = methods.find((_, index) => !supported[index]);
+    if (missing) throw new Error(`Codex lacks ${missing}; upgrade to a compatible >= 0.154.0 build`);
 }

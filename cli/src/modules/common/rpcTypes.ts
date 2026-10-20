@@ -22,6 +22,12 @@ export interface SpawnSessionOptions {
     collaborationMode?: 'default' | 'plan'
     copilotAgentMode?: CopilotAgentMode
     token?: string
+    /** Runner-local account id; no credential material is serialized over RPC. */
+    codexAccountId?: string
+    /** Persistent Codex home selected for this execution; omitted = default. */
+    codexHome?: string
+    /** Runner-local gateway key profile; only the id is serialized. */
+    codexKeyProfileId?: string
     sessionType?: 'simple' | 'worktree'
     worktreeName?: string
     startingMode?: 'remote' | 'pty'

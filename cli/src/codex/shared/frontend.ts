@@ -2,8 +2,11 @@ import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { ApiClient } from '@/api/api';
 import { readRunnerState } from '@/persistence';
-import { isProcessAlive, killProcessByChildProcess } from '@/utils/process';
+import { isProcessAlive, getProcessStartMarkerAsync, killProcessByChildProcess } from '@/utils/process';
 import { getInvokedCwd } from '@/utils/invokedCwd';
+import { expandCodexHomePath } from '../utils/codexHome';
+import { resolveCodexKeyProfile } from '../utils/codexKeyProfiles';
+import { resolve } from 'node:path';
 import { CodexAppServerClient } from '../codexAppServerClient';
 import { findRuntime, runtimeAlive, type CodexRuntimeRecord } from './registry';
 import { initializeSharedClient, sharedLaunchConfig, SharedLaunchSchema, type SharedLaunchOptions } from './launch';
@@ -55,6 +58,18 @@ export async function runSharedCodex(raw: SharedLaunchOptions): Promise<void> {
     if (options.existingSessionId && !options.reservedSessionId) {
         const api = await ApiClient.create();
         const session = await api.getSession(options.existingSessionId);
+        // Resume must stay on the home that owns this thread's native store.
+        const storedHome = typeof session.metadata?.codexHome === 'string' ? session.metadata.codexHome : undefined;
+        if (storedHome) {
+            if (options.codexHome && resolve(expandCodexHomePath(options.codexHome)) !== resolve(storedHome)) {
+                throw new Error(`This session is bound to Codex home ${storedHome}; refusing to resume it from ${options.codexHome}`);
+            }
+            options.codexHome ??= storedHome;
+        }
+        const storedKeyProfile = typeof session.metadata?.codexKeyProfileId === 'string' ? session.metadata.codexKeyProfileId : undefined;
+        options.codexKeyProfileId ??= storedKeyProfile;
+        if (!options.codexProvider && typeof session.metadata?.codexProvider === 'string') options.codexProvider = session.metadata.codexProvider;
+        if (!options.codexModel && typeof session.metadata?.codexModel === 'string') options.codexModel = session.metadata.codexModel;
         const runtime = await findRuntime(session.id);
         if (runtime) {
             if (options.startedBy === 'runner') throw new Error('Shared session is already running; attach instead of spawning another execution');
@@ -65,8 +80,15 @@ export async function runSharedCodex(raw: SharedLaunchOptions): Promise<void> {
         options.resumeSessionId ??= session.metadata?.codexSessionId;
         if (!options.resumeSessionId) throw new Error('Existing HAPI session has no Codex thread binding');
     }
+    if (options.codexKeyProfileId) {
+        // The key is process-local: apply it before any app-server child is
+        // spawned, including a cold resume that recovered the profile from
+        // session metadata.
+        Object.assign(process.env, resolveCodexKeyProfile(options.codexKeyProfileId).env);
+    }
     const runner = await readRunnerState();
-    if (runner && isProcessAlive(runner.pid) && !runner.sharedCodexRuntime) {
+    if (runner && !runner.sharedCodexRuntime && (process.platform === 'win32'
+        ? await getProcessStartMarkerAsync(runner.pid) : isProcessAlive(runner.pid))) {
         throw new Error('Running HAPI runner predates shared Codex sessions. Upgrade/restart the runner first; existing sessions are not migrated or stopped automatically.');
     }
     const launch = sharedLaunchConfig(options, options.workingDirectory!);

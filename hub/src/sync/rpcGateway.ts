@@ -2,8 +2,13 @@ import { ForkOperationResponseSchema, type ForkOperationRpcRequest, type ForkOpe
 import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
 import type { FileManagementRequest, FileManagementResponse, FileManagementUploadRequest } from '@hapi/protocol/fileManagement'
 import type { ArtifactReadResponse } from '@hapi/protocol/artifacts'
-import type { CodexGoalRequest, CodexGoalResponse } from '@hapi/protocol/apiTypes'
-import { CodexSubagentMessagesResponseSchema } from '@hapi/protocol/apiTypes'
+import type { CodexAccountSummary, CodexAccountsResponse, CodexGoalRequest, CodexGoalResponse, DshBundleState, InterruptDshSubagentRequest, PromptDshSubagentRequest, ReadDshSubagentMessagesRequest, SwitchCodexAccountResponse } from '@hapi/protocol/apiTypes'
+import {
+    CodexSubagentMessagesResponseSchema,
+    DshSubagentMessagesResponseSchema,
+    InterruptDshSubagentResponseSchema,
+    PromptDshSubagentResponseSchema
+} from '@hapi/protocol/apiTypes'
 import type { AgentFlavor, CodexCollaborationMode, CopilotAgentMode, PermissionMode } from '@hapi/protocol/types'
 import { PERMISSION_REQUEST_NOT_FOUND_MESSAGE, RPC_METHODS } from '@hapi/protocol/rpcMethods'
 import {
@@ -93,6 +98,17 @@ function isPermissionRequestNotFoundResponse(response: unknown): boolean {
     if (!response || typeof response !== 'object') return false
     const error = (response as Record<string, unknown>).error
     return error === PERMISSION_REQUEST_NOT_FOUND_MESSAGE
+}
+
+/**
+ * Session RPC handlers report failures as `{ error }` rather than throwing
+ * (see RpcHandlerManager.handleRequest). Surface them as real errors so route
+ * handlers can map them onto 409 instead of returning a hollow success.
+ */
+function throwOnRpcError(result: unknown): void {
+    if (!result || typeof result !== 'object') return
+    const error = (result as Record<string, unknown>).error
+    if (typeof error === 'string') throw new Error(error)
 }
 
 export type RpcCommandResponse = CommandResponse
@@ -243,7 +259,10 @@ export class RpcGateway {
         // latter is adopt-stub (create/getOrCreate with id), not reopen.
         forkSession?: boolean,
         /** Fresh machine-spawn stub — distinct from reopen existingSessionId. */
-        reservedSessionId?: string
+        reservedSessionId?: string,
+        codexAccountId?: string,
+        codexHome?: string,
+        codexKeyProfileId?: string
     ): Promise<
         | { type: 'success'; sessionId: string }
         | {
@@ -280,7 +299,10 @@ export class RpcGateway {
                     collaborationMode,
                     copilotAgentMode,
                     startingMode,
-                    forkSession: forkSession === true
+                    forkSession: forkSession === true,
+                    codexAccountId,
+                    codexHome,
+                    codexKeyProfileId
                 }
             )
             if (result && typeof result === 'object') {
@@ -346,6 +368,14 @@ export class RpcGateway {
         return AgentAvailabilityResponseSchema.parse(result)
     }
 
+    async listDshBundles(machineId: string): Promise<DshBundleState> {
+        return await this.machineRpc(machineId, RPC_METHODS.ListDshBundles, {}) as DshBundleState
+    }
+
+    async setDshBundle(machineId: string, name: string, enabled: boolean): Promise<DshBundleState> {
+        return await this.machineRpc(machineId, RPC_METHODS.SetDshBundle, { name, enabled }) as DshBundleState
+    }
+
     async checkPathsExist(machineId: string, paths: string[]): Promise<PathExistsResponse> {
         const result = await this.machineRpc(machineId, RPC_METHODS.PathExists, { paths }) as RpcPathExistsResponse | unknown
         if (!result || typeof result !== 'object') {
@@ -402,6 +432,14 @@ export class RpcGateway {
 
     async readSessionFile(sessionId: string, path: string): Promise<RpcReadFileResponse> {
         return await this.sessionRpc(sessionId, RPC_METHODS.ReadFile, { path }) as RpcReadFileResponse
+    }
+
+    async readMachineFile(machineId: string, cwd: string, path: string): Promise<RpcReadFileResponse> {
+        return await this.machineRpc(machineId, RPC_METHODS.ReadFile, { cwd, path }) as RpcReadFileResponse
+    }
+
+    async statMachineFiles(machineId: string, cwd: string, paths: string[]): Promise<RpcStatFilesResponse> {
+        return await this.machineRpc(machineId, RPC_METHODS.StatFiles, { cwd, paths }) as RpcStatFilesResponse
     }
 
     async writeSessionFile(sessionId: string, data: FileWriteRequest): Promise<FileWriteResponse> {
@@ -468,6 +506,47 @@ export class RpcGateway {
         return await this.machineRpc(machineId, RPC_METHODS.ListCodexModels, {}, MODEL_LIST_RPC_TIMEOUT_MS) as RpcListCodexModelsResponse
     }
 
+    async codexDeviceLogin(machineId: string, action: 'start' | 'get' | 'cancel', id?: string, label?: string): Promise<import('@hapi/protocol/apiTypes').CodexDeviceLoginResponse> {
+        const method = action === 'start' ? RPC_METHODS.StartCodexDeviceLogin : action === 'get' ? RPC_METHODS.GetCodexDeviceLogin : RPC_METHODS.CancelCodexDeviceLogin
+        return await this.machineRpc(machineId, method, { id, label }) as import('@hapi/protocol/apiTypes').CodexDeviceLoginResponse
+    }
+
+    async migrateCodexThread(machineId: string, request: import('@hapi/protocol/apiTypes').MigrateCodexThreadRequest): Promise<import('@hapi/protocol/apiTypes').MigrateCodexThreadResponse> {
+        return await this.machineRpc(machineId, RPC_METHODS.MigrateCodexThread, request, 120_000) as import('@hapi/protocol/apiTypes').MigrateCodexThreadResponse
+    }
+
+    async listCodexHomes(machineId: string): Promise<import('@hapi/protocol/apiTypes').CodexHomesResponse> {
+        return await this.machineRpc(machineId, RPC_METHODS.ListCodexHomes, {}) as import('@hapi/protocol/apiTypes').CodexHomesResponse
+    }
+
+    async saveCodexHome(machineId: string, input: import('@hapi/protocol/apiTypes').SaveCodexHomeRequest): Promise<import('@hapi/protocol/apiTypes').CodexHomesResponse> {
+        return await this.machineRpc(machineId, RPC_METHODS.SaveCodexHome, input) as import('@hapi/protocol/apiTypes').CodexHomesResponse
+    }
+
+    async deleteCodexHome(machineId: string, id: string): Promise<import('@hapi/protocol/apiTypes').CodexHomesResponse> {
+        return await this.machineRpc(machineId, RPC_METHODS.DeleteCodexHome, { id }) as import('@hapi/protocol/apiTypes').CodexHomesResponse
+    }
+
+    async listCodexAccounts(machineId: string): Promise<CodexAccountsResponse> {
+        return await this.machineRpc(machineId, RPC_METHODS.ListCodexAccounts, {}) as CodexAccountsResponse
+    }
+
+    async importCurrentCodexAccount(machineId: string, label?: string): Promise<{ success: boolean; account?: CodexAccountSummary; error?: string }> {
+        return await this.machineRpc(machineId, RPC_METHODS.ImportCurrentCodexAccount, { label }) as { success: boolean; account?: CodexAccountSummary; error?: string }
+    }
+
+    async renameCodexAccount(machineId: string, accountId: string, label: string): Promise<{ success: boolean; account?: CodexAccountSummary; error?: string }> {
+        return await this.machineRpc(machineId, RPC_METHODS.RenameCodexAccount, { accountId, label }) as { success: boolean; account?: CodexAccountSummary; error?: string }
+    }
+
+    async deleteCodexAccount(machineId: string, accountId: string): Promise<{ success: boolean; error?: string }> {
+        return await this.machineRpc(machineId, RPC_METHODS.DeleteCodexAccount, { accountId }) as { success: boolean; error?: string }
+    }
+
+    async switchCodexAccount(sessionId: string, accountId: string): Promise<SwitchCodexAccountResponse> {
+        return await this.sessionRpc(sessionId, RPC_METHODS.SwitchCodexAccount, { accountId }, 30_000) as SwitchCodexAccountResponse
+    }
+
     async listOpencodeModelVariantsForMachine(machineId: string, cwd?: string | null): Promise<RpcListOpencodeModelVariantsResponse> {
         return await this.machineRpc(machineId, RPC_METHODS.ListOpencodeModelVariants, { cwd: cwd ?? null }, MODEL_LIST_RPC_TIMEOUT_MS) as RpcListOpencodeModelVariantsResponse
     }
@@ -487,6 +566,27 @@ export class RpcGateway {
 
     async readCodexSubagentMessages(machineId: string, query: import('@hapi/protocol/apiTypes').ReadCodexSubagentMessagesRequest) {
         return CodexSubagentMessagesResponseSchema.parse(await this.machineRpc(machineId, RPC_METHODS.ReadCodexSubagentMessages, query, 15_000))
+    }
+
+    /** One page of a DSH child transcript; the parent session is the RPC channel. */
+    async readDshSubagentMessages(sessionId: string, request: ReadDshSubagentMessagesRequest) {
+        const result = await this.sessionRpc(sessionId, RPC_METHODS.ReadDshSubagentMessages, request, 15_000)
+        throwOnRpcError(result)
+        return DshSubagentMessagesResponseSchema.parse(result)
+    }
+
+    /** Append one human follow-up to a continuable DSH child. */
+    async promptDshSubagent(sessionId: string, request: PromptDshSubagentRequest) {
+        const result = await this.sessionRpc(sessionId, RPC_METHODS.PromptDshSubagent, request, 30_000)
+        throwOnRpcError(result)
+        return PromptDshSubagentResponseSchema.parse(result)
+    }
+
+    /** Stop a continuable DSH child's current execution. */
+    async interruptDshSubagent(sessionId: string, request: InterruptDshSubagentRequest) {
+        const result = await this.sessionRpc(sessionId, RPC_METHODS.InterruptDshSubagent, request, 15_000)
+        throwOnRpcError(result)
+        return InterruptDshSubagentResponseSchema.parse(result)
     }
 
     async readCodexHistory(sessionId: string, query: Record<string, unknown>) {

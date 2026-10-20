@@ -1,3 +1,4 @@
+import * as Dialog from '@radix-ui/react-dialog'
 import { createNewTaskDelivery, loadNewTaskDelivery, saveNewTaskDelivery, sendNewTaskDelivery } from './newTaskDelivery'
 import { ArrowUp, Plus, MoreHorizontal, Folder, Monitor, Shield } from './TaskIcons'
 import { ModelEffortPicker } from '@/components/AssistantChat/ModelEffortPicker'
@@ -11,6 +12,7 @@ import { getShareTransfer } from '@/lib/shareTransfer'
 import { MAX_UPLOAD_BYTES } from '@/lib/attachmentAdapter'
 import type { AttachmentMetadata } from '@/types/api'
 import { randomId } from '@/lib/randomId'
+import { CodexDeviceLogin } from '@/components/CodexDeviceLogin'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
@@ -22,6 +24,8 @@ import { usePlatform } from '@/hooks/usePlatform'
 import { useMachinePathsExists } from '@/hooks/useMachinePathsExists'
 import { useSpawnSession } from '@/hooks/mutations/useSpawnSession'
 import { useCodexModels } from '@/hooks/queries/useCodexModels'
+import { useCodexAccounts } from '@/hooks/queries/useCodexAccounts'
+import { useCodexHomes } from '@/hooks/queries/useCodexHomes'
 import { useCursorModelsForMachine } from '@/hooks/queries/useCursorModelsForMachine'
 import { useAgyModels } from '@/hooks/queries/useAgyModels'
 import { useOpencodeModelsForCwd } from '@/hooks/queries/useOpencodeModelsForCwd'
@@ -49,13 +53,13 @@ import {
 } from './newSessionCursorModels'
 import { buildCursorEffortPickerOptions, resolveCursorVariantOptions } from '@/lib/cursorModelOptions'
 import {
-    clearNewSessionFormDraft,
     clearNativeUpdateNewSessionDraft,
+    clearNewSessionFormDraft,
     loadNativeUpdateNewSessionDraft,
     loadNewSessionFormDraft,
     newSessionDraftMatchesMachine,
-    saveNewSessionFormDraft,
     saveNativeUpdateNewSessionDraft,
+    saveNewSessionFormDraft,
     shouldRestoreNewSessionFormDraft
 } from './newSessionFormDraft'
 import { isOpencodeReasoningEffortValid } from './types'
@@ -64,10 +68,12 @@ import { ActionButtons } from './ActionButtons'
 import { AgentSelector } from './AgentSelector'
 import { CollaborationModeSelector } from './CollaborationModeSelector'
 import { CodexImportActions } from './CodexImportActions'
+import { CodexAccountSelector } from './CodexAccountSelector'
 import { PiImportActions } from './PiImportActions'
 import { clearBatchImportedCodexSelection, resolveCodexImportRedirectSessionId } from './codexImportMerge'
 import { AgyModelSelector } from './AgyModelSelector'
 import { DirectorySection } from './DirectorySection'
+import { DirectoryPicker } from './DirectoryPicker'
 import { CopilotAgentModeSelector } from './CopilotAgentModeSelector'
 import { FastModeSelector } from './FastModeSelector'
 import { MachineSelector } from './MachineSelector'
@@ -98,6 +104,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { formatRunnerSpawnError } from '../../utils/formatRunnerSpawnError'
 import { markCodexSessionsImported } from '@/lib/codexImportedSessions'
 import { useToast } from '@/lib/toast-context'
+import { queryKeys } from '@/lib/query-keys'
 
 
 
@@ -124,7 +131,7 @@ export function NewSession(props: {
     const [filesReady, setFilesReady] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const nativeAttachmentScope = useMemo(() => ({}), [draftKey, props.api])
-    const [contextOpen, setContextOpen] = useState<'machine' | 'directory' | null>(null)
+    const [contextOpen, setContextOpen] = useState<'directory' | null>(null)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [permissionOpen, setPermissionOpen] = useState(false)
     const deliveryRef = useRef(loadNewTaskDelivery(draftKey))
@@ -167,6 +174,7 @@ export function NewSession(props: {
     const { haptic } = usePlatform()
     const { t } = useTranslation()
     const { addToast } = useToast()
+    const queryClient = useQueryClient()
     const { spawnSession, isPending, error: spawnError } = useSpawnSession(props.api)
     const { sessions, refetch: refetchSessions } = useSessions(props.api)
     const { getRecentPaths, addRecentPath, getLastUsedMachineId, setLastUsedMachineId } = useRecentPaths()
@@ -192,6 +200,11 @@ export function NewSession(props: {
     const [opencodeSelectedModel, setOpencodeSelectedModel] = useState<string | null | undefined>(undefined)
     const [serviceTier, setServiceTier] = useState<NewSessionServiceTier>('standard')
     const [collaborationMode, setCollaborationMode] = useState<CodexCollaborationMode>('default')
+    const [codexAccountId, setCodexAccountId] = useState('')
+    const [codexHome, setCodexHome] = useState('')
+    const [codexHomeId, setCodexHomeId] = useState('')
+    const [codexKeyProfileId, setCodexKeyProfileId] = useState('')
+    const [codexAccountError, setCodexAccountError] = useState<string | null>(null)
     const [copilotAgentMode, setCopilotAgentMode] = useState<CopilotAgentMode>('interactive')
     const [yoloMode, setYoloMode] = useState(loadPreferredYoloMode)
     const [nativePermissionMode, setNativePermissionMode] = useState<PermissionMode>('default')
@@ -383,6 +396,80 @@ export function NewSession(props: {
         () => (machineId ? props.machines.find((machine) => machine.id === machineId) ?? null : null),
         [machineId, props.machines]
     )
+    const codexAccounts = useCodexAccounts(props.api, machineId, agent === 'codex')
+
+    useEffect(() => {
+        if (agent !== 'codex' || codexAccountId || !codexAccounts.data) return
+        const preferred = codexAccounts.data.currentAccountId
+            ?? codexAccounts.data.accounts?.find(account => account.enabled)?.id
+            ?? ''
+        setCodexAccountId(preferred)
+    }, [agent, codexAccountId, codexAccounts.data])
+
+    useEffect(() => {
+        setCodexAccountId('')
+        setCodexAccountError(null)
+    }, [machineId])
+
+    const refreshCodexAccounts = useCallback(async () => {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.machineCodexAccounts(machineId ?? '') })
+    }, [machineId, queryClient])
+
+    const importCurrentAccount = useCallback(async () => {
+        if (!machineId) return
+        setCodexAccountError(null)
+        const result = await props.api.importCurrentCodexAccount(machineId)
+        if (!result.success || !result.account) throw new Error(result.error || t('newSession.codexAccount.importFailed'))
+        setCodexAccountId(result.account.id)
+        await refreshCodexAccounts()
+    }, [machineId, props.api, refreshCodexAccounts, t])
+
+    const renameAccount = useCallback(async (account: import('@/types/api').CodexAccountSummary, label: string) => {
+        if (!machineId) return
+        const result = await props.api.renameCodexAccount(machineId, account.id, label)
+        if (!result.success) throw new Error(result.error || t('newSession.codexAccount.renameFailed'))
+        await refreshCodexAccounts()
+    }, [machineId, props.api, refreshCodexAccounts, t])
+
+    const deleteAccount = useCallback(async (account: import('@/types/api').CodexAccountSummary) => {
+        if (!machineId) return
+        const result = await props.api.deleteCodexAccount(machineId, account.id)
+        if (!result.success) throw new Error(result.error || t('newSession.codexAccount.deleteFailed'))
+        if (codexAccountId === account.id) setCodexAccountId('')
+        await refreshCodexAccounts()
+    }, [codexAccountId, machineId, props.api, refreshCodexAccounts, t])
+    const codexHomeCatalog = useCodexHomes(props.api, machineId, agent === 'codex')
+    const codexKeyProfiles = selectedMachine?.metadata?.codexKeyProfiles ?? []
+    useEffect(() => {
+        if (codexKeyProfiles.length === 0 || codexKeyProfiles.some(profile => profile.id === codexKeyProfileId)) return
+        setCodexKeyProfileId(codexKeyProfiles[0].id)
+    }, [codexKeyProfiles, codexKeyProfileId])
+    const codexHomePresets = useMemo(() => {
+        const merged = [...(codexHomeCatalog.data?.homes ?? []), ...(selectedMachine?.metadata?.codexHomes ?? [])]
+        const seen = new Set<string>()
+        return merged.filter(home => {
+            if (seen.has(home.id)) return false
+            seen.add(home.id)
+            return true
+        })
+    }, [codexHomeCatalog.data?.homes, selectedMachine?.metadata?.codexHomes])
+    useEffect(() => {
+        if (codexHomePresets.length <= 1) return
+        const preferred = codexHomePresets.find(home => home.id === codexHomeId)
+            ?? codexHomePresets.find(home => home.official === true)
+            ?? codexHomePresets[0]
+        if (preferred && preferred.id !== codexHomeId) {
+            setCodexHomeId(preferred.id)
+            setCodexHome(preferred.path)
+        }
+    }, [codexHomePresets, codexHomeId])
+    const sharedProjectRoot = selectedMachine?.metadata?.capabilities?.includes('shared-project')
+        ? selectedMachine.metadata.workspaceRoots?.[0] : undefined
+    useEffect(() => {
+        if (!sharedProjectRoot) return
+        setDirectory(current => current.trim() ? current : sharedProjectRoot)
+        setSessionType('simple')
+    }, [sharedProjectRoot])
     const agentAvailability = useAgentAvailability({
         api: props.api,
         machineId,
@@ -1163,7 +1250,6 @@ export function NewSession(props: {
         if (codexSearchTimerRef.current) clearTimeout(codexSearchTimerRef.current)
     }, [])
 
-    const queryClient = useQueryClient()
     const codexCatalogKey = useMemo(() => ['machine-codex-sessions', machineId] as const, [machineId])
     const readInitialCodexCatalog = useCallback(async () => {
         const result = await props.api.getCodexSessions(null, machineId, { search: '', cursor: undefined, limit: 50 })
@@ -1893,6 +1979,10 @@ export function NewSession(props: {
                             ? { permissionMode: nativePermissionMode }
                             : undefined
                     )
+                    if (codexAccountId) {
+                        const switched = await props.api.switchSessionCodexAccount(resumedSessionId, codexAccountId)
+                        if (!switched.success) throw new Error(switched.error || t('newSession.codexAccount.switchFailed'))
+                    }
                     haptic.notification('success')
                     markCodexSessionsImported([selectedCodexImportSession.id])
                     savePreferredLaunchSettings(machineId, agent, preferredLaunchSettings)
@@ -1958,7 +2048,7 @@ export function NewSession(props: {
                 model: resolvedModel,
                 effort: resolvedEffort,
                 modelReasoningEffort: resolvedModelReasoningEffort,
-                yolo: agent === 'dsh' || usesNativeSelect ? undefined : yoloMode,
+                yolo: usesNativeSelect ? undefined : yoloMode,
                 permissionMode: agent === 'grok'
                     ? grokPermissionMode
                     : usesSharedPermissionMode
@@ -1969,6 +2059,9 @@ export function NewSession(props: {
                 serviceTier: resolvedServiceTier,
                 collaborationMode: resolvedCollaborationMode,
                 copilotAgentMode: agent === 'copilot' ? copilotAgentMode : undefined,
+                codexAccountId: agent === 'codex' ? (codexAccountId || undefined) : undefined,
+                codexHome: agent === 'codex' ? (codexHome.trim() || undefined) : undefined,
+                codexKeyProfileId: agent === 'codex' ? (codexKeyProfileId || undefined) : undefined,
             }
             launchInputRef.current = launchInput
             if (deliveryRef.current) {
@@ -2080,6 +2173,13 @@ export function NewSession(props: {
         && !fastModeSelectionPending
     )
 
+    // DSH and Qoder CN publish their model catalog from the ACP session itself,
+    // so the create form has no pre-session model picker: selection happens in
+    // the composer once the session advertises its options.
+    const sessionManagedModel = agent === 'dsh' || agent === 'qoder'
+    const sessionManagedModelHintKey = agent === 'dsh'
+        ? 'newSession.dshManagedModel'
+        : agent === 'qoder' ? 'newSession.qoderManagedModel' : null
     const taskModels = agent === 'codex' ? codexModelOptions
         : agent === 'grok' ? grokModelOptions
         : agent === 'copilot' ? copilotModelOptions
@@ -2120,11 +2220,11 @@ export function NewSession(props: {
     return (
         <div className="app-new-session-form flex flex-col">
             {props.initialTask !== undefined ? (
-                <section className="mx-auto flex w-full max-w-3xl flex-col px-4 pb-8 pt-[clamp(2rem,12vh,9rem)] sm:px-6" data-testid="new-task-composer">
-                    <h1 className="mb-8 text-center text-2xl font-semibold tracking-tight sm:mb-10 sm:text-4xl">{t('newTask.heading')}</h1>
+                <section className="mx-auto flex w-full max-w-3xl flex-col px-4 pb-8 pt-5 sm:pt-12 sm:px-6" data-testid="new-task-composer">
+                    <h1 className="mb-4 text-left text-xl font-semibold tracking-tight sm:mb-6 sm:text-3xl">{t('newTask.heading')}</h1>
                     <div className="rounded-3xl border border-[var(--app-border)] bg-[var(--app-bg)] p-3 shadow-sm sm:p-4">
                         <label htmlFor="new-session-initial-task" className="sr-only">{t('sessions.task.initial')}</label>
-                        <textarea id="new-session-initial-task" rows={6} value={taskText}
+                        <textarea id="new-session-initial-task" rows={3} value={taskText}
                             onChange={event => props.onInitialTaskChange?.(event.target.value)}
                             placeholder={t('sessions.task.placeholder')}
                             disabled={isCreating || deliveryPending}
@@ -2134,7 +2234,7 @@ export function NewSession(props: {
                                     void handleCreate()
                                 }
                             }}
-                            className="min-h-40 w-full resize-y border-0 bg-transparent p-2 text-base text-[var(--app-fg)] outline-none sm:min-h-52" />
+                            className="min-h-24 w-full resize-none border-0 bg-transparent p-2 text-base text-[var(--app-fg)] outline-none sm:min-h-32" />
                         {files.length > 0 ? <ul className="mb-3 flex flex-wrap gap-2" aria-label="Attachments">
                             {files.map(item => <li key={item.id} className="flex max-w-full items-center gap-2 rounded-xl bg-[var(--app-secondary-bg)] px-3 py-2 text-xs">
                                 <span className="truncate">{item.file.name}</span><button type="button" className="min-h-11 min-w-11" disabled={isCreating || deliveryPending} aria-label={`Remove ${item.file.name}`} onClick={() => setFiles(current => current.filter(file => file.id !== item.id))}>×</button>
@@ -2154,11 +2254,9 @@ export function NewSession(props: {
                                 event.target.value = ''
                             }} />
                             <button type="button" aria-label={t('newTask.attachFiles')} disabled={isCreating || deliveryPending || !filesReady} onClick={() => fileInputRef.current?.click()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-secondary-bg)] disabled:opacity-50"><Plus size={20} /></button></>}
-                            <button type="button" aria-label={t('misc.permissionMode')} aria-expanded={permissionOpen} onClick={() => setPermissionOpen(value => !value)} className="flex min-h-11 min-w-11 items-center gap-1 rounded-full px-2 py-2 text-xs hover:bg-[var(--app-secondary-bg)]"><Shield size={16} /><span className="hidden sm:inline">{taskPermissionLabel}</span><span>⌄</span></button>
+                            <button type="button" aria-label={t('newSession.advanced')} aria-expanded={permissionOpen} onClick={() => setPermissionOpen(value => !value)} className="flex min-h-11 min-w-11 items-center gap-1 rounded-full px-2 py-2 text-xs hover:bg-[var(--app-secondary-bg)]"><Shield size={16} /><span className="hidden sm:inline">{t('newSession.advanced')} · {taskPermissionLabel}</span><span>⌄</span></button>
                             <div className="ml-auto min-w-0">
-                                {agent === 'dsh' ? <span className="block truncate px-2 py-2 text-sm text-[var(--app-hint)]" title={t('newSession.dshManagedModelHint')}>
-                                    {t('newSession.dshManagedModel')}
-                                </span> : <ModelEffortPicker models={taskModels} model={agent === 'cursor' && cursorPicker.mode === 'dual' ? cursorBaseSelectValue : agent === 'agy' ? agySelectedModel ?? 'auto' : agent === 'opencode' ? opencodeSelectedModel ?? 'auto' : model}
+                                {sessionManagedModel ? null : <ModelEffortPicker models={taskModels} model={agent === 'cursor' && cursorPicker.mode === 'dual' ? cursorBaseSelectValue : agent === 'agy' ? agySelectedModel ?? 'auto' : agent === 'opencode' ? opencodeSelectedModel ?? 'auto' : model}
                                     onModelChange={value => { if (agent === 'agy') { agyModelPickedByUserRef.current = value !== 'auto'; setAgySelectedModel(value === 'auto' ? null : value); } else if (agent === 'opencode') setOpencodeSelectedModel(value === 'auto' ? null : value); else if (agent === 'cursor' && cursorPicker.mode === 'dual') handleCursorBaseChange(value ?? 'auto'); else setModel(value ?? 'auto') }}
                                     efforts={taskEfforts} effort={taskEffort}
                                     onEffortChange={value => { if (agent === 'codex' || agent === 'opencode') setModelReasoningEffort(value ?? 'default'); else if (agent === 'cursor') handleCursorEffortChange(value ?? 'auto'); else setEffort(value ?? 'auto') }}
@@ -2169,6 +2267,7 @@ export function NewSession(props: {
                             </div>
                             <button type="button" aria-label={deliveryPending ? t('newTask.retryDelivery') : t('composer.send')} title={createLabel} disabled={!taskCanSend} onClick={() => void handleCreate()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--app-fg)] text-[var(--app-bg)] disabled:opacity-30"><ArrowUp size={22} /></button>
                         </div>
+                        {sessionManagedModelHintKey ? <p className="px-2 pt-2 text-xs text-[var(--app-hint)]">{t(sessionManagedModelHintKey)}</p> : null}
                         {permissionOpen ? <div className="mt-2 rounded-xl bg-[var(--app-secondary-bg)]">            <PermissionField
                 agent={agent}
                 nativeValue={agent === 'grok' ? grokPermissionMode : nativePermissionMode}
@@ -2186,39 +2285,32 @@ export function NewSession(props: {
             />
 </div> : null}
                     </div>
-                    <div className="mt-4 flex items-center gap-2 rounded-2xl bg-[var(--app-secondary-bg)] px-3 py-3 text-sm">
-                        <button type="button" className="flex min-h-11 min-w-11 items-center gap-2 rounded-lg px-2 py-1" onClick={() => setContextOpen(contextOpen === 'machine' ? null : 'machine')} aria-expanded={contextOpen === 'machine'}><Monitor size={17} /><span className="max-w-24 truncate sm:max-w-40">{selectedMachine?.metadata?.displayName || selectedMachine?.metadata?.host || t('newSession.machine')}</span><span>⌄</span></button>
+                    <div className="mt-3 flex flex-wrap items-center gap-1 rounded-xl bg-[var(--app-secondary-bg)] px-2 py-1 text-sm">
+                        <div className="flex min-w-0 max-w-full items-center gap-1">
+                            <span className="shrink-0"><Monitor size={17} /></span>
+                            <MachineSelector compact machines={props.machines} machineId={machineId}
+                                isLoading={props.isLoading} isDisabled={isFormDisabled}
+                                onChange={handleMachineChange} />
+                        </div>
                         <span className="h-5 border-l border-[var(--app-border)]" />
-                        <button type="button" className="flex min-h-11 min-w-11 items-center gap-2 rounded-lg px-2 py-1" onClick={() => setContextOpen(contextOpen === 'directory' ? null : 'directory')} aria-expanded={contextOpen === 'directory'} title={directory}><Folder size={17} /><span className="max-w-24 truncate sm:max-w-52">{directory.split(/[\\/]/).filter(Boolean).pop() || t('newSession.directory')}</span><span>⌄</span></button>
+                        <button type="button" className="flex min-h-11 min-w-11 items-center gap-2 rounded-lg px-2 py-1" onClick={() => setContextOpen(contextOpen === 'directory' ? null : 'directory')} aria-expanded={contextOpen === 'directory'} title={directory}><Folder size={17} /><span className="max-w-[260px] truncate">{directory.split(/[\\/]/).filter(Boolean).pop() || t('newSession.directory')}</span><span>⌄</span></button>
                         <button type="button" className="ml-auto flex min-h-11 min-w-11 items-center justify-center rounded-full p-2" aria-label={t('newTask.moreSettings')} aria-expanded={settingsOpen} onClick={() => setSettingsOpen(value => !value)}><MoreHorizontal size={20} /></button>
                     </div>
-                    {contextOpen === 'machine' ? <div className="mt-2 rounded-2xl border border-[var(--app-border)]">            <MachineSelector
-                machines={props.machines}
+                    {contextOpen === 'directory' ? <Dialog.Root open onOpenChange={open => { if (!open) setContextOpen(null) }}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-[119] bg-black/20" /><Dialog.Content aria-describedby={undefined} className="fixed left-1/2 bottom-4 z-[120] w-[calc(100vw-24px)] max-w-xl -translate-x-1/2 max-h-[65dvh] overflow-auto rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)] p-2 shadow-xl"><Dialog.Title className="sr-only">{t('newSession.directory')}</Dialog.Title><button type="button" className="ml-auto block min-h-11 px-3" onClick={() => setContextOpen(null)}>{t('button.close')}</button>            <DirectoryPicker
+                api={props.api}
                 machineId={machineId}
-                isLoading={props.isLoading}
-                isDisabled={isFormDisabled}
-                onChange={handleMachineChange}
-            />
-</div> : null}
-                    {contextOpen === 'directory' ? <div className="mt-2 rounded-2xl border border-[var(--app-border)]">            <DirectorySection
-                directory={directory}
-                suggestions={suggestions}
-                selectedIndex={selectedIndex}
-                isDisabled={isFormDisabled}
+                workspaceRoots={selectedMachine?.metadata?.workspaceRoots ?? []}
+                initialPath={trimmedDirectory}
                 recentPaths={recentPaths}
                 statusMessage={directoryStatusMessage}
                 statusTone={directoryStatusTone}
-                onDirectoryChange={handleDirectoryChange}
-                onDirectoryFocus={handleDirectoryFocus}
-                onDirectoryBlur={handleDirectoryBlur}
-                onDirectoryKeyDown={handleDirectoryKeyDown}
-                onSuggestionSelect={handleSuggestionSelect}
-                onPathClick={handlePathClick}
-                onChooseFolder={props.onChooseFolder ? handleChooseFolderClick : undefined}
+                onSelect={(path) => {
+                    setDirectory(path)
+                    setContextOpen(null)
+                }}
             />
-</div> : null}
+</Dialog.Content></Dialog.Portal></Dialog.Root> : null}
                     {settingsOpen ? <div className="mt-2 rounded-2xl border border-[var(--app-border)]">            <AgentSelector
-                key={machineId}
                 agent={agent}
                 agents={availableAgents}
                 availability={agentAvailability.agents}
@@ -2322,16 +2414,15 @@ export function NewSession(props: {
                 onPathClick={handlePathClick}
                 onChooseFolder={props.onChooseFolder ? handleChooseFolderClick : undefined}
             />
-            <SessionTypeSelector
+            {!sharedProjectRoot ? <SessionTypeSelector
                 sessionType={sessionType}
                 worktreeName={worktreeName}
                 worktreeInputRef={worktreeInputRef}
                 isDisabled={isFormDisabled}
                 onSessionTypeChange={setSessionType}
                 onWorktreeNameChange={setWorktreeName}
-            />
+            /> : null}
             <AgentSelector
-                key={machineId}
                 agent={agent}
                 agents={availableAgents}
                 availability={agentAvailability.agents}
@@ -2362,6 +2453,76 @@ export function NewSession(props: {
             ) : null}
             {selectedAgentAvailable && !agentAvailability.isLoading && !agentAvailability.error ? <>
             {agent === 'codex' ? (
+                <>
+                {machineId ? <CodexDeviceLogin key={machineId} api={props.api} machineId={machineId} onComplete={account => setCodexAccountId(account.id)} /> : null}
+                <label className="flex flex-col gap-1 px-3 py-2 text-xs text-[var(--app-hint)]">
+                    <span>{t('newSession.codexHome.label')}</span>
+                    {codexHomePresets.length > 1 ? (
+                        <select
+                            value={codexHomeId}
+                            onChange={(event) => {
+                                const selected = codexHomePresets.find(home => home.id === event.target.value)
+                                setCodexHomeId(event.target.value)
+                                setCodexHome(selected?.path ?? '')
+                            }}
+                            disabled={isFormDisabled || !selectedMachine}
+                            className="rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1.5 text-sm text-[var(--app-fg)]"
+                        >
+                            {codexHomePresets.map(home => (
+                                <option key={home.id} value={home.id}>{home.label} — {home.path}</option>
+                            ))}
+                        </select>
+                    ) : (
+                        <input
+                            type="text"
+                            value={codexHome}
+                            onChange={(event) => setCodexHome(event.target.value)}
+                            placeholder={t('newSession.codexHome.placeholder')}
+                            disabled={isFormDisabled || !selectedMachine}
+                            className="rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1.5 text-sm text-[var(--app-fg)]"
+                        />
+                    )}
+                    <span>{t('newSession.codexHome.hint')}</span>
+                </label>
+                {agent === 'codex' && codexKeyProfiles.length > 0 ? (
+                    <label className="flex flex-col gap-1 px-3 py-2 text-xs text-[var(--app-hint)]">
+                        <span>{t('newSession.codexKeyProfile.label')}</span>
+                        <select
+                            value={codexKeyProfileId}
+                            onChange={(event) => setCodexKeyProfileId(event.target.value)}
+                            disabled={isFormDisabled || !selectedMachine}
+                            className="rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2 py-1.5 text-sm text-[var(--app-fg)]"
+                        >
+                            {codexKeyProfiles.map(profile => (
+                                <option key={profile.id} value={profile.id}>{profile.label}</option>
+                            ))}
+                        </select>
+                    </label>
+                ) : null}
+                <CodexAccountSelector
+                    accounts={codexAccounts.data?.accounts ?? []}
+                    value={codexAccountId}
+                    currentAccountId={codexAccounts.data?.currentAccountId ?? null}
+                    isLoading={codexAccounts.isLoading}
+                    isDisabled={isFormDisabled || !selectedMachine}
+                    error={codexAccountError ?? (codexAccounts.error instanceof Error ? codexAccounts.error.message : null)}
+                    onChange={setCodexAccountId}
+                    onImportCurrent={async () => {
+                        try { await importCurrentAccount() } catch (error) {
+                            setCodexAccountError(error instanceof Error ? error.message : t('newSession.codexAccount.importFailed'))
+                        }
+                    }}
+                    onRename={async (account, label) => {
+                        try { await renameAccount(account, label) } catch (error) {
+                            setCodexAccountError(error instanceof Error ? error.message : t('newSession.codexAccount.renameFailed'))
+                        }
+                    }}
+                    onDelete={async (account) => {
+                        try { await deleteAccount(account) } catch (error) {
+                            setCodexAccountError(error instanceof Error ? error.message : t('newSession.codexAccount.deleteFailed'))
+                        }
+                    }}
+                />
                 <CodexImportActions
                     selectedSession={selectedCodexImportSession}
                     isLoading={isLoadingCodexImportSessions}
@@ -2375,6 +2536,7 @@ export function NewSession(props: {
                     }}
                     onClear={() => setSelectedCodexImportSessionId(null)}
                 />
+                </>
             ) : null}
             {agent === 'pi' ? (
                 <PiImportActions
@@ -2389,7 +2551,7 @@ export function NewSession(props: {
                     onClear={() => setSelectedPiImportSessionId(null)}
                 />
             ) : null}
-            {agent === 'dsh' ? null : agent === 'agy' ? (
+            {sessionManagedModel ? null : agent === 'agy' ? (
                 <AgyModelSelector
                     machineId={machineId}
                     isLoading={agyModelsState.isLoading}

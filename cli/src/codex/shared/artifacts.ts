@@ -40,7 +40,17 @@ export function projectNativeContent(threadId: string, turnId: string, item: Rec
         if ('Ok' in part || 'Err' in part) { visit(part.Ok ?? part.Err, depth + 1); return; }
         const type = part.type;
         if (['text', 'inputText', 'input_text', 'output_text'].includes(String(type))) {
-            if (typeof part.text === 'string') parts.push({ type: 'text', text: part.text });
+            if (typeof part.text === 'string') {
+                // Native history can serialize an MCP result inside a text block,
+                // while the live event exposes its content array directly.
+                if (item.type === 'mcpToolCall' && type === 'text' && part.text.trimStart().startsWith('{')) {
+                    try {
+                        const wrapped = record(JSON.parse(part.text));
+                        if (Array.isArray(wrapped.content)) { visit(wrapped, depth + 1); return; }
+                    } catch { /* ordinary tool text */ }
+                }
+                parts.push({ type: 'text', text: part.text });
+            }
         } else if (type === 'mention' || type === 'skill') {
             parts.push({ type: 'text', text: type === 'skill' ? `$${part.name}` : `@"${part.path}"` });
         } else if (type === 'localImage' || type === 'localAudio') {

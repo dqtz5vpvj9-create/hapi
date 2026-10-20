@@ -783,10 +783,97 @@ export const SpawnSessionRequestSchema = z.object({
     serviceTier: z.enum(['fast', 'standard']).optional(),
     collaborationMode: CodexCollaborationModeSchema.optional(),
     copilotAgentMode: CopilotAgentModeSchema.optional(),
-    startingMode: z.enum(['remote', 'pty']).optional()
+    startingMode: z.enum(['remote', 'pty']).optional(),
+    /** Runner-local Codex account id. Credentials never cross the Hub. */
+    codexAccountId: z.string().min(1).max(128).optional(),
+    /** Persistent Codex home for this execution; omitted = runner default (~/.codex). */
+    codexHome: z.string().min(1).max(4096).optional(),
+    /** Runner-local gateway key profile id; the secret never crosses the Hub. */
+    codexKeyProfileId: z.string().min(1).max(128).optional()
 })
 
 export type SpawnSessionRequest = z.infer<typeof SpawnSessionRequestSchema>
+
+export const MigrateCodexThreadRequestSchema = z.object({
+    sourceHome: z.string().min(1).max(4096),
+    targetHome: z.string().min(1).max(4096),
+    threadId: z.string().min(1).max(256),
+    targetProvider: z.string().min(1).max(128).optional(),
+    targetModel: z.string().min(1).max(256).optional(),
+    sessionId: z.string().min(1).max(128).optional(),
+    stopSource: z.boolean().optional(),
+    targetHomeId: z.string().min(1).max(128).optional(),
+})
+export type MigrateCodexThreadRequest = z.infer<typeof MigrateCodexThreadRequestSchema>
+export type MigrateCodexThreadResponse = {
+    success: boolean
+    threadId?: string
+    journalPath?: string
+    warnings?: string[]
+    error?: string
+}
+
+export const CodexHomeIdSchema = z.string().min(1).max(128)
+export const CodexHomeSchema = z.object({
+    id: CodexHomeIdSchema,
+    label: z.string().min(1).max(120),
+    path: z.string().min(1).max(4096),
+    official: z.boolean().optional(),
+})
+export type CodexHome = z.infer<typeof CodexHomeSchema>
+export type CodexHomesResponse = {
+    success: boolean
+    homes?: CodexHome[]
+    error?: string
+}
+export const SaveCodexHomeRequestSchema = z.object({
+    id: CodexHomeIdSchema.optional(),
+    label: z.string().min(1).max(120),
+    path: z.string().min(1).max(4096),
+    official: z.boolean().optional(),
+})
+export type SaveCodexHomeRequest = z.infer<typeof SaveCodexHomeRequestSchema>
+
+export const CodexAccountIdSchema = z.string().min(1).max(128)
+
+export const CodexAccountSummarySchema = z.object({
+    id: CodexAccountIdSchema,
+    label: z.string().min(1).max(80),
+    email: z.string().nullable(),
+    chatgptAccountId: z.string().min(1),
+    enabled: z.boolean(),
+    updatedAt: z.number().int().nonnegative(),
+    lastRefreshAt: z.number().int().nonnegative().nullable(),
+})
+
+export type CodexAccountSummary = z.infer<typeof CodexAccountSummarySchema>
+
+export type CodexAccountsResponse = {
+    success: boolean
+    accounts?: CodexAccountSummary[]
+    currentAccountId?: string | null
+    error?: string
+}
+
+export const ImportCurrentCodexAccountRequestSchema = z.object({
+    label: z.string().trim().min(1).max(80).optional(),
+})
+
+export const RenameCodexAccountRequestSchema = z.object({
+    label: z.string().trim().min(1).max(80),
+})
+
+export const SwitchCodexAccountRequestSchema = z.object({
+    accountId: CodexAccountIdSchema,
+})
+
+export type SwitchCodexAccountResponse = {
+    success: boolean
+    account?: CodexAccountSummary
+    applied?: boolean
+    persisted?: boolean
+    error?: string
+}
 
 export const MachineListDirectoryRequestSchema = z.object({
     path: z.string().min(1),
@@ -814,6 +901,32 @@ export type AgentAvailabilityEntry = z.infer<typeof AgentAvailabilityEntrySchema
 export const AgentAvailabilityResponseSchema = z.object({
     agents: z.array(AgentAvailabilityEntrySchema)
 })
+
+/** One bundle the machine's dsh installation can compose into a profile. */
+export const DshBundleEntrySchema = z.object({
+    name: z.string(),
+    description: z.string(),
+    enabled: z.boolean(),
+    /** Foundation bundles cannot be disabled; only optional/provider layers can. */
+    switchable: z.boolean().default(true)
+})
+export type DshBundleEntry = z.infer<typeof DshBundleEntrySchema>
+
+/** One DSH profile's composed bundle list. */
+export const DshBundleProfileSchema = z.object({
+    profile: z.string(),
+    dshHome: z.string(),
+    bundles: z.array(z.string())
+})
+export type DshBundleProfile = z.infer<typeof DshBundleProfileSchema>
+
+/** One DSH profile's composed bundle list plus every bundle it could compose. */
+export const DshBundleStateSchema = DshBundleProfileSchema.extend({
+    available: z.array(DshBundleEntrySchema),
+    /** A write changed the manifest; the running ACP profile keeps its startup composition. */
+    restartRequired: z.boolean().default(false)
+})
+export type DshBundleState = z.infer<typeof DshBundleStateSchema>
 export type AgentAvailabilityResponse = z.infer<typeof AgentAvailabilityResponseSchema>
 
 export const AuthRequestSchema = z.union([
@@ -1174,3 +1287,50 @@ export const CodexSubagentMessagesResponseSchema = z.object({
     hasLater: z.boolean().optional(), reset: z.boolean().optional(), truncated: z.boolean().optional(),
 })
 export type CodexSubagentMessagesResponse = z.infer<typeof CodexSubagentMessagesResponseSchema>
+
+/** Shared native-subagent transcript row; Codex and DSH both map onto this shape. */
+export const SubagentMessageSchema = CodexSubagentMessageSchema
+export type SubagentMessage = z.infer<typeof SubagentMessageSchema>
+
+export const DshSubagentMessagesQuerySchema = CodexSubagentMessagesQuerySchema
+export const ReadDshSubagentMessagesRequestSchema = DshSubagentMessagesQuerySchema.safeExtend({
+    /** Durable child DSH session id; the parent session is the RPC channel. */
+    sessionId: z.string().min(1)
+})
+export type ReadDshSubagentMessagesRequest = z.infer<typeof ReadDshSubagentMessagesRequestSchema>
+export const DshSubagentMessagesResponseSchema = z.object({
+    sessionId: z.string(),
+    messages: z.array(SubagentMessageSchema),
+    before: z.number().nullable(), hasMore: z.boolean(),
+    after: z.number().int().nonnegative().optional(), epoch: z.string().optional(),
+    hasLater: z.boolean().optional(), reset: z.boolean().optional(), truncated: z.boolean().optional(),
+})
+export type DshSubagentMessagesResponse = z.infer<typeof DshSubagentMessagesResponseSchema>
+
+export const PromptDshSubagentRequestSchema = z.object({
+    /** Durable child DSH session id addressed through this parent session. */
+    sessionId: z.string().min(1),
+    text: z.string().min(1).max(100_000),
+    delivery: z.enum(['queue', 'steer']).default('queue'),
+    /** Caller-minted identity persisted on the accepted child message. */
+    requestId: z.string().min(1).max(128)
+})
+export type PromptDshSubagentRequest = z.infer<typeof PromptDshSubagentRequestSchema>
+export const PromptDshSubagentResponseSchema = z.object({ messageId: z.string().optional() })
+export type PromptDshSubagentResponse = z.infer<typeof PromptDshSubagentResponseSchema>
+
+export const InterruptDshSubagentRequestSchema = z.object({ sessionId: z.string().min(1) })
+export type InterruptDshSubagentRequest = z.infer<typeof InterruptDshSubagentRequestSchema>
+export const InterruptDshSubagentResponseSchema = z.object({ accepted: z.boolean() })
+export type InterruptDshSubagentResponse = z.infer<typeof InterruptDshSubagentResponseSchema>
+
+export type CodexDeviceLogin = {
+    id: string
+    userCode: string
+    verificationUrl: string
+    expiresAt: number
+    status: 'pending' | 'completed' | 'cancelled' | 'expired' | 'error'
+    account?: CodexAccountSummary
+    error?: string
+}
+export type CodexDeviceLoginResponse = { success: boolean; login?: CodexDeviceLogin; error?: string }

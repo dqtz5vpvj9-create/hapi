@@ -14,7 +14,7 @@ import { getEnvironmentInfo } from '@/ui/doctor';
 import { spawnHappyCLI } from '@/utils/spawnHappyCLI';
 import { writeRunnerState, RunnerLocallyPersistedState, readRunnerState, acquireRunnerLock, releaseRunnerLock } from '@/persistence';
 import { getCliArgs } from '@/utils/cliArgs';
-import { getProcessStartMarker, isProcessAlive, isWindows, killProcess, killProcessByChildProcess, killProcessTreeByPid } from '@/utils/process';
+import { getProcessStartMarker, getProcessStartMarkerAsync, getWindowsProcessStartMarkers, isProcessAlive, isWindows, killProcess, killProcessByChildProcess, killProcessTreeByPid } from '@/utils/process';
 import { findStopSessionOrphanTargets, reapRunnerSpawnedOrphans } from '@/runner/orphanReap';
 import { decideUntrackedRunnerWebhook } from '@/runner/lateRunnerWebhook';
 import {
@@ -37,7 +37,7 @@ import { cleanupRunnerState, getInstalledCliMtimeMs, isRunnerRunningCurrentlyIns
 import { startRunnerControlServer } from './controlServer';
 import { createWorktree, removeWorktree, type WorktreeInfo } from './worktree';
 import { validateWorkspaceDirectory } from './validateWorkspaceDirectory';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { buildMachineMetadata } from '@/agent/sessionFactory';
 import { resolveWorkspaceRoots } from '@/utils/workspaceRoot';
 import { hashRunnerCliApiToken, hashRunnerExtraHeaders } from './runnerIdentity';
@@ -45,7 +45,10 @@ import { readRuntimes, runtimeMayBeAlive, runtimeAuthHash } from '@/codex/shared
 import { scheduleCursorModelsPrewarm } from '@/modules/common/cursorModelsPrewarm';
 import { isLinkedGitWorktree } from '@/utils/isLinkedGitWorktree';
 import { agentUnavailableMessage, getAgentAvailability } from '@/agent/agentAvailability';
-import { copyCodexConfigFile, resolveCodexHome } from '@/codex/utils/codexHome';
+import { copyCodexConfigFile, expandCodexHomePath, resolveCodexHome } from '@/codex/utils/codexHome';
+import { listCodexHomes } from '@/codex/utils/codexHomesRegistry';
+import { resolveCodexKeyProfile } from '@/codex/utils/codexKeyProfiles';
+import { activateCodexAccountForSpawn } from '@/codex/accounts/accountManager';
 
 /**
  * Deduplicates a preallocated HAPI-row spawn only while its child is alive.
@@ -380,9 +383,14 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
         logger.debug('[RUNNER RUN] Failed to persist resume processes:', error);
       }
     };
+    let recoveredWindowsMarkers: Map<number, string> | undefined;
+    if (isWindows()) {
+      try { recoveredWindowsMarkers = await getWindowsProcessStartMarkers([...persistedResumeProcesses.keys()]); }
+      catch (error) { logger.debug('[RUNNER RUN] Could not verify recovered Windows children; retaining quarantine', error); }
+    }
     for (const [pid, record] of [...persistedResumeProcesses]) {
-      const alive = isProcessAlive(pid);
-      const marker = alive ? getProcessStartMarker(pid) : null;
+      const alive = isWindows() ? recoveredWindowsMarkers?.has(pid) ?? true : isProcessAlive(pid);
+      const marker = isWindows() ? recoveredWindowsMarkers?.get(pid) ?? null : alive ? getProcessStartMarker(pid) : null;
       const generation = classifyRecoveredProcessGeneration(alive, marker, record.processStartMarker);
       if (generation === 'verified') {
         pidToRequestedSessionId.set(pid, record.requestedSessionId);
@@ -753,7 +761,32 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
 
         // Resolve authentication token if provided
         let extraEnv: Record<string, string> = {};
-        if (options.token) {
+        if (agent === 'codex' && options.codexAccountId) {
+          if (options.codexHome) {
+            const selected = resolve(options.directory, expandCodexHomePath(options.codexHome));
+            const home = (await listCodexHomes()).find(entry => resolve(entry.path) === selected);
+            if (home && !home.official) {
+              throw new Error(`Codex account switching is only available on the official home; ${home.label} is isolated`);
+            }
+            if (!home && selected !== resolve(resolveCodexHome())) {
+              throw new Error('Codex account switching requires the official home or the default Codex home');
+            }
+          }
+          const runtime = await activateCodexAccountForSpawn(options.codexAccountId);
+          extraEnv = {
+            HAPI_CODEX_ACCOUNT_ID: runtime.account.id,
+            HAPI_CODEX_ACCOUNT_LABEL: runtime.account.label,
+          };
+          // A custom home is not the account manager's global ~/.codex. Copy
+          // the just-activated auth into it so official accounts and isolated
+          // configs can be used together.
+          if (options.codexHome) {
+            const authSource = join(resolveCodexHome(), 'auth.json');
+            const authTarget = join(resolve(options.directory, expandCodexHomePath(options.codexHome)), 'auth.json');
+            await fs.copyFile(authSource, authTarget);
+            await fs.chmod(authTarget, 0o600);
+          }
+        } else if (options.token) {
           if (options.agent === 'codex') {
 
             // Create a temporary directory for Codex
@@ -774,6 +807,11 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
               CLAUDE_CODE_OAUTH_TOKEN: options.token
             };
           }
+        }
+
+        if (agent === 'codex' && options.codexKeyProfileId) {
+          const profile = resolveCodexKeyProfile(options.codexKeyProfileId);
+          extraEnv = { ...extraEnv, ...profile.env };
         }
 
         if (worktreeInfo) {
@@ -808,14 +846,22 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
           logger.debug('[RUNNER RUN] Child stderr tail', trimmed);
         };
 
+        const childEnv: NodeJS.ProcessEnv = {
+          ...process.env,
+          ...extraEnv
+        };
+        if (agent === 'codex' && options.codexAccountId) {
+          delete childEnv.OPENAI_API_KEY;
+          delete childEnv.CODEX_API_KEY;
+          delete childEnv.CODEX_ACCESS_TOKEN;
+          delete childEnv.OPENAI_ACCESS_TOKEN;
+        }
+
         happyProcess = spawnHappyCLI(args, {
           cwd: spawnDirectory,
           detached: true,  // Sessions stay alive when runner stops
           stdio: ['ignore', 'pipe', 'pipe'],  // Capture stdout/stderr for debugging
-          env: {
-            ...process.env,
-            ...extraEnv
-          }
+          env: childEnv
         });
         happyProcess.once('exit', () => {
           void cleanupCopiedCodexConfig('child-exit');
@@ -911,7 +957,7 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
         pidToTrackedSession.set(pid, trackedSession);
         if (trackedSession.requestedHappySessionId) {
           pidToRequestedSessionId.set(pid, trackedSession.requestedHappySessionId);
-          const processStartMarker = getProcessStartMarker(pid);
+          const processStartMarker = await getProcessStartMarkerAsync(pid);
           if (processStartMarker) {
             persistedResumeProcesses.set(pid, {
               requestedSessionId: trackedSession.requestedHappySessionId,
@@ -1737,8 +1783,20 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
         ...pidToTrackedSession.keys(),
         ...existingSessionIdByChildPid.keys()
       ]);
+      let windowsMarkers: Map<number, string> | undefined;
+      let processProbeFailed = false;
+      if (isWindows()) {
+        try { windowsMarkers = await getWindowsProcessStartMarkers([...pidsToCheck]); }
+        catch (error) {
+          // An unavailable OS query cannot prove a child exited. Keep its
+          // durable identity and let the heartbeat/control sockets continue.
+          processProbeFailed = true;
+          logger.debug('[RUNNER RUN] Could not verify Windows children; retaining tracking', error);
+        }
+      }
       for (const pid of pidsToCheck) {
-        if (!isProcessAlive(pid)) {
+        if (processProbeFailed) break;
+        if (windowsMarkers ? !windowsMarkers.has(pid) : !isProcessAlive(pid)) {
           logger.debug(`[RUNNER RUN] Removing stale session with PID ${pid} (process no longer exists)`);
           onChildExited(pid);
           continue;
@@ -1747,7 +1805,7 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
         if (persisted) {
           const generation = classifyRecoveredProcessGeneration(
             true,
-            getProcessStartMarker(pid),
+            windowsMarkers ? windowsMarkers.get(pid) ?? null : getProcessStartMarker(pid),
             persisted.processStartMarker
           );
           if (generation === 'exited') {
@@ -1977,7 +2035,9 @@ export function buildCliArgs(
                 ? 'pi'
                 : agent === 'agy'
                   ? 'agy'
-                  : 'claude';
+                  : agent === 'qoder'
+                    ? 'qoder'
+                    : 'claude';
   const args = [agentCommand];
   if (options.resumeSessionId) {
     if (agent === 'codex') {
@@ -2018,7 +2078,7 @@ export function buildCliArgs(
   if (options.model) {
     args.push('--model', options.model);
   }
-  if (options.effort && (agent === 'claude' || agent === 'grok' || agent === 'pi' || agent === 'agy' || agent === 'dsh')) {
+  if (options.effort && (agent === 'claude' || agent === 'grok' || agent === 'pi' || agent === 'agy' || agent === 'dsh' || agent === 'qoder')) {
     args.push('--effort', options.effort);
   }
   if (options.modelReasoningEffort && (agent === 'codex' || agent === 'opencode' || agent === 'dsh')) {
@@ -2030,12 +2090,18 @@ export function buildCliArgs(
   if (options.collaborationMode && options.collaborationMode !== 'default' && agent === 'codex') {
     args.push('--collaboration-mode', options.collaborationMode);
   }
+  if (options.codexHome && agent === 'codex') {
+    args.push('--codex-home', options.codexHome);
+  }
+  if (options.codexKeyProfileId && agent === 'codex') {
+    args.push('--codex-key-profile', options.codexKeyProfileId);
+  }
   if (options.copilotAgentMode && options.copilotAgentMode !== 'interactive' && agent === 'copilot') {
     args.push('--copilot-agent-mode', options.copilotAgentMode);
   }
   // Pi RPC mode has no permission switching; never pass these flags to it
   // (the Pi parser rejects --permission-mode and ignores --yolo).
-  if (agent !== 'pi' && agent !== 'dsh') {
+  if (agent !== 'pi') {
     if (options.permissionMode && (PERMISSION_MODES as readonly string[]).includes(options.permissionMode)) {
       args.push('--permission-mode', options.permissionMode);
     } else if (yolo) {

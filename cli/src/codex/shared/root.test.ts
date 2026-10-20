@@ -128,7 +128,7 @@ async function fixture(opts?: { fresh?: boolean; hubArchived?: boolean; external
         cleanups.unshift(async () => { stopSource.close(); });
     }
     return {
-        root, native, rpc, send, stopSource, bindCalls, metadata: () => metadata, state: () => state, updateState,
+        root, native, rpc, send, session, stopSource, bindCalls, metadata: () => metadata, state: () => state, updateState,
         userMessage: (message: UserMessage, localId: string) => userMessage?.(message, localId),
         reconnect: () => reconnect?.(),
         emitHubArchived: () => { for (const listener of hubArchivedListeners) listener(); },
@@ -318,6 +318,25 @@ it('updates goal controls from native activity in an external thread without rep
     expect(f.state().threadGoal).toBeNull();
     expect(f.send).not.toHaveBeenCalled();
     expect(f.native.queue).toHaveLength(0);
+});
+
+it('confirms model, effort and tier updates while the native turn remains running', async () => {
+    const f = await fixture();
+    await f.root.activate();
+    f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'running' } });
+    await (f.root as any).notifications;
+    const request = vi.spyOn(f.root.client, 'request');
+    const result = await f.rpc.get(RPC_METHODS.SetSessionConfig)!({
+        model: 'next-model', modelReasoningEffort: 'high', serviceTier: 'fast'
+    });
+    expect(result).toMatchObject({ applied: {
+        model: 'next-model', modelReasoningEffort: 'high', serviceTier: 'fast'
+    } });
+    expect(request).toHaveBeenCalledWith('thread/settings/update', expect.objectContaining({
+        model: 'next-model', effort: 'high', serviceTier: 'priority'
+    }));
+    expect((f.root as any).currentTurn).toBe('running');
+    expect(request.mock.calls.some(([method]) => method === 'turn/interrupt')).toBe(false);
 });
 
 it('waits for native YOLO confirmation before submitting an old-turn approval and then suppresses later prompts', async () => {
@@ -1355,4 +1374,40 @@ describe('capacity continuation through the shared native bridge', () => {
         } finally { vi.useRealTimers(); }
     });
 
+});
+
+describe('live native context compaction', () => {
+    it.each([false, true])('publishes compaction before blocked history/queue projection (external=%s)', async external => {
+        const f = await fixture({ external });
+        const alive = vi.spyOn(f.root.session, 'keepAlive');
+        f.native.notify('turn/started', { threadId: 'thread', turn: { id: 'turn' } });
+        let release!: () => void;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        const original = f.root.client.request.bind(f.root.client);
+        const request = vi.spyOn(f.root.client, 'request').mockImplementation(async (method, params) => {
+            if (method === 'thread/queue/list') await gate;
+            return original(method, params);
+        });
+        f.native.notify('thread/queue/changed', { threadId: 'thread' });
+        await vi.waitFor(() => expect(request).toHaveBeenCalledWith('thread/queue/list', expect.anything()));
+        try {
+            const compact = { threadId: 'thread', turnId: 'turn', item: { id: 'compact', type: 'contextCompaction' } };
+            f.native.notify('item/started', compact);
+            expect(alive.mock.lastCall?.[2]?.execution?.compacting).toBe(true);
+            f.native.notify('item/completed', { ...compact, threadId: 'child' });
+            expect(alive.mock.lastCall?.[2]?.execution?.compacting).toBe(true);
+            f.native.notify('item/completed', compact);
+            expect(alive.mock.lastCall?.[2]?.execution?.compacting).not.toBe(true);
+        } finally { release(); }
+    });
+});
+
+it.each(['completed', 'failed', 'interrupted'])('emits readiness only for successful completion (%s)', async status => {
+    const f = await fixture();
+    await f.root.activate();
+    vi.mocked(f.session.sendSessionEvent).mockClear();
+    f.native.notify('turn/completed', { threadId: 'thread', turn: { id: 'done', status, items: [] } });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    const ready = vi.mocked(f.session.sendSessionEvent).mock.calls.filter(([event]) => event.type === 'ready');
+    expect(ready).toHaveLength(status === 'completed' ? 1 : 0);
 });

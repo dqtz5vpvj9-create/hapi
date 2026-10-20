@@ -523,6 +523,7 @@ export class SessionCache {
             || (wasThinking !== session.thinking)
             || turnBoundaryChanged
             || previousExecution?.status !== session.execution?.status
+            || previousExecution?.compacting !== session.execution?.compacting
             || previousExecution?.turnId !== session.execution?.turnId
             || previousExecution?.generation !== session.execution?.generation
             || JSON.stringify(previousExecution?.capacityRecovery) !== JSON.stringify(session.execution?.capacityRecovery)

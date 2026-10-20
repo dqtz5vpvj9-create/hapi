@@ -2,7 +2,12 @@ import { configureSessionReadSync, hydrateSessionReadStates } from '@/lib/sessio
 import { ForkOperationCloseResponseSchema, ForkOperationResponseSchema, ForkSourceStateSchema, type ForkOperationCloseResponse, type ForkOperationResponse, type ForkSourceState } from '@hapi/protocol/forkOperations'
 import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
 import type { FileManagementRequest, FileManagementResponse, FileManagementUploadRequest } from '@hapi/protocol/fileManagement'
-import type { CodexSubagentMessagesResponse } from '@hapi/protocol/apiTypes'
+import type {
+    CodexSubagentMessagesResponse,
+    DshSubagentMessagesResponse,
+    InterruptDshSubagentResponse,
+    PromptDshSubagentResponse,
+} from '@hapi/protocol/apiTypes'
 import type {
     AttachmentMetadata,
     AuthResponse,
@@ -41,6 +46,9 @@ import type {
     AgyModelsResponse,
     AgentAvailabilityResponse,
     CodexModelsResponse,
+    CodexAccountsResponse,
+    CodexAccountSummary,
+    SwitchCodexAccountResponse,
     CursorMigrateOutcome,
     CursorMigrateToAcpRequest,
     CursorChatStoreStatus,
@@ -69,7 +77,8 @@ import type {
     HubSettingsResponse,
     UpdateHubSettingsRequest,
     UsageSummaryResponse,
-    UploadFileResponse
+    UploadFileResponse,
+    DshBundleState
 } from '@hapi/protocol/apiTypes'
 import type { AgentFlavor, MessageDeliveryMode } from '@hapi/protocol'
 import type { CancelMessageResponse, SteerQueuedMessageResponse } from '@hapi/protocol/schemas'
@@ -480,6 +489,38 @@ export class ApiClient {
         if (options.after !== undefined) query.set('after', String(options.after))
         if (options.epoch !== undefined) query.set('epoch', options.epoch)
         return await this.request(`/api/sessions/${encodeURIComponent(parentSessionId)}/codex-subagents/${encodeURIComponent(threadId)}/messages?${query}`, { signal: options.signal })
+    }
+
+    async getDshSubagentMessages(
+        parentSessionId: string,
+        subagentId: string,
+        options: { limit?: number; before?: number; after?: number; epoch?: string; signal?: AbortSignal } = {},
+    ): Promise<DshSubagentMessagesResponse> {
+        const query = new URLSearchParams({ limit: String(options.limit ?? 40) })
+        if (options.before !== undefined) query.set('before', String(options.before))
+        if (options.after !== undefined) query.set('after', String(options.after))
+        if (options.epoch !== undefined) query.set('epoch', options.epoch)
+        return await this.request(`/api/sessions/${encodeURIComponent(parentSessionId)}/dsh-subagents/${encodeURIComponent(subagentId)}/messages?${query}`, { signal: options.signal })
+    }
+
+    async promptDshSubagent(
+        parentSessionId: string,
+        subagentId: string,
+        request: { text: string; delivery: 'queue' | 'steer'; requestId: string },
+    ): Promise<PromptDshSubagentResponse> {
+        return await this.request(`/api/sessions/${encodeURIComponent(parentSessionId)}/dsh-subagents/${encodeURIComponent(subagentId)}/prompt`, {
+            method: 'POST',
+            body: JSON.stringify(request),
+        })
+    }
+
+    async interruptDshSubagent(
+        parentSessionId: string,
+        subagentId: string,
+    ): Promise<InterruptDshSubagentResponse> {
+        return await this.request(`/api/sessions/${encodeURIComponent(parentSessionId)}/dsh-subagents/${encodeURIComponent(subagentId)}/interrupt`, {
+            method: 'POST',
+        })
     }
 
     async getMessages(
@@ -942,6 +983,29 @@ export class ApiClient {
         })
     }
 
+    /** Restart one live agent process; the next message resumes the session. */
+    /** Read the DSH profile bundles enabled on one machine. */
+    async getMachineDshBundles(machineId: string): Promise<DshBundleState> {
+        return await this.request<DshBundleState>(
+            `/api/machines/${encodeURIComponent(machineId)}/dsh-bundles`
+        )
+    }
+
+    /** Enable or disable one DSH profile bundle on one machine. */
+    async setMachineDshBundle(machineId: string, name: string, enabled: boolean): Promise<DshBundleState> {
+        return await this.request<DshBundleState>(
+            `/api/machines/${encodeURIComponent(machineId)}/dsh-bundles`,
+            { method: 'POST', body: JSON.stringify({ name, enabled }) }
+        )
+    }
+
+    async restartSession(sessionId: string): Promise<void> {
+        await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/restart`, {
+            method: 'POST',
+            body: JSON.stringify({})
+        })
+    }
+
     async reopenSession(sessionId: string): Promise<ReopenSessionResponse> {
         return await this.request<ReopenSessionResponse>(
             `/api/sessions/${encodeURIComponent(sessionId)}/reopen`,
@@ -1174,7 +1238,10 @@ export class ApiClient {
         collaborationMode?: CodexCollaborationMode,
         copilotAgentMode?: CopilotAgentMode,
         startingMode?: 'remote' | 'pty',
-        requestId?: string
+        requestId?: string,
+        codexAccountId?: string,
+        codexHome?: string,
+        codexKeyProfileId?: string
     ): Promise<SpawnResponse> {
         return await this.request<SpawnResponse>(`/api/machines/${encodeURIComponent(machineId)}/spawn`, {
             method: 'POST',
@@ -1192,8 +1259,76 @@ export class ApiClient {
                 collaborationMode,
                 copilotAgentMode,
                 startingMode,
-                requestId
+                requestId,
+                codexAccountId,
+                codexHome,
+                codexKeyProfileId
             })
+        })
+    }
+
+    async codexDeviceLogin(machineId: string, action: 'start' | 'get' | 'cancel', id?: string, label?: string): Promise<import('@hapi/protocol/apiTypes').CodexDeviceLoginResponse> {
+        return this.request(`/api/machines/${encodeURIComponent(machineId)}/codex-device-login`, {
+            method: 'POST', body: JSON.stringify({ action, id, label }),
+        })
+    }
+
+    async migrateCodexThread(machineId: string, input: { sourceHome: string; targetHome: string; threadId: string; targetProvider?: string; targetModel?: string; sessionId?: string; stopSource?: boolean }): Promise<import('@hapi/protocol/apiTypes').MigrateCodexThreadResponse> {
+        return await this.request(`/api/machines/${encodeURIComponent(machineId)}/codex-thread-migrate`, {
+            method: 'POST', body: JSON.stringify(input),
+        })
+    }
+
+    async getCodexHomes(machineId: string): Promise<import('@hapi/protocol/apiTypes').CodexHomesResponse> {
+        return await this.request(`/api/machines/${encodeURIComponent(machineId)}/codex-homes`)
+    }
+
+    async saveCodexHome(machineId: string, input: { id?: string; label: string; path: string }): Promise<import('@hapi/protocol/apiTypes').CodexHomesResponse> {
+        return await this.request(`/api/machines/${encodeURIComponent(machineId)}/codex-homes`, {
+            method: 'POST', body: JSON.stringify(input),
+        })
+    }
+
+    async deleteCodexHome(machineId: string, id: string): Promise<import('@hapi/protocol/apiTypes').CodexHomesResponse> {
+        return await this.request(`/api/machines/${encodeURIComponent(machineId)}/codex-homes/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+        })
+    }
+
+    async getMachineCodexAccounts(machineId: string): Promise<CodexAccountsResponse> {
+        return await this.request<CodexAccountsResponse>(`/api/machines/${encodeURIComponent(machineId)}/codex-accounts`)
+    }
+
+    async importCurrentCodexAccount(machineId: string, label?: string): Promise<{ success: boolean; account?: CodexAccountSummary; error?: string }> {
+        return await this.request<{ success: boolean; account?: CodexAccountSummary; error?: string }>(`/api/machines/${encodeURIComponent(machineId)}/codex-accounts/import-current`, {
+            method: 'POST',
+            body: JSON.stringify({ label })
+        })
+    }
+
+    async renameCodexAccount(machineId: string, accountId: string, label: string): Promise<{ success: boolean; account?: CodexAccountSummary; error?: string }> {
+        return await this.request<{ success: boolean; account?: CodexAccountSummary; error?: string }>(`/api/machines/${encodeURIComponent(machineId)}/codex-accounts/${encodeURIComponent(accountId)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ label })
+        })
+    }
+
+    async deleteCodexAccount(machineId: string, accountId: string): Promise<{ success: boolean; error?: string }> {
+        return await this.request<{ success: boolean; error?: string }>(`/api/machines/${encodeURIComponent(machineId)}/codex-accounts/${encodeURIComponent(accountId)}`, {
+            method: 'DELETE'
+        })
+    }
+
+    async switchMachineCodexAccount(machineId: string, accountId: string): Promise<SwitchCodexAccountResponse> {
+        return await this.request<SwitchCodexAccountResponse>(`/api/machines/${encodeURIComponent(machineId)}/codex-account`, {
+            method: 'POST', body: JSON.stringify({ accountId })
+        })
+    }
+
+    async switchSessionCodexAccount(sessionId: string, accountId: string): Promise<SwitchCodexAccountResponse> {
+        return await this.request<SwitchCodexAccountResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/codex-account`, {
+            method: 'POST',
+            body: JSON.stringify({ accountId })
         })
     }
 

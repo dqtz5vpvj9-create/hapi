@@ -1,11 +1,13 @@
 import { SessionSchema } from '@hapi/protocol/schemas'
+import { resolve } from 'node:path'
 import { ForkOperationService, isSharedCodexForkSource, type StartForkOperationResult } from './forkOperations'
 import type { ForkOperationCloseRequest } from '@hapi/protocol/forkOperations'
 import type { ForkConversationRequest } from '@hapi/protocol/apiTypes'
 import type { FileWriteRequest, FileWriteResponse } from '@hapi/protocol/documents'
 import type { FileManagementRequest, FileManagementResponse, FileManagementUploadRequest } from '@hapi/protocol/fileManagement'
 import { CODEX_ARTIFACT_PREFIX, type ArtifactReadResponse } from '@hapi/protocol/artifacts'
-import type { CodexGoalRequest, CodexGoalResponse, NativeForkBoundary } from '@hapi/protocol/apiTypes'
+import type { CodexAccountSummary, CodexAccountsResponse, CodexGoalRequest, CodexGoalResponse, NativeForkBoundary, SwitchCodexAccountResponse } from '@hapi/protocol/apiTypes'
+
 /**
  * Sync Engine for HAPI Telegram Bot (Direct Connect)
  *
@@ -1153,6 +1155,10 @@ export class SyncEngine {
         if (this.historyActionsInFlight.has(sessionId)) {
             throw new Error('Conversation history action already in progress')
         }
+        const ingress = this.sessionCache.getSession(sessionId) ?? this.sessionCache.refreshSession(sessionId)
+        if (ingress?.metadata?.migrationInProgress) {
+            throw new Error('This session is being migrated to another Codex home; wait for the migration to finish')
+        }
         const { actualSessionId, createdAt: activeTurnStartedAt } = await this.messageService.sendMessage(sessionId, payload)
         this.sessionCache.markMessageQueued(actualSessionId, Date.now(), activeTurnStartedAt)
         this.sessionCache.recordSessionActivity(actualSessionId, Date.now())
@@ -1653,6 +1659,8 @@ export class SyncEngine {
             forkedFrom: sessionId,
             startedBy: 'runner',
             capabilities: source.metadata?.capabilities,
+            codexAccountId: source.metadata?.codexAccountId,
+            codexAccountLabel: source.metadata?.codexAccountLabel,
             conversationHistoryPoints: Object.fromEntries(
                 Object.entries(source.metadata?.conversationHistoryPoints ?? {})
                     .filter(([localId]) => copiedLocalIds.has(localId))
@@ -1735,7 +1743,10 @@ export class SyncEngine {
                 source.collaborationMode,
                 undefined,
                 undefined,
-                rpcResult.forkSession === true
+                rpcResult.forkSession === true,
+                undefined,
+                source.metadata?.codexAccountId,
+                source.metadata?.codexHome
             )
             if (spawn.type !== 'success') {
                 throw new Error(spawn.message)
@@ -1894,6 +1905,32 @@ export class SyncEngine {
                 message: error instanceof Error ? error.message : String(error),
                 hydrateFailed: true
             }
+        }
+    }
+
+    /**
+     * Restart one live session process without archiving it.
+     *
+     * The next user message spawns a fresh runner with `--resume`, so the agent
+     * re-reads its launch configuration and re-runs the ACP handshake. A target
+     * that is already gone is a successful restart, not a failure.
+     */
+    async restartSession(sessionId: string): Promise<void> {
+        try {
+            await this.rpcGateway.killSession(sessionId)
+        } catch (error) {
+            if (!(error instanceof RpcTargetMissingError)) throw error
+        }
+        const sessionMeta = this.sessionCache.getSession(sessionId)?.metadata
+        const machineId = sessionMeta?.machineId
+        const runnerSpawned = sessionMeta?.startedBy === 'runner'
+            || sessionMeta?.startedFromRunner === true
+        if (!machineId || !runnerSpawned) return
+        try {
+            await this.rpcGateway.stopRunnerSession(machineId, sessionId)
+        } catch {
+            // The runner is unreachable; the next message still spawns a fresh
+            // process, and archive-style liveness refusal does not apply here.
         }
     }
 
@@ -2375,7 +2412,7 @@ export class SyncEngine {
                     request.model, request.modelReasoningEffort, request.yolo, request.sessionType,
                     request.worktreeName, undefined, request.effort, request.permissionMode,
                     request.serviceTier, undefined, request.collaborationMode, request.copilotAgentMode,
-                    request.startingMode, namespace, sessionId)
+                    request.startingMode, namespace, request.codexAccountId, sessionId, request.codexHome, request.codexKeyProfileId)
                 response = result.type === 'error' && result.childStarted !== false
                     ? { ...result, code: 'spawn_outcome_unknown', sessionId }
                     : result
@@ -2411,7 +2448,10 @@ export class SyncEngine {
         // Required for fresh machine spawns so the runner stamps the HAPI id on
         // argv before the first webhook (#1911 Major: unreapable window).
         namespace?: string,
-        reservedFreshSessionId?: string
+        codexAccountId?: string,
+        reservedFreshSessionId?: string,
+        codexHome?: string,
+        codexKeyProfileId?: string
     ): ReturnType<RpcGateway['spawnSession']> {
         // Fresh machine spawns historically omitted existingSessionId, so
         // buildCliArgs could not stamp --hapi-session-id / --existing-session-id.
@@ -2433,6 +2473,7 @@ export class SyncEngine {
                     machineId,
                     startedBy: 'runner',
                     startedFromRunner: true,
+                    codexAccountId,
                 },
                 null,
                 namespace,
@@ -2466,7 +2507,10 @@ export class SyncEngine {
                 copilotAgentMode,
                 startingMode,
                 undefined,
-                preallocated ? allocatedSessionId : undefined
+                preallocated ? allocatedSessionId : undefined,
+                codexAccountId,
+                codexHome,
+                codexKeyProfileId
             )
         } catch (error) {
             // Ambiguous post-dispatch failure — keep the stub (child may exist).
@@ -2975,6 +3019,8 @@ export class SyncEngine {
         if (flavor === 'pi') return metadata.piSessionId ?? null
         // The CLI publishes this token only for an ACP server that advertises resume.
         if (flavor === 'dsh') return metadata.dshSessionId ?? null
+        // Qoder CN is remote-only ACP like DSH and keeps the same token contract.
+        if (flavor === 'qoder') return metadata.qoderSessionId ?? null
 
         return metadata.claudeSessionId ?? this.recoverClaudeSessionIdFromMessages(session.id, namespace)
     }
@@ -3577,7 +3623,10 @@ export class SyncEngine {
                 access.sessionId,
                 session.collaborationMode ?? undefined,
                 session.copilotAgentMode ?? undefined,
-                resumedStartingMode
+                resumedStartingMode,
+                undefined,
+                undefined,
+                metadata.codexAccountId
             )
 
             if (spawnResult.type !== 'success') {
@@ -4473,6 +4522,14 @@ export class SyncEngine {
         return await this.rpcGateway.getAgentAvailability(machineId)
     }
 
+    async listDshBundles(machineId: string): ReturnType<RpcGateway['listDshBundles']> {
+        return await this.rpcGateway.listDshBundles(machineId)
+    }
+
+    async setDshBundle(machineId: string, name: string, enabled: boolean): ReturnType<RpcGateway['setDshBundle']> {
+        return await this.rpcGateway.setDshBundle(machineId, name, enabled)
+    }
+
     async listMachineDirectory(machineId: string, path: string, includeHidden?: boolean): Promise<RpcListDirectoryResponse> {
         return await this.rpcGateway.listMachineDirectory(machineId, path, includeHidden)
     }
@@ -4490,6 +4547,12 @@ export class SyncEngine {
     }
 
     async readSessionFile(sessionId: string, path: string): Promise<RpcReadFileResponse> {
+        const session = this.getSession(sessionId)
+        const machineId = session?.metadata?.machineId
+        const cwd = session?.metadata?.path
+        if (session && machineId && cwd && this.getMachineByNamespace(machineId, session.namespace)?.active) {
+            return await this.rpcGateway.readMachineFile(machineId, cwd, path)
+        }
         return await this.rpcGateway.readSessionFile(sessionId, path)
     }
 
@@ -4536,6 +4599,12 @@ export class SyncEngine {
     }
 
     async statFiles(sessionId: string, paths: string[]): Promise<RpcStatFilesResponse> {
+        const session = this.getSession(sessionId)
+        const machineId = session?.metadata?.machineId
+        const cwd = session?.metadata?.path
+        if (session && machineId && cwd && this.getMachineByNamespace(machineId, session.namespace)?.active) {
+            return await this.rpcGateway.statMachineFiles(machineId, cwd, paths)
+        }
         return await this.rpcGateway.statFiles(sessionId, paths)
     }
 
@@ -4576,6 +4645,121 @@ export class SyncEngine {
 
     async listCodexModelsForMachine(machineId: string): Promise<RpcListCodexModelsResponse> {
         return await this.rpcGateway.listCodexModelsForMachine(machineId)
+    }
+
+    async codexDeviceLogin(machineId: string, action: 'start' | 'get' | 'cancel', id?: string, label?: string) {
+        return this.rpcGateway.codexDeviceLogin(machineId, action, id, label)
+    }
+
+    async migrateCodexThread(machineId: string, request: import('@hapi/protocol/apiTypes').MigrateCodexThreadRequest): Promise<import('@hapi/protocol/apiTypes').MigrateCodexThreadResponse> {
+        return await this.rpcGateway.migrateCodexThread(machineId, request)
+    }
+
+    async stopSessionForMigration(sessionId: string, namespace: string): Promise<{ success: boolean; error?: string }> {
+        let session = this.sessionCache.getSessionByNamespace(sessionId, namespace) ?? this.sessionCache.refreshSession(sessionId)
+        if (!session) return { success: false, error: 'Session not found' }
+        if (!session.active) return { success: true }
+        const machineId = session.metadata?.machineId
+        if (!machineId) return { success: false, error: 'Session has no machine binding' }
+        try { await this.rpcGateway.stopRunnerSession(machineId, sessionId) }
+        catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Failed to stop session' } }
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+            session = this.sessionCache.getSessionByNamespace(sessionId, namespace) ?? this.sessionCache.refreshSession(sessionId)
+            if (!session?.active) return { success: true }
+        }
+        return { success: false, error: 'Source session is still active; stop it manually before migrating' }
+    }
+
+    async beginCodexMigration(sessionId: string, namespace: string, sourceHome: string, targetHome: string): Promise<{ success: boolean; id?: string; error?: string }> {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const session = this.sessionCache.getSessionByNamespace(sessionId, namespace) ?? this.sessionCache.refreshSession(sessionId)
+            if (!session?.metadata) return { success: false, error: 'Session not found' }
+            if (session.active) return { success: false, error: 'Stop the source session before migrating its thread' }
+            if (session.metadata.migrationInProgress) return { success: false, error: 'A migration is already in progress for this session' }
+            if (session.metadata.codexHome && resolve(session.metadata.codexHome) !== resolve(sourceHome)) {
+                return { success: false, error: 'Session is not bound to the migration source home' }
+            }
+            const id = randomUUID()
+            const result = this.store.sessions.updateSessionMetadata(sessionId, {
+                ...session.metadata, migrationInProgress: { id, sourceHome: resolve(sourceHome), targetHome: resolve(targetHome), startedAt: Date.now() },
+            }, session.metadataVersion, namespace)
+            if (result.result === 'success') { this.sessionCache.refreshSession(sessionId); return { success: true, id } }
+            if (result.result !== 'version-mismatch') return { success: false, error: 'Session metadata update failed' }
+        }
+        return { success: false, error: 'Session metadata changed while acquiring migration barrier' }
+    }
+
+    async endCodexMigration(sessionId: string, namespace: string): Promise<void> {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const session = this.sessionCache.getSessionByNamespace(sessionId, namespace) ?? this.sessionCache.refreshSession(sessionId)
+            if (!session?.metadata?.migrationInProgress) return
+            const metadata = { ...session.metadata }
+            delete metadata.migrationInProgress
+            const result = this.store.sessions.updateSessionMetadata(sessionId, metadata, session.metadataVersion, namespace)
+            if (result.result === 'success') { this.sessionCache.refreshSession(sessionId); return }
+            if (result.result !== 'version-mismatch') return
+        }
+    }
+
+    async rebindCodexHome(sessionId: string, namespace: string, sourceHome: string, targetHome: string, targetHomeId?: string, targetProvider?: string, targetModel?: string): Promise<{ success: boolean; error?: string }> {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const session = this.sessionCache.getSessionByNamespace(sessionId, namespace)
+                ?? this.sessionCache.refreshSession(sessionId)
+            if (!session?.metadata) return { success: false, error: 'Session not found' }
+            if (session.metadata.codexHome && session.metadata.codexHome !== sourceHome) {
+                return { success: false, error: 'Session is not bound to the migration source home' }
+            }
+            const metadata = {
+                ...session.metadata,
+                codexHome: targetHome,
+                codexStoreId: targetHome,
+                ...(targetHomeId ? { codexHomeId: targetHomeId } : {}),
+                ...(targetProvider ? { codexProvider: targetProvider } : {}),
+                ...(targetModel ? { codexModel: targetModel } : {}),
+                migratedFromHome: sourceHome,
+                migratedAt: Date.now(),
+            }
+            const result = this.store.sessions.updateSessionMetadata(sessionId, metadata, session.metadataVersion, namespace)
+            if (result.result === 'success') {
+                this.sessionCache.refreshSession(sessionId)
+                return { success: true }
+            }
+            if (result.result !== 'version-mismatch') return { success: false, error: 'Session metadata update failed' }
+        }
+        return { success: false, error: 'Session metadata changed during migration' }
+    }
+
+    async listCodexHomes(machineId: string): Promise<import('@hapi/protocol/apiTypes').CodexHomesResponse> {
+        return await this.rpcGateway.listCodexHomes(machineId)
+    }
+
+    async saveCodexHome(machineId: string, input: import('@hapi/protocol/apiTypes').SaveCodexHomeRequest): Promise<import('@hapi/protocol/apiTypes').CodexHomesResponse> {
+        return await this.rpcGateway.saveCodexHome(machineId, input)
+    }
+
+    async deleteCodexHome(machineId: string, id: string): Promise<import('@hapi/protocol/apiTypes').CodexHomesResponse> {
+        return await this.rpcGateway.deleteCodexHome(machineId, id)
+    }
+
+    async listCodexAccounts(machineId: string): Promise<CodexAccountsResponse> {
+        return await this.rpcGateway.listCodexAccounts(machineId)
+    }
+
+    async importCurrentCodexAccount(machineId: string, label?: string): Promise<{ success: boolean; account?: CodexAccountSummary; error?: string }> {
+        return await this.rpcGateway.importCurrentCodexAccount(machineId, label)
+    }
+
+    async renameCodexAccount(machineId: string, accountId: string, label: string): Promise<{ success: boolean; account?: CodexAccountSummary; error?: string }> {
+        return await this.rpcGateway.renameCodexAccount(machineId, accountId, label)
+    }
+
+    async deleteCodexAccount(machineId: string, accountId: string): Promise<{ success: boolean; error?: string }> {
+        return await this.rpcGateway.deleteCodexAccount(machineId, accountId)
+    }
+
+    async switchCodexAccount(sessionId: string, accountId: string): Promise<SwitchCodexAccountResponse> {
+        return await this.rpcGateway.switchCodexAccount(sessionId, accountId)
     }
 
     async listOpencodeModelVariantsForMachine(machineId: string, cwd?: string | null): Promise<RpcListOpencodeModelVariantsResponse> {
@@ -4638,6 +4822,8 @@ export class SyncEngine {
                 if (!current?.metadata || current.metadata.machineId !== session.metadata?.machineId
                     || current.metadata.codexSessionId !== lineage.id) return false
                 const { id: _id, cwd: _cwd, ...metadata } = lineage
+                // Preserve activity received while the native lookup was in flight.
+                if (current.metadata.codexUpdatedAt !== session.metadata?.codexUpdatedAt) delete metadata.codexUpdatedAt
                 const changed = Object.entries(metadata).some(([field, value]) => value !== undefined
                     && JSON.stringify(current.metadata?.[field as keyof NonNullable<Session['metadata']>]) !== JSON.stringify(value))
                 if (!changed) return true
@@ -4651,6 +4837,18 @@ export class SyncEngine {
 
     async readCodexSubagentMessages(machineId: string, query: import('@hapi/protocol/apiTypes').ReadCodexSubagentMessagesRequest) {
         return await this.rpcGateway.readCodexSubagentMessages(machineId, query)
+    }
+
+    async readDshSubagentMessages(sessionId: string, request: import('@hapi/protocol/apiTypes').ReadDshSubagentMessagesRequest) {
+        return await this.rpcGateway.readDshSubagentMessages(sessionId, request)
+    }
+
+    async promptDshSubagent(sessionId: string, request: import('@hapi/protocol/apiTypes').PromptDshSubagentRequest) {
+        return await this.rpcGateway.promptDshSubagent(sessionId, request)
+    }
+
+    async interruptDshSubagent(sessionId: string, request: import('@hapi/protocol/apiTypes').InterruptDshSubagentRequest) {
+        return await this.rpcGateway.interruptDshSubagent(sessionId, request)
     }
 
     async listCodexSessionsForMachine(machineId: string, cwd?: string | null, sessionIds?: string[], page?: { search?: string; cursor?: number; limit?: number }) {

@@ -303,7 +303,14 @@ export function createForkOperationController(options: {
         getSnapshot: () => view,
         subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
         cancelNavigation,
-        restore: () => execute(refreshSource),
+        restore: () => execute(async () => {
+            try { await refreshSource() }
+            catch (error) {
+                // Opening a conversation is not a fork request. Keep recovery
+                // errors visible only when there is an operation to recover.
+                if (view.intent || view.operation) throw error
+            }
+        }),
         check: () => execute(() => observe(false)),
         reconcile: () => execute(() => observe(true)),
         syncStorage: () => syncSaved(),

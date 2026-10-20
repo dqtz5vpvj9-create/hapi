@@ -20,6 +20,7 @@ import { normalizeCodexModel } from '@/modules/common/codexModels';
 import { formatMessageWithAttachments } from '@/utils/attachmentFormatter';
 import { RPC_METHODS } from '@hapi/protocol/rpcMethods';
 import { ThreadGoalSchema, type ThreadGoal } from '@hapi/protocol/schemas';
+import type { CodexAccountSummary, SwitchCodexAccountResponse } from '@hapi/protocol/apiTypes';
 import { ForkConversationRequestSchema, CodexGoalRequestSchema, CodexGoalResponseSchema, ImplementCodexPlanRequestSchema, type ImplementCodexPlanResult } from '@hapi/protocol/apiTypes';
 import { CodexAppServerClient, isIndeterminateError } from '../codexAppServerClient';
 import { buildHapiMcpBridge, type HapiMcpBridge } from '../utils/buildHapiMcpBridge';
@@ -43,11 +44,13 @@ import { planImplementationMessageId, planProposalForItem, planProposalForTurn }
 type RuntimeSettings = NonNullable<Parameters<ApiSessionClient['keepAlive']>[2]>;
 export type RootHost = {
     directory: string; generation: string; endpoint: string; token?: string;
-    external?: boolean; codexHome?: string; trace?: SessionStartupTrace;
+    external?: boolean; codexHome?: string; codexProvider?: string; codexModel?: string; trace?: SessionStartupTrace;
     settingsFor(threadId: string): Record<string, unknown> | undefined;
     create(method: 'thread/start' | 'thread/fork', params: Record<string, unknown>, parent?: SharedCodexRoot): Promise<SharedCodexRoot>;
     end(root: SharedCodexRoot, nativeArchive?: boolean): Promise<void>;
     forkOperation?(root: SharedCodexRoot, request: ForkOperationRpcRequest, preflight: () => Promise<ForkPlan>, origin?: ForkOperationOrigin): Promise<ForkOperationRpcResponse>;
+    switchAccount?(root: SharedCodexRoot, accountId: string): Promise<SwitchCodexAccountResponse>;
+
 };
 const SettingsSchema = z.object({
     permissionMode: z.enum(['default', 'read-only', 'safe-yolo', 'yolo']).optional(),
@@ -253,6 +256,9 @@ export class SharedCodexRoot {
                 if (method.startsWith('item/') || method === 'model/rerouted') {
                     this.execution.progress(record(params).turnId);
                 }
+                if (this.execution.observeCompaction(method, params)) {
+                    this.runtimeRevision++; this.alive();
+                }
                 if (method === 'thread/status/changed') {
                     if (record(record(params).status).type === 'notLoaded') this.capacityRecovery.cancel();
                     this.runtimeRevision++; this.execution.acceptStatus(record(params).status);
@@ -383,7 +389,7 @@ export class SharedCodexRoot {
     async setNativeConnection(loaded: boolean): Promise<void> {
         if (!loaded) { this.pendingCapacityInput = undefined; this.capacityRecovery.cancel(); }
         if (loaded && this.threadId) {
-            const response = record(await this.client.request('thread/resume', { threadId: this.threadId, excludeTurns: true }));
+            const response = record(await this.client.request('thread/resume', { threadId: this.threadId, excludeTurns: true, ...(this.host.codexProvider ? { modelProvider: this.host.codexProvider } : {}), ...(this.host.codexModel ? { model: this.host.codexModel } : {}) }));
             this.acceptSettings(response);
         }
         this.session.updateMetadata(metadata => ({ ...metadata, codexNativeConnection: loaded ? 'attached' : 'history' }));
@@ -489,7 +495,9 @@ export class SharedCodexRoot {
         // External history is paged separately; refresh below recovers the
         // current turn and queue without hydrating every inherited turn here.
         if (subscribe) response = record(await this.measure('root.subscribe', () => this.client.request('thread/resume', {
-            threadId, ...(this.host.external ? { excludeTurns: true } : {})
+            threadId, ...(this.host.external ? { excludeTurns: true } : {}),
+            ...(this.host.codexProvider ? { modelProvider: this.host.codexProvider } : {}),
+            ...(this.host.codexModel ? { model: this.host.codexModel } : {}),
         })));
         this.acceptSettings(response); this.acceptSettings(this.host.settingsFor(threadId) ?? {});
         if (turnRevision === this.turnRevision) this.execution.snapshot(record(response.thread),
@@ -608,7 +616,9 @@ export class SharedCodexRoot {
             this.session.emitNativeHistoryChanged(this.nativeActivity, true);
         }
         if (method === 'item/started' || method === 'item/completed') this.asyncQuestions?.observe(record(p.item), string(p.turnId));
-        if (method === 'turn/completed' && !this.host.external) this.session.sendSessionEvent({ type: 'ready' });
+        if (method === 'turn/completed' && !this.host.external && record(p.turn).status === 'completed') {
+            this.session.sendSessionEvent({ type: 'ready' });
+        }
         if (method === 'thread/archived') { await this.host.end(this, false); return; }
         if (method === 'thread/queue/changed') await this.queue.reconcile();
         if (this.host.external) {
@@ -864,6 +874,11 @@ export class SharedCodexRoot {
                 models.push(...(response.data ?? []).map(normalizeCodexModel).filter(model => model !== null)); cursor = response.nextCursor ?? undefined;
             } while (cursor);
             return { success: true, models };
+        });
+        rpc.registerHandler(RPC_METHODS.SwitchCodexAccount, async raw => {
+            const { accountId } = z.object({ accountId: z.string().min(1) }).parse(raw);
+            if (!this.host.switchAccount) throw new Error('Codex account switching is unavailable in this runtime');
+            return await this.host.switchAccount(this, accountId);
         });
         rpc.registerHandler(RPC_METHODS.Switch, async () => { throw new Error('control_mode_not_applicable'); });
         rpc.registerHandler(RPC_METHODS.HandoffLocal, async () => { throw new Error('control_mode_not_applicable'); });
@@ -1173,5 +1188,13 @@ export class SharedCodexRoot {
             this.session.sendSessionDeath(undefined, { preserveUploads: !archived });
             await this.session.flush(); this.session.close();
         })();
+    }
+    isBusy(): boolean { return Boolean(this.currentTurn); }
+    applyAccountMetadata(account: CodexAccountSummary): void {
+        this.session.updateMetadata(metadata => ({
+            ...metadata,
+            codexAccountId: account.id,
+            codexAccountLabel: account.label,
+        }));
     }
 }

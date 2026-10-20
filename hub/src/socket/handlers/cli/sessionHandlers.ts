@@ -457,17 +457,21 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
         onSessionReady?.(data)
     })
 
-    socket.on('messages-consumed', (data: { sid: string; localIds: string[]; clearQueuedThinkingGrace?: boolean; steered?: boolean }) => {
+    socket.on('messages-consumed', (data: { sid: string; localIds: string[]; clearQueuedThinkingGrace?: boolean; steered?: boolean }, ack?: (response: { ok: boolean }) => void) => {
+        const reply = typeof ack === 'function' ? ack : () => {}
         if (!data || typeof data.sid !== 'string' || !Array.isArray(data.localIds)) {
+            reply({ ok: false })
             return
         }
         const localIds = data.localIds.filter((id): id is string => typeof id === 'string')
         if (localIds.length === 0) {
+            reply({ ok: false })
             return
         }
         const sessionAccess = resolveSessionAccess(data.sid)
         if (!sessionAccess.ok) {
             emitAccessError('session', data.sid, sessionAccess.reason)
+            reply({ ok: false })
             return
         }
         const invokedAt = Date.now()
@@ -481,6 +485,7 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
             )
         } catch (err) {
             console.error('recordMessagesConsumed failed', err)
+            reply({ ok: false })
             return
         }
 
@@ -503,6 +508,7 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
         // heterogeneous, replayed, or unknown. `steered` is a live-only signal
         // (never persisted) that marks mid-turn delivery for the web badge.
         onWebappEvent?.({ type: 'messages-consumed', sessionId: data.sid, localIds, invokedAt, ...(data.steered === true ? { steered: true } : {}) })
+        reply({ ok: true })
     })
 
     socket.on('messages-indeterminate', (data: { sid: string; localIds: string[] }) => {

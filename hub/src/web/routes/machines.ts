@@ -3,10 +3,17 @@ import {
     MACHINE_CAPABILITIES,
     MachineListDirectoryRequestSchema,
     MachinePathsExistsRequestSchema,
+    ImportCurrentCodexAccountRequestSchema,
+    RenameCodexAccountRequestSchema,
+    CodexAccountIdSchema,
+    CodexHomeIdSchema,
+    SaveCodexHomeRequestSchema,
+    MigrateCodexThreadRequestSchema,
     RenameMachineRequestSchema,
     SpawnSessionRequestSchema
 } from '@hapi/protocol'
 import { Hono } from 'hono'
+import { resolve } from 'node:path'
 import { RPC_TARGET_MISSING_ERROR_CODE } from '@hapi/protocol/rpcMethods'
 import type { SyncEngine } from '../../sync/syncEngine'
 import { RpcTargetMissingError } from '../../sync/rpcGateway'
@@ -92,7 +99,7 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             return c.json({ error: 'Invalid body' }, 400)
         }
         if (
-            (parsed.data.agent === 'agy' || parsed.data.agent === 'dsh')
+            (parsed.data.agent === 'agy' || parsed.data.agent === 'dsh' || parsed.data.agent === 'qoder')
             && parsed.data.startingMode
             && parsed.data.startingMode !== 'remote'
         ) {
@@ -122,9 +129,199 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             parsed.data.collaborationMode,
             parsed.data.copilotAgentMode,
             startingMode,
-            namespace
+            namespace,
+            parsed.data.codexAccountId,
+            undefined,
+            parsed.data.codexHome,
+            parsed.data.codexKeyProfileId
         )
         return c.json(result)
+    })
+
+    app.post('/machines/:id/codex-device-login', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machineId = c.req.param('id')
+        const machine = requireMachine(c, engine, machineId)
+        if (machine instanceof Response) return machine
+        const body = await c.req.json().catch(() => null)
+        if (!body || !['start', 'get', 'cancel'].includes(body.action)
+            || (body.action !== 'start' && typeof body.id !== 'string')
+            || (body.label !== undefined && (typeof body.label !== 'string' || body.label.length > 80))) {
+            return c.json({ error: 'Invalid device login request' }, 400)
+        }
+        try {
+            const result = await engine.codexDeviceLogin(machineId, body.action, body.id, body.label)
+            return c.json(result, result.success ? 200 : 409)
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Device login failed' }, 503)
+        }
+    })
+
+    app.post('/machines/:id/codex-account', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machineId = c.req.param('id')
+        const machine = requireMachine(c, engine, machineId)
+        if (machine instanceof Response) return machine
+        const body = await c.req.json().catch(() => null)
+        const parsed = CodexAccountIdSchema.safeParse(body?.accountId)
+        if (!parsed.success) return c.json({ error: 'Invalid account ID' }, 400)
+        const sessions = engine.getSessionsByNamespace(c.get('namespace')).filter(session =>
+            session.active && session.metadata?.machineId === machineId && session.metadata?.flavor === 'codex')
+        if (sessions.some(session => session.thinking)) {
+            return c.json({ success: false, error: 'Finish active Codex turns on this machine before switching accounts' }, 409)
+        }
+        const runtime = sessions.find(session => session.metadata?.capabilities?.concurrentClients)
+        if (!runtime) return c.json({ success: false, error: 'No connected Codex runtime on this machine' }, 409)
+        try {
+            const result = await engine.switchCodexAccount(runtime.id, parsed.data)
+            return c.json(result, result.success ? 200 : 409)
+        } catch (error) {
+            return c.json({ success: false, error: error instanceof Error ? error.message : 'Account switch failed' }, 503)
+        }
+    })
+
+    app.post('/machines/:id/codex-thread-migrate', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machine = requireMachine(c, engine, c.req.param('id'))
+        if (machine instanceof Response) return machine
+        const parsed = MigrateCodexThreadRequestSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid thread migration request' }, 400)
+        const namespace = c.get('namespace')
+        const sourceHome = resolve(parsed.data.sourceHome)
+        const targetHome = resolve(parsed.data.targetHome)
+        let barrier = false
+        if (parsed.data.sessionId) {
+            if (parsed.data.stopSource !== false) {
+                const stopped = await engine.stopSessionForMigration(parsed.data.sessionId, namespace)
+                if (!stopped.success) return c.json({ success: false, error: stopped.error ?? 'Could not stop source session' }, 409)
+            }
+            const begun = await engine.beginCodexMigration(parsed.data.sessionId, namespace, sourceHome, targetHome)
+            if (!begun.success) return c.json({ success: false, error: begun.error ?? 'Could not acquire migration barrier' }, 409)
+            barrier = true
+        }
+        try {
+            const result = await engine.migrateCodexThread(c.req.param('id'), parsed.data)
+            if (result.success && parsed.data.sessionId) {
+                const rebound = await engine.rebindCodexHome(
+                    parsed.data.sessionId, namespace, sourceHome, targetHome, parsed.data.targetHomeId, parsed.data.targetProvider, parsed.data.targetModel
+                )
+                if (!rebound.success) return c.json({ ...result, success: false, error: rebound.error ?? 'Thread migrated but session rebind failed' }, 409)
+            }
+            return c.json(result, result.success ? 200 : 409)
+        } finally {
+            if (barrier && parsed.data.sessionId) await engine.endCodexMigration(parsed.data.sessionId, namespace)
+        }
+    })
+
+    app.get('/machines/:id/codex-homes', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machine = requireMachine(c, engine, c.req.param('id'))
+        if (machine instanceof Response) return machine
+        try { return c.json(await engine.listCodexHomes(c.req.param('id'))) }
+        catch (error) { return c.json({ success: false, error: error instanceof Error ? error.message : 'Failed to list Codex homes' }, 500) }
+    })
+
+    app.post('/machines/:id/codex-homes', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machine = requireMachine(c, engine, c.req.param('id'))
+        if (machine instanceof Response) return machine
+        const parsed = SaveCodexHomeRequestSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid Codex home' }, 400)
+        const result = await engine.saveCodexHome(c.req.param('id'), parsed.data)
+        return c.json(result, result.success ? 200 : 409)
+    })
+
+    app.delete('/machines/:id/codex-homes/:homeId', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machine = requireMachine(c, engine, c.req.param('id'))
+        if (machine instanceof Response) return machine
+        const id = CodexHomeIdSchema.safeParse(c.req.param('homeId'))
+        if (!id.success) return c.json({ error: 'Invalid Codex home id' }, 400)
+        const result = await engine.deleteCodexHome(c.req.param('id'), id.data)
+        return c.json(result, result.success ? 200 : 409)
+    })
+
+    app.get('/machines/:id/codex-accounts', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machineId = c.req.param('id')
+        const machine = requireMachine(c, engine, machineId)
+        if (machine instanceof Response) return machine
+        try {
+            return c.json(await engine.listCodexAccounts(machineId))
+        } catch (error) {
+            return c.json({ success: false, error: error instanceof Error ? error.message : 'Failed to list Codex accounts' }, 500)
+        }
+    })
+
+    app.post('/machines/:id/codex-accounts/import-current', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machineId = c.req.param('id')
+        const machine = requireMachine(c, engine, machineId)
+        if (machine instanceof Response) return machine
+        const parsed = ImportCurrentCodexAccountRequestSchema.safeParse(await c.req.json().catch(() => ({})))
+        if (!parsed.success) return c.json({ error: 'Invalid body' }, 400)
+        const result = await engine.importCurrentCodexAccount(machineId, parsed.data.label)
+        return c.json(result, result.success ? 200 : 409)
+    })
+
+    app.patch('/machines/:id/codex-accounts/:accountId', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machineId = c.req.param('id')
+        const machine = requireMachine(c, engine, machineId)
+        if (machine instanceof Response) return machine
+        const accountId = CodexAccountIdSchema.safeParse(c.req.param('accountId'))
+        const body = RenameCodexAccountRequestSchema.safeParse(await c.req.json().catch(() => null))
+        if (!accountId.success || !body.success) return c.json({ error: 'Invalid request' }, 400)
+        const result = await engine.renameCodexAccount(machineId, accountId.data, body.data.label)
+        return c.json(result, result.success ? 200 : 409)
+    })
+
+    app.delete('/machines/:id/codex-accounts/:accountId', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machineId = c.req.param('id')
+        const machine = requireMachine(c, engine, machineId)
+        if (machine instanceof Response) return machine
+        const accountId = CodexAccountIdSchema.safeParse(c.req.param('accountId'))
+        if (!accountId.success) return c.json({ error: 'Invalid account id' }, 400)
+        const result = await engine.deleteCodexAccount(machineId, accountId.data)
+        return c.json(result, result.success ? 200 : 409)
+    })
+
+    app.get('/machines/:id/dsh-bundles', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machine = requireMachine(c, engine, c.req.param('id'))
+        if (machine instanceof Response) return machine
+        try {
+            return c.json(await engine.listDshBundles(machine.id))
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Failed to read DSH bundles' }, 500)
+        }
+    })
+
+    app.post('/machines/:id/dsh-bundles', async (c) => {
+        const engine = getSyncEngine()
+        if (!engine) return c.json({ error: 'Not connected' }, 503)
+        const machine = requireMachine(c, engine, c.req.param('id'))
+        if (machine instanceof Response) return machine
+        const body = await c.req.json().catch(() => null) as { name?: unknown; enabled?: unknown } | null
+        const name = typeof body?.name === 'string' ? body.name : ''
+        if (!name) return c.json({ error: 'Bundle name is required' }, 400)
+        try {
+            return c.json(await engine.setDshBundle(machine.id, name, body?.enabled === true))
+        } catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : 'Failed to update DSH bundles' }, 400)
+        }
     })
 
     app.get('/machines/:id/agent-availability', async (c) => {

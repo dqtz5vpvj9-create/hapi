@@ -367,6 +367,35 @@ describe('machines routes', () => {
         expect(captured![12]).toBeUndefined()
     })
 
+    it('forwards a custom Codex home in the last spawn slot', async () => {
+        const machine = createMachine()
+        let captured: unknown[] | null = null
+        const engine = {
+            getMachine: () => machine,
+            getMachineByNamespace: () => machine,
+            spawnSession: async (...args: unknown[]) => {
+                captured = args
+                return { type: 'success', sessionId: 's-1' }
+            }
+        } as unknown as Partial<SyncEngine>
+
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createMachinesRoutes(() => engine as SyncEngine))
+
+        const response = await app.request('/api/machines/machine-1/spawn', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ directory: '/tmp/x', agent: 'codex', codexHome: '/home/me/.codex-ipads' })
+        })
+
+        expect(response.status).toBe(200)
+        expect(captured![19]).toBe('/home/me/.codex-ipads')
+    })
+
     it('forwards AGY spawns without forcing a starting mode', async () => {
         const machine = createMachine()
         let captured: unknown[] | null = null
@@ -418,6 +447,32 @@ describe('machines routes', () => {
         expect(captured![15]).toBe('remote')
     })
 
+    it('accepts an explicit remote Qoder machine spawn', async () => {
+        const machine = createMachine()
+        let captured: unknown[] | null = null
+        const engine = {
+            getMachine: () => machine,
+            getMachineByNamespace: () => machine,
+            spawnSession: async (...args: unknown[]) => {
+                captured = args
+                return { type: 'success', sessionId: 's-qoder' }
+            }
+        } as unknown as Partial<SyncEngine>
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => { c.set('namespace', 'default'); await next() })
+        app.route('/api', createMachinesRoutes(() => engine as SyncEngine))
+
+        const response = await app.request('/api/machines/machine-1/spawn', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ directory: '/tmp/x', agent: 'qoder', startingMode: 'remote' })
+        })
+
+        expect(response.status).toBe(200)
+        expect(captured![2]).toBe('qoder')
+        expect(captured![15]).toBe('remote')
+    })
+
     it('rejects a non-remote headless-agent machine spawn', async () => {
         const machine = createMachine()
         const spawnSession = () => { throw new Error('must not spawn') }
@@ -430,7 +485,7 @@ describe('machines routes', () => {
         app.use('*', async (c, next) => { c.set('namespace', 'default'); await next() })
         app.route('/api', createMachinesRoutes(() => engine as SyncEngine))
 
-        for (const agent of ['agy', 'dsh']) {
+        for (const agent of ['agy', 'dsh', 'qoder']) {
             for (const startingMode of ['local', 'pty']) {
                 const response = await app.request('/api/machines/machine-1/spawn', {
                     method: 'POST',
@@ -438,6 +493,11 @@ describe('machines routes', () => {
                     body: JSON.stringify({ directory: '/tmp/x', agent, startingMode })
                 })
                 expect(response.status).toBe(400)
+                // SpawnSessionRequestSchema already rejects `local`; `pty` is the
+                // mode the remote-only guard itself turns away.
+                if (agent === 'qoder' && startingMode === 'pty') {
+                    expect(await response.json()).toEqual({ error: 'QODER only supports remote mode' })
+                }
             }
         }
     })

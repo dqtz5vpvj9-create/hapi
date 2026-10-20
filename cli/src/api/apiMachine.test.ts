@@ -770,7 +770,9 @@ describe('ApiMachineClient SpawnHappySession handler', () => {
                 directory: workspaceRoot,
                 agent: 'codex',
                 serviceTier: 'fast',
-                collaborationMode: 'plan'
+                collaborationMode: 'plan',
+                codexHome: '/home/me/.codex-ipads',
+                codexKeyProfileId: 'ipads-a'
             })
 
             expect(result).toEqual({ type: 'success', sessionId: 'session-1' })
@@ -778,7 +780,9 @@ describe('ApiMachineClient SpawnHappySession handler', () => {
                 directory: workspaceRoot,
                 agent: 'codex',
                 serviceTier: 'fast',
-                collaborationMode: 'plan'
+                collaborationMode: 'plan',
+                codexHome: '/home/me/.codex-ipads',
+                codexKeyProfileId: 'ipads-a'
             }))
         } finally {
             client.shutdown()

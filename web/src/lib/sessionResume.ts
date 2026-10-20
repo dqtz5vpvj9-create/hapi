@@ -27,6 +27,9 @@ export function resolveAgentSessionIdFromMetadata(
         // here made archived dsh sessions look non-resumable in the web UI even
         // though `POST /sessions/:id/reopen` succeeds.
         case 'dsh': return metadata.dshSessionId ?? undefined
+        // Qoder CN advertises ACP resume from the live session; the hub honors
+        // `qoderSessionId` the same way it honors dsh's resume id.
+        case 'qoder': return metadata.qoderSessionId ?? undefined
         default: return metadata.claudeSessionId ?? undefined
     }
 }

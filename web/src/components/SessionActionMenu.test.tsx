@@ -94,20 +94,8 @@ describe('SessionActionMenu - positioning', () => {
     it('centers the menu on the supplied anchor', () => {
         const originalInnerWidth = window.innerWidth
         Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
-        const menuRect = {
-            bottom: 320,
-            height: 320,
-            left: 0,
-            right: 240,
-            top: 0,
-            width: 240,
-            x: 0,
-            y: 0,
-            toJSON: () => ({})
-        } as DOMRect
-        const getBoundingClientRect = vi
-            .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-            .mockReturnValue(menuRect)
+        const offsetWidth = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(240)
+        const offsetHeight = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(320)
 
         try {
             renderMenu({ anchorPoint: { x: 160, y: 100 } })
@@ -117,7 +105,8 @@ describe('SessionActionMenu - positioning', () => {
             expect(menu).toHaveStyle({ left: '40px' })
             expect(screen.getAllByRole('menuitem')[0]).toHaveClass('pl-3', 'pr-[42px]')
         } finally {
-            getBoundingClientRect.mockRestore()
+            offsetWidth.mockRestore()
+            offsetHeight.mockRestore()
             Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
         }
     })
@@ -125,27 +114,16 @@ describe('SessionActionMenu - positioning', () => {
     it('clamps the trigger-centered menu at the viewport edge', () => {
         const originalInnerWidth = window.innerWidth
         Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
-        const menuRect = {
-            bottom: 320,
-            height: 320,
-            left: 0,
-            right: 240,
-            top: 0,
-            width: 240,
-            x: 0,
-            y: 0,
-            toJSON: () => ({})
-        } as DOMRect
-        const getBoundingClientRect = vi
-            .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-            .mockReturnValue(menuRect)
+        const offsetWidth = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(240)
+        const offsetHeight = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(320)
 
         try {
             renderMenu({ anchorPoint: { x: 100, y: 100 } })
 
             expect(screen.getByRole('menu').parentElement).toHaveStyle({ left: '8px' })
         } finally {
-            getBoundingClientRect.mockRestore()
+            offsetWidth.mockRestore()
+            offsetHeight.mockRestore()
             Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
         }
     })

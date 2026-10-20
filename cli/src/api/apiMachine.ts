@@ -1,3 +1,9 @@
+import { resolve } from 'node:path'
+import { startCodexDeviceLogin, getCodexDeviceLogin, cancelCodexDeviceLogin } from '@/codex/accounts/deviceLogin'
+import { deleteCodexHome, listCodexHomes, saveCodexHome } from '@/codex/utils/codexHomesRegistry'
+import { migrateNativeThread } from '@/codex/migration/nativeThreadMigration'
+import { readRuntimes, runtimeMayBeAlive } from '@/codex/shared/registry'
+import { MigrateCodexThreadRequestSchema, SaveCodexHomeRequestSchema } from '@hapi/protocol/apiTypes'
 /**
  * WebSocket client for machine/runner communication with hapi-hub
  */
@@ -70,10 +76,18 @@ import { inspectCursorChatStore } from '@/cursor/cursorChatStoreStatus'
 import { homedir } from 'node:os'
 import type { CursorChatStoreStatus } from '@hapi/protocol/apiTypes'
 import { MachinePathPolicy } from './machinePathPolicy'
+import { registerMachineFileHandlers } from './machineFileHandlers'
 import { getAgentAvailabilityResponse } from '@/agent/agentAvailability'
+import { listDshBundleCatalog, setDshBundle } from '@/dsh/bundles'
 import { TerminalHostBridge } from '@/terminal/TerminalHostBridge'
 import { startWindowsProcessProbe } from '@/utils/windowsProcessProbe'
 import { MachineTerminalRpcRequestSchema } from '@hapi/protocol/terminals'
+import {
+    deleteCodexAccount,
+    importCurrentCodexAccount,
+    listCodexAccounts,
+    renameCodexAccount,
+} from '@/codex/accounts/accountManager'
 
 export { normalizeWindowsDriveRoot } from './machinePathPolicy'
 
@@ -147,6 +161,7 @@ export class ApiMachineClient {
         })
 
         registerCommonHandlers(this.rpcHandlerManager, getInvokedCwd())
+        registerMachineFileHandlers(this.rpcHandlerManager, this.pathPolicy)
         this.rpcHandlerManager.registerHandler(RPC_METHODS.MachineTerminal, async params => ({
             ok: true,
             value: await this.terminalBridge.request(MachineTerminalRpcRequestSchema.parse(params)),
@@ -162,6 +177,112 @@ export class ApiMachineClient {
             RPC_METHODS.AgentAvailability,
             async () => getAgentAvailabilityResponse()
         )
+
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.ListDshBundles, async () => await listDshBundleCatalog())
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.SetDshBundle, async (params: unknown) => {
+            const input = (params ?? {}) as { name?: unknown; enabled?: unknown }
+            return await setDshBundle(String(input.name ?? ''), input.enabled === true)
+        })
+
+        for (const [method, action] of [
+            [RPC_METHODS.StartCodexDeviceLogin, 'start'],
+            [RPC_METHODS.GetCodexDeviceLogin, 'get'],
+            [RPC_METHODS.CancelCodexDeviceLogin, 'cancel'],
+        ] as const) {
+            this.rpcHandlerManager.registerHandler(method, async (params: unknown) => {
+                const input = (params ?? {}) as { id?: string; label?: string }
+                try {
+                    const login = action === 'start' ? await startCodexDeviceLogin(input.label)
+                        : action === 'cancel' ? cancelCodexDeviceLogin(input.id ?? '') : getCodexDeviceLogin(input.id ?? '')
+                    return { success: true, login }
+                } catch (error) {
+                    return { success: false, error: error instanceof Error ? error.message : 'Device login failed' }
+                }
+            })
+        }
+
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.ListCodexHomes, async () => ({ success: true, homes: await listCodexHomes() }))
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.MigrateCodexThread, async (params: unknown) => {
+            const parsed = MigrateCodexThreadRequestSchema.safeParse(params)
+            if (!parsed.success) return { success: false, error: 'Invalid thread migration request' }
+            const sourceHome = resolve(parsed.data.sourceHome)
+            const targetHome = resolve(parsed.data.targetHome)
+            if (sourceHome === targetHome) return { success: false, error: 'Source and target homes are identical' }
+            for (const runtime of await readRuntimes()) {
+                if (!runtimeMayBeAlive(runtime) || resolve(runtime.codexHome) !== sourceHome) continue
+                if (Object.values(runtime.sessions).some(session => session.active && session.threadId === parsed.data.threadId)) {
+                    return { success: false, error: 'Stop the source Codex execution before migrating its thread' }
+                }
+            }
+            try {
+                const result = await migrateNativeThread({
+                    sourceHome, targetHome, threadId: parsed.data.threadId,
+                    targetProvider: parsed.data.targetProvider,
+                    targetModel: parsed.data.targetModel,
+                    allowCrossProvider: Boolean(parsed.data.targetProvider),
+                })
+                return { success: true, threadId: result.plan.threadId, journalPath: result.journalPath, warnings: result.plan.warnings }
+            } catch (error) {
+                return { success: false, error: error instanceof Error ? error.message : 'Thread migration failed' }
+            }
+        })
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.SaveCodexHome, async (params: unknown) => {
+            const parsed = SaveCodexHomeRequestSchema.safeParse(params)
+            if (!parsed.success) return { success: false, error: 'Invalid Codex home' }
+            try { return { success: true, homes: await saveCodexHome(parsed.data) } }
+            catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Failed to save Codex home' } }
+        })
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.DeleteCodexHome, async (params: unknown) => {
+            const id = params && typeof params === 'object' && typeof (params as { id?: unknown }).id === 'string'
+                ? (params as { id: string }).id : ''
+            if (!id) return { success: false, error: 'Invalid Codex home id' }
+            try { return { success: true, homes: await deleteCodexHome(id) } }
+            catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Failed to delete Codex home' } }
+        })
+
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.ListCodexAccounts, async () => {
+            try {
+                return { success: true, ...(await listCodexAccounts()) }
+            } catch (error) {
+                return { success: false, error: error instanceof Error ? error.message : 'Failed to list Codex accounts' }
+            }
+        })
+
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.ImportCurrentCodexAccount, async (params: unknown) => {
+            const label = params && typeof params === 'object' && typeof (params as { label?: unknown }).label === 'string'
+                ? (params as { label: string }).label
+                : undefined
+            try {
+                return { success: true, account: await importCurrentCodexAccount(label) }
+            } catch (error) {
+                return { success: false, error: error instanceof Error ? error.message : 'Failed to import Codex account' }
+            }
+        })
+
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.RenameCodexAccount, async (params: unknown) => {
+            const input = params && typeof params === 'object' ? params as { accountId?: unknown; label?: unknown } : {}
+            if (typeof input.accountId !== 'string' || typeof input.label !== 'string' || !input.label.trim()) {
+                return { success: false, error: 'accountId and label are required' }
+            }
+            try {
+                return { success: true, account: await renameCodexAccount(input.accountId, input.label) }
+            } catch (error) {
+                return { success: false, error: error instanceof Error ? error.message : 'Failed to rename Codex account' }
+            }
+        })
+
+        this.rpcHandlerManager.registerHandler(RPC_METHODS.DeleteCodexAccount, async (params: unknown) => {
+            const accountId = params && typeof params === 'object' && typeof (params as { accountId?: unknown }).accountId === 'string'
+                ? (params as { accountId: string }).accountId
+                : ''
+            if (!accountId) return { success: false, error: 'accountId is required' }
+            try {
+                await deleteCodexAccount(accountId)
+                return { success: true }
+            } catch (error) {
+                return { success: false, error: error instanceof Error ? error.message : 'Failed to delete Codex account' }
+            }
+        })
 
         this.rpcHandlerManager.registerHandler<PathExistsRequest, PathExistsResponse>(RPC_METHODS.PathExists, async (params) => {
             const rawPaths = Array.isArray(params?.paths) ? params.paths : []
@@ -535,7 +656,7 @@ export class ApiMachineClient {
 
     setRPCHandlers({ spawnSession, stopSession, requestShutdown }: MachineRpcHandlers): void {
         this.rpcHandlerManager.registerHandler(RPC_METHODS.SpawnHappySession, async (params: any) => {
-            const { directory, sessionId, existingSessionId, reservedSessionId, resumeSessionId, machineId, approvedNewDirectoryCreation, agent, model, effort, modelReasoningEffort, yolo, permissionMode, serviceTier, collaborationMode, copilotAgentMode, token, sessionType, worktreeName, startingMode, forkSession } = params || {}
+            const { directory, sessionId, existingSessionId, reservedSessionId, resumeSessionId, machineId, approvedNewDirectoryCreation, agent, model, effort, modelReasoningEffort, yolo, permissionMode, serviceTier, collaborationMode, copilotAgentMode, token, sessionType, worktreeName, startingMode, forkSession, codexAccountId, codexHome, codexKeyProfileId } = params || {}
 
             if (!directory) {
                 throw new Error('Directory is required')
@@ -570,6 +691,9 @@ export class ApiMachineClient {
                 collaborationMode,
                 copilotAgentMode,
                 token,
+                codexAccountId,
+                codexHome,
+                codexKeyProfileId,
                 sessionType,
                 worktreeName,
                 startingMode,

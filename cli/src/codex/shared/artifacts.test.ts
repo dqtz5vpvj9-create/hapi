@@ -41,6 +41,16 @@ describe('native chat artifacts', () => {
         expect(projection({ id: 'function', type: 'functionCallOutput', output }).resources).toHaveLength(1);
         expect(projection({ id: 'function', type: 'functionCallOutput', output: JSON.stringify({ content: [{ type: 'image', data: png }] }) }).resources).toHaveLength(1);
     });
+    it('reads a live MCP image after native history wraps the result in text', async () => {
+        const result = { content: [{ type: 'text', text: 'C:\\work\\screenshot.png' }, { type: 'image', mimeType: 'image/png', data: png }] };
+        const live = { id: 'screenshot', type: 'mcpToolCall', server: 'node_repl', tool: 'js', result };
+        const stored = { ...live, result: { content: [{ type: 'text', text: JSON.stringify(result) }] } };
+        const id = projection(live).resources[0].ref.id;
+        expect(projection(stored).parts).toEqual(projection(live).parts);
+        expect(await read(id, stored)).toMatchObject({ success: true, content: png, mimeType: 'image/png' });
+        const ordinary = { ...live, result: { content: [{ type: 'text', text: '{"message":"No screenshot"}' }] } };
+        expect(projection(ordinary).parts).toEqual([{ type: 'text', text: '{"message":"No screenshot"}' }]);
+    });
     it('checks conversation ownership before reading any item', async () => {
         const request = vi.fn();
         const id = projection({ id: 'generated', type: 'imageGeneration', result: png }).resources[0].ref.id;

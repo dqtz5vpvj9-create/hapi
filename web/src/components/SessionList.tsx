@@ -1,3 +1,4 @@
+import { APP_TITLE } from '@/lib/runtime-config'
 import { classifySessionActivity } from '@hapi/protocol'
 import { useOptionalAppContext } from '@/lib/app-context'
 import { panes } from '@/workspace/workspaceStore'
@@ -12,7 +13,12 @@ import { buildSessionHierarchy, hierarchyRootId, hierarchyContains, type Session
 import { projectSessionTreeRows, selectedSessionAncestors } from '@/lib/sessionTreeRows'
 import { SessionListScrollAnchor } from './SessionListScrollAnchor'
 import { RecentSessionList, useRecentRowRetention, type RecentScrollObserver } from './RecentSessionList'
-import { CodexSubagentDialog } from './CodexSubagentDialog'
+import {
+    directNativeChildRows,
+    nativeSubagentRows,
+    nestedNativeChildRows,
+    type NativeSubagentRow,
+} from './SubagentChat/nativeSubagents'
 import type { SessionSummary } from '@/types/api'
 import { SESSION_LIFECYCLE_IDLE } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
@@ -27,6 +33,7 @@ import { useLongPress } from '@/hooks/useLongPress'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
+import { CodexHomeMigrationDialog } from '@/components/CodexHomeMigrationDialog'
 import { SessionExportDialog } from '@/components/SessionExportDialog'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -1001,7 +1008,8 @@ function SessionItem(props: {
     const [exportOpen, setExportOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
-    useRecentRowRetention(s.id, menuOpen || renameOpen || exportOpen || archiveOpen || deleteOpen)
+    const [migrateOpen, setMigrateOpen] = useState(false)
+    useRecentRowRetention(s.id, menuOpen || renameOpen || exportOpen || archiveOpen || deleteOpen || migrateOpen)
     const {
         status: cursorChatStoreStatus,
         isApplicable: cursorChatStoreApplicable,
@@ -1027,7 +1035,7 @@ function SessionItem(props: {
         ? t('session.action.reopenCursorUnverified')
         : undefined
 
-    const { archiveSession, reopenSession, renameSession, suggestSessionTitle, updateSessionSummary, deleteSession, setPinMode, isPending } = useSessionActions(
+    const { archiveSession, reopenSession, restartSession, renameSession, suggestSessionTitle, updateSessionSummary, deleteSession, setPinMode, isPending } = useSessionActions(
         api,
         s.id,
         s.metadata?.flavor ?? null
@@ -1153,14 +1161,18 @@ function SessionItem(props: {
                 onSetPinMode={(mode) => void handleSetPinMode(mode)}
                 onRename={() => setRenameOpen(true)}
                 onExport={() => setExportOpen(true)}
+                onMigrateCodexHome={api && (s.metadata?.codexHome ?? s.metadata?.codexStoreId) && (s.metadata?.codexSessionId ?? s.metadata?.agentSessionId) ? () => setMigrateOpen(true) : undefined}
                 onMarkUnread={() => markSessionUnread(s.id, s.updatedAt)}
                 onArchive={() => setArchiveOpen(true)}
+                onRestart={s.active ? () => void restartSession() : undefined}
                 onReopen={cursorReopenDisabledReason ? undefined : handleReopen}
                 reopenDisabledReason={cursorReopenDisabledReason}
                 reopenHint={cursorReopenUnverifiedHint}
                 onDelete={() => setDeleteOpen(true)}
                 anchorPoint={menuAnchorPoint}
             />
+
+            {api && migrateOpen ? <CodexHomeMigrationDialog api={api} session={s} isOpen={migrateOpen} onClose={() => setMigrateOpen(false)} /> : null}
 
             {reopenError ? (
                 <ConfirmDialog
@@ -1263,17 +1275,25 @@ function PullRefreshIcon(props: { rotation: number }) {
     )
 }
 
-type NativeSubagent = NonNullable<NonNullable<SessionSummary['metadata']>['codexSubagents']>[number]
-type OpenNativeSubagent = (parentSessionId: string, agent: NativeSubagent) => void
+type OpenNativeSubagent = (parentSessionId: string, subagentId: string) => void
 type FlatTreeRowControl = { expanded: boolean; childCount: number; onToggle: () => void }
 
-function nativeSubagentTitle(agent: NativeSubagent): string {
-    return agent.nickname || agent.role || agent.threadId.slice(0, 8)
+/** Unified subtitle shared by Codex thread rows and DSH child-session rows. */
+function nativeSubagentSubtitle(row: NativeSubagentRow, t: (key: string) => string): string {
+    const parts = [t(`sessions.subagentFlavor.${row.flavor}`)]
+    if (row.flavor === 'dsh') {
+        if (row.mode && row.mode !== 'unknown') parts.push(t(`sessions.subagentMode.${row.mode}`))
+        if (row.teamStatus) parts.push(t(`sessions.subagentTeamStatus.${row.teamStatus}`))
+        else if (row.activity) parts.push(t(`sessions.subagentActivity.${row.activity}`))
+    } else if (row.role) {
+        parts.push(row.role)
+    }
+    return parts.join(' · ')
 }
 
 function NativeSubagentItem(props: {
-    agent: NativeSubagent
-    agents: NativeSubagent[]
+    row: NativeSubagentRow
+    rows: NativeSubagentRow[]
     parentSessionId: string
     machineId?: string
     onOpen: OpenNativeSubagent
@@ -1282,30 +1302,32 @@ function NativeSubagentItem(props: {
     flatRow?: FlatTreeRowControl
 }) {
     const { t } = useTranslation()
-    const expansionKey = `native:${props.parentSessionId}:${props.agent.threadId}`
+    const expansionKey = `native:${props.parentSessionId}:${props.row.id}`
     const [expanded, setExpandedState] = useState(() => props.expansionCache?.get(expansionKey) ?? false)
     const setExpanded = (update: (value: boolean) => boolean) => {
         const next = update(expanded)
         props.expansionCache?.set(expansionKey, next)
         setExpandedState(next)
     }
-    const children = props.flatRow ? [] : props.agents.filter(agent => agent.parentThreadId === props.agent.threadId)
+    const children = props.flatRow ? [] : nestedNativeChildRows(props.rows, props.row.id)
     const childCount = props.flatRow?.childCount ?? children.length
     const open = props.flatRow?.expanded ?? (expanded || props.revealChildren)
     return (
-        <div className="app-native-subagent-tree" data-native-subagent-id={props.agent.threadId} data-has-subagents={childCount > 0 || undefined}>
+        <div className="app-native-subagent-tree" data-native-subagent-id={props.row.id}
+            data-subagent-flavor={props.row.flavor} data-subagent-status={props.row.status}
+            data-has-subagents={childCount > 0 || undefined}>
             <button type="button"
                 data-session-view-anchor={expansionKey}
                 className="app-native-subagent-row flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left hover:bg-[var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
-                title={[nativeSubagentTitle(props.agent), props.agent.role].filter(Boolean).join('\n')}
-                onClick={() => props.onOpen(props.parentSessionId, props.agent)}>
+                title={[props.row.title, props.row.role].filter(Boolean).join('\n')}
+                onClick={() => props.onOpen(props.parentSessionId, props.row.id)}>
                 <span className="flex items-center gap-1.5 text-sm text-[var(--app-fg)]">
                     <span aria-hidden="true" className="text-[var(--app-hint)]">↳</span>
                     <MachineIdentityIcon machineId={props.machineId} />
-                    <span className="truncate">{nativeSubagentTitle(props.agent)}</span>
+                    <span className="truncate">{props.row.title}</span>
                 </span>
                 <span className="app-session-subagent-meta text-[11px] text-[var(--app-hint)]">
-                    {t('sessions.subagent')}{props.agent.role && props.agent.role !== props.agent.nickname ? ` · ${props.agent.role}` : ''}
+                    {nativeSubagentSubtitle(props.row, t)}
                 </span>
             </button>
             {childCount > 0 ? <>
@@ -1318,7 +1340,7 @@ function NativeSubagentItem(props: {
                     <span className="app-session-subagent-label">{t('sessions.subagents', { n: childCount })}</span>
                 </button>
                 {open && !props.flatRow ? <div className="app-session-children ml-3 border-l border-[var(--app-border)] pl-2">
-                    {children.map(agent => <NativeSubagentItem {...props} key={agent.threadId} agent={agent} />)}
+                    {children.map(row => <NativeSubagentItem {...props} key={row.id} row={row} />)}
                 </div> : null}
             </> : null}
         </div>
@@ -1338,9 +1360,11 @@ function SessionTreeItem(props: Omit<ComponentProps<typeof SessionItem>, 'lastSe
     const manualUnreadAt = readState.manualUnreadById[props.session.id]
     const { t } = useTranslation()
     const children = tree.children.get(props.session.id) ?? []
-    const agents = props.session.metadata?.codexSubagents ?? []
-    const nativeChildren = flatRow ? [] : agents.filter(agent => agent.parentThreadId === props.session.metadata?.agentSessionId
-        && !children.some(child => child.metadata?.agentSessionId === agent.threadId))
+    const nativeRows = nativeSubagentRows(props.session.metadata)
+    const hapiChildAgentIds = new Set(children
+        .map(child => child.metadata?.agentSessionId)
+        .filter((id): id is string => Boolean(id)))
+    const nativeChildren = flatRow ? [] : directNativeChildRows(nativeRows, props.session.metadata?.agentSessionId, hapiChildAgentIds)
     const childCount = flatRow?.childCount ?? children.length + nativeChildren.length
     const containsSelection = !flatRow && hierarchyContains(tree, props.session.id, selectedSessionId)
         && props.session.id !== selectedSessionId
@@ -1389,7 +1413,7 @@ function SessionTreeItem(props: Omit<ComponentProps<typeof SessionItem>, 'lastSe
                                     selectedSessionId={selectedSessionId} revealChildren={revealChildren}
                                     onOpenNativeSubagent={onOpenNativeSubagent} expansionCache={expansionCache} />
                             ))}
-                            {nativeChildren.map(agent => <NativeSubagentItem key={agent.threadId} agent={agent} agents={agents}
+                            {nativeChildren.map(row => <NativeSubagentItem key={row.id} row={row} rows={nativeRows}
                                 parentSessionId={props.session.id} machineId={props.session.metadata?.machineId} onOpen={onOpenNativeSubagent} revealChildren={revealChildren} expansionCache={expansionCache} />)}
                         </div>
                     ) : null}
@@ -1403,6 +1427,8 @@ export function SessionList(props: {
     sessions: SessionSummary[]
     onSelect: (sessionId: string) => void
     onOpenPane?: (sessionId: string, axis: 'horizontal' | 'vertical') => void
+    /** Opens a native Codex/DSH child in the shared subagent chat route. */
+    onOpenSubagent?: (parentSessionId: string, subagentId: string) => void
     onNewSession: () => void
     onStartTask?: (machineId?: string) => void
     hub?: string | null
@@ -1457,8 +1483,10 @@ export function SessionList(props: {
     const [customStart, setCustomStart] = useState('')
     const [customEnd, setCustomEnd] = useState('')
     const [markAllReadOpen, setMarkAllReadOpen] = useState(false)
-    const [nativeSubagent, setNativeSubagent] = useState<{ parentSessionId: string; agent: NativeSubagent } | null>(null)
-    const openNativeSubagent: OpenNativeSubagent = (parentSessionId, agent) => setNativeSubagent({ parentSessionId, agent })
+    const openNativeSubagent: OpenNativeSubagent = useCallback(
+        (parentSessionId, subagentId) => props.onOpenSubagent?.(parentSessionId, subagentId),
+        [props.onOpenSubagent],
+    )
     const normalizedQuery = normalizeSearch(searchQuery)
     const timeRange = getSessionTimeRange(customStart, customEnd)
     const isFiltering = normalizedQuery.length > 0 || timeRange !== null
@@ -2180,7 +2208,7 @@ export function SessionList(props: {
             <div className="app-session-list-header session-list-scrollbar-offset mx-auto w-full max-w-content shrink-0">
             {showHeaderRow ? (
                 <div className="app-session-list-toolbar flex items-center gap-1 px-2 py-1">
-                    <div className="app-session-identity"><h1 className="app-session-list-brand hidden">HAPI</h1>
+                    <div className="app-session-identity"><h1 className="app-session-list-brand hidden">{APP_TITLE}</h1>
                         {activeMachineFilter !== null || machineFilters.length === 1 ? <span className="app-session-machine-heading">{resolveMachineLabel(activeMachineFilter ?? machineFilters[0]?.machineId ?? null)}</span> : null}
                     </div>
                     <div className="app-session-list-controls contents">
@@ -2346,7 +2374,7 @@ export function SessionList(props: {
                                 titleSuggestionAvailable={titleSuggestionAvailable} selected={row.id === selectedSessionId}
                                 showDetailedStatus={showDetailedStatus} readState={readState}
                                 machineLabel={showMachineFilterBar && activeMachineFilter === null ? resolveMachineLabel(row.session.metadata?.machineId ?? null) : undefined} />
-                                : <NativeSubagentItem agent={row.agent} agents={row.agents} parentSessionId={row.session.id}
+                                : <NativeSubagentItem row={row.agent} rows={row.agents} parentSessionId={row.session.id}
                                     machineId={row.session.metadata?.machineId} onOpen={openNativeSubagent} revealChildren={isFiltering}
                                     flatRow={{ expanded: row.expanded, childCount: row.childCount, onToggle: () => toggleRecentRow(row.id) }} />}
                         </div>} />
@@ -2430,10 +2458,6 @@ export function SessionList(props: {
             </div>
             </GlassSource>
             <NewTaskInput hub={props.hub} onContinue={() => props.onStartTask ? props.onStartTask(activeMachineFilter && activeMachineFilter !== UNKNOWN_MACHINE_ID ? activeMachineFilter : undefined) : props.onNewSession()} />
-            {nativeSubagent && api ? <CodexSubagentDialog api={api} parentSessionId={nativeSubagent.parentSessionId}
-                threadId={nativeSubagent.agent.threadId} title={nativeSubagentTitle(nativeSubagent.agent)}
-                path={nativeSubagent.agent.path} role={nativeSubagent.agent.role}
-                isOpen={true} onClose={() => setNativeSubagent(null)} /> : null}
             <ConfirmDialog
                 isOpen={markAllReadOpen}
                 onClose={() => setMarkAllReadOpen(false)}

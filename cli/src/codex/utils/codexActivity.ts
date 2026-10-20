@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { readCodexRolloutActivity } from './codexRolloutActivity';
 
 /** Read activity only for the native thread already bound to this session. */
 export function readCodexActivity(threadId: string, home: string): number | undefined {
@@ -10,9 +11,8 @@ export function readCodexActivity(threadId: string, home: string): number | unde
     const { Database } = require('bun:sqlite') as typeof import('bun:sqlite');
     const db = new Database(join(home, file), { readonly: true });
     try {
-        const columns = new Set((db.query('PRAGMA table_info(threads)').all() as { name: string }[]).map(column => column.name));
-        const row = db.query(`SELECT ${columns.has('updated_at_ms') ? 'COALESCE(updated_at_ms, updated_at * 1000)' : 'updated_at * 1000'} AS at FROM threads WHERE id = ?`)
-            .get(threadId) as { at: number } | null;
-        return row?.at;
+        const row = db.query('SELECT rollout_path, created_at FROM threads WHERE id = ?')
+            .get(threadId) as { rollout_path: string; created_at: number } | null;
+        return row ? readCodexRolloutActivity(row.rollout_path) ?? row.created_at * 1000 : undefined;
     } finally { db.close(); }
 }

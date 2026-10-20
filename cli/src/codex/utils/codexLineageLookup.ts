@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { CodexSubagent } from '@hapi/protocol/types';
 import type { CodexSessionLineage } from '@hapi/protocol/apiTypes';
 import { codexSubagentMetadata } from './codexSubagentMetadata';
+import { readCodexRolloutActivity } from './codexRolloutActivity';
 
 /** Batch metadata lookup for existing HAPI rows. Never opens a native thread or imports messages. */
 export function lookupCodexSessionLineage(ids: readonly string[], home = process.env.CODEX_HOME?.trim() || join(homedir(), '.codex')): CodexSessionLineage[] {
@@ -20,7 +21,7 @@ export function lookupCodexSessionLineage(ids: readonly string[], home = process
         const db = new Database(join(home, databases[0]), { readonly: true });
         try {
             const available = new Set((db.query('PRAGMA table_info(threads)').all() as { name: string }[]).map(column => column.name));
-            const columns = ['id', 'cwd', 'source', 'rollout_path', 'thread_source', 'parent_thread_id', 'agent_nickname', 'agent_role', 'agent_path', 'archived', 'updated_at', 'updated_at_ms']
+            const columns = ['id', 'cwd', 'source', 'rollout_path', 'thread_source', 'parent_thread_id', 'agent_nickname', 'agent_role', 'agent_path', 'archived', 'created_at', 'updated_at', 'updated_at_ms']
                 .filter(column => available.has(column));
             const indexed = db.query(`SELECT ${columns.join(', ')} FROM threads ORDER BY id`).all() as Record<string, unknown>[];
             const byId = new Map(indexed.map(row => [row.id, row]));
@@ -35,7 +36,7 @@ export function lookupCodexSessionLineage(ids: readonly string[], home = process
                     threadId: row.id, parentThreadId: lineage.codexParentThreadId,
                     nickname: lineage.codexAgentNickname, role: lineage.codexAgentRole,
                     path: typeof row.cwd === 'string' ? row.cwd : undefined,
-                    updatedAt: typeof row.updated_at_ms === 'number' ? row.updated_at_ms : typeof row.updated_at === 'number' ? row.updated_at * 1000 : undefined,
+                    updatedAt: conversationActivity(row),
                     status: row.archived ? 'archived' : 'unknown'
                 };
                 const siblings = children.get(entry.parentThreadId) ?? [];
@@ -49,8 +50,7 @@ export function lookupCodexSessionLineage(ids: readonly string[], home = process
                 const identity = Object.fromEntries([['codexAgentNickname', row.agent_nickname], ['codexAgentRole', row.agent_role], ['codexAgentPath', row.agent_path]]
                     .filter(([, value]) => typeof value === 'string' && value.trim()));
                 found.set(id, { id, cwd: typeof row.cwd === 'string' ? row.cwd : null,
-                    codexUpdatedAt: typeof row.updated_at_ms === 'number' ? row.updated_at_ms
-                        : typeof row.updated_at === 'number' ? row.updated_at * 1000 : undefined,
+                    codexUpdatedAt: conversationActivity(row),
                     ...identity, ...lineage });
                 // Older indices sometimes preserve only the source kind, so use the header for its parent.
                 if (!lineage.codexParentThreadId && typeof row.rollout_path === 'string')
@@ -130,4 +130,9 @@ function readHeader(file: string): Record<string, unknown> | null {
         return entry.type === 'session_meta' ? entry.payload ?? null : null;
     } catch { return null; }
     finally { if (fd !== undefined) closeSync(fd); }
+}
+
+function conversationActivity(row: Record<string, unknown>): number | undefined {
+    const at = typeof row.rollout_path === 'string' ? readCodexRolloutActivity(row.rollout_path) : undefined;
+    return at ?? (typeof row.created_at === 'number' ? row.created_at * 1000 : undefined);
 }

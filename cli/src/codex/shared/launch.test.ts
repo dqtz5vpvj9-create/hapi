@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { sharedLaunchConfig, takeReservedSessionId } from './launch';
+import { checkSharedCapabilities, sharedLaunchConfig, takeReservedSessionId } from './launch';
+import type { CodexAppServerClient } from '../codexAppServerClient';
 import { parseCodexCliOverrides } from '../utils/codexCliOverrides';
 import { resolveCodexPermissionModeConfig } from '../utils/permissionModeConfig';
 
@@ -60,4 +61,22 @@ describe('takeReservedSessionId', () => {
         expect(options.reservedSessionId).toBeUndefined();
         expect(takeReservedSessionId(options)).toBeUndefined();
     });
+});
+
+it('probes all required capabilities concurrently using the read-only invalid-ID check', async () => {
+    const pending: Array<(supported: boolean) => void> = [];
+    const checked: string[] = [];
+    const client = { supportsMethod: (method: string) => {
+        checked.push(method);
+        return new Promise<boolean>(resolve => pending.push(resolve));
+    } } as unknown as CodexAppServerClient;
+    const checking = checkSharedCapabilities(client);
+    expect(checked).toHaveLength(9);
+    pending.forEach(resolve => resolve(true));
+    await checking;
+});
+
+it('rejects a server missing any required capability', async () => {
+    const client = { supportsMethod: async (method: string) => method !== 'thread/fork' } as unknown as CodexAppServerClient;
+    await expect(checkSharedCapabilities(client)).rejects.toThrow('Codex lacks thread/fork');
 });

@@ -4,6 +4,7 @@ import type { Session, Machine } from '@hapi/protocol/types';
 /** Refresh each machine's native descendants at most once every twenty seconds. */
 export class CodexLineageBackfill {
     private readonly nativeMetadata = new Map<string, CodexSessionLineage>();
+    private readonly appliedActivity = new Map<string, CodexSessionLineage>();
     private readonly nextReadAt = new Map<string, number>();
     private readonly inFlight = new Map<string, Promise<void>>();
     refresh(namespace: string, sessions: Session[], machines: Machine[], lookup: (machineId: string, ids: string[]) => Promise<CodexSessionLineage[]>,
@@ -39,12 +40,16 @@ export class CodexLineageBackfill {
                 }
             }
             for (const session of candidates) {
-                const lineage = this.nativeMetadata.get(key(machine.id, session.metadata!.codexSessionId!));
-                if (!lineage) continue;
+                const cached = this.nativeMetadata.get(key(machine.id, session.metadata!.codexSessionId!));
+                if (!cached) continue;
+                const activityKey = JSON.stringify([namespace, session.id]);
+                const lineage = { ...cached };
+                // A cached lookup must not roll back newer live activity on every list request.
+                if (this.appliedActivity.get(activityKey) === cached) delete lineage.codexUpdatedAt;
                 const { id: _id, cwd: _cwd, ...metadata } = lineage;
                 const changed = Object.entries(metadata).some(([field, value]) => value !== undefined
                     && JSON.stringify(session.metadata?.[field as keyof NonNullable<Session['metadata']>]) !== JSON.stringify(value));
-                if (changed) apply(session, lineage);
+                if (!changed || apply(session, lineage)) this.appliedActivity.set(activityKey, cached);
             }
         }));
     }

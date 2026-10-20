@@ -1,4 +1,4 @@
-import type { NativeRuntimeState, AgentState, Metadata, Session, TodoItem, WorktreeMetadata, CodexSubagent } from './schemas'
+import type { NativeRuntimeState, AgentState, Metadata, Session, TodoItem, WorktreeMetadata, CodexSubagent, DshSubagent } from './schemas'
 import { isKnownFlavor } from './flavors'
 import type { AgentFlavor } from './modes'
 
@@ -40,13 +40,24 @@ export type SessionSummaryMetadata = {
     flavor?: string | null
     worktree?: WorktreeMetadata
     agentSessionId?: string
+    codexSessionId?: string
     codexStoreId?: string
+    codexHome?: string
+    codexProvider?: string
+    codexModel?: string
+    codexHomeId?: string
+    migratedFromHome?: string
+    migratedAt?: number
+    migrationInProgress?: { id: string; sourceHome: string; targetHome: string; startedAt: number }
+    codexKeyProfileId?: string
     codexUpdatedAt?: number
     codexParentThreadId?: string
     codexAgentNickname?: string
     codexAgentRole?: string
     codexAgentPath?: string
     codexSubagents?: CodexSubagent[]
+    /** Direct DSH children mirrored from the injected control plugin. */
+    dshSubagents?: DshSubagent[]
     lifecycleState?: string
     /** Loopback MCP URL when session CLI happy server is running (#956). */
     hapiMcpUrl?: string
@@ -180,7 +191,8 @@ const AGENT_SESSION_ID_FIELD_BY_FLAVOR: Partial<Record<AgentFlavor, keyof Metada
     cursor: 'cursorSessionId',
     kimi: 'kimiSessionId',
     copilot: 'copilotSessionId',
-    pi: 'piSessionId'
+    pi: 'piSessionId',
+    qoder: 'qoderSessionId'
 }
 
 function getSummaryAgentSessionId(metadata: Metadata): string | undefined {
@@ -226,6 +238,7 @@ export function toSessionSummaryMetadata(metadata: Metadata | null | undefined):
         codexAgentRole: metadata.codexAgentRole,
         codexAgentPath: metadata.codexAgentPath,
         codexSubagents: metadata.codexSubagents,
+        dshSubagents: metadata.dshSubagents,
         lifecycleState: metadata.lifecycleState,
         hapiMcpUrl: metadata.hapiMcpUrl ?? undefined
     }

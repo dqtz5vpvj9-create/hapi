@@ -515,7 +515,7 @@ describe('durable fork operation recovery', () => {
         f.api.getForkSourceState.mockReturnValueOnce(new Promise(() => {}))
         const work = controller.restore()
         await vi.advanceTimersByTimeAsync(101); await work
-        expect(controller.getSnapshot()).toMatchObject({ revision: null, busy: false, error: expect.any(String) })
+        expect(controller.getSnapshot()).toMatchObject({ revision: null, busy: false, error: undefined })
         expect(f.api.startForkOperation).not.toHaveBeenCalled()
     })
 
@@ -865,4 +865,18 @@ describe('explicit duplicate-risk fork intents', () => {
         expect(f.navigate).not.toHaveBeenCalled()
     })
 
+})
+
+
+describe('background fork recovery', () => {
+    it('does not show a fork error on ordinary conversation open, but reports an explicit check failure', async () => {
+        const f = fixture()
+        f.api.getForkSourceState.mockRejectedValue(new Error('source identity unavailable'))
+        const controller = f.create()
+        await controller.restore()
+        expect(controller.getSnapshot().error).toBeUndefined()
+        expect(controller.getSnapshot().sourceStateVerified).not.toBe(true)
+        await controller.check()
+        expect(controller.getSnapshot().error).toContain('source identity unavailable')
+    })
 })

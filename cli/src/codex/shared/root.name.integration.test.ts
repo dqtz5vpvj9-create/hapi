@@ -18,7 +18,7 @@ it.skipIf(process.env.HAPI_RUN_NATIVE_CODEX_TESTS !== 'true')('syncs real native
     await mkdir(home);
     await writeFile(join(home, 'config.toml'), 'model = "mock"\nmodel_provider = "mock"\n[model_providers.mock]\nname = "No model calls"\nbase_url = "http://127.0.0.1:1/v1"\nwire_api = "responses"\nrequires_openai_auth = false\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n');
     const endpoint = `unix://${join(directory, 'native.sock')}`;
-    const command = resolveSharedCodex();
+    const command = await resolveSharedCodex();
     const server = spawn(command.command, [...command.args, 'app-server', '--listen', endpoint], {
         env: { ...process.env, CODEX_HOME: home }, cwd: directory, stdio: 'ignore'
     });

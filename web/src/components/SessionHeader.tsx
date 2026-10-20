@@ -5,6 +5,7 @@ import type { ApiClient } from '@/api/client'
 import { isTelegramApp } from '@/hooks/useTelegram'
 import { sessionModelMutationKey, useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
+import { CodexHomeMigrationDialog } from '@/components/CodexHomeMigrationDialog'
 import { SessionExportDialog } from '@/components/SessionExportDialog'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -222,6 +223,7 @@ export function SessionHeader(props: {
     const showMobileMetadata = (headerMetadata.agent && agentLabel !== null) || mobileSecondary !== null
 
     const [menuOpen, setMenuOpen] = useState(false)
+    const [migrateOpen, setMigrateOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
     const menuId = useId()
     const menuAnchorRef = useRef<HTMLButtonElement | null>(null)
@@ -232,7 +234,7 @@ export function SessionHeader(props: {
     const [isSyncingCodex, setIsSyncingCodex] = useState(false)
     const [isSyncingPi, setIsSyncingPi] = useState(false)
 
-    const { archiveSession, reopenSession, renameSession, suggestSessionTitle, updateSessionSummary, setPinMode, deleteSession, isPending } = useSessionActions(
+    const { archiveSession, reopenSession, restartSession, renameSession, suggestSessionTitle, updateSessionSummary, setPinMode, deleteSession, isPending } = useSessionActions(
         api,
         session.id,
         session.metadata?.flavor ?? null
@@ -550,8 +552,10 @@ export function SessionHeader(props: {
                 onSetPinMode={api ? (mode) => void handleSetPinMode(mode) : undefined}
                 onExport={() => setExportOpen(true)}
                 onSyncCodex={api && codexSessionId && !session.active ? handleSyncCodex : undefined}
+                onMigrateCodexHome={api && codexSessionId && (session.metadata?.codexHome ?? session.metadata?.codexStoreId) ? () => setMigrateOpen(true) : undefined}
                 onSyncPi={api && piSessionId && !session.active ? handleSyncPi : undefined}
                 onArchive={() => setArchiveOpen(true)}
+                onRestart={session.active ? () => void restartSession() : undefined}
                 onReopen={props.canReopen === false ? undefined : handleReopen}
                 reopenDisabledReason={props.reopenDisabledReason}
                 reopenHint={props.reopenHint}
@@ -559,6 +563,8 @@ export function SessionHeader(props: {
                 anchorPoint={menuAnchorPoint}
                 menuId={menuId}
             />
+
+            {api && migrateOpen ? <CodexHomeMigrationDialog api={api} session={session as unknown as import('@/types/api').SessionSummary} isOpen={migrateOpen} onClose={() => setMigrateOpen(false)} /> : null}
 
             {reopenError ? (
                 <ConfirmDialog

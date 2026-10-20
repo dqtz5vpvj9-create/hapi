@@ -73,6 +73,32 @@ export const DshConfigOptionSchema = z.object({
 })
 export type DshConfigOption = z.infer<typeof DshConfigOptionSchema>
 
+/** DSH delegation mode of one direct child session, mirrored from its durable catalog. */
+export const DshSubagentModeSchema = z.enum(['one-shot', 'continuable', 'external', 'unknown'])
+export type DshSubagentMode = z.infer<typeof DshSubagentModeSchema>
+
+/** One direct child of a DSH root session, mirrored onto the parent session metadata. */
+export const DshSubagentSchema = z.object({
+    sessionId: z.string().min(1),
+    /** Catalog label written when the child was created. */
+    label: z.string().optional(),
+    /** Named Agent Team member, when the child is a teammate rather than an anonymous delegation. */
+    name: z.string().optional(),
+    mode: DshSubagentModeSchema,
+    activity: z.enum(['running', 'inactive']),
+    createdAt: z.number(),
+    /** Milliseconds accumulated across completed turns. */
+    settledMs: z.number().nonnegative().optional(),
+    /** Start of the currently open turn, when one is open. */
+    openSince: z.number().nonnegative().optional(),
+    lastTurnCompleted: z.boolean().optional(),
+    /** Delegation provider, for example `spawn` or `codex`. */
+    provider: z.string().optional(),
+    /** Agent Team roster phase, present only for teammates. */
+    teamStatus: z.enum(['running', 'inactive', 'provisioning', 'failed']).optional()
+})
+export type DshSubagent = z.infer<typeof DshSubagentSchema>
+
 export const MetadataSchema = z.object({
     path: z.string(),
     host: z.string(),
@@ -88,6 +114,17 @@ export const MetadataSchema = z.object({
     forkedFrom: z.string().optional(),
     codexSessionId: z.string().optional(),
     codexStoreId: z.string().optional(),
+    codexHome: z.string().optional(),
+    codexProvider: z.string().optional(),
+    codexModel: z.string().optional(),
+    codexHomeId: z.string().optional(),
+    migratedFromHome: z.string().optional(),
+    migratedAt: z.number().optional(),
+    migrationInProgress: z.object({ id: z.string(), sourceHome: z.string(), targetHome: z.string(), startedAt: z.number() }).optional(),
+    codexKeyProfileId: z.string().optional(),
+    /** Runner-local account id and non-secret label used by this Codex runtime. */
+    codexAccountId: z.string().optional(),
+    codexAccountLabel: z.string().optional(),
     // Native subagent lineage; independent forks use forkedFrom instead.
     // Native activity time, independent of HAPI connection and state updates.
     codexUpdatedAt: z.number().optional(),
@@ -106,7 +143,23 @@ export const MetadataSchema = z.object({
     geminiSessionId: z.string().optional(),
     // Published only when the connected DSH ACP server advertises session/resume.
     dshSessionId: z.string().optional(),
+    acpPromptCapabilities: z.object({ image: z.boolean() }).optional(),
     dshConfigOptions: z.array(DshConfigOptionSchema).optional(),
+    // Qoder CN publishes the ACP session's config options (model catalog,
+    // thought level) so the composer can switch models between turns.
+    qoderConfigOptions: z.array(DshConfigOptionSchema).optional(),
+    // Direct DSH children (teammates, workflow children, external providers);
+    // refreshed by the CLI from the injected DSH control plugin.
+    dshSubagents: z.array(DshSubagentSchema).optional(),
+    /** Capabilities of the exact DSH ACP runtime this session launched. */
+    dshCapabilities: z.object({
+        control: z.boolean(),
+        steering: z.boolean(),
+        resume: z.boolean(),
+        images: z.boolean(),
+        /** The injected control plugin serves the subagent catalog and transcripts. */
+        subagents: z.boolean().optional()
+    }).optional(),
     opencodeSessionId: z.string().optional(),
     grokSessionId: z.string().optional(),
     agySessionId: z.string().optional(),
@@ -122,6 +175,8 @@ export const MetadataSchema = z.object({
     kimiSessionId: z.string().optional(),
     copilotSessionId: z.string().optional(),
     piSessionId: z.string().optional(),
+    // Published only when the connected Qoder CN ACP server advertises resume.
+    qoderSessionId: z.string().optional(),
     piResumeAttempt: z.object({
         state: z.enum(['resuming', 'terminating', 'quarantined']),
         machineId: z.string(),
@@ -390,6 +445,8 @@ export const NativeRuntimeStateSchema = z.object({
     sequence: z.number().int().nonnegative(),
     status: z.enum(['active', 'idle', 'notLoaded', 'systemError', 'disconnected']),
     waitingOn: z.array(z.enum(['approval', 'input'])),
+    // Live item lifecycle, independent of transcript pagination and queue acceptance.
+    compacting: z.boolean().optional(),
     turnId: z.string().nullable(),
     startedAt: z.number().nullable(),
     completedAt: z.number().nullable(),
@@ -552,6 +609,19 @@ export const MachineMetadataSchema = z.object({
     happyHomeDir: z.string().optional(),
     happyLibDir: z.string().optional(),
     workspaceRoots: z.array(z.string()).optional(),
+    /** Runner-local Codex homes selectable for new sessions (paths only; no secrets). */
+    codexHomes: z.array(z.object({
+        id: z.string().min(1),
+        label: z.string().min(1),
+        path: z.string().min(1),
+        official: z.boolean().optional(),
+    })).optional(),
+    /** Gateway key profile labels; secret values stay runner-local. */
+    codexKeyProfiles: z.array(z.object({
+        id: z.string().min(1),
+        label: z.string().min(1),
+        homeId: z.string().optional(),
+    })).optional(),
     /** Machine-scoped RPC capability ids this runner registers (see runnerCapabilities). */
     capabilities: z.array(z.string()).optional(),
     /** CLI binary/package mtime when this runner process started. */

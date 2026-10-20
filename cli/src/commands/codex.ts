@@ -9,6 +9,7 @@ import { CodexCollaborationModeSchema } from '@hapi/protocol/schemas'
 import type { ReasoningEffort } from '@/codex/appServerTypes'
 import { parseReasoningEffortValue } from '@/codex/utils/reasoningEffort'
 import { resolveSharedCodex } from '@/codex/shared/launch'
+import { resolveCodexKeyProfile } from '@/codex/utils/codexKeyProfiles'
 
 // Mirror the web /service-tier endpoint's enum so the internal resume spawn
 // path can never seed/persist an unsupported tier string.
@@ -49,6 +50,8 @@ export const codexCommand: CommandDefinition = {
                 modelReasoningEffort?: ReasoningEffort
                 serviceTier?: string
                 collaborationMode?: 'default' | 'plan'
+                codexHome?: string
+                codexKeyProfileId?: string
             } = {}
             const unknownArgs: string[] = []
             let hasExplicitPermissionMode = false
@@ -129,6 +132,18 @@ export const codexCommand: CommandDefinition = {
                         throw new Error('Missing --collaboration-mode value')
                     }
                     options.collaborationMode = parseCollaborationMode(mode)
+                } else if (arg === '--codex-home') {
+                    const codexHome = commandArgs[++i]
+                    if (!codexHome) {
+                        throw new Error('Missing --codex-home value')
+                    }
+                    options.codexHome = codexHome
+                } else if (arg === '--codex-key-profile') {
+                    const profile = commandArgs[++i]
+                    if (!profile) {
+                        throw new Error('Missing --codex-key-profile value')
+                    }
+                    options.codexKeyProfileId = profile
                 } else {
                     unknownArgs.push(arg)
                 }
@@ -136,8 +151,11 @@ export const codexCommand: CommandDefinition = {
             if (unknownArgs.length > 0) {
                 options.codexArgs = unknownArgs
             }
+            if (options.codexKeyProfileId) {
+                Object.assign(process.env, resolveCodexKeyProfile(options.codexKeyProfileId).env)
+            }
 
-            resolveSharedCodex()
+            await resolveSharedCodex()
             await initializeToken()
             if (options.startedBy === 'runner') {
                 await maybeAutoStartServer()

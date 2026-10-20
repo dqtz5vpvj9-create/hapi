@@ -9,6 +9,7 @@ import type {
     SyncEvent as ProtocolSyncEvent,
     WorktreeMetadata
 } from '@hapi/protocol/types'
+import type { CodexSubagent, DshSubagent } from '@hapi/protocol/schemas'
 
 export type {
     AgyModelsResponse,
@@ -17,6 +18,9 @@ export type {
     AgyModelSummary,
     CodexModelsResponse,
     CodexModelSummary,
+    CodexAccountSummary,
+    CodexAccountsResponse,
+    SwitchCodexAccountResponse,
     CommandResponse,
     CursorModelsResponse,
     CursorModelSummary,
@@ -114,6 +118,9 @@ export type SessionMetadataSummary = {
     conversationHistoryEntryIds?: Record<string, string>
     conversationHistoryDiverged?: boolean
     worktree?: WorktreeMetadata
+    codexSubagents?: CodexSubagent[]
+    dshSubagents?: DshSubagent[]
+    dshSessionId?: string
 }
 
 export type HubHealthResponse = {

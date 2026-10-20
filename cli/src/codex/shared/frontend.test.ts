@@ -6,10 +6,10 @@ import type { SharedLaunchOptions } from './launch';
 const state = vi.hoisted(() => ({ existing: false, run: vi.fn(), spawn: vi.fn(), kill: vi.fn() }));
 const runtime: RuntimeReady['runtime'] = { id: 'runtime', pid: 1, marker: 'start', endpoint: 'unix://private', command: '/resolved/codex',
     args: [], codexHome: '/isolated/codex', hub: 'hub', authHash: 'auth', sessions: { sid: { threadId: 'thread', namespace: 'ns', active: true } } };
-vi.mock('node:child_process', () => ({ spawn: state.spawn, execFileSync: vi.fn() }));
+vi.mock('node:child_process', async importOriginal => ({ ...await importOriginal<typeof import('node:child_process')>(), spawn: state.spawn }));
 vi.mock('@/api/api', () => ({ ApiClient: { create: async () => ({ getSession: async () => ({ id: 'sid', namespace: 'ns', active: state.existing, metadata: { path: '/work' } }) }) } }));
 vi.mock('@/persistence', () => ({ readRunnerState: async () => null }));
-vi.mock('@/utils/process', () => ({ isProcessAlive: () => true, killProcessByChildProcess: state.kill }));
+vi.mock('@/utils/process', () => ({ isProcessAlive: () => true, getProcessStartMarkerAsync: async () => 'generation', killProcessByChildProcess: state.kill }));
 vi.mock('./registry', () => ({ findRuntime: async () => state.existing ? runtime : undefined, runtimeAlive: () => true }));
 vi.mock('./runtime', () => ({ runSharedRuntime: state.run }));
 vi.mock('../codexAppServerClient', () => ({ CodexAppServerClient: class {

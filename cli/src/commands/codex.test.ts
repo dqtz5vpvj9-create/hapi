@@ -122,6 +122,21 @@ describe('codexCommand', () => {
         })
     })
 
+    it('forwards a --codex-key-profile to runCodex', async () => {
+        vi.stubEnv('HAPI_CODEX_KEY_PROFILES', JSON.stringify([{ id: 'ipads-a', label: 'A', env: { IPADS_API_KEY: 'x' } }]))
+        await codexCommand.run(createCommandContext(['--started-by', 'runner', '--codex-key-profile', 'ipads-a']))
+        expect(runCodexMock).toHaveBeenCalledWith(expect.objectContaining({
+            codexKeyProfileId: 'ipads-a'
+        }))
+    })
+
+    it('forwards a custom --codex-home to runCodex', async () => {
+        await codexCommand.run(createCommandContext(['--started-by', 'runner', '--codex-home', '/home/chris/.codex-ipads']))
+        expect(runCodexMock).toHaveBeenCalledWith(expect.objectContaining({
+            codexHome: '/home/chris/.codex-ipads'
+        }))
+    })
+
     it('rejects an unsupported --service-tier value', async () => {
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
         const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {

@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { copyCodexConfigFile, resolveCodexHome } from './codexHome';
+import { copyCodexConfigFile, resolveCodexHome, resolveLaunchCodexHome } from './codexHome';
 
 const temporaryDirectories: string[] = [];
 
@@ -19,6 +19,22 @@ afterEach(async () => {
 describe('codexHome', () => {
     it('uses CODEX_HOME when configured and trims surrounding whitespace', () => {
         expect(resolveCodexHome({ CODEX_HOME: '  C:\\codex-home  ' })).toBe('C:\\codex-home');
+    });
+
+    it('resolves an existing custom home and refuses a missing one', async () => {
+        const home = await createTemporaryDirectory();
+        expect(resolveLaunchCodexHome(home, home)).toBe(await realpath(home));
+        expect(() => resolveLaunchCodexHome(join(home, 'missing'), home)).toThrow('does not exist');
+    });
+
+    it('refuses an isolated home launched from $HOME', async () => {
+        const home = await createTemporaryDirectory();
+        expect(() => resolveLaunchCodexHome(home, homedir())).toThrow('Cannot start an isolated Codex home from $HOME');
+    });
+
+    it('keeps the default home behavior when no custom home is configured', async () => {
+        const home = await createTemporaryDirectory();
+        expect(resolveLaunchCodexHome(undefined, home, { CODEX_HOME: home })).toBe(await realpath(home));
     });
 
     it('copies config.toml without copying authentication or other state', async () => {

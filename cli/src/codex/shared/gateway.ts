@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import type { Socket } from 'node:net';
 import { chmod, unlink } from 'node:fs/promises';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
 import WebSocket, { WebSocketServer } from 'ws';
@@ -33,7 +34,14 @@ export async function startCodexGateway(options: {
     const server = createServer((_request, response) => { response.writeHead(404).end(); });
     const websocket = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
     const connections = new Map<WebSocket, WebSocket>();
+    const sockets = new Set<Socket>();
+    let closing = false;
+    server.on('connection', socket => {
+        sockets.add(socket);
+        socket.once('close', () => sockets.delete(socket));
+    });
     server.on('upgrade', (request, socket, head) => {
+        if (closing) { socket.destroy(); return; }
         if (!options.path) {
             const provided = Buffer.from(request.headers.authorization ?? '');
             const expected = Buffer.from(`Bearer ${options.token}`);
@@ -148,9 +156,14 @@ export async function startCodexGateway(options: {
     const address = server.address();
     const endpoint = options.path ? `unix://${options.path}` : `ws://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
     return { endpoint, async close() {
+        closing = true;
+        const closed = new Promise<void>(resolve => server.close(() => resolve()));
         for (const [client, upstream] of connections) { client.terminate(); upstream.terminate(); }
+        // A WebSocket may have left the RPC map while its underlying HTTP
+        // socket is still closing. Admission shutdown owns those sockets too.
+        for (const socket of sockets) socket.destroy();
         websocket.close();
-        await new Promise<void>(resolve => server.close(() => resolve()));
+        await closed;
         if (options.path) await unlink(options.path).catch(() => {});
     } };
 }

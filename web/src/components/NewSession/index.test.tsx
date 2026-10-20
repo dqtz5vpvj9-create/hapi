@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
     notification: vi.fn(),
     checkPathsExists: vi.fn(),
     availableAgents: [
-        'agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi'
+        'agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi', 'qoder'
     ].map((agent) => ({ agent, available: true })) as Array<{ agent: string; available: boolean; reason?: 'not_found' | 'invalid_configuration' }>,
     refreshAgentAvailability: vi.fn(),
     agentAvailabilityFetching: false,
@@ -337,7 +337,7 @@ describe('NewSession launch preferences', () => {
         mocks.availableAgents.splice(
             0,
             mocks.availableAgents.length,
-            ...['agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi']
+            ...['agy', 'claude', 'codex', 'dsh', 'copilot', 'cursor', 'grok', 'kimi', 'opencode', 'pi', 'qoder']
                 .map((agent) => ({ agent, available: true }))
         )
         mocks.refreshAgentAvailability.mockReset()
@@ -367,6 +367,20 @@ describe('NewSession launch preferences', () => {
         mocks.addToast.mockReset()
         mocks.getShareTransfer.mockReset().mockResolvedValue(null)
         savePreferredAgent('codex')
+    })
+
+    it('defaults a shared project session to its advertised root without requiring directory input', async () => {
+        const scopedMachine = { ...machine, metadata: { host: 'Training', platform: 'linux', happyCliVersion: '1',
+            capabilities: ['shared-project'], workspaceRoots: ['/training'], homeDir: '/training' } } as Machine
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'new-shared-session' })
+        mocks.checkPathsExists.mockResolvedValue({ exists: { '/training': true } })
+        render(<NewSession api={api} machines={[scopedMachine]} onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        await waitFor(() => expect(screen.getByTestId('create')).not.toBeDisabled())
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
+            machineId: machine.id, directory: '/training', sessionType: 'simple'
+        })))
+        expect(mocks.onSuccess).toHaveBeenCalledWith('new-shared-session')
     })
 
     it('keeps the initial task on launch failure and sends it before navigating after success', async () => {
@@ -1192,7 +1206,7 @@ describe('NewSession launch preferences', () => {
         await waitFor(() => expect(screen.getByTestId('create')).toBeDisabled())
     })
 
-    it('does not forward the global YOLO preference to managed DSH ACP', async () => {
+    it('passes the selected DSH permission mode to the runner', async () => {
         savePreferredAgent('dsh')
         savePreferredYoloMode(true)
         mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'dsh-session' })
@@ -1203,11 +1217,11 @@ describe('NewSession launch preferences', () => {
         expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
             agent: 'dsh',
             yolo: undefined,
-            permissionMode: undefined
+            permissionMode: 'default'
         }))
     })
 
-    it('shows DSH-managed launch settings without an empty model picker or a misleading YOLO caption', async () => {
+    it('explains DSH model selection and exposes permissions under Advanced', async () => {
         savePreferredAgent('dsh')
         savePreferredYoloMode(true)
         mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'dsh-task' })
@@ -1217,13 +1231,44 @@ describe('NewSession launch preferences', () => {
         const model = screen.getByText('newSession.dshManagedModel')
         expect(model.closest('button')).toBeNull()
         expect(screen.queryByRole('button', { name: 'auto · auto' })).not.toBeInTheDocument()
-        expect(screen.getByRole('button', { name: 'misc.permissionMode' })).toHaveTextContent('newSession.permission.managedTitle')
-        expect(screen.getByRole('button', { name: 'misc.permissionMode' })).not.toHaveTextContent('Yolo')
+        expect(screen.getByRole('button', { name: 'newSession.advanced' })).toHaveTextContent('Default')
+        expect(screen.getByRole('button', { name: 'newSession.advanced' })).not.toHaveTextContent('Yolo')
         await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
         await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('dsh-task'))
         expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
-            agent: 'dsh', model: undefined, effort: undefined, yolo: undefined, permissionMode: undefined
+            agent: 'dsh', model: undefined, effort: undefined, yolo: undefined, permissionMode: 'default'
+        }))
+    })
+
+    it('passes the Qoder CN flavor and managed permission mode to the runner', async () => {
+        savePreferredAgent('qoder')
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'qoder-session' })
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+
+        fireEvent.click(screen.getByTestId('create'))
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('qoder-session'))
+        expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
+            agent: 'qoder',
+            model: undefined,
+            yolo: undefined,
+            permissionMode: 'default'
+        }))
+    })
+
+    it('explains that Qoder CN model selection happens in the composer', async () => {
+        savePreferredAgent('qoder')
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'qoder-task' })
+        render(<NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo"
+            initialTask="Inspect this project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+
+        const hint = screen.getByText('newSession.qoderManagedModel')
+        expect(hint.closest('button')).toBeNull()
+        await waitFor(() => expect(screen.getByRole('button', { name: 'composer.send' })).toBeEnabled())
+        fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('qoder-task'))
+        expect(mocks.spawnSession).toHaveBeenCalledWith(expect.objectContaining({
+            agent: 'qoder', model: undefined, yolo: undefined, permissionMode: 'default'
         }))
     })
 

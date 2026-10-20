@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WebSocket, WebSocketServer } from 'ws';
+import { createConnection } from 'node:net';
 import { startCodexGateway, type Envelope } from './gateway';
 
 async function fixture(after: (request: Envelope, response: Envelope, connection: string) => Promise<void>) {
@@ -31,6 +32,19 @@ async function fixture(after: (request: Envelope, response: Envelope, connection
     } };
 }
 describe('native gateway barriers', () => {
+    it('closes live WebSockets and incomplete HTTP handshakes without waiting for clients', async () => {
+        const f = await fixture(async () => {});
+        const endpoint = new URL(f.gateway.endpoint);
+        const socket = createConnection({ host: endpoint.hostname, port: Number(endpoint.port) });
+        try {
+            await new Promise<void>(resolve => socket.once('connect', resolve));
+            socket.write('GET / HTTP/1.1\r\nHost: localhost\r\n');
+            const client = await f.connect();
+            const disconnected = new Promise<void>(resolve => client.once('close', () => resolve()));
+            await f.gateway.close();
+            await disconnected;
+        } finally { socket.destroy(); await f.close(); }
+    });
     it('namespaces colliding native request IDs by connection and withholds replies until binding', async () => {
         let release!: () => void; const barrier = new Promise<void>(resolve => { release = resolve; });
         const after = vi.fn(async () => { await barrier; }); const f = await fixture(after);

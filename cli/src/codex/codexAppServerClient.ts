@@ -102,6 +102,8 @@ export function isIndeterminateError(error: unknown): boolean {
 
 type CodexAppServerClientOptions = {
     cwd?: string;
+    /** Start a local app-server with this CODEX_HOME instead of inheriting the process env. */
+    codexHome?: string;
     /** An independently owned shared server. Disconnect only detaches this client. */
     endpoint?: string;
     token?: string;
@@ -284,11 +286,10 @@ export class CodexAppServerClient extends JsonLineParser {
         logger.debug(`[CodexAppServer] Starting ${codexCommand} app-server`);
         const child = spawn(codexCommand, ['app-server'], {
             cwd: this.options.cwd,
-            env: Object.keys(process.env).reduce((acc, key) => {
-                const value = process.env[key];
-                if (typeof value === 'string') acc[key] = value;
-                return acc;
-            }, {} as Record<string, string>),
+            env: {
+                ...process.env,
+                ...(this.options.codexHome ? { CODEX_HOME: this.options.codexHome } : {}),
+            },
             stdio: ['pipe', 'pipe', 'pipe'],
             shell: process.platform === 'win32',
             windowsHide: process.platform === 'win32'

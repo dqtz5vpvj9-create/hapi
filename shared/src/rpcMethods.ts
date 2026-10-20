@@ -34,12 +34,30 @@ export const RPC_METHODS = {
     ListSlashCommands: 'listSlashCommands',
     ListSkills: 'listSkills',
     ListCodexModels: 'listCodexModels',
+    StartCodexDeviceLogin: 'startCodexDeviceLogin',
+    GetCodexDeviceLogin: 'getCodexDeviceLogin',
+    CancelCodexDeviceLogin: 'cancelCodexDeviceLogin',
+    ListCodexAccounts: 'listCodexAccounts',
+    ListCodexHomes: 'listCodexHomes',
+    MigrateCodexThread: 'migrateCodexThread',
+    SaveCodexHome: 'saveCodexHome',
+    DeleteCodexHome: 'deleteCodexHome',
+    ImportCurrentCodexAccount: 'importCurrentCodexAccount',
+    RenameCodexAccount: 'renameCodexAccount',
+    DeleteCodexAccount: 'deleteCodexAccount',
+    SwitchCodexAccount: 'switchCodexAccount',
     ListPiModelsForMachine: 'listPiModelsForMachine',
     ListCodexSessions: 'listCodexSessions',
     CodexSessionLineage: 'codexSessionLineage',
     ConnectCodexSession: 'connectCodexSession',
     ReadCodexHistory: 'readCodexHistory',
     ReadCodexSubagentMessages: 'readCodexSubagentMessages',
+    /** Read one DSH child session transcript through its parent session channel. */
+    ReadDshSubagentMessages: 'readDshSubagentMessages',
+    /** Append one human follow-up to a continuable DSH child. */
+    PromptDshSubagent: 'promptDshSubagent',
+    /** Stop a continuable DSH child's current execution. */
+    InterruptDshSubagent: 'interruptDshSubagent',
     ArchiveCodexSession: 'archiveCodexSession',
     ListCursorModels: 'listCursorModels',
     ListPiModels: 'listPiModels',
@@ -56,6 +74,10 @@ export const RPC_METHODS = {
     ListKimiModels: 'listKimiModels',
     ListOpencodeReasoningEffortOptions: 'listOpencodeReasoningEffortOptions',
     ListAgyModels: 'listAgyModels',
+    /** Read the optional DSH profile bundles enabled for this machine. */
+    ListDshBundles: 'list-dsh-bundles',
+    /** Enable or disable one optional DSH profile bundle. */
+    SetDshBundle: 'set-dsh-bundle',
     /** Deliver one queued message into the active Pi turn (native steer). */
     SteerQueuedMessage: 'steer-queued-message',
     ForkConversation: 'fork-conversation',

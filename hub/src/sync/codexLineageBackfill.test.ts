@@ -6,6 +6,20 @@ const row = (id: string, machineId = 'm', namespace = 'n'): Session => ({ id, na
     metadata: { flavor: 'codex', machineId, codexSessionId: id, path: '/project', host: 'test' } } as Session);
 const machine = (id = 'm', namespace = 'n', active = true): Machine => ({ id, namespace, active } as Machine);
 describe('existing Codex row lineage backfill', () => {
+    it('corrects polluted clocks once without overwriting subsequent live activity from cache', async () => {
+        const backfill = new CodexLineageBackfill(); const root = row('root');
+        root.metadata!.codexUpdatedAt = 900;
+        const lookup = async () => [{ id: 'root', codexUpdatedAt: 100 }];
+        const apply = (session: Session, lineage: CodexSessionLineage) => {
+            session.metadata = { ...session.metadata!, ...lineage }; return true;
+        };
+        await backfill.refresh('n', [root], [machine()], lookup, apply);
+        expect(root.metadata!.codexUpdatedAt).toBe(100);
+        root.metadata!.codexUpdatedAt = 1000;
+        await backfill.refresh('n', [root], [machine()], lookup, apply);
+        expect(root.metadata!.codexUpdatedAt).toBe(1000);
+    });
+
     it('refreshes newly spawned root descendants after twenty seconds and skips unchanged arrays between refreshes', async () => {
         const backfill = new CodexLineageBackfill(); const root = row('root'); let now = 100000, calls = 0, applied = 0;
         const clock = spyOn(Date, 'now').mockImplementation(() => now);

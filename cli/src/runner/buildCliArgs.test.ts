@@ -354,7 +354,7 @@ describe('buildCliArgs', () => {
         expect(args).not.toContain('--hapi-session-id')
     })
 
-    it('builds a remote DSH ACP runner command without unsupported policy flags', () => {
+    it('builds a remote DSH ACP runner command with the supported permission mode', () => {
         const args = buildCliArgs('dsh', {
             directory: '/tmp',
             existingSessionId: 'existing-hub-id',
@@ -365,8 +365,26 @@ describe('buildCliArgs', () => {
             'dsh',
             '--hapi-starting-mode', 'remote',
             '--started-by', 'runner',
-            '--existing-session-id', 'existing-hub-id'
+            '--existing-session-id', 'existing-hub-id',
+            '--permission-mode', 'read-only'
         ])
+    })
+
+    it('passes a Codex key profile only for Codex', () => {
+        const args = buildCliArgs('codex', { directory: '/tmp', codexKeyProfileId: 'ipads-a' })
+        expect(args).toContain('--codex-key-profile')
+        expect(args).toContain('ipads-a')
+        expect(buildCliArgs('claude', { directory: '/tmp', codexKeyProfileId: 'ipads-a' }))
+            .not.toContain('--codex-key-profile')
+    })
+
+    it('passes a custom Codex home only for Codex', () => {
+        expect(buildCliArgs('codex', { directory: '/tmp', codexHome: '/home/chris/.codex-ipads' }))
+            .toContain('--codex-home')
+        expect(buildCliArgs('codex', { directory: '/tmp', codexHome: '/home/chris/.codex-ipads' }))
+            .toContain('/home/chris/.codex-ipads')
+        expect(buildCliArgs('claude', { directory: '/tmp', codexHome: '/home/chris/.codex-ipads' }))
+            .not.toContain('--codex-home')
     })
 
     it('preserves DSH native resume and opaque model/effort arguments', () => {
@@ -589,5 +607,41 @@ describe('releaseRecoveredSpawnDedupe', () => {
 
         expect(calls).toBe(1)
         expect(recovered.has(123)).toBe(false)
+    })
+})
+
+describe('buildCliArgs for Qoder CN', () => {
+    it('spawns hapi qoder in remote starting mode', () => {
+        const args = buildCliArgs('qoder', { directory: '/tmp' })
+        expect(args[0]).toBe('qoder')
+        expect(args).toContain('--hapi-starting-mode')
+        expect(args[args.indexOf('--hapi-starting-mode') + 1]).toBe('remote')
+        expect(args).toContain('--started-by')
+    })
+
+    it('passes model, resume, and permission mode through', () => {
+        const args = buildCliArgs('qoder', {
+            directory: '/tmp',
+            model: 'deepseek-v4.1-flash-1017',
+            resumeSessionId: 'qoder-native-session',
+            permissionMode: 'acceptEdits'
+        })
+        expect(args).toContain('--model')
+        expect(args).toContain('deepseek-v4.1-flash-1017')
+        expect(args).toContain('--resume')
+        expect(args).toContain('qoder-native-session')
+        expect(args).toContain('--permission-mode')
+        expect(args).toContain('acceptEdits')
+    })
+
+    it('forwards reasoning effort but not a separate model-reasoning-effort', () => {
+        const args = buildCliArgs('qoder', {
+            directory: '/tmp',
+            effort: 'high',
+            modelReasoningEffort: 'high'
+        })
+        expect(args).toContain('--effort')
+        expect(args).toContain('high')
+        expect(args).not.toContain('--model-reasoning-effort')
     })
 })
