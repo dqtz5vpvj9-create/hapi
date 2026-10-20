@@ -1,3 +1,5 @@
+import { isBundledNativePlatform } from './platform'
+
 export const APP_TITLE = import.meta.env.VITE_APP_TITLE?.trim() || 'HAPI'
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on'])
@@ -10,5 +12,6 @@ function parseBooleanFlag(value: string | undefined): boolean {
 }
 
 export function requireHubUrlForLogin(): boolean {
+    if (isBundledNativePlatform()) return true
     return parseBooleanFlag(import.meta.env.VITE_REQUIRE_HUB_URL)
 }

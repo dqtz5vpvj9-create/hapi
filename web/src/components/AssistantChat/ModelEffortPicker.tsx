@@ -17,6 +17,8 @@ export type ModelEffortPickerProps = {
     onClearFast?: () => void
     disabledHint?: string
     disabled?: boolean
+    triggerDisabled?: boolean
+    controlsDisabled?: boolean
     loading?: boolean
     error?: string | null
     notice?: string
@@ -27,6 +29,7 @@ export type ModelEffortPickerProps = {
 /** Presentation only: capabilities and confirmed settings belong to the caller. */
 export function ModelEffortPicker(props: ModelEffortPickerProps) {
     const { t } = useTranslation()
+    const controlsDisabled = Boolean(props.disabled || props.controlsDisabled)
     const [open, setOpen] = useState(false)
     const [page, setPage] = useState<'effort' | 'model'>('effort')
     const sliderId = useId()
@@ -40,7 +43,7 @@ export function ModelEffortPicker(props: ModelEffortPickerProps) {
     const caption = [modelLabel, effortLabel].filter(Boolean).join(' · ')
     return <Popover.Root modal open={open} onOpenChange={next => { setOpen(next); if (next) setPage('effort') }}>
         <Popover.Trigger asChild>
-            <button type="button" className="model-effort-capsule" aria-label={caption} title={caption} disabled={props.disabled}>
+            <button type="button" className="model-effort-capsule" aria-label={caption} title={caption} disabled={Boolean(props.disabled || props.triggerDisabled)}>
                 {props.fast ? <span aria-label="Fast" className="model-effort-lightning">ϟ</span> : null}
                 <span className="model-effort-caption">{caption}</span><span aria-hidden="true">⌄</span>
             </button>
@@ -53,7 +56,7 @@ export function ModelEffortPicker(props: ModelEffortPickerProps) {
                     <h2 id={headingId}>{page === 'model' ? t('misc.model') : t('misc.reasoningEffort')}</h2>
                     <Popover.Close className="model-effort-icon" aria-label={t('composer.modelPicker.close')}>×</Popover.Close>
                 </div>
-                {props.disabled && props.disabledHint ? <div role="status" className="model-effort-notice">{props.disabledHint}</div> : null}
+                {controlsDisabled && props.disabledHint ? <div role="status" className="model-effort-notice">{props.disabledHint}</div> : null}
                 {props.loading ? <div role="status" className="model-effort-notice">{t('loading')}</div> : null}
                 {props.error ? <div role="alert" className="model-effort-error">{props.error}</div> : null}
                 {props.notice ? <div role="status" className="model-effort-notice">{props.notice}</div> : null}
@@ -61,7 +64,7 @@ export function ModelEffortPicker(props: ModelEffortPickerProps) {
                     {props.modelControls ?? props.models.map((option, index) => <div key={option.value ?? '__default'}>
                         {option.group && option.group !== props.models[index - 1]?.group ? <div className="model-effort-group">{option.group}</div> : null}
                         <button type="button" className="model-effort-model-row" aria-pressed={props.model === option.value}
-                            disabled={props.disabled} onClick={() => { props.onModelChange(option.value); setPage('effort') }}>
+                            disabled={controlsDisabled} onClick={() => { props.onModelChange(option.value); setPage('effort') }}>
                             <span>{option.label}</span>{props.model === option.value ? <span aria-hidden="true" className="model-effort-check">✓</span> : null}
                         </button>
                     </div>)}
@@ -73,19 +76,19 @@ export function ModelEffortPicker(props: ModelEffortPickerProps) {
                         <label htmlFor={sliderId}>{t('misc.reasoningEffort')}</label>
                         {invalidEffort && !props.error ? <div role="alert" className="model-effort-error">{t('composer.modelPicker.chooseEffort')}</div> : null}
                         <input id={sliderId} type="range" min={0} max={Math.max(0, efforts.length - 1)} step={1}
-                            value={selectedIndex < 0 ? 0 : selectedIndex} disabled={props.disabled || efforts.length < 2}
+                            value={selectedIndex < 0 ? 0 : selectedIndex} disabled={controlsDisabled || efforts.length < 2}
                             aria-valuetext={selectedEffort?.label ?? t('composer.modelPicker.chooseEffort')}
                             onChange={event => props.onEffortChange?.(efforts[Number(event.target.value)].value)} />
                         <div className="model-effort-stops">
                             {efforts.map(option => <button type="button" key={option.value ?? '__default'}
-                                disabled={props.disabled} aria-pressed={option.value === (props.effort ?? null)}
+                                disabled={controlsDisabled} aria-pressed={option.value === (props.effort ?? null)}
                                 onClick={() => props.onEffortChange?.(option.value)}>{option.label}</button>)}
                         </div>
                     </div> : null)}
-                    {props.onClearFast ? <button type="button" className="model-effort-model-row" disabled={props.disabled} onClick={props.onClearFast}>{t('newTask.clearFast')}</button> : null}
+                    {props.onClearFast ? <button type="button" className="model-effort-model-row" disabled={controlsDisabled} onClick={props.onClearFast}>{t('newTask.clearFast')}</button> : null}
                     {props.onFastChange ? <div className="model-effort-fast">
                         <span>ϟ&nbsp; Fast</span><button type="button" role="switch" aria-label="Fast" aria-checked={Boolean(props.fast)}
-                            disabled={props.disabled} onClick={() => props.onFastChange?.(!props.fast)}><span /></button>
+                            disabled={controlsDisabled} onClick={() => props.onFastChange?.(!props.fast)}><span /></button>
                     </div> : null}
                 </>}
             </Popover.Content>

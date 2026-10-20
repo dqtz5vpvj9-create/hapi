@@ -133,7 +133,7 @@ describe('refined composer behavior', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Send options' }))
         fireEvent.click(screen.getByRole('button', { name: 'Draft mode' }))
         expect(screen.getByRole('status')).toHaveTextContent('Draft mode · not sent to agent')
-        expect(screen.getByRole('button', { name: 'Save draft' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Send to scratchlist' })).toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', { name: 'Send options' }))
         fireEvent.click(screen.getByRole('button', { name: 'Schedule send' }))
         fireEvent.click(screen.getByRole('button', { name: '+30m' }))
@@ -150,7 +150,7 @@ describe('refined composer behavior', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Send options' }))
         expect(screen.getByRole('button', { name: 'Schedule send' })).toBeDisabled()
         fireEvent.click(screen.getByRole('button', { name: 'Draft mode' }))
-        fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Send to scratchlist' }))
         expect(send).toHaveBeenCalledWith('default')
     })
 

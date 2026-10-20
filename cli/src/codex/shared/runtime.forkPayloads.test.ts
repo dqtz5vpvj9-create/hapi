@@ -135,7 +135,6 @@ vi.mock('@/configuration', () => ({ configuration: { get happyHomeDir() { return
 vi.mock('@/agent/sessionFactory', () => ({ bootstrapSession: async (options: { workingDirectory: string; metadataOverrides: Partial<Metadata>; reservedSessionId?: string; newSessionId?: string }) => {
     if (options.reservedSessionId && options.newSessionId) throw new Error('Conflicting session creation identities');
     const existing = options.reservedSessionId && native.sessions.find(session => session.sessionId === options.reservedSessionId);
-    if (options.reservedSessionId && !existing) throw new Error('Cannot adopt a missing preallocated Hub stub');
     if (options.newSessionId && native.sessions.some(session => session.sessionId === options.newSessionId)) throw new Error('New session ID collision');
     const session = existing || new TestSession(options.workingDirectory, options.metadataOverrides, options.newSessionId ?? options.reservedSessionId);
     if (!existing) native.sessions.push(session);

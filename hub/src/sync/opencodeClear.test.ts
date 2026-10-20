@@ -645,7 +645,9 @@ describe('SyncEngine.clearOpenCodeSession', () => {
                 // forkSession / reservedSessionId — clear uses reopen existingSessionId
                 undefined,
                 undefined,
-                // codexAccountId — not applicable to OpenCode
+                // codexAccountId / codexHome / key profile — not applicable to OpenCode
+                undefined,
+                undefined,
                 undefined
             )
             expect(engine.getSessionByNamespace(replacementSessionId, 'default')?.metadata).toMatchObject({

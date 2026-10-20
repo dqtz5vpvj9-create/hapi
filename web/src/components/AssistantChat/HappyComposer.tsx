@@ -2363,7 +2363,7 @@ export function HappyComposer(props: {
         } : undefined}
         notice={agentFlavor === 'dsh' && (thinking || threadIsRunning) ? t('composer.modelPicker.nextMessage') : undefined}
         disabledHint={agentFlavor !== 'codex' && agentFlavor !== 'dsh' && (thinking || threadIsRunning) ? t('composer.modelPicker.runningHint') : undefined}
-        disabled={modelEffortControlsDisabled} error={props.modelSettingsError ?? (incompatibleFast ? t('composer.modelPicker.incompatibleFast') : incompatibleEffort ? t('composer.modelPicker.chooseEffort') : undefined)}
+        disabled={disabled} controlsDisabled={modelEffortControlsDisabled || !active} error={props.modelSettingsError ?? (incompatibleFast ? t('composer.modelPicker.incompatibleFast') : incompatibleEffort ? t('composer.modelPicker.chooseEffort') : undefined)}
     /> : undefined
 
     const statusBar = (

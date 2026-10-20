@@ -294,7 +294,7 @@ function send() {
 
 it('locks Pi model selection while a message is pending', () => {
     const controls = renderComposer()
-    act(() => controls.current!.setThreadDisabled(true))
+    act(() => controls.current!.setSending(true))
     const valueButton = screen.getByRole('button', { name: /^Pi model/ })
     expect(valueButton).toBeDisabled()
     fireEvent.click(valueButton)

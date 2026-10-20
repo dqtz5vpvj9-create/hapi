@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@/types/api'
@@ -67,9 +67,9 @@ describe('Recent bounded mounting', () => {
         expect(container.querySelector('[data-recent-root="row-500"]')).toBeNull()
         expect(scroller.scrollTop).toBe(0)
     })
-    it('keeps selection mounted without moving the viewport', () => {
+    it('keeps selection mounted without moving the viewport', async () => {
         const { container } = mount(sessions(1000), vi.fn(), 'row-900')
-        expect(container.querySelector('[data-recent-root="row-900"] [aria-current="page"]')).toBeTruthy()
+        await waitFor(() => expect(container.querySelector('[data-recent-root="row-900"] [aria-current="page"]')).toBeTruthy())
         const scroller = container.querySelector('.app-session-list-content') as HTMLElement
         expect(scroller.scrollTop).toBe(0)
         expect(rows(container).length).toBeLessThan(85)
@@ -128,13 +128,14 @@ describe('Recent bounded mounting', () => {
         fireEvent.keyDown(document, { key: 'Escape' })
         expect(container.contains(first)).toBe(false)
     })
-    it('reveals a newly pending child without remounting its retained root', () => {
+    it('reveals a newly pending child without remounting its retained root', async () => {
         const items = sessions(1000)
         const child = session('child', 'Child needing approval', { metadata: {
             name: 'Child needing approval', path: '/work/hapi', flavor: 'codex', machineId: 'm1',
             agentSessionId: 'child', codexParentThreadId: 'row-0',
         } })
         const { container, updateSessions } = mount([...items, child], vi.fn(), 'row-0')
+        await waitFor(() => expect(container.querySelector('[data-recent-root="row-0"]')).toBeTruthy())
         const root = container.querySelector('[data-recent-root="row-0"]')
         expect(screen.queryByText('Child needing approval')).toBeNull()
         scrollTo(container, 18000)

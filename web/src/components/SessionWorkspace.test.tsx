@@ -34,7 +34,7 @@ describe('SessionWorkspace navigation', () => {
         const next = screen.getByRole('button', { name: 'Other pane' })
         next.focus()
         rerender(ui(false))
-        expect(screen.getByRole('region', { name: 'Workspace', hidden: true })).not.toBeVisible()
+        expect(screen.getByRole('region', { hidden: true })).not.toBeVisible()
         expect(next).toHaveFocus()
         rerender(ui(true))
         expect(screen.getByRole('region', { name: 'Workspace' })).toBeVisible()

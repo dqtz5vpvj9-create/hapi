@@ -9,6 +9,7 @@ import {
     putShareTransfer,
 } from './lib/shareTransfer'
 import { shareTargetPathname } from './lib/sharePath'
+import { handleAppNavigation, isAppNavigationRequest } from './swNavigation'
 
 const sharePath = shareTargetPathname()
 
@@ -33,19 +34,11 @@ type PushPayload = {
 // serves an older app here even while a deep session URL loads the new build.
 // Register before precache so online launches and ordinary refreshes use the
 // current entry; keep the most recently loaded entry available offline.
-const appRoot = new URL(import.meta.env.BASE_URL, self.location.origin).pathname
+const appRoot = new URL(import.meta.env.BASE_URL ?? '/', self.location.origin).pathname
 const navigation = new NetworkFirst({ cacheName: 'app-navigation' })
 registerRoute(
-    ({ request, url }) => request.mode === 'navigate'
-        && url.origin === self.location.origin
-        && (url.pathname === appRoot || url.pathname === `${appRoot}index.html`),
-    async (context) => {
-        try {
-            return await navigation.handle({ ...context, request: new Request(context.request, { cache: 'no-cache' }) })
-        } catch {
-            return await matchPrecache(`${appRoot}index.html`) ?? Response.error()
-        }
-    },
+    context => isAppNavigationRequest(context, self.location.origin, appRoot),
+    context => handleAppNavigation(context, navigation, matchPrecache, appRoot),
 )
 
 precacheAndRoute(self.__WB_MANIFEST)

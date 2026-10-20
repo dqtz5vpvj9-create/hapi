@@ -57,7 +57,7 @@ export function SessionWorkspace(props: {
             <div className="session-workspace-chat" inert={chatCovered} aria-hidden={chatCovered || undefined}>
                 {visitedChat.current || split ? props.chat : null}
             </div>
-            {props.open || (props.keepPanelMounted && visitedPanel.current) ? <section className="session-workspace-panel" hidden={!props.open} inert={!props.open} onKeyDown={event => event.stopPropagation()} aria-label={t('session.workspace.title')}>
+            {props.open || (props.keepPanelMounted && visitedPanel.current) ? <section className="session-workspace-panel" style={props.open ? undefined : { visibility: 'hidden' }} onKeyDown={event => event.stopPropagation()} aria-label={t('session.workspace.title')}>
                 <header className="session-workspace-heading">
                     <button ref={closeRef} type="button" onClick={props.onClose} aria-label={props.closeLabel ?? t('session.workspace.close')} title={props.closeLabel ?? t('session.workspace.close')}>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
