@@ -375,10 +375,10 @@ function ProcessGroupCard(props: { block: ProcessGroupBlock }) {
     const [open, setOpen] = useState(false)
     const count = props.block.members.length
     return (
-        <div data-hapi-share-exclude="true" className="py-1 min-w-0 max-w-full overflow-x-hidden">
+        <div data-hapi-share-exclude="true" className="py-1 px-1 min-w-0 max-w-full overflow-x-hidden">
             <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}
-                className="flex min-h-11 max-w-full items-center gap-1.5 rounded-lg pr-2 text-left text-xs text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)]">
-                <span aria-hidden="true" className="w-3 shrink-0">{open ? '⌄' : '›'}</span>
+                className="flex min-h-11 w-full max-w-full items-center gap-1.5 rounded-lg px-1.5 text-left text-xs text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)]">
+                <span aria-hidden="true" className="w-3 shrink-0 text-center">{open ? '⌄' : '›'}</span>
                 <span className="truncate">{t('nativeChat.process', { count })}</span>
             </button>
             {open ? (

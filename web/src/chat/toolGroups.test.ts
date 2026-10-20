@@ -567,6 +567,18 @@ describe('foldProcess', () => {
         expect(live.running).toBe(true)
     })
 
+    it('keeps one process per turn while reasoning stays in place', () => {
+        const visible = buildVisibleChatBlocks([
+            makeUser('u1'), makeReasoning('r1'), makeToolBlock('t1', 'Read'), makeReasoning('r2'),
+            makeToolBlock('t2', 'Grep'), makeTextBlock('a1', 'answer')
+        ], { hasMoreMessages: false, foldProcess: true, activeTurn: false })
+
+        expect(visible.map(block => block.kind)).toEqual(['user-text', 'agent-reasoning', 'process-group', 'agent-reasoning', 'agent-text'])
+        const process = visible[2]
+        if (process.kind !== 'process-group') throw new Error('expected process group')
+        expect(process.members.map(member => member.id)).toEqual(['t1', 't2'])
+    })
+
     it('does not fold a subagent control into the process', () => {
         const visible = buildVisibleChatBlocks([
             makeUser('u1'), makeReasoning('r1'), makeToolBlock('sub', 'spawn_agent'),

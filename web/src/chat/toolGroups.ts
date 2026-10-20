@@ -317,7 +317,6 @@ function buildFlatProcessBlocks(blocks: ChatBlock[], options: ToolGroupingOption
         while (end < blocks.length && blocks[end].kind !== 'user-text') end += 1
         const turn = blocks.slice(index + 1, end)
         const running = end === blocks.length && options.activeTurn === true
-        const completed = end < blocks.length || options.activeTurn === false
         let answer = -1
         for (let cursor = turn.length - 1; cursor >= 0; cursor -= 1) {
             if (turn[cursor].kind === 'agent-text') { answer = cursor; break }
@@ -327,17 +326,20 @@ function buildFlatProcessBlocks(blocks: ChatBlock[], options: ToolGroupingOption
         // its process at the last answer.
         if (running && answer >= 0 && answer !== turn.length - 1) answer = -1
         const limit = answer >= 0 ? answer : turn.length
-        let members: ChatBlock[] = []
-        const flush = () => {
-            if (members.length > 0) visible.push(makeProcessBlock(members, running))
-            members = []
-        }
+        const members = turn.slice(0, limit).filter(isProcessMember)
+        const memberIds = new Set(members.map(member => member.id))
+        let processPlaced = false
         for (let cursor = 0; cursor < limit; cursor += 1) {
             const candidate = turn[cursor]
-            if (isProcessMember(candidate)) members.push(candidate)
-            else { flush(); visible.push(candidate) }
+            if (memberIds.has(candidate.id)) {
+                if (!processPlaced) {
+                    visible.push(makeProcessBlock(members, running))
+                    processPlaced = true
+                }
+                continue
+            }
+            visible.push(candidate)
         }
-        flush()
         if (answer >= 0) visible.push(...turn.slice(answer))
         index = end
     }
