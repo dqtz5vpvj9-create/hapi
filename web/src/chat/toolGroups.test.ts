@@ -555,13 +555,16 @@ describe('foldProcess', () => {
         expect(first.members.map(member => member.id)).toEqual(['r1', 't1', 't2'])
     })
 
-    it('keeps the live turn flat but folds earlier completed turns', () => {
+    it('folds the live turn without swapping it when the turn settles', () => {
         const visible = buildVisibleChatBlocks([
             makeUser('u1'), makeReasoning('r1'), makeToolBlock('t1', 'Read'), makeTextBlock('a1', 'answer'),
             makeUser('u2'), makeReasoning('r2'), makeToolBlock('t2', 'Read')
         ], { hasMoreMessages: false, foldProcess: true, activeTurn: true })
 
-        expect(visible.map(block => block.kind)).toEqual(['user-text', 'process-group', 'agent-text', 'user-text', 'agent-reasoning', 'tool-call'])
+        expect(visible.map(block => block.kind)).toEqual(['user-text', 'process-group', 'agent-text', 'user-text', 'process-group'])
+        const live = visible[4]
+        if (live.kind !== 'process-group') throw new Error('expected live process group')
+        expect(live.running).toBe(true)
     })
 
     it('does not fold a subagent control into the process', () => {
@@ -570,6 +573,6 @@ describe('foldProcess', () => {
             makeToolBlock('t1', 'Read'), makeToolBlock('t2', 'Grep'), makeTextBlock('a1', 'answer')
         ], { hasMoreMessages: false, foldProcess: true, activeTurn: false })
 
-        expect(visible.map(block => block.kind)).toEqual(['user-text', 'agent-reasoning', 'tool-call', 'process-group', 'agent-text'])
+        expect(visible.map(block => block.kind)).toEqual(['user-text', 'process-group', 'tool-call', 'process-group', 'agent-text'])
     })
 })

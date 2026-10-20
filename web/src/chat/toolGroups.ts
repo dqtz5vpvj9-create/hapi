@@ -43,6 +43,7 @@ export type ProcessGroupBlock = {
     id: string
     createdAt: number
     invokedAt?: number | null
+    running: boolean
     members: ChatBlock[]
 }
 
@@ -286,19 +287,21 @@ function isProcessMember(block: ChatBlock): boolean {
     return false
 }
 
-function makeProcessBlock(members: ChatBlock[]): ProcessGroupBlock {
+function makeProcessBlock(members: ChatBlock[], running: boolean): ProcessGroupBlock {
     return {
         kind: 'process-group',
         id: `process-group:${members[0].id}`,
         createdAt: members[0].createdAt,
         invokedAt: members[0].invokedAt,
+        running,
         members,
     }
 }
 
 /** DSH/ACP transcripts arrive as flat reasoning and tool-call blocks. Group
- * the completed turn's process under one disclosure, leaving the final answer
- * (and any unresolved interaction) directly reachable. */
+ * each turn's process under one stable disclosure, including the live turn, so
+ * finishing a turn never swaps a visible tool row for a collapsed header. The
+ * final answer and unresolved interactions stay directly reachable. */
 function buildFlatProcessBlocks(blocks: ChatBlock[], options: ToolGroupingOptions): VisibleChatBlock[] {
     const visible: VisibleChatBlock[] = []
     let index = 0
@@ -312,37 +315,32 @@ function buildFlatProcessBlocks(blocks: ChatBlock[], options: ToolGroupingOption
         visible.push(block)
         let end = index + 1
         while (end < blocks.length && blocks[end].kind !== 'user-text') end += 1
-        const completed = end < blocks.length || options.activeTurn === false
-        if (!completed) {
-            for (let cursor = index + 1; cursor < end; cursor += 1) visible.push(blocks[cursor])
-            index = end
-            continue
-        }
         const turn = blocks.slice(index + 1, end)
+        const running = end === blocks.length && options.activeTurn === true
+        const completed = end < blocks.length || options.activeTurn === false
         let answer = -1
         for (let cursor = turn.length - 1; cursor >= 0; cursor -= 1) {
             if (turn[cursor].kind === 'agent-text') { answer = cursor; break }
         }
-        if (answer < 0) {
-            visible.push(...turn)
-            index = end
-            continue
-        }
+        // A live turn's trailing text is its answer; an earlier text block is
+        // commentary and belongs to the process. A completed turn always ends
+        // its process at the last answer.
+        if (running && answer >= 0 && answer !== turn.length - 1) answer = -1
+        const limit = answer >= 0 ? answer : turn.length
         let members: ChatBlock[] = []
         const flush = () => {
-            if (members.length >= 2) visible.push(makeProcessBlock(members))
-            else visible.push(...members)
+            if (members.length > 0) visible.push(makeProcessBlock(members, running))
             members = []
         }
-        for (let cursor = 0; cursor < answer; cursor += 1) {
+        for (let cursor = 0; cursor < limit; cursor += 1) {
             const candidate = turn[cursor]
             // Agent text before the final answer is commentary from the same
-            // process. The last agent-text remains the visible answer.
+            // process; the final answer itself remains outside the disclosure.
             if (isProcessMember(candidate) || candidate.kind === 'agent-text') members.push(candidate)
             else { flush(); visible.push(candidate) }
         }
         flush()
-        visible.push(...turn.slice(answer))
+        if (answer >= 0) visible.push(...turn.slice(answer))
         index = end
     }
     return visible
