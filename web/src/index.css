@@ -803,3 +803,7 @@ html[data-theme="oled"] .shiki span:not([data-line-number]) {
     transition: none;
   }
 }
+/* Compact process/reasoning rows are disclosure headers, not chat bubbles. */
+.aui-reasoning-group { margin-block: 2px; }
+.happy-thread-messages > *:has([data-process-row="true"]),
+.happy-thread-messages > *:has(.aui-reasoning-group) { margin-block: -6px; }
