@@ -1000,9 +1000,9 @@ function SessionItem(props: {
     const workspaceState = useSyncExternalStore(workspace?.subscribe ?? subscribeWithoutWorkspace, workspace?.get ?? noWorkspaceState)
     const workspaceLocation = useMemo(() => {
         if (workspaceState?.mode !== 'workspace') return undefined
-        for (const document of workspaceState.workspaces) {
+        for (const [position, document] of workspaceState.workspaces.entries()) {
             const index = panes(document.root).findIndex(pane => pane.resource.kind === 'chat' && pane.resource.sessionId === props.session.id)
-            if (index >= 0) return { name: document.name, pane: index + 1 }
+            if (index >= 0) return { position: position + 1, pane: index + 1 }
         }
         return undefined
     }, [workspaceState?.workspaces, workspaceState?.mode, props.session.id])

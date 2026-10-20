@@ -73,7 +73,7 @@ for (const width of [390, 1440]) {
         await document.getByRole('button', { name: 'Project files', exact: true }).click()
         await page.getByRole('dialog').getByRole('button', { name: 'Keep local draft', exact: true }).click()
         await expect(panel.getByText('PLAN.md', { exact: true })).toBeVisible()
-        await page.getByRole('button', { name: width < 640 ? 'P2' : 'P2: PLAN.md', exact: true }).click()
+        await page.keyboard.press('Control+b'); await page.keyboard.press('o')
         await expect(document.locator('.cm-content')).toContainText('Keep this edit')
         expect(await page.evaluate(() => window.__workspaceFixture.fileWrites)).toEqual([])
         expect(await page.evaluate(() => window.__workspaceFixture.sends)).toEqual([])

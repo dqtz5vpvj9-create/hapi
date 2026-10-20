@@ -284,17 +284,26 @@ is independent of the selected visual theme. Its tabs are called **windows**
 in the UI, matching tmux: each window holds chat and terminal panes, with
 drag-to-split, resize, directional focus and temporary maximize. The store and
 API continue to call these workspace documents; this is not an extra hierarchy.
-The bottom bar switches windows and returns to a single chat.
-Selecting an already open chat focuses its existing pane. On narrow screens,
-P1 / P2 controls project one pane without changing the saved desktop layout.
-The bottom bar's persistent `P＋` opens a new pane through the existing session
-list (or desktop sidebar). It reuses a focused empty pane when selection was
-cancelled. **New window**, available in Window actions or with Ctrl-b c,
-creates a window immediately and opens the existing session chooser (on desktop,
-it focuses the sidebar search). It does not ask for a name first; rename a tab
-later by double-clicking it or using Window actions. Existing saved names remain
-unchanged. The tab shows only the name; pane counts belong in the window switcher.
-Directional splits remain in Pane actions and the existing shortcuts.
+The bottom bar is the window list and nothing else. Each tab shows the position
+number used by Ctrl-b 1–9, then the session of that window's focused pane (an
+empty, terminal or document pane falls back to its header label), then the most
+urgent activity among its chat panes. Desktop pane names never appear in the bar
+because each pane header already names its session. Windows created without a
+name track their position (W1, W2…); a hand-picked name is only an alias and
+surfaces in Move to and the window switcher. Rename it from Window actions: the
+tab keeps following pane focus, so the rename never changes the visible label.
+Selecting an already open chat focuses its existing pane. On narrow screens the
+bar keeps compact P1 / P2 controls that project one pane without changing the
+saved desktop layout, together with the window list, and scrolls the current
+window into view when the list overflows. The desktop pane header carries a `＋`
+action that opens a new pane through the existing session list (or desktop
+sidebar); on phones the `P＋` button stays in the bar and the pane menu (··· next
+to it) exposes Project files, Open a conversation, splits, maximize, Move to and
+Close pane. Both reuse a focused empty pane when selection was cancelled.
+**New window**, available in Window actions or with Ctrl-b c, creates a window
+immediately and opens the existing session chooser (on desktop, it focuses the
+sidebar search). It does not ask for a name first. Directional splits remain in
+Pane actions and the existing shortcuts.
 
 The keyboard prefix is Ctrl-b: `%` splits right, `"` splits below, arrows move
 focus, `o` cycles panes, `z` toggles maximize, `x` closes a view, `c` creates a

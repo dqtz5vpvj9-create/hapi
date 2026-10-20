@@ -5,7 +5,8 @@ export type PaneResource = DocumentResource | { kind: 'chat'; sessionId: string 
 export type PaneNode = { type: 'pane'; id: string; resource: PaneResource }
 export type SplitNode = { type: 'split'; id: string; axis: 'horizontal' | 'vertical'; children: WorkspaceNode[]; weights: number[] }
 export type WorkspaceNode = PaneNode | SplitNode
-export type WorkspaceDocument = { id: string; name: string; root: WorkspaceNode }
+/** `autoName` marks a name derived from the window position (W1, W2…). A missing flag keeps the stored name (older documents). */
+export type WorkspaceDocument = { id: string; name: string; autoName?: boolean; root: WorkspaceNode }
 export type WorkspaceSnapshot = { schemaVersion: 2; revision: number; workspaces: WorkspaceDocument[] }
 
 const id = z.string().min(1).max(256)
@@ -23,7 +24,7 @@ export const WorkspaceNodeSchema: z.ZodType<WorkspaceNode> = z.lazy(() => z.disc
         children: z.array(WorkspaceNodeSchema).min(2), weights: z.array(z.number().positive()),
     }).strict().refine(node => node.children.length === node.weights.length, 'Each child needs a weight'),
 ]))
-export const WorkspaceDocumentSchema = z.object({ id, name: z.string().trim().min(1).max(200), root: WorkspaceNodeSchema }).strict()
+export const WorkspaceDocumentSchema = z.object({ id, name: z.string().trim().min(1).max(200), autoName: z.boolean().optional(), root: WorkspaceNodeSchema }).strict()
 
 export function panes(node: WorkspaceNode): PaneNode[] {
     return node.type === 'pane' ? [node] : node.children.flatMap(panes)
@@ -109,7 +110,7 @@ export function applyWorkspaceCommand(workspaces: WorkspaceDocument[], command: 
         next.splice(Math.min(command.index, next.length), 0, { ...command.workspace, root })
         return { workspaces: next }
     }
-    if (command.type === 'rename') return { workspaces: workspaces.map(w => w.id === command.workspaceId ? { ...w, name: command.name } : w) }
+    if (command.type === 'rename') return { workspaces: workspaces.map(w => w.id === command.workspaceId ? { ...w, name: command.name, autoName: false } : w) }
     if (command.type === 'close') return { workspaces: workspaces.filter(w => w.id !== command.workspaceId) }
     if (command.type === 'layout') {
         const w = workspaces.find(w => w.id === command.workspaceId)

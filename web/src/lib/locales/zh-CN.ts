@@ -151,7 +151,7 @@ export default {
     "login.error.timeout": "Hub 响应超时，请检查地址和连接后重试。",
     "login.error.network": "无法连接 Hub，请检查地址、网络和 HTTPS 配置。",
 
-    'workspace.defaultName': '窗口 {number}',
+    'workspace.defaultName': 'W{number}',
     'workspace.loading': '正在加载共享窗口…',
     'workspace.temporary': '其他设备修改了布局。本机视图和草稿已保留。',
     'workspace.shareTemporary': '保存为窗口',
@@ -180,7 +180,7 @@ export default {
     'workspace.create': '新建窗口',
     'workspace.actions': '窗口操作',
     'workspace.paneActions': "窗格操作",
-    'workspace.rename': '重命名窗口',
+    'workspace.rename': '编辑窗口别名',
     'workspace.close': '关闭窗口',
     'workspace.undoClose': '恢复已关闭窗口',
     'workspace.split': "分屏",

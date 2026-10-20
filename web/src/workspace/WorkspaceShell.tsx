@@ -1,5 +1,4 @@
 import { DocumentLeaveDialog } from '@/documents/DocumentLeaveDialog'
-import { documentName } from '@hapi/protocol/documents'
 import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from 'react'
 import { Actions, DockLocation, Layout, TabNode, TabSetNode, type Model } from 'flexlayout-react'
 import * as Popover from '@radix-ui/react-popover'
@@ -20,6 +19,7 @@ import { WorkspacePaneActions } from './WorkspacePaneActions'
 import { WorkspaceIcon } from './WorkspaceIcon'
 import { WorkspacePane } from './WorkspacePane'
 import { panes, type PaneNode, type WorkspaceNode, type WorkspaceDocument, type WorkspaceStore } from './workspaceStore'
+import { windowActivityKind, windowAlias, windowPane, windowPaneLabel } from './windowIdentity'
 import { workspaceModel, workspaceTree } from './layoutAdapter'
 import 'flexlayout-react/style/light.css'
 import './workspace.css'
@@ -99,15 +99,16 @@ export function WorkspaceSurface(props: { foreground?: boolean; sessions?: Sessi
     const closeWorkspace = (id: string) => { store.closeWorkspace(id); setClosedNotice(true); setMenuOpen(false) }
     const split = useCallback((axis: 'horizontal' | 'vertical') => { store.split(axis); props.onPick() }, [store, props.onPick])
     const createWindow = useCallback(() => {
-        store.create(t('workspace.defaultName', { number: store.get().workspaces.length + 1 }))
+        store.create()
         props.onPick()
-    }, [store, t, props.onPick])
+    }, [store, props.onPick])
     const moveToNewWindow = useCallback((paneId: string) => {
-        store.create(t('workspace.defaultName', { number: store.get().workspaces.length + 1 }))
+        store.create()
         store.movePane(paneId, store.active()!.id)
-    }, [store, t])
+    }, [store])
     const sessionFor = (pane?: PaneNode) => { const resource = pane?.resource; return resource?.kind === 'chat' ? props.sessions?.find(s => s.id === resource.sessionId) : undefined }
     const focusedNode = allPanes.find(p => p.id === focused)
+    const focusedSession = sessionFor(focusedNode)
     const bottom = useRef<HTMLElement>(null)
     const paneTabs = useRef<HTMLDivElement>(null)
     useLayoutEffect(() => {
@@ -119,6 +120,16 @@ export function WorkspaceSurface(props: { foreground?: boolean; sessions?: Sessi
         if (tab.left < bounds.left) list.scrollLeft += tab.left - bounds.left
         else if (tab.right > bounds.right) list.scrollLeft += tab.right - bounds.right
     }, [focused, allPanes, mobile])
+    const windowTabs = useRef<HTMLDivElement>(null)
+    useLayoutEffect(() => {
+        const list = windowTabs.current
+        const selected = list?.querySelector<HTMLElement>('[aria-current="page"]')
+        if (!list || !selected) return
+        // Narrow phones show two or three windows; keep the current one reachable.
+        const bounds = list.getBoundingClientRect(), tab = selected.getBoundingClientRect()
+        if (tab.left < bounds.left) list.scrollLeft += tab.left - bounds.left
+        else if (tab.right > bounds.right) list.scrollLeft += tab.right - bounds.right
+    }, [state.activeId, state.workspaces.length, mobile])
     const focusPane = useCallback((id: string) => {
         store.focus(id)
         requestAnimationFrame(() => {
@@ -138,12 +149,10 @@ export function WorkspaceSurface(props: { foreground?: boolean; sessions?: Sessi
         const wheel = (event: WheelEvent) => {
             if (event.ctrlKey || event.metaKey) return
             const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
-            if (event.target instanceof Element && event.target.closest('.workspace-pane-tabs')) {
-                const list = paneTabs.current
-                if (list && list.scrollWidth > list.clientWidth) {
-                    event.preventDefault()
-                    list.scrollLeft += delta * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? list.clientWidth : 1)
-                }
+            const strip = event.target instanceof Element ? event.target.closest<HTMLElement>('.workspace-pane-tabs, .workspace-tabs') : null
+            if (strip && strip.scrollWidth > strip.clientWidth) {
+                event.preventDefault()
+                strip.scrollLeft += delta * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? strip.clientWidth : 1)
                 return
             }
             event.preventDefault()
@@ -219,8 +228,11 @@ export function WorkspaceSurface(props: { foreground?: boolean; sessions?: Sessi
         <Dialog open={switcherOpen} onOpenChange={setSwitcherOpen}>
             <DialogContent className="workspace-dialog max-w-sm" aria-describedby={undefined}>
                 <DialogHeader><DialogTitle>{t('workspace.switch')}</DialogTitle></DialogHeader>
-                <div className="workspace-picker">{state.workspaces.map(w => <button type="button" key={w.id} aria-current={w.id === active?.id ? 'page' : undefined}
-                    onClick={() => { store.activate(w.id); setSwitcherOpen(false) }}><span className="workspace-picker-name" title={w.name}>{w.name}</span><span className="workspace-picker-count">{t('workspace.paneCount', { count: panes(w.root).length })}</span></button>)}</div>
+                <div className="workspace-picker">{state.workspaces.map((w, index) => {
+                    const label = windowPaneLabel(windowPane(w, state.focused[w.id]), props.title, t)
+                    return <button type="button" key={w.id} aria-current={w.id === active?.id ? 'page' : undefined}
+                        onClick={() => { store.activate(w.id); setSwitcherOpen(false) }}><span className="workspace-picker-name" title={`${windowAlias(state.workspaces, w)} · ${label}`}>{index + 1} · {label}</span><span className="workspace-picker-count">{t('workspace.paneCount', { count: panes(w.root).length })}</span></button>
+                })}</div>
             </DialogContent>
         </Dialog>
         {closedNotice ? <div className="workspace-toast" role="status"><span>{t('workspace.closed')}</span><button type="button" onClick={() => { store.undoClose(); setClosedNotice(false) }}>{t('workspace.undo')}</button></div> : null}
@@ -242,17 +254,14 @@ export function WorkspaceSurface(props: { foreground?: boolean; sessions?: Sessi
             <button type="button" className="workspace-mode" onClick={mobile ? props.onPick : props.onSingle} title={t(mobile ? 'share.backToSessions' : 'workspace.single')} aria-label={t(mobile ? 'share.backToSessions' : 'workspace.single')}>
                 {mobile ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg> : <WorkspaceIcon />}
             </button>
-            <div className="workspace-pane-navigation">
-                <div ref={paneTabs} className={`workspace-pane-tabs${mobile ? ' workspace-mobile-panes' : ''}`}>
+            {mobile ? <div className="workspace-pane-navigation">
+                <div ref={paneTabs} className="workspace-pane-tabs workspace-mobile-panes">
                     {allPanes.map((p, i) => {
-                        const title = p.resource.kind === 'empty' ? t('workspace.newPane')
-                            : p.resource.kind === 'document' ? documentName(p.resource.document)
-                            : props.title(p.resource.sessionId)
+                        const title = windowPaneLabel(p, props.title, t)
                         return <button type="button" key={p.id} className="workspace-pane-tab"
-                            aria-pressed={p.id === focused} aria-label={mobile ? `P${i + 1}` : `P${i + 1}: ${title}`} title={title}
-                            onClick={() => mobile ? store.focus(p.id) : focusPane(p.id)}>
+                            aria-pressed={p.id === focused} aria-label={`P${i + 1}`} title={title}
+                            onClick={() => store.focus(p.id)}>
                             <span className="workspace-pane-index">{p.resource.kind === 'document' ? '▤ ' : p.resource.kind === 'terminal' ? '⌘ ' : ''}P{i + 1}</span>
-                            {!mobile ? <span className="workspace-pane-title">{title}</span> : null}
                             {p.resource.kind === 'chat' ? <WorkspaceActivity session={sessionFor(p)} /> : null}
                         </button>
                     })}
@@ -262,24 +271,39 @@ export function WorkspaceSurface(props: { foreground?: boolean; sessions?: Sessi
                     onClick={() => { if (focusedNode?.resource.kind === 'empty') props.onPick(); else split('horizontal') }}>
                     <span aria-hidden="true">P＋</span>
                 </button>
-            </div>
-            <div className="workspace-tabs">
-                {state.workspaces.map(w => renameId === w.id ? <form key={w.id} onSubmit={e => { e.preventDefault(); store.rename(w.id, rename); setRenameId(null) }}>
-                    <input autoFocus aria-label={t('workspace.rename')} value={rename} onChange={e => setRename(e.target.value)} onBlur={() => { store.rename(w.id, rename); setRenameId(null) }} onKeyDown={e => { if (e.key === 'Escape') setRenameId(null) }} />
-                </form> : <div className="workspace-tab" key={w.id}>
-                    <button type="button" aria-current={w.id === active?.id ? 'page' : undefined} onClick={() => store.activate(w.id)} onDoubleClick={() => { setRename(w.name); setRenameId(w.id) }} title={w.name}>
-                        <span>{w.name}</span>
-                    </button>
-                    <button type="button" className="workspace-tab-close" aria-label={`${t('workspace.close')}: ${w.name}`} onClick={() => closeWorkspace(w.id)}>×</button>
-                </div>)}
+                {focusedNode ? <PaneMenu id={focusedNode.id} store={store} onPick={props.onPick} onMoveNew={moveToNewWindow} files={focusedNode.resource.kind === 'chat' ? {
+                    disabled: !focusedSession?.metadata?.path,
+                    pressed: store.getPaneTools(focusedNode.id, focusedNode.resource)?.current?.view === 'directories',
+                    onToggle: () => {
+                        store.focus(focusedNode.id)
+                        const current = store.getPaneTools(focusedNode.id, focusedNode.resource)?.current
+                        store.setPaneTool(focusedNode.id, focusedNode.resource, current?.view === 'directories' ? null : { view: 'directories' })
+                    },
+                } : undefined} /> : null}
+            </div> : null}
+            <div ref={windowTabs} className="workspace-tabs">
+                {state.workspaces.map((w, index) => {
+                    if (renameId === w.id) return <form key={w.id} onSubmit={e => { e.preventDefault(); store.rename(w.id, rename); setRenameId(null) }}>
+                        <input autoFocus aria-label={t('workspace.rename')} value={rename} onChange={e => setRename(e.target.value)} onBlur={() => { store.rename(w.id, rename); setRenameId(null) }} onKeyDown={e => { if (e.key === 'Escape') setRenameId(null) }} />
+                    </form>
+                    const pane = windowPane(w, state.focused[w.id])
+                    const label = windowPaneLabel(pane, props.title, t)
+                    const activity = windowActivityKind(panes(w.root).filter(p => p.resource.kind === 'chat').map(p => sessionFor(p)))
+                    const alias = windowAlias(state.workspaces, w)
+                    return <div className="workspace-tab" key={w.id}>
+                        <button type="button" aria-current={w.id === active?.id ? 'page' : undefined} onClick={() => store.activate(w.id)}
+                            title={`${alias} · ${label}`} aria-label={`${index + 1}: ${label}`}>
+                            <span className="workspace-window-index">{index + 1}</span>
+                            <span className="workspace-window-title">{label}</span>
+                            {activity ? <WorkspaceActivity kind={activity} /> : null}
+                        </button>
+                        <button type="button" className="workspace-tab-close" aria-label={`${t('workspace.close')}: ${label}`} onClick={() => closeWorkspace(w.id)}>×</button>
+                    </div>
+                })}
             </div>
             {prefix ? <span className="workspace-prefix">Ctrl-b</span> : null}
             {state.sync.status === 'offline' || state.sync.status === 'error' ? <button type="button" className="workspace-sync-state" data-state={state.sync.status} title={state.sync.error ?? t('workspace.offline')} onClick={() => store.retrySync()}>{t(state.sync.status === 'offline' ? 'workspace.offline' : 'workspace.syncFailed')}</button> : null}
             {state.sync.status === 'syncing' && state.sync.pending > 0 ? <span className="workspace-sync-pending" title={t('workspace.syncing')}>↑{state.sync.pending}</span> : null}
-            {mobile && focusedNode ? <>
-                <div className="workspace-header-dock" data-workspace-header={focusedNode.id} />
-                {focusedNode.resource.kind !== 'chat' ? <PaneMenu id={focusedNode.id} store={store} onPick={props.onPick} onMoveNew={moveToNewWindow} /> : null}
-            </> : null}
             <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}><Popover.Trigger asChild><button type="button" aria-label={t('workspace.actions')}>···</button></Popover.Trigger>
                 <Popover.Portal><Popover.Content className="workspace-menu" side="top" align="end" sideOffset={8} collisionPadding={8}>
                     <button type="button" onClick={() => { setMenuOpen(false); createWindow() }}>{t('workspace.create')}</button>
@@ -367,7 +391,11 @@ const WorkspaceLayout = memo(function WorkspaceLayout(props: {
                     const id = group.getChildren()[0]?.getId()
                     if (!id) return
                     if (mobile) return
-                    values.buttons.push(<span key="number" className="workspace-header-number">{allPanes.findIndex(p => p.id === id) + 1}</span>)
+                    values.buttons.push(<button type="button" key="new-pane" className="workspace-header-newpane" aria-label={t('workspace.newPane')} title={t('workspace.newPane')} onPointerDown={e => e.stopPropagation()} onClick={() => {
+                        store.focus(id)
+                        if (allPanes.find(p => p.id === id)?.resource.kind === 'empty') props.onPick()
+                        else { store.split('horizontal'); props.onPick() }
+                    }}><span aria-hidden="true">＋</span></button>)
                     values.buttons.push(<button type="button" key="zoom" className="workspace-header-zoom" aria-label={t('workspace.zoom')} title={t('workspace.zoom')} onPointerDown={e => e.stopPropagation()} onClick={() => { store.focus(id); store.zoom() }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 3H3v5m0-5 6 6M16 3h5v5m0-5-6 6M3 16v5h5m-5 0 6-6m12 1v5h-5m5 0-6-6" /></svg></button>)
                     values.buttons.push(<div key="pane-actions" className="workspace-header-dock" data-workspace-header={id} />)
                     if (allPanes.find(p => p.id === id)?.resource.kind !== 'chat') values.buttons.push(<PaneMenu key="pane-menu" id={id} store={store} onPick={props.onPick} onMoveNew={props.onMoveNew} />)
@@ -409,7 +437,7 @@ function VisiblePane(props: PaneProps & { node: TabNode; projected: boolean; Com
     </div>
 }
 
-function PaneMenu(props: { id: string; store: WorkspaceStore; onPick: () => void; onMoveNew: (id: string) => void }) {
+function PaneMenu(props: { id: string; store: WorkspaceStore; onPick: () => void; onMoveNew: (id: string) => void; files?: { disabled?: boolean; pressed: boolean; onToggle: () => void } }) {
     const { t } = useTranslation()
     const [open, setOpen] = useState(false)
     return <Popover.Root open={open} onOpenChange={setOpen}>

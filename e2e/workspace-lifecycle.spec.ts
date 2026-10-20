@@ -4,7 +4,7 @@ import type { ReadingAnchor } from '../web/src/lib/reading-anchor'
 test.use({ viewport: { width: 1600, height: 960 } })
 const pane = (page: Page, id: number) => page.locator(`[data-pane-id][data-session-id="chat-${id}"]`)
 const editor = (page: Page, id: number) => pane(page, id).locator('[contenteditable]:not([contenteditable="false"])')
-const workspace = (page: Page, id: number) => page.locator(`.workspace-tabs button[title="Window ${id}"]`)
+const workspace = (page: Page, id: number) => page.locator('.workspace-tabs .workspace-tab').nth(id - 1).locator('button').first()
 
 for (const size of [2, 4]) test(`bounds the resident cost of ${size}-pane workspaces and keeps the previous layout warm`, async ({ page }) => {
     await page.goto(`/e2e-fixtures/workspace-fixture.html?panes=${size}&workingSet=12&grouped`, { waitUntil: 'domcontentloaded' })

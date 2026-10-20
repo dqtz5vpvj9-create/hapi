@@ -61,8 +61,9 @@ async function read(page: Page, hub: Hub): Promise<WorkspaceSnapshot> {
     return response.json()
 }
 async function rename(page: Page, name: string) {
-    await page.locator('.workspace-tab > button[aria-current="page"]').dblclick()
-    await page.getByRole('textbox', { name: 'Rename window', exact: true }).fill(name)
+    await page.getByRole('button', { name: 'Window actions', exact: true }).click()
+    await page.getByRole('button', { name: 'Edit window alias', exact: true }).click()
+    await page.getByRole('textbox', { name: 'Edit window alias', exact: true }).fill(name)
     await page.keyboard.press('Enter')
 }
 async function create(page: Page, name: string) {
@@ -81,7 +82,7 @@ test('shares real Hub layouts across desktop/mobile while preserving independent
     const revision = (await read(page, hub)).revision
     await rename(other, 'Shared development')
     await settled(other)
-    await expect(page.locator('.workspace-tab')).toContainText('Shared development')
+    await expect(page.locator('.workspace-tab > button').first()).toHaveAttribute('title', /Shared development/)
     await expect(editor(page, 1)).toHaveText('Desktop draft stays local')
     await expect(page.locator('[data-pane-id]:visible')).toHaveCount(1)
     expect((await read(page, hub)).revision).toBe(revision + 1)
@@ -130,7 +131,7 @@ test('replays a workspace created offline after refresh alongside another device
     offline = false
     await page.getByRole('button', { name: 'Saved locally · Retry', exact: true }).click()
     await settled(page)
-    await expect(other.locator('.workspace-tabs')).toContainText('Offline research')
+    await expect(other.locator('.workspace-tabs .workspace-tab').nth(1).locator('button').first()).toHaveAttribute('title', /Offline research/)
     expect((await read(page, hub)).workspaces.map(w => w.name)).toEqual(['Renamed remotely', 'Offline research'])
     await expect(editor(page, 3)).toHaveText('Unsent offline draft')
     expect(await page.evaluate(() => window.__workspaceFixture.sends)).toEqual([])
@@ -148,7 +149,7 @@ test('does not duplicate a workspace after the Hub commits but the acknowledgeme
         await route.continue()
     })
     await prefix(page, 'c')
-    await expect(other.locator('.workspace-tabs')).toContainText('Window 2')
+    await expect(other.locator('.workspace-tab')).toHaveCount(2)
     await expect(page.getByRole('button', { name: 'Saved locally · Retry', exact: true })).toBeVisible()
     const revision = (await read(page, hub)).revision
     await page.reload()
@@ -158,5 +159,5 @@ test('does not duplicate a workspace after the Hub commits but the acknowledgeme
     await settled(page)
     const snapshot = await read(page, hub)
     expect(snapshot.revision).toBe(revision)
-    expect(snapshot.workspaces.filter(w => w.name === 'Window 2')).toHaveLength(1)
+    expect(snapshot.workspaces.filter(w => w.name === 'W2')).toHaveLength(1)
 })

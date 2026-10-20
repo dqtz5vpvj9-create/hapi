@@ -56,12 +56,12 @@ for (const width of [390, 1280]) {
         await page.getByRole('button', { name: 'New window', exact: true }).click()
         // On mobile an empty window opens the conversation picker.
         if (width < 768) await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
-        await expect(page.getByRole('button', { name: 'Window 2', exact: true })).toBeVisible()
+        await expect(page.locator('.workspace-tab')).toHaveCount(2)
         await page.getByRole('button', { name: 'Window actions', exact: true }).click()
         await page.getByRole('button', { name: 'Close window', exact: true }).click()
         await expect(input).toHaveText('保留草稿：cancel / restore / 中文')
         await page.getByRole('button', { name: 'Window actions', exact: true }).click()
         await page.getByRole('button', { name: 'Restore closed window', exact: true }).click()
-        await expect(page.getByRole('button', { name: 'Window 2', exact: true })).toBeVisible()
+        await expect(page.locator('.workspace-tab')).toHaveCount(2)
     })
 }

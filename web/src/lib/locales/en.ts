@@ -151,7 +151,7 @@ export default {
     "login.error.timeout": "The Hub took too long to respond. Check its address and connection, then retry.",
     "login.error.network": "Could not reach the Hub. Check its address, network and HTTPS configuration.",
 
-    'workspace.defaultName': 'Window {number}',
+    'workspace.defaultName': 'W{number}',
     'workspace.loading': 'Loading shared windows…',
     'workspace.temporary': 'Changed on another device. Your local view and draft are kept.',
     'workspace.shareTemporary': 'Save as a window',
@@ -180,7 +180,7 @@ export default {
     'workspace.create': 'New window',
     'workspace.actions': 'Window actions',
     'workspace.paneActions': "Pane actions",
-    'workspace.rename': 'Rename window',
+    'workspace.rename': 'Edit window alias',
     'workspace.close': 'Close window',
     'workspace.undoClose': 'Restore closed window',
     'workspace.split': "Split pane",

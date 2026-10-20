@@ -90,7 +90,7 @@ export function SessionRowSummary(props: {
     /** Machine label shown next to the project name (pinned "in progress" rows). */
     machineLabel?: string
     /** Existing workspace destination when the row is used to select a chat. */
-    workspaceLocation?: { name: string; pane: number }
+    workspaceLocation?: { position: number; pane: number }
 }) {
     const {
         session: s,
@@ -230,8 +230,8 @@ export function SessionRowSummary(props: {
             {narrowViewport ? <div className="app-session-row-mobile-meta">
                 {urgentAttention || s.pendingRequestsCount > 0 ? <span className="app-session-row-execution text-[var(--app-badge-warning-text)]">{activity.kind === 'running' ? `${runningLabel} · ` : ''}{attentionLabel ?? t('session.item.pending')}</span>
                     : activity.kind === 'error' ? <span className="app-session-row-execution text-[var(--app-badge-error-text)]">{t('session.item.error')}</span> : activity.running ? <span className={`app-session-row-execution ${runningColor}`}><LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow" />{runningLabel}</span> : null}
-                {workspaceLocation ? <span className="app-session-workspace-location" title={`${workspaceLocation.name} · P${workspaceLocation.pane}`}>
-                    <span className="truncate">{workspaceLocation.name}</span>
+                {workspaceLocation ? <span className="app-session-workspace-location" title={`W${workspaceLocation.position} · P${workspaceLocation.pane}`}>
+                    <span className="truncate">W{workspaceLocation.position}</span>
                     <span className="shrink-0">· P{workspaceLocation.pane}</span>
                 </span> : <span className="truncate">{[s.metadata?.flavor === 'codex' ? 'Codex' : s.metadata?.flavor, projectLabel ?? (s.metadata?.worktree?.basePath ?? s.metadata?.path ?? '').split(/[\\/]/).filter(Boolean).at(-1)].filter(Boolean).join(' · ')}</span>}
             </div> : null}

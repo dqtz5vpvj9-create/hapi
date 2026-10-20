@@ -192,7 +192,7 @@ test('moves a live chat between workspaces, switches with the bottom wheel and r
     await page.mouse.wheel(0, -120)
     await expect(pane(page, 1)).toBeVisible()
     await page.getByRole('button', { name: 'Pane actions', exact: true }).first().click()
-    await page.getByRole('menuitem', { name: 'Move to Window 2', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Move to W2', exact: true }).click()
     await expect(pane(page, 3)).toBeVisible()
     await expect(input(pane(page, 1))).toHaveText('Draft follows its conversation')
     await page.getByRole('button', { name: 'Window actions', exact: true }).click()
@@ -261,7 +261,7 @@ test('matches the accepted compact workspace and keeps menus available on mobile
     await expect(page.locator('[data-pane-id]:visible')).toHaveCount(1)
     await page.getByRole('button', { name: 'P2', exact: true }).click()
     expect((await pane(page, 2).boundingBox())!.y).toBe(0)
-    expect((await page.locator('.workspace-bottom').boundingBox())!.height).toBeLessThanOrEqual(36)
+    expect((await page.locator('.workspace-bottom').boundingBox())!.height).toBeLessThanOrEqual(45)
     await page.getByRole('button', { name: 'Pane actions', exact: true }).click()
     await expect(page.getByRole('menuitem', { name: 'Split below', exact: true })).toBeVisible()
     await page.getByRole('menuitem', { name: 'Open a conversation', exact: true }).click()
@@ -335,17 +335,19 @@ test('shows each mobile session destination and updates its workspace name and p
     await createWorkspace(page)
     await page.locator('.app-session-sidebar-frame').getByText('工作区交互设计', { exact: true }).click()
     await expect(pane(page, 3)).toBeVisible()
-    const tabs = page.locator('.workspace-tabs')
-    await tabs.getByTitle('Window 2', { exact: true }).dblclick()
-    await tabs.getByRole('textbox').fill('Review workspace with a long name')
-    await tabs.getByRole('textbox').press('Enter')
+    await page.getByRole('button', { name: 'Window actions', exact: true }).click()
+    await page.getByRole('button', { name: 'Edit window alias', exact: true }).click()
+    const alias = page.getByRole('textbox', { name: 'Edit window alias', exact: true })
+    await alias.fill('Review workspace with a long name')
+    await alias.press('Enter')
+    await expect(page.locator('.workspace-tabs .workspace-tab').nth(1).locator('button').first()).toHaveAttribute('title', /Review workspace with a long name/)
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
     const row = (title: string) => page.locator('.session-list-item').filter({ has: page.getByText(title, { exact: true }) })
     const location = (title: string) => row(title).locator('.app-session-workspace-location')
-    await expect(location('历史阅读优化')).toHaveAttribute('title', 'Window 1 · P1')
-    await expect(location('Windows 终端集成')).toHaveAttribute('title', 'Window 1 · P2')
-    await expect(location('工作区交互设计')).toHaveAttribute('title', 'Review workspace with a long name · P1')
+    await expect(location('历史阅读优化')).toHaveAttribute('title', 'W1 · P1')
+    await expect(location('Windows 终端集成')).toHaveAttribute('title', 'W1 · P2')
+    await expect(location('工作区交互设计')).toHaveAttribute('title', 'W2 · P1')
     await expect(location('发布检查')).toHaveCount(0)
     const lastPart = location('工作区交互设计').locator('span').last()
     expect((await lastPart.boundingBox())!.width).toBeGreaterThan(15)
@@ -358,10 +360,10 @@ test('shows each mobile session destination and updates its workspace name and p
     await expect(pane(page, 2)).toBeVisible()
     await page.getByRole('button', { name: 'Back to sessions', exact: true }).click()
     await expect(location('历史阅读优化')).toHaveCount(0)
-    await expect(location('Windows 终端集成')).toHaveAttribute('title', 'Window 1 · P1')
+    await expect(location('Windows 终端集成')).toHaveAttribute('title', 'W1 · P1')
     await page.reload()
-    await expect(location('Windows 终端集成')).toHaveAttribute('title', 'Window 1 · P1')
-    await expect(location('工作区交互设计')).toHaveAttribute('title', 'Review workspace with a long name · P1')
+    await expect(location('Windows 终端集成')).toHaveAttribute('title', 'W1 · P1')
+    await expect(location('工作区交互设计')).toHaveAttribute('title', 'W2 · P1')
     expect(await page.evaluate(() => window.__workspaceFixture.unhandled)).toEqual([])
 })
 
@@ -513,7 +515,7 @@ for (const warmCount of [2, 5]) test(`returns among ${warmCount} warm workspaces
     await page.goto('/e2e-fixtures/workspace-fixture.html?panes=1&workingSet=7&rich', { waitUntil: 'domcontentloaded' })
     const samples: { ms: number; skeletonFrames: number; blankFrames: number; sameReader: boolean; sameComposer: boolean; sameCode: boolean }[] = []
     for (let id = 1; id <= warmCount; id++) {
-        await page.locator(`.workspace-tabs button[title="Window ${id}"]`).click()
+        await page.locator('.workspace-tabs .workspace-tab').nth(id - 1).locator('button').first().click()
         await expect(pane(page, id).locator('[data-chat-presented=true]')).toBeVisible()
         await expect(pane(page, id).locator('.cm-editor')).toBeVisible()
         await input(pane(page, id)).fill(`Hot draft ${id}`)
@@ -527,7 +529,7 @@ for (const warmCount of [2, 5]) test(`returns among ${warmCount} warm workspaces
     for (let i = 0; i < Math.max(12, warmCount * 3); i++) {
         const id = i % warmCount + 1
         const sample = await page.evaluate(async id => {
-            const button = document.querySelector<HTMLButtonElement>(`.workspace-tabs button[title="Window ${id}"]`)!
+            const button = document.querySelectorAll<HTMLButtonElement>('.workspace-tabs .workspace-tab > button:first-child')[id - 1]!
             const started = performance.now()
             button.click()
             let skeletonFrames = 0, blankFrames = 0
@@ -557,7 +559,7 @@ for (const warmCount of [2, 5]) test(`returns among ${warmCount} warm workspaces
     console.log('WARM_SWITCH', JSON.stringify(samples))
     await page.evaluate(() => window.__workspaceFixture.releaseHistory())
     for (let id = warmCount + 1; id <= 7; id++) {
-        await page.locator(`.workspace-tabs button[title="Window ${id}"]`).click()
+        await page.locator('.workspace-tabs .workspace-tab').nth(id - 1).locator('button').first().click()
         await expect(pane(page, id).locator('[data-chat-presented=true]')).toBeVisible()
         await expect(page.locator('.workspace-stage')).toHaveCount(Math.min(5, id))
     }

@@ -41,6 +41,14 @@ function cloneTree(node: WorkspaceNode): WorkspaceNode {
         : { ...node, id: crypto.randomUUID(), children: node.children.map(cloneTree) }
 }
 
+/** Automatic window names track their position; reuse a freed number instead of colliding with a live one. */
+export function nextWindowName(workspaces: WorkspaceDocument[]): string {
+    const used = new Set(workspaces.map(w => w.name.trim()))
+    let index = 1
+    while (used.has(`W${index}`)) index += 1
+    return `W${index}`
+}
+
 /** Shared intent + local presentation. This store never owns messages or execution processes. */
 export class WorkspaceStore {
     readonly documents: DocumentRegistry
@@ -153,7 +161,7 @@ export class WorkspaceStore {
         }
         return projected.map(w => {
             const old = this.state.workspaces.find(old => old.id === w.id)
-            return old && sameTree(old.root, w.root) ? (old.name === w.name ? old : { ...w, root: old.root }) : w
+            return old && sameTree(old.root, w.root) ? (old.name === w.name && old.autoName === w.autoName ? old : { ...w, root: old.root }) : w
         })
     }
     setSyncStatus(status: WorkspaceState['sync']['status'], error?: string) {
@@ -244,8 +252,9 @@ export class WorkspaceStore {
         this.commit({ ...this.state, mode: 'single', workspaces: this.project(this.sharedDocuments()) }, false)
         return id
     }
-    create(name = `Window ${this.state.workspaces.length + 1}`) {
-        const workspace = { id: crypto.randomUUID(), name, root: emptyPane() }
+    /** Without an explicit name the window tracks its position (W1, W2…); a name passed here is a manual alias. */
+    create(name?: string) {
+        const workspace = { id: crypto.randomUUID(), name: name ?? nextWindowName(this.state.workspaces), autoName: name === undefined, root: emptyPane() }
         this.execute({ type: 'create', workspace }, { mode: 'workspace', activeId: workspace.id })
     }
     activate(id: string) {

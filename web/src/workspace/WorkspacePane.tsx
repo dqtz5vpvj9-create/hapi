@@ -100,7 +100,7 @@ export function WorkspacePane(props: { pane: PaneNode; focused: boolean; foregro
         await routeNavigate(options)
     }, [store, pane, sessionId, session?.metadata?.path, session?.metadata?.machineId, routeNavigate, tool, setTool])
     const menuItems = useCallback((close: () => void) => <WorkspacePaneActions id={pane.id} store={store} onPick={props.pickSession} onClose={close} onMoveNew={() => {
-        store.create(t('workspace.defaultName', { number: store.get().workspaces.length + 1 }))
+        store.create()
         store.movePane(pane.id, store.active()!.id)
     }} />, [pane.id, store, props.pickSession, t])
     const [headerTarget, setHeaderTarget] = useState<HTMLElement | null>(null)
