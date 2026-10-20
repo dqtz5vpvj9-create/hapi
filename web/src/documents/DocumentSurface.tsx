@@ -23,6 +23,15 @@ const SheetDocument = lazy(() => import('./SheetDocument'))
 const ImageDocument = lazy(() => import('./ImageDocument'))
 const HtmlDocument = lazy(() => import('./HtmlDocument'))
 const localRegistries = new WeakMap<object, DocumentRegistry>()
+
+/** Office/artifact downloads read the source directly; text needs loaded bytes or a draft. */
+export function documentDownloadAvailable(
+    state: { dirty: boolean; blob?: Blob; preview?: unknown },
+    office: boolean,
+    artifact: boolean,
+): boolean {
+    return state.dirty || Boolean(state.blob) || Boolean(state.preview) || office || artifact
+}
 const markdownBlocks = Object.fromEntries(['p', 'li', 'h1', 'h2', 'h3', 'h4', 'blockquote', 'table', 'pre'].map(tag => [tag,
     ({ node, ...props }: HTMLAttributes<HTMLElement> & ExtraProps) => createElement(tag, { ...props,
         'data-source-from': node?.position?.start.offset, 'data-source-to': node?.position?.end.offset }),
@@ -137,8 +146,11 @@ export function DocumentSurface({ resource, foreground = true, onBack, backLabel
         await session.persist().catch(error => setReferenceError(String(error)))
         setDisk(undefined); setEditorRevision(value => value + 1)
     }
+    // Office and artifact downloads read the source directly, so they do not
+    // depend on the rendered preview (which may still be converting).
+    const downloadAvailable = documentDownloadAvailable(state, office, resource.document.kind === 'artifact')
     const download = async () => {
-        if (!state.blob && !state.preview && !state.dirty) return
+        if (!downloadAvailable) return
         setDownloading(true); setReferenceError(undefined)
         try {
             let blob = state.dirty ? new Blob([encodeDocumentText(state.text, state.format) as Uint8Array<ArrayBuffer>]) : state.blob!
@@ -178,7 +190,7 @@ export function DocumentSurface({ resource, foreground = true, onBack, backLabel
             {markdown || html ? <button onClick={() => { select(undefined); session.patch({ mode: state.mode === 'preview' ? 'edit' : 'preview' }) }}>{state.mode === 'preview' ? html ? labels.source : labels.edit : labels.preview}</button> : null}
             {!office && !sheet && state.mode === 'edit' ? <button onClick={() => setFind(value => value + 1)}>{labels.find}</button> : null}
             {state.writable ? <button className="document-primary" disabled={!state.dirty || state.saving} onClick={() => void session.save(api)}>{state.saving ? labels.saving : labels.save}</button> : null}
-            <button disabled={(!state.blob && !state.preview && !state.dirty) || downloading} onClick={() => void download()}>{downloading ? labels.loading : state.dirty ? labels.downloadDraft : labels.download}</button>
+            <button disabled={!downloadAvailable || downloading} onClick={() => void download()}>{downloading ? labels.loading : state.dirty ? labels.downloadDraft : labels.download}</button>
             {onCloseOthers ? <button onClick={onCloseOthers}>{labels.closeOthers}</button> : null}
             {onClose ? <button onClick={onClose}>{labels.closeFile}</button> : null}
         </div>
