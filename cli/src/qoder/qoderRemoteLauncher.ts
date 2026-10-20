@@ -180,9 +180,10 @@ export class QoderRemoteLauncher extends RemoteLauncherBase {
         this.currentBackendModel = backend.getSessionModelsMetadata(acpSessionId)?.currentModelId
             ?? backend.getConfigOptionByCategory(acpSessionId, 'model')?.currentValue
             ?? null
-        this.publishConfigOptions()
-
+        // Capture the launch request before publishConfigOptions mirrors the
+        // server's current (possibly ineligible) model back onto the session.
         const requestedModel = this.session.getModel() ?? null
+        this.publishConfigOptions()
         if (requestedModel) {
             if (requestedModel !== this.currentBackendModel) {
                 try {
