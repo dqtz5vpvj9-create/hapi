@@ -1903,8 +1903,10 @@ export function NewSession(props: {
 
     async function handleCreate() {
         if (createInFlightRef.current || (!deliveryPending && (!machineId || !trimmedDirectory))) return
-        if (props.initialTask !== undefined && !deliveryPending && (!props.initialTask.trim() && files.length === 0)) return
         if (props.initialTask !== undefined && !deliveryPending && invalidTaskSelection) return
+        // An empty composer still creates the session; the first message can wait
+        // until the operator is inside the chat. Only a payload needs delivery.
+        const hasTaskToDeliver = Boolean(props.initialTask?.trim() || files.length)
 
         createInFlightRef.current = true
         setIsCreating(true)
@@ -2024,14 +2026,17 @@ export function NewSession(props: {
                     clearNewSessionFormDraft()
                     setLastUsedMachineId(machineId)
                     addRecentPath(machineId, trimmedDirectory)
-                    if (props.initialTask !== undefined) {
+                    if (props.initialTask !== undefined && hasTaskToDeliver) {
                         deliveryRef.current = { ...createNewTaskDelivery(props.initialTask, files.map(item => item.id)), shareTransferId: acceptedShareRef.current }
                         deliveryRef.current.sessionId = resumedSessionId
                         createdSessionRef.current = resumedSessionId
                         saveNewTaskDelivery(draftKey, deliveryRef.current)
                         setDeliveryPending(true)
                         await deliverInitialTask(resumedSessionId)
-                    } else props.onSuccess(resumedSessionId)
+                    } else {
+                        props.onCreated?.(resumedSessionId, acceptedShareRef.current)
+                        props.onSuccess(resumedSessionId)
+                    }
                     return
                 }
                 setIsImportingCodexSession(false)
@@ -2061,18 +2066,21 @@ export function NewSession(props: {
                 clearNewSessionFormDraft()
                 setLastUsedMachineId(machineId)
                 addRecentPath(machineId, trimmedDirectory)
-                if (props.initialTask !== undefined) {
+                if (props.initialTask !== undefined && hasTaskToDeliver) {
                     deliveryRef.current = { ...createNewTaskDelivery(props.initialTask, files.map(item => item.id)), shareTransferId: acceptedShareRef.current }
                     deliveryRef.current.sessionId = reopened.sessionId
                     createdSessionRef.current = reopened.sessionId
                     saveNewTaskDelivery(draftKey, deliveryRef.current)
                     setDeliveryPending(true)
                     await deliverInitialTask(reopened.sessionId)
-                } else props.onSuccess(reopened.sessionId)
+                } else {
+                    props.onCreated?.(reopened.sessionId, acceptedShareRef.current)
+                    props.onSuccess(reopened.sessionId)
+                }
                 return
             }
 
-            if (props.initialTask !== undefined && !deliveryRef.current) {
+            if (props.initialTask !== undefined && hasTaskToDeliver && !deliveryRef.current) {
                 deliveryRef.current = { ...createNewTaskDelivery(props.initialTask, files.map(item => item.id)), shareTransferId: acceptedShareRef.current }
             }
             const launchInput = launchInputRef.current ?? {
@@ -2118,7 +2126,7 @@ export function NewSession(props: {
                     deliveryRef.current.sessionId = result.sessionId
                     saveNewTaskDelivery(draftKey, deliveryRef.current)
                 }
-                if (props.initialTask !== undefined) {
+                if (deliveryRef.current) {
                     await deliverInitialTask(result.sessionId)
                     return
                 }
@@ -2127,7 +2135,7 @@ export function NewSession(props: {
                 clearNewSessionFormDraft()
                 setLastUsedMachineId(machineId)
                 addRecentPath(machineId, trimmedDirectory)
-                props.onCreated?.(result.sessionId)
+                props.onCreated?.(result.sessionId, acceptedShareRef.current)
                 props.onSuccess(result.sessionId)
                 return
             }
@@ -2250,7 +2258,8 @@ export function NewSession(props: {
         || (agent === 'grok' && !grokModelsState.isLoading && !grokEffortOptions.some(option => option.value === effort))
     )
     const taskText = deliveryPending ? deliveryRef.current?.text ?? props.initialTask : props.initialTask
-    const taskCanSend = (canCreate || deliveryPending) && !isCreating && (deliveryPending || !invalidTaskSelection) && filesReady && Boolean(deliveryPending || taskText?.trim() || files.length)
+    const taskHasPayload = Boolean(taskText?.trim() || files.length)
+    const taskCanSend = (canCreate || deliveryPending) && !isCreating && (deliveryPending || !invalidTaskSelection) && filesReady
     let taskDisabledReason: string | null = null
     if (!taskCanSend) {
         if (isCreating || isPending) taskDisabledReason = t('newTask.sending')
@@ -2265,8 +2274,12 @@ export function NewSession(props: {
         else if (isLaunchPreferenceValidationPending || fastModeSelectionPending) taskDisabledReason = t('newTask.checkingSettings')
         else if (invalidTaskSelection) taskDisabledReason = t('newTask.invalidSelection')
         else if (isFormDisabled) taskDisabledReason = t('newTask.sessionBusy')
-        else taskDisabledReason = t('newTask.taskRequired')
     }
+    const taskSubmitLabel = isCreating
+        ? (taskHasPayload || deliveryPending ? t('newTask.sending') : t('newSession.creating'))
+        : deliveryPending
+            ? t('newTask.retryDelivery')
+            : createLabel ?? (taskHasPayload ? t('newTask.createAndSend') : t('newTask.createSession'))
     const taskModelLabel = taskEfforts.length > 1 || sessionManagedModel
         ? `${t('newSession.model')} · ${t('misc.reasoningEffort')}`
         : t('newSession.model')
@@ -2283,7 +2296,7 @@ export function NewSession(props: {
                             placeholder={t('sessions.task.placeholder')}
                             disabled={isCreating || deliveryPending}
                             onKeyDown={event => {
-                                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && taskCanSend) {
+                                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && taskCanSend && taskHasPayload) {
                                     event.preventDefault()
                                     void handleCreate()
                                 }
@@ -2423,10 +2436,11 @@ export function NewSession(props: {
                                 aria-describedby={taskDisabledReason ? taskDisabledReasonId : undefined}
                                 onClick={() => void handleCreate()}
                                 className="new-task-submit">
-                                {isCreating ? t('newTask.sending') : deliveryPending ? t('newTask.retryDelivery') : createLabel ?? t('newTask.createAndSend')}
+                                {taskSubmitLabel}
                             </button>
                         </div>
                         {taskDisabledReason ? <p id={taskDisabledReasonId} role="status" className="mt-2 px-1 text-sm text-[var(--app-hint)]">{taskDisabledReason}</p> : null}
+                        {taskCanSend && !taskHasPayload ? <p className="mt-2 px-1 text-sm text-[var(--app-hint)]">{t('newTask.emptyHint')}</p> : null}
                     </div>
                     {agent === 'codex' || agent === 'pi' || agent === 'copilot' || sessionManagedModel ? <div className="new-task-more-options">
                         <button type="button" className="new-task-more-toggle" aria-expanded={moreOptionsOpen}

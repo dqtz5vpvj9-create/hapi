@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render as renderBase, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { Machine, PiModelSummary } from '@/types/api'
 import { createNewTaskDelivery, saveNewTaskDelivery } from './newTaskDelivery'
@@ -477,7 +477,6 @@ describe('NewSession launch preferences', () => {
     })
 
     it.each([
-        ['empty task', 'newTask.taskRequired'],
         ['no directory', 'newSession.directoryRequired'],
         ['offline machine', 'newTask.machineRequired'],
         ['loading machines', 'loading.machines'],
@@ -499,12 +498,45 @@ describe('NewSession launch preferences', () => {
         }
         render(<NewSession api={api} machines={state === 'offline machine' ? [] : [machine]} initialMachineId="machine-1"
             initialDirectory={state === 'no directory' ? '' : 'C:\\repo'} isLoading={state === 'loading machines'}
-            initialTask={state === 'empty task' ? '' : 'Inspect the project'} onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+            initialTask="Inspect the project" onSuccess={mocks.onSuccess} onCancel={() => {}} />)
         const create = screen.getByRole('button', { name: 'newTask.createAndSend' })
         await waitFor(() => expect(create).toHaveAccessibleDescription(reason))
         expect(create).toBeDisabled()
         expect(document.getElementById(create.getAttribute('aria-describedby')!)).toBeVisible()
         expect(mocks.spawnSession).not.toHaveBeenCalled()
+    })
+
+    it('creates a session without a task and opens the chat without sending a message', async () => {
+        const sendMessage = vi.fn().mockResolvedValue(undefined)
+        const onCreated = vi.fn()
+        mocks.spawnSession.mockResolvedValue({ type: 'success', sessionId: 'empty-session' })
+        render(<NewSession api={{ sendMessage } as unknown as ApiClient} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo"
+            initialTask="" onCreated={onCreated} onSuccess={mocks.onSuccess} onCancel={() => {}} />)
+        const create = screen.getByRole('button', { name: 'newTask.createSession' })
+        await waitFor(() => expect(create).toBeEnabled())
+        expect(screen.getByText('newTask.emptyHint')).toBeVisible()
+        fireEvent.click(create)
+        await waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledWith('empty-session'))
+        expect(mocks.spawnSession).toHaveBeenCalledTimes(1)
+        expect(sendMessage).not.toHaveBeenCalled()
+        expect(onCreated).toHaveBeenCalledWith('empty-session', undefined)
+        expect(onCreated.mock.invocationCallOrder[0]).toBeLessThan(mocks.onSuccess.mock.invocationCallOrder[0])
+        expect(mocks.notification).toHaveBeenCalledWith('success')
+    })
+
+    it('switches the primary action back to create and send once the task has text', async () => {
+        function TaskComposer() {
+            const [task, setTask] = useState('')
+            return <NewSession api={api} machines={[machine]} initialMachineId="machine-1" initialDirectory="C:\\repo"
+                initialTask={task} onInitialTaskChange={setTask} onSuccess={mocks.onSuccess} onCancel={() => {}} />
+        }
+        render(<TaskComposer />)
+        const create = screen.getByRole('button', { name: 'newTask.createSession' })
+        await waitFor(() => expect(create).toBeEnabled())
+        expect(screen.getByText('newTask.emptyHint')).toBeVisible()
+        fireEvent.change(screen.getByRole('textbox', { name: 'sessions.task.initial' }), { target: { value: 'Inspect the project' } })
+        await waitFor(() => expect(screen.getByRole('button', { name: 'newTask.createAndSend' })).toBeEnabled())
+        expect(screen.queryByText('newTask.emptyHint')).not.toBeInTheDocument()
     })
 
     it('shows progress as the disabled action reason while creating', async () => {
