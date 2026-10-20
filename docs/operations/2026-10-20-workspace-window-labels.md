@@ -64,3 +64,18 @@
 
 验收截图：`test-results/workspace-review/`（gitignored）里的
 `new-desktop.png`、`desktop-three-windows.png`、`mobile-three-windows.png`。
+
+## 发布
+
+- 提交 `5e4970fb`（function: "feat(web): navigate windows by focused-pane session names"），
+  发布 `20261020T171949Z-5e4970fb23`，components `hub`，`--skip-windows`（web 改动
+  不涉及 Windows Runner；当时也避免了已知的 Windows SSH 不可用）。
+- 发布顺带包含同分支上已提交的 `1bdbb780`（reasoning/process 行高调整），两者都是 web。
+  工作区里其它会话未提交的 CLI 改动没有进入这次 commit，也没有进入发布。
+- 发布流程自身已跑通：全仓 typecheck、`test:web`、`test:cli`、`test:hub`、web 构建、
+  嵌入式 web assets 生成、Linux 可执行文件构建与 built-artifact smoke，
+  最后 `systemctl --user restart hapi-hub.service` 并等待 public `/health`。
+- 线上验证：receipt 指向 `5e4970fb`，`hapi-hub.service` active，`/health` 返回
+  `{"status":"ok"}`；`/assets/index-mpyvdDTS.js` 含 `Edit window alias` 与 `autoName`，
+  `/assets/WorkspaceShell-pLjwW-p2.css` 含 `workspace-window-title/.workspace-window-index/
+  .workspace-header-newpane`，旧的 `.workspace-pane-title` 已不存在。
