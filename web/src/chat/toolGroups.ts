@@ -44,6 +44,7 @@ export type ProcessGroupBlock = {
     createdAt: number
     invokedAt?: number | null
     running: boolean
+    summary: string
     members: ChatBlock[]
 }
 
@@ -287,6 +288,15 @@ function isProcessMember(block: ChatBlock): boolean {
     return block.kind === 'tool-call' && isEligibleForToolGrouping(block)
 }
 
+function processSummary(members: ChatBlock[]): string {
+    const last = [...members].reverse().find((member): member is ToolCallBlock => member.kind === 'tool-call')
+    if (!last) return ''
+    const tool = last.tool
+    const command = normalizeCommandInput(tool.input)
+        ?? getInputStringAny(tool.input, ['command', 'cmd', 'file_path', 'path', 'file', 'pattern', 'query', 'url'])
+    return (command ?? tool.nativeTitle ?? tool.description ?? tool.name).trim()
+}
+
 function makeProcessBlock(members: ChatBlock[], running: boolean): ProcessGroupBlock {
     return {
         kind: 'process-group',
@@ -294,6 +304,7 @@ function makeProcessBlock(members: ChatBlock[], running: boolean): ProcessGroupB
         createdAt: members[0].createdAt,
         invokedAt: members[0].invokedAt,
         running,
+        summary: processSummary(members),
         members,
     }
 }

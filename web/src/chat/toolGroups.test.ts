@@ -579,6 +579,17 @@ describe('foldProcess', () => {
         expect(process.members.map(member => member.id)).toEqual(['t1', 't2'])
     })
 
+    it('shows the latest tool command as the process summary', () => {
+        const visible = buildVisibleChatBlocks([
+            makeUser('u1'), makeToolBlock('t1', 'Read', { file_path: '/repo/a.ts' }),
+            makeToolBlock('t2', 'Bash', { command: 'rg -n process src' }), makeTextBlock('a1', 'answer')
+        ], { hasMoreMessages: false, foldProcess: true, activeTurn: false })
+
+        const process = visible.find(block => block.kind === 'process-group')
+        if (!process || process.kind !== 'process-group') throw new Error('expected process group')
+        expect(process.summary).toBe('rg -n process src')
+    })
+
     it('does not fold a subagent control into the process', () => {
         const visible = buildVisibleChatBlocks([
             makeUser('u1'), makeReasoning('r1'), makeToolBlock('sub', 'spawn_agent'),

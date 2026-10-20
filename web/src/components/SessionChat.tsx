@@ -1478,10 +1478,10 @@ function SessionChatInner(props: SessionChatProps) {
             hasMoreMessages: props.hasMoreMessages,
             previousGroups: visibleGroupsRef.current,
             codexExplorationCollapsed,
-            foldProcess: props.session.metadata?.flavor === 'dsh',
+            foldProcess: !useNativeChat,
             activeTurn: props.session.thinking
         }),
-        [reconciled.blocks, props.hasMoreMessages, codexExplorationCollapsed, props.session.metadata?.flavor, props.session.thinking]
+        [reconciled.blocks, props.hasMoreMessages, codexExplorationCollapsed, useNativeChat, props.session.thinking]
     )
 
     // Fork-current must compare against assistant-ui message ids (`kind:id`),

@@ -379,7 +379,8 @@ function ProcessGroupCard(props: { block: ProcessGroupBlock }) {
             <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}
                 className="flex min-h-8 w-full max-w-full items-center gap-1.5 rounded-lg px-1.5 py-0.5 text-left text-xs text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)]">
                 <span aria-hidden="true" className="w-3 shrink-0 text-center">{open ? '⌄' : '›'}</span>
-                <span className="truncate">{t('nativeChat.process', { count })}</span>
+                <span className="shrink-0">{t('nativeChat.process', { count })}</span>
+                {props.block.summary ? <span className="min-w-0 truncate opacity-60">{props.block.summary}</span> : null}
             </button>
             {open ? (
                 <div className="mt-1 ml-1.5 border-l border-[var(--app-divider)] pl-3">
