@@ -202,6 +202,24 @@ afterEach(() => {
     vi.unstubAllGlobals()
 })
 
+it('explains compaction without acknowledging or replaying a dispatching message', () => {
+    const queued = makeQueuedMessage(null, 'server-message-id', { deliveryState: 'dispatching' });
+    mocks.messageWindowState = { messages: [queued] };
+    const client = new QueryClient();
+    const view = (compacting: boolean) => <QueryClientProvider client={client}>
+        <QueuedMessagesBar sessionId="session-1" api={null} pendingSchedule={null} pendingScheduleRevision={0} compacting={compacting} />
+    </QueryClientProvider>;
+    const rendered = render(view(true));
+    expect(screen.getByText('session.item.compacting')).toBeTruthy();
+    expect(screen.getByText('queuedMessages.confirmingWhileCompacting')).toBeTruthy();
+    expect(mocks.markMessagesConsumed).not.toHaveBeenCalled();
+    expect(mocks.steerMessage).not.toHaveBeenCalled();
+    rendered.rerender(view(false));
+    expect(screen.queryByText('session.item.compacting')).toBeNull();
+    expect(screen.getAllByText('queuedMessages.confirming')).toHaveLength(2);
+    expect(mocks.messageWindowState.messages).toEqual([queued]);
+});
+
 describe('QueuedMessagesBar layout', () => {
     it('keeps the queue footer flush with the composer area', () => {
         renderQueuedMessage()

@@ -18,9 +18,10 @@ describe('useColorTheme', () => {
         for (const name of THEME_VARS) document.documentElement.style.removeProperty(name)
     })
 
-    it('parses invalid or missing stored values as default', () => {
-        expect(parseColorTheme(null)).toBe('default')
-        expect(parseColorTheme('unknown')).toBe('default')
+    it('uses Codex Glass for missing or invalid preferences and preserves explicit themes', () => {
+        expect(parseColorTheme(null)).toBe('codex')
+        expect(parseColorTheme('unknown')).toBe('codex')
+        expect(parseColorTheme('default')).toBe('default')
         expect(parseColorTheme('notion')).toBe('notion')
     })
 
@@ -45,7 +46,7 @@ describe('useColorTheme', () => {
         expect(document.documentElement.style.getPropertyValue('--app-link')).toBe('')
     })
 
-    it('persists non-default selections and removes the key for default', () => {
+    it('persists every explicit selection, including the original default palette', () => {
         const { result } = renderHook(() => useColorTheme())
 
         act(() => result.current.setColorTheme('night-owl'))
@@ -53,7 +54,8 @@ describe('useColorTheme', () => {
         expect(document.documentElement.style.getPropertyValue('--app-bg')).toBe('#fbfdff')
 
         act(() => result.current.setColorTheme('default'))
-        expect(localStorage.getItem(getColorThemeStorageKey())).toBeNull()
+        expect(localStorage.getItem(getColorThemeStorageKey())).toBe('default')
+        expect(getStoredColorTheme()).toBe('default')
         expect(document.documentElement.style.getPropertyValue('--app-bg')).toBe('')
     })
 

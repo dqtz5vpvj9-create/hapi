@@ -38,9 +38,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 ? (query.state.data as SessionsResponse | undefined)?.sessions
                 : key === 'session' ? [(query.state.data as SessionResponse | undefined)?.session] : []
             for (const session of sessions ?? []) {
-                if (!session || thinkingRef.current.get(session.id) === session.thinking) continue
-                thinkingRef.current.set(session.id, session.thinking)
-                if (session.thinking) {
+                if (!session) continue
+                const suppressReady = session.thinking || session.execution?.status === 'systemError'
+                if (thinkingRef.current.get(session.id) === suppressReady) continue
+                thinkingRef.current.set(session.id, suppressReady)
+                if (suppressReady) {
                     setToasts(current => current.filter(toast => toast.sessionId !== session.id || toast.kind !== 'ready'))
                 }
             }

@@ -334,6 +334,13 @@ events without model calls. Run it with `bun run test:e2e e2e/workspace.spec.ts`
 
 ## Chat media and documents
 
+File documents in tmux panes include a **Project files** return action. Opening
+a file retains the initiating browser's directory expansion, search and scroll;
+returning focuses that browser without closing the document or other panes.
+After refresh, or when the source pane is no longer available, the action opens
+Project files within the document pane. Unsaved edits use the existing leave
+prompt. Regression coverage: `e2e/document-files-return.spec.ts`.
+
 Codex chat preserves the order of text, images and audio in user messages and
 tool results. Generated images and MCP resources also appear in restored
 history. Images support zoom; audio and video use browser playback controls.

@@ -112,7 +112,9 @@ export function SessionRowSummary(props: {
     const { t } = useTranslation()
     const narrowViewport = useNarrowViewport()
     const now = useRelativeTimeClock()
+    const runningColor = /astra/i.test(s.model ?? '') ? 'text-yellow-500' : 'text-[var(--app-badge-success-text)]'
     const activity = classifySessionActivity(s)
+    const runningLabel = t(s.execution?.compacting ? 'session.item.compacting' : 'session.item.running')
     const sessionName = getSessionTitle(s)
     const worktreeLabel = getWorktreeSessionLabel(s)
     const todoProgress = getTodoProgress(s)
@@ -151,8 +153,8 @@ export function SessionRowSummary(props: {
                     <AgentFlavorIcon flavor={s.metadata?.flavor} className="app-session-row-agent h-4 w-4 shrink-0 -translate-y-px" />
                     <span className="app-session-row-status inline-flex shrink-0 items-center">
                         {activity.kind === 'running' ? (
-                            <span title={t('session.item.running')} aria-label={t('session.item.running')} data-session-status="running">
-                                <LoaderIcon className="app-session-row-spinner h-3.5 w-3.5 shrink-0 animate-spin-slow text-[var(--app-badge-success-text)]" />
+                            <span title={runningLabel} aria-label={runningLabel} data-session-status="running">
+                                <LoaderIcon className={`app-session-row-spinner h-3.5 w-3.5 shrink-0 animate-spin-slow ${runningColor}`} />
                             </span>
                         ) : activity.kind === 'error' ? (
                             <span title={t('session.item.error')} aria-label={t('session.item.error')} data-session-status="error" className="text-[var(--app-badge-error-text)]">!</span>
@@ -185,7 +187,7 @@ export function SessionRowSummary(props: {
                     >
                         {sessionName}
                     </div>
-                    <SessionServiceTier flavor={s.metadata?.flavor} serviceTier={s.serviceTier} iconOnly />
+                    <SessionServiceTier flavor={s.metadata?.flavor} serviceTier={s.serviceTier} />
                     {hasScheduleTooltip && nestedTooltips && scheduleId ? (
                         <HoverTooltip
                             id={scheduleId}
@@ -226,8 +228,8 @@ export function SessionRowSummary(props: {
                 </div>
             </div>
             {narrowViewport ? <div className="app-session-row-mobile-meta">
-                {urgentAttention || s.pendingRequestsCount > 0 ? <span className="app-session-row-execution text-[var(--app-badge-warning-text)]">{activity.kind === 'running' ? `${t('session.item.running')} · ` : ''}{attentionLabel ?? t('session.item.pending')}</span>
-                    : activity.kind === 'error' ? <span className="app-session-row-execution text-[var(--app-badge-error-text)]">{t('session.item.error')}</span> : activity.running ? <span className="app-session-row-execution text-[var(--app-badge-success-text)]"><LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow" />{t('session.item.running')}</span> : null}
+                {urgentAttention || s.pendingRequestsCount > 0 ? <span className="app-session-row-execution text-[var(--app-badge-warning-text)]">{activity.kind === 'running' ? `${runningLabel} · ` : ''}{attentionLabel ?? t('session.item.pending')}</span>
+                    : activity.kind === 'error' ? <span className="app-session-row-execution text-[var(--app-badge-error-text)]">{t('session.item.error')}</span> : activity.running ? <span className={`app-session-row-execution ${runningColor}`}><LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin-slow" />{runningLabel}</span> : null}
                 {workspaceLocation ? <span className="app-session-workspace-location" title={`${workspaceLocation.name} · P${workspaceLocation.pane}`}>
                     <span className="truncate">{workspaceLocation.name}</span>
                     <span className="shrink-0">· P{workspaceLocation.pane}</span>

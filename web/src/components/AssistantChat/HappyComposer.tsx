@@ -1,7 +1,8 @@
+import { formatDshModelLabel, dshEffortPickerOptions } from '@/lib/dshSessionOptions'
 import { ModelEffortPicker } from './ModelEffortPicker'
-import { dshEffortPickerOptions } from '@/lib/dshSessionOptions'
 import { CapacityNotice } from './CapacityNotice'
 import { DocumentReferenceDrafts } from '@/documents/DocumentReferenceDrafts'
+import { isTerminalInterfaceEnabled } from '@/utils/terminalSupport'
 import { useSelectionDrafts } from '@/documents/useSelectionDrafts'
 import { usePane, usePaneEditing } from '@/workspace/PaneContext'
 import type { CodexGoalRequest } from '@hapi/protocol/apiTypes'
@@ -302,6 +303,7 @@ export function HappyComposer(props: {
     focusInputRef?: MutableRefObject<(() => void) | null>
     onUploadDraftSnapshot?: (text: string, attachments: AttachmentDraftInput[]) => void
     onSendAttachmentDrafts?: (attachments: AttachmentDraftInput[]) => void
+    imageInputSupported?: boolean
     canRestoreAttachments?: boolean
     disabled?: boolean
     permissionMode?: PermissionMode
@@ -326,6 +328,8 @@ export function HappyComposer(props: {
     controlledByUser?: boolean
     concurrentClients?: boolean
     agentFlavor?: string | null
+    /** Exact runtime capabilities when the backend stamps them (DSH). */
+    agentCapabilities?: { control?: boolean; steering?: boolean } | null
     modelSettingsError?: string | null
     availableModelOptions?: Array<{ value: string | null; label: string }>
     /** Full Pi model data with thinkingLevelMap for provider grouping + thinking level filtering */
@@ -441,6 +445,7 @@ export function HappyComposer(props: {
         controlledByUser = false,
         concurrentClients = false,
         agentFlavor,
+        agentCapabilities,
         availableModelOptions,
         piModels,
         piSelectedModel,
@@ -515,8 +520,6 @@ export function HappyComposer(props: {
     }, [attachmentIds, attachmentOrderRef])
     const orderedAttachments = orderItemsById(attachments, orderedAttachmentIds)
     const threadIsRunning = useAuiState((s) => s.thread.isRunning)
-    // DSH pins the running turn's configuration; advertised changes target its next turn.
-    const modelSettingsBlockedByRun = agentFlavor !== 'dsh' && (thinking || threadIsRunning)
     const threadIsDisabled = useAuiState((s) => s.thread.isDisabled)
     const composerTextRef = useRef(composerText)
     composerTextRef.current = composerText
@@ -563,6 +566,8 @@ export function HappyComposer(props: {
 
     const configurationControlsDisabled = (!active && !allowSendWhenInactive) || isParkingScratchlist
     const controlsDisabled = disabled || threadIsDisabled || configurationControlsDisabled
+    // Codex confirms live settings through thread/settings/updated while a turn is running.
+    const modelEffortControlsDisabled = controlsDisabled || (agentFlavor !== 'codex' && agentFlavor !== 'dsh' && agentFlavor !== 'qoder' && (thinking || threadIsRunning))
     const trimmed = composerText.trim()
     const hasText = trimmed.length > 0
     const hasAttachments = attachments.length > 0
@@ -1070,7 +1075,7 @@ export function HappyComposer(props: {
     const abortDisabled = controlsDisabled || isAborting || !threadIsRunning
     const switchDisabled = controlsDisabled || isSwitching || !controlledByUser
     const showSwitchButton = Boolean(controlledByUser && onSwitchToRemote)
-    const showTerminalButton = Boolean(onTerminal || terminalUnsupported)
+    const showTerminalButton = isTerminalInterfaceEnabled() && Boolean(onTerminal || terminalUnsupported)
     const terminalDisabled = controlsDisabled || terminalUnsupported
     const terminalLabel = terminalUnsupported ? t('terminal.unsupportedWindows') : t('composer.terminal')
 
@@ -1109,8 +1114,10 @@ export function HappyComposer(props: {
     }, [switchDisabled, onSwitchToRemote, haptic])
 
     const permissionModeOptions = useMemo(
-        () => getPermissionModeOptionsForFlavor(agentFlavor).filter(option => !concurrentClients || option.mode !== 'safe-yolo'),
-        [agentFlavor, concurrentClients]
+        () => agentFlavor === 'dsh' && agentCapabilities?.control === false
+            ? []
+            : getPermissionModeOptionsForFlavor(agentFlavor).filter(option => !concurrentClients || option.mode !== 'safe-yolo'),
+        [agentFlavor, agentCapabilities, concurrentClients]
     )
     const collaborationModeOptions = useMemo(
         () => agentFlavor === 'codex' ? getCodexCollaborationModeOptions() : [],
@@ -1177,9 +1184,7 @@ export function HappyComposer(props: {
     const claudeEffortOptions = useMemo(
         () => agentFlavor === 'pi'
             ? getPiThinkingLevelOptions(effort, selectedPiModel?.thinkingLevelMap)
-            : agentFlavor === 'dsh'
-                ? dshEffortPickerOptions(availableEffortOptions)
-            : agentFlavor === 'grok' && availableEffortOptions && availableEffortOptions.length > 0
+            : (agentFlavor === 'grok' || agentFlavor === 'qoder') && availableEffortOptions && availableEffortOptions.length > 0
                 ? [
                     { value: null, label: 'Default' },
                     ...availableEffortOptions.map((option) => ({
@@ -1487,14 +1492,13 @@ export function HappyComposer(props: {
 
     useEffect(() => {
         const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
-            if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || controlsDisabled || modelSettingsBlockedByRun || (pane && !pane.focused)) return
+            if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || modelEffortControlsDisabled || (pane && !pane.focused)) return
             // Pi needs { provider, modelId } to disambiguate duplicate model IDs,
             // but this generic cycler only emits a bare modelId (or null), which
             // would lose the provider and can pick the wrong cached match or clear
             // the model. Pi model changes go through the settings sheet's
             // provider-qualified picker (piModelGroups) only.
-            if (agentFlavor === 'pi') return
-            if (agentFlavor === 'dsh' && !availableModelOptions?.length) return
+            if (agentFlavor === 'pi' || (agentFlavor === 'dsh' && !availableModelOptions?.length)) return
             if (e.key === 'm' && (e.metaKey || e.ctrlKey) && onModelChange && supportsModelChange(agentFlavor)) {
                 e.preventDefault()
                 onModelChange(getNextModelForFlavor(agentFlavor, model, availableModelOptions))
@@ -1504,7 +1508,7 @@ export function HappyComposer(props: {
 
         window.addEventListener('keydown', handleGlobalKeyDown)
         return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-    }, [model, onModelChange, haptic, agentFlavor, availableModelOptions, pane?.focused, controlsDisabled, modelSettingsBlockedByRun])
+    }, [model, onModelChange, haptic, agentFlavor, availableModelOptions, pane?.focused, modelEffortControlsDisabled])
 
     const handleChange = useCallback((e: ReactChangeEvent<HTMLTextAreaElement>) => {
         const selection = {
@@ -1577,14 +1581,14 @@ export function HappyComposer(props: {
 
 
     const handleModelChange = useCallback((nextModel: { provider: string; modelId: string } | string | null) => {
-        if (!onModelChange || controlsDisabled || modelSettingsBlockedByRun) return
+        if (!onModelChange || modelEffortControlsDisabled) return
         onModelChange(nextModel)
         dismissSettings()
         haptic('light')
-    }, [onModelChange, controlsDisabled, modelSettingsBlockedByRun, haptic, dismissSettings])
+    }, [onModelChange, modelEffortControlsDisabled, haptic, dismissSettings])
 
     const handleCursorModelRowClick = useCallback((nextModel: string | null) => {
-        if (!onModelChange || controlsDisabled || thinking || threadIsRunning) return
+        if (!onModelChange || modelEffortControlsDisabled) return
 
         const variants = nextModel && nextModel !== 'auto' && resolveModelVariantsForBase
             ? resolveModelVariantsForBase(nextModel)
@@ -1609,9 +1613,7 @@ export function HappyComposer(props: {
         haptic('light')
     }, [
         onModelChange,
-        controlsDisabled,
-        thinking,
-        threadIsRunning,
+        modelEffortControlsDisabled,
         resolveModelVariantsForBase,
         selectedModelBase,
         haptic,
@@ -1620,11 +1622,11 @@ export function HappyComposer(props: {
 
     const handleModelEffortChange = useCallback((nextWireId: string | null) => {
         const handler = onModelEffortChange ?? onModelChange
-        if (!handler || controlsDisabled || thinking || threadIsRunning) return
+        if (!handler || modelEffortControlsDisabled) return
         handler(nextWireId)
         dismissSettings()
         haptic('light')
-    }, [onModelEffortChange, onModelChange, controlsDisabled, thinking, threadIsRunning, haptic, dismissSettings])
+    }, [onModelEffortChange, onModelChange, modelEffortControlsDisabled, haptic, dismissSettings])
 
     useEffect(() => {
         if (!showSettings) return
@@ -1688,25 +1690,25 @@ export function HappyComposer(props: {
     }, [onCopilotAgentModeChange, controlsDisabled, haptic, dismissSettings])
 
     const handleModelReasoningEffortChange = useCallback((nextModelReasoningEffort: string | null) => {
-        if (!onModelReasoningEffortChange || controlsDisabled || thinking || threadIsRunning) return
+        if (!onModelReasoningEffortChange || modelEffortControlsDisabled) return
         onModelReasoningEffortChange(nextModelReasoningEffort)
         dismissSettings()
         haptic('light')
-    }, [onModelReasoningEffortChange, controlsDisabled, thinking, threadIsRunning, haptic, dismissSettings])
+    }, [onModelReasoningEffortChange, modelEffortControlsDisabled, haptic, dismissSettings])
 
     const handleEffortChange = useCallback((nextEffort: string | null) => {
-        if (!onEffortChange || controlsDisabled || modelSettingsBlockedByRun) return
+        if (!onEffortChange || modelEffortControlsDisabled) return
         onEffortChange(nextEffort)
         dismissSettings()
         haptic('light')
-    }, [onEffortChange, controlsDisabled, modelSettingsBlockedByRun, haptic, dismissSettings])
+    }, [onEffortChange, modelEffortControlsDisabled, haptic, dismissSettings])
 
     const handleServiceTierChange = useCallback((nextServiceTier: string | null) => {
-        if (!onServiceTierChange || controlsDisabled || thinking || threadIsRunning) return
+        if (!onServiceTierChange || modelEffortControlsDisabled) return
         onServiceTierChange(nextServiceTier)
         dismissSettings()
         haptic('light')
-    }, [onServiceTierChange, controlsDisabled, thinking, threadIsRunning, haptic, dismissSettings])
+    }, [onServiceTierChange, modelEffortControlsDisabled, haptic, dismissSettings])
 
     // 'standard' (not null) is the explicit Fast-off choice so it persists
     // distinctly from an untouched/account-default session.
@@ -1738,8 +1740,7 @@ export function HappyComposer(props: {
     // fallback levels would mutate a set_thinking_level the model may reject.
     const piEffortUnavailable = agentFlavor === 'pi'
         && (!selectedPiModel || selectedPiModel.reasoning === false)
-    const showEffortSettings = Boolean(onEffortChange && supportsEffort(agentFlavor) && !piEffortUnavailable
-        && (agentFlavor !== 'dsh' || claudeEffortOptions.length > 0))
+    const showEffortSettings = Boolean(onEffortChange && supportsEffort(agentFlavor) && !piEffortUnavailable && ((agentFlavor !== 'dsh' && agentFlavor !== 'qoder') || Boolean(availableEffortOptions?.length)))
     const showFastModeSettings = Boolean(onServiceTierChange)
     const showModelAreaSettings = showModelSettings || showModelEffortSettings || showModelReasoningEffortSettings || showEffortSettings
     const showOtherSettings = showFastModeSettings || showCollaborationSettings || showCopilotAgentModeSettings
@@ -1792,7 +1793,6 @@ export function HappyComposer(props: {
     // status controls. The capsule remains reachable on narrow viewports.
     const isNarrowViewport = useNarrowViewport()
     const glassLayout = useGlassLayout() || Boolean(pane)
-    const modelEffortControlsDisabled = controlsDisabled || modelSettingsBlockedByRun
     const modelValueLabel = useMemo(() => {
         if (!onModelChange || !supportsModelChange(agentFlavor)) return undefined
         // Pi models come from the dynamic piModels catalog; show the
@@ -1803,10 +1803,10 @@ export function HappyComposer(props: {
             if (!selectedPiModel) return undefined
             return selectedPiModel.name ?? selectedPiModel.modelId
         }
+        if (agentFlavor === 'dsh') return modelOptions.find(option => option.value === model)?.label ?? (model ? formatDshModelLabel(model) : undefined)
         if (modelOptions.length === 0) return undefined
         const rawKey = selectedModelBase !== undefined ? selectedModelBase : model
-        const normalizedKey = agentFlavor === 'dsh' ? rawKey
-            : agentFlavor === 'cursor'
+        const normalizedKey = agentFlavor === 'cursor'
             ? (!rawKey || rawKey === 'auto' || rawKey === 'default' || rawKey === 'default[]' ? 'auto' : rawKey)
             : (!rawKey || rawKey === 'auto' || rawKey === 'default' ? null : rawKey)
         const option = modelOptions.find((candidate) => candidate.value === normalizedKey)
@@ -2325,13 +2325,14 @@ export function HappyComposer(props: {
         ? 'h-full min-h-[1.5rem] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent text-base leading-snug text-[var(--app-fg)] focus:outline-none'
         : 'max-h-[7.5rem] min-h-[1.5rem] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent text-base leading-snug text-[var(--app-fg)] focus:outline-none'
 
-    const pickerEfforts = showModelReasoningEffortSettings
+    const pickerEfforts = agentFlavor === 'dsh' || agentFlavor === 'qoder' ? dshEffortPickerOptions(availableEffortOptions)
+        : showModelReasoningEffortSettings
         ? (availableModelReasoningEffortOptions
             ? [{ value: null, label: 'Default' }, ...availableModelReasoningEffortOptions.map(option => ({ value: option.value, label: option.name ?? option.value }))]
             : agentFlavor === 'codex' ? [] : codexReasoningEffortOptions)
         : showModelEffortSettings ? [...(visibleModelEffortOptions ?? [])]
         : agentFlavor === 'pi' && selectedPiModel?.reasoning === false ? [{ value: null, label: 'Default' }]
-        : showEffortSettings ? (agentFlavor === 'dsh' ? claudeEffortOptions : [{ value: null, label: 'Default' }, ...claudeEffortOptions.filter(option => option.value !== null)]) : []
+        : showEffortSettings ? [{ value: null, label: 'Default' }, ...claudeEffortOptions.filter(option => option.value !== null)] : []
     const pickerModel = agentFlavor === 'pi' && piSelectedModel
         ? JSON.stringify([piSelectedModel.provider, piSelectedModel.modelId])
         : selectedModelBase !== undefined ? selectedModelBase : model
@@ -2342,7 +2343,6 @@ export function HappyComposer(props: {
         : modelOptions
     const modelControl = showModelAreaSettings ? <ModelEffortPicker
         models={pickerModels} model={pickerModel ?? null} modelLabel={modelValueLabel}
-        notice={agentFlavor === 'dsh' ? t('composer.modelPicker.nextTurn') : undefined}
         onModelChange={value => {
             if (agentFlavor === 'pi' && value) {
                 const [provider, modelId] = JSON.parse(value) as [string, string]
@@ -2361,6 +2361,8 @@ export function HappyComposer(props: {
         onClearFast={props.onClearUnsupportedFast ? () => {
             if (!modelEffortControlsDisabled) props.onClearUnsupportedFast?.()
         } : undefined}
+        notice={agentFlavor === 'dsh' && (thinking || threadIsRunning) ? t('composer.modelPicker.nextMessage') : undefined}
+        disabledHint={agentFlavor !== 'codex' && agentFlavor !== 'dsh' && (thinking || threadIsRunning) ? t('composer.modelPicker.runningHint') : undefined}
         disabled={modelEffortControlsDisabled} error={props.modelSettingsError ?? (incompatibleFast ? t('composer.modelPicker.incompatibleFast') : incompatibleEffort ? t('composer.modelPicker.chooseEffort') : undefined)}
     /> : undefined
 
@@ -2477,6 +2479,7 @@ export function HappyComposer(props: {
                             sendError ? 'ring-1 ring-red-500' : ''
                         }`}
                     >
+                        {props.imageInputSupported === false && attachments.some(attachment => attachment.type === 'image') ? <div role="status" className="px-4 pt-3 text-sm text-amber-700 dark:text-amber-400">{t('composer.imageInputUnsupported')}</div> : null}
                         <DocumentReferenceDrafts references={selectionDrafts.references} onRemove={selectionDrafts.remove} />
                         {attachments.length > 0 ? (
                             <div className={`flex flex-wrap gap-2 px-4 pt-3 ${
@@ -2633,11 +2636,11 @@ export function HappyComposer(props: {
                             onSchedule={handleUserSchedule}
                             onClearSchedule={onUserClearSchedule}
                             hasAttachments={blocksScheduling}
-                            modelValueLabel={modelControl ? undefined : glassLayout && showSettingsButton ? `${(modelValueLabel ?? model ?? 'Model').replace(/^GPT-/i, '').replace(/-sol$/i, ' Sol').replace(/\s*\([^)]*\)/g, '')} · ${effortValueCompactLabel ?? 'Default'}` : modelValueLabel}
+                            modelValueLabel={modelControl || (agentFlavor === 'dsh' && !showModelSettings) ? undefined : glassLayout && showSettingsButton ? `${(modelValueLabel ?? model ?? 'Model').replace(/^GPT-/i, '').replace(/-sol$/i, ' Sol').replace(/\s*\([^)]*\)/g, '')} · ${effortValueCompactLabel ?? 'Default'}` : modelValueLabel}
                             modelValueDisabled={modelEffortControlsDisabled}
                             modelValueOpen={showSettings && (settingsSection === null || settingsSection === 'model')}
                             onModelValueToggle={glassLayout ? () => handleSettingsToggle(null, modelValueButtonRef.current ?? undefined) : handleModelValueToggle}
-                            effortValueLabel={modelControl || showModelReasoningEffortSettings ? undefined : effortValueLabel}
+                            effortValueLabel={modelControl || showModelReasoningEffortSettings || ((agentFlavor === 'dsh' || agentFlavor === 'qoder') && !showEffortSettings) ? undefined : effortValueLabel}
                             effortValueCompactLabel={effortValueCompactLabel}
                             effortValueDisabled={modelEffortControlsDisabled}
                             effortValueOpen={showSettings && (settingsSection === null || settingsSection === 'effort')}

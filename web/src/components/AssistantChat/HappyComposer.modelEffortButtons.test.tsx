@@ -11,7 +11,7 @@ import { HappyComposer } from './HappyComposer'
  * HappyComposer.sendError.test.tsx but keeps ComposerButtons unmocked so the
  * picker portal is exercised for real.
  */
-type FakeAttachment = { id: string; status: { type: 'complete' } }
+type FakeAttachment = { id: string; type?: 'image'; status: { type: 'complete' } }
 type MockComposerInputProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
     asChild?: boolean
     maxRows?: number
@@ -35,6 +35,8 @@ const runtime = vi.hoisted(() => ({
     toolbarLayout: null as ComposerToolbarLayout | null,
     cancelRun: vi.fn(),
 }))
+
+vi.mock('@/components/AssistantChat/SortableComposerAttachments', () => ({ SortableComposerAttachments: () => null }))
 
 vi.mock('@assistant-ui/react', async () => {
     const React = await import('react')
@@ -145,6 +147,14 @@ function openPicker(name = 'Sonnet 4 · High') {
 }
 
 describe('HappyComposer unified model/effort picker', () => {
+    it('warns immediately when an image is attached to an agent without image input', () => {
+        runtime.snapshot.composer.attachments = [{ id: 'shot', type: 'image', status: { type: 'complete' } }]
+        try {
+            renderComposer('dsh', { active: true, imageInputSupported: false })
+            expect(screen.getByRole('status')).toHaveTextContent('has not declared image input')
+        } finally { runtime.snapshot.composer.attachments = [] }
+    })
+
     it('uses only DSH advertised values and maps its provider default to null during a running turn', () => {
         runtime.snapshot.thread.isRunning = true
         const change = vi.fn()
@@ -289,9 +299,51 @@ describe('HappyComposer unified model/effort picker', () => {
         const change = vi.fn()
         renderComposer('pi', { piModels, piSelectedModel, thinking: state === 'thinking', onEffortChange: change })
         const trigger = screen.getByRole('button', { name: 'Gemini 2.5 Pro · High' })
-        expect(trigger).toBeDisabled()
+        expect(trigger).not.toBeDisabled()
         fireEvent.click(trigger)
-        expect(screen.queryByRole('slider')).toBeNull()
+        expect(screen.getByRole('slider')).toBeDisabled()
+        expect(change).not.toHaveBeenCalled()
+    })
+
+    it.each(['running', 'thinking', 'both'] as const)('changes Codex settings during %s without stopping the turn', state => {
+        runtime.narrowViewport = true
+        runtime.snapshot.thread.isRunning = state !== 'thinking'
+        const modelChange = vi.fn()
+        const effortChange = vi.fn()
+        const fastChange = vi.fn()
+        renderComposer('codex', {
+            thinking: state !== 'running',
+            model: 'codex-one', modelReasoningEffort: 'medium',
+            availableModelOptions: [{ value: 'codex-one', label: 'Codex One' }, { value: 'codex-two', label: 'Codex Two' }],
+            availableModelReasoningEffortOptions: [{ value: 'medium', name: 'Medium' }, { value: 'high', name: 'High' }],
+            onModelChange: modelChange,
+            onModelReasoningEffortChange: effortChange,
+            onServiceTierChange: fastChange, serviceTier: 'standard',
+        })
+        openPicker('Codex One · Medium')
+        expect(screen.getByRole('slider')).not.toBeDisabled()
+        expect(screen.queryByText(/when this turn finishes/)).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'High' }))
+        expect(effortChange).toHaveBeenCalledExactlyOnceWith('high')
+        fireEvent.click(screen.getByRole('switch', { name: 'Fast' }))
+        expect(fastChange).toHaveBeenCalledExactlyOnceWith('fast')
+        fireEvent.click(screen.getByRole('button', { name: 'Codex One' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Codex Two' }))
+        expect(modelChange).toHaveBeenCalledExactlyOnceWith('codex-two')
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
+        expect(runtime.sentIntents).toEqual([])
+    })
+
+    it('still disables Codex setting changes when the composer is disabled', () => {
+        runtime.snapshot.thread.isRunning = true
+        runtime.snapshot.thread.isDisabled = true
+        const change = vi.fn()
+        renderComposer('codex', { thinking: true, modelReasoningEffort: 'medium',
+            availableModelReasoningEffortOptions: [{ value: 'high', name: 'High' }],
+            onModelReasoningEffortChange: change })
+        openPicker('Sonnet 4 · medium')
+        expect(screen.getByRole('slider')).toBeDisabled()
+        fireEvent.click(screen.getByRole('button', { name: 'High' }))
         expect(change).not.toHaveBeenCalled()
     })
 

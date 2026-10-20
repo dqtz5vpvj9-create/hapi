@@ -21,6 +21,7 @@
     min-height: 0;
     background: var(--app-bg);
 }
+.session-workspace-panel[hidden] { display: none; }
 .session-workspace[data-split="true"] > .session-workspace-panel {
     position: relative;
     flex: 0 0 var(--session-panel-width, 46%);

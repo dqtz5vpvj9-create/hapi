@@ -123,3 +123,5 @@
 .composer-refinement-model .composer-refinement-model-label { display: flex; min-width: 0; }
 .composer-refinement-model .composer-refinement-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .composer-refinement-model .composer-refinement-model-effort { flex-shrink: 0; white-space: pre; }
+
+.composer-refinement-mode button.composer-draft-exit { width: auto; padding: 0 8px; margin-left: auto; font-size: 12px; border-radius: 8px; text-decoration: underline; }

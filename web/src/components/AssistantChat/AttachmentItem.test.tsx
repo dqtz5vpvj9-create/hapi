@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/lib/i18n-context'
 
@@ -92,7 +92,7 @@ describe('AttachmentItem', () => {
 
         const dialog = screen.getByRole('dialog', { name: 'zoom-me.png' })
         expect(dialog).toBeInTheDocument()
-        expect(screen.getAllByRole('img', { name: 'zoom-me.png' })).toHaveLength(2)
+        expect(within(dialog).getByRole('img', { name: 'zoom-me.png' })).toBeInTheDocument()
     })
 
     it('keeps non-image attachments in the filename chip layout', () => {

@@ -222,3 +222,12 @@ describe('session row Fast tier', () => {
         expect(view.container.querySelector('[data-service-tier="fast"]')).toBeTruthy()
     })
 })
+
+it('updates the running spinner color when switching between Astra and other models', () => {
+    const row = (model: string) => <I18nProvider><SessionRowSummary session={makeSummary({ thinking: true, model })} /></I18nProvider>
+    const view = render(row('gpt-6-astra'))
+    expect(view.container.querySelector('.app-session-row-spinner')).toHaveClass('text-yellow-500')
+    view.rerender(row('gpt-6.1-sol'))
+    expect(view.container.querySelector('.app-session-row-spinner')).not.toHaveClass('text-yellow-500')
+    expect(view.container.querySelector('.app-session-row-spinner')).toHaveClass('text-[var(--app-badge-success-text)]')
+})

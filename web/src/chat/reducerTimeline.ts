@@ -7,6 +7,7 @@ import { isSubagentToolName } from '@/chat/subagentTool'
 import { asString, isObject } from '@hapi/protocol'
 import { getAgentRunFingerprint, getAgentRunIdentity } from '@hapi/protocol/messageDependencies'
 import { isCodexCommandResultError } from '@/chat/codexCommandResult'
+import { canonicalToolName } from '@/chat/toolNames'
 
 function getEventString(event: Record<string, unknown>, key: string): string | null {
     return asString(event[key])
@@ -1058,7 +1059,7 @@ export function reduceTimeline(
                         model: msg.model,
                         localId: msg.localId,
                         meta: msg.meta,
-                        name: permissionEntry?.toolName ?? 'Tool',
+                        name: canonicalToolName(permissionEntry?.toolName ?? 'Tool'),
                         input: permissionEntry?.input ?? null,
                         description: null,
                         permission

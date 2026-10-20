@@ -1,5 +1,6 @@
-import { reconcilePermissionActions } from '@/components/ToolCard/permissionAction'
 import { dshSessionOptions } from '@/lib/dshSessionOptions'
+import { qoderSessionOptions } from '@/lib/qoderSessionOptions'
+import { reconcilePermissionActions } from '@/components/ToolCard/permissionAction'
 import { useForkOperation } from '@/hooks/useForkOperation'
 import { ForkOperationBanner } from '@/components/ForkOperationBanner'
 import { createForkNavigator, type ForkBoundary } from '@/lib/fork-navigation'
@@ -739,7 +740,7 @@ function SessionChatInner(props: SessionChatProps) {
     // misleadingly "connected" view. Matches the composer terminal button, which
     // is likewise gated on `session.active`.
     const canViewAgentTerminal =
-        props.session.metadata?.startingMode === 'pty' && props.session.active
+        terminalSupported && props.session.metadata?.startingMode === 'pty' && props.session.active
     const useNativeChat = nativeChatEnabled(props.session.metadata?.codexNativeSession)
     const presentation = useMemo(() => useNativeChat
         ? getSessionPresentation(props.api, props.session.id)
@@ -1036,7 +1037,6 @@ function SessionChatInner(props: SessionChatProps) {
         [props.onSend, props.api, props.session.id, props.session.metadata?.capabilities?.concurrentClients, navigate, scratchlist, scratchlistMode],
     )
     const agentFlavor = props.session.metadata?.flavor ?? null
-    const dshOptions = useMemo(() => dshSessionOptions(props.session.metadata?.dshConfigOptions), [props.session.metadata?.dshConfigOptions])
     // The effort-options query is keyed by session only, so a stale option
     // list from the previous model would survive a switch. Reset when the
     // session model changes. `session.model` is updated by the hub at REST-ack
@@ -1580,7 +1580,7 @@ function SessionChatInner(props: SessionChatProps) {
             model
         })
 
-        if (props.session.thinking && agentFlavor !== 'dsh') return
+        if (agentFlavor !== 'codex' && agentFlavor !== 'dsh' && props.session.thinking) return
         const fastBlocker = agentFlavor === 'codex' ? getCodexFastModelChangeBlocker(
             props.session.serviceTier, typeof model === 'string' ? model : model?.modelId, codexModelsState.models
         ) : null
@@ -2088,6 +2088,7 @@ function SessionChatInner(props: SessionChatProps) {
                                 />
                             ) : null}
                             <QueuedMessagesBar
+                                compacting={props.session.active && props.session.execution?.status === 'active' && props.session.execution.compacting === true}
                                 sessionId={props.session.id}
                                 api={props.api}
                                 pendingSchedule={pendingSchedule}
@@ -2140,10 +2141,14 @@ function SessionChatInner(props: SessionChatProps) {
                         modelReasoningEffort={agentFlavor === 'codex' || agentFlavor === 'opencode' ? props.session.modelReasoningEffort : undefined}
                         effort={props.session.effort}
                         agentFlavor={agentFlavor}
+                        agentCapabilities={props.session.metadata?.dshCapabilities}
+                        imageInputSupported={props.session.metadata?.acpPromptCapabilities?.image}
                         concurrentClients={props.session.metadata?.capabilities?.concurrentClients}
                         availableModelOptions={
                             agentFlavor === 'dsh'
-                                ? dshOptions.models
+                                ? dshSessionOptions(props.session.metadata?.dshConfigOptions).models
+                                : agentFlavor === 'qoder'
+                                ? qoderSessionOptions(props.session.metadata?.qoderConfigOptions).models
                                 : agentFlavor === 'codex'
                                 ? codexModelOptions
                                 : agentFlavor === 'cursor'
@@ -2182,9 +2187,9 @@ function SessionChatInner(props: SessionChatProps) {
                                     : undefined
                         }
                         availableEffortOptions={
-                            agentFlavor === 'dsh'
-                                ? dshOptions.efforts
-                                : agentFlavor === 'grok' && grokEffortState.options.length > 0
+                            agentFlavor === 'dsh' ? dshSessionOptions(props.session.metadata?.dshConfigOptions).efforts
+                            : agentFlavor === 'qoder' ? qoderSessionOptions(props.session.metadata?.qoderConfigOptions).efforts
+                            : agentFlavor === 'grok' && grokEffortState.options.length > 0
                                 ? grokEffortState.options
                                 : undefined
                         }
@@ -2242,9 +2247,7 @@ function SessionChatInner(props: SessionChatProps) {
                                 : undefined
                         }
                         onModelChange={
-                            agentFlavor === 'dsh'
-                                ? (props.session.active && !controlledByUser && dshOptions.models.length > 0 ? handleModelChange : undefined)
-                                : agentFlavor === 'codex'
+                            agentFlavor === 'codex'
                                 ? (props.session.active && !controlledByUser && !codexModelsState.error ? handleModelChange : undefined)
                                 : agentFlavor === 'cursor'
                                     ? (props.session.active
@@ -2285,9 +2288,7 @@ function SessionChatInner(props: SessionChatProps) {
                                 : undefined
                         }
                         onEffortChange={
-                            agentFlavor === 'dsh'
-                                ? (props.session.active && !controlledByUser && dshOptions.efforts.length > 0 ? handleEffortChange : undefined)
-                                : agentFlavor === 'grok'
+                            agentFlavor === 'grok'
                                 ? (props.session.active && !controlledByUser && grokEffortState.options.length > 0
                                     ? handleEffortChange
                                     : undefined)

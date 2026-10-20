@@ -268,6 +268,15 @@ export function isToolGroupBlock(block: VisibleChatBlock | ChatBlock): block is 
     return block.kind === 'tool-group'
 }
 
+/**
+ * Whether a user block is still waiting for invocation behind the active turn.
+ * These belong to the composer's queue bar; rendering them in the transcript as
+ * well duplicates the text and pushes it above a turn it has not joined yet.
+ */
+export function isQueuedUserBlock(block: ChatBlock): boolean {
+    return block.kind === 'user-text' && block.invokedAt === null && block.status !== 'failed'
+}
+
 export function buildVisibleChatBlocks(
     blocks: ChatBlock[],
     options: ToolGroupingOptions
@@ -277,6 +286,7 @@ export function buildVisibleChatBlocks(
 
     for (let index = 0; index < blocks.length; index += 1) {
         const block = blocks[index]
+        if (isQueuedUserBlock(block)) continue
         if (block.kind !== 'tool-call') {
             visibleBlocks.push(block)
             continue

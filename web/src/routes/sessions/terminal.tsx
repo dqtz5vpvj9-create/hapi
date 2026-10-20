@@ -19,7 +19,7 @@ import { KeyEditor } from '@/components/Terminal/termbeam/KeyEditor'
 import { useTouchBarKeys } from '@/components/Terminal/termbeam/useTouchBarKeys'
 import { LoadingState } from '@/components/LoadingState'
 import { Button } from '@/components/ui/button'
-import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
+import { isRemoteTerminalSupported, isTerminalInterfaceEnabled } from '@/utils/terminalSupport'
 import {
     Dialog,
     DialogContent,
@@ -605,6 +605,11 @@ export function SessionTerminal(props: { sessionId: string; terminalId?: string;
         : terminalState.status === 'error'
           ? terminalState.error
           : null
+
+    if (!isTerminalInterfaceEnabled()) return <div className="flex h-full flex-col items-center justify-center gap-3 p-4" role="status">
+        <p>Terminal access is disabled on this shared site.</p>
+        <button type="button" onClick={goBack}>{t('common.back')}</button>
+    </div>
 
     return (
         <div className="flex h-full min-h-0 flex-col">

@@ -44,6 +44,36 @@ function harness() {
 }
 
 describe('native transcript replay', () => {
+    it.each(['inProgress', 'completed'])('folds failed commands with other process steps in a %s turn', status => {
+        const h = harness()
+        const call = row('tool3', {
+            type: 'tool-call', name: 'CodexBash', callId: 'command', input: { command: 'python check.py' },
+        }, 'command')
+        const result = row('result4', {
+            type: 'tool-call-result', callId: 'command', is_error: true,
+            output: { exit_code: 1, output: 'Traceback: invalid input' },
+        }, 'command')
+        const nodes = h.apply([user(), comment(), call, result, answer(), stateRow(status)])
+        const command = nodes.find(node => node.block.kind === 'tool-call')!
+        expect(command.block.kind === 'tool-call' && command.block.tool.state).toBe('error')
+        if (status === 'completed') expect(command.hidden).toBe(true)
+        else expect(command.group).toMatchObject({ control: true, open: false })
+        expect(h.projection.getRuntimeBlocks().some(block => block.kind === 'tool-call')).toBe(false)
+
+        if (status === 'completed') {
+            const process = nodes.find(node => node.process?.control)!.process!
+            expect(process.count).toBe(2)
+            h.projection.setOpen(process.key, process.answer, true)
+            h.projection.refreshPresentation()
+        }
+        const group = h.projection.order.map(key => h.projection.get(key)!).find(node => node.group?.control)!.group!
+        expect(group).toMatchObject({ count: 1, open: false })
+        h.projection.setGroupOpen(group.key, true)
+        h.projection.refreshPresentation()
+        const expanded = h.projection.getRuntimeBlocks().find(block => block.kind === 'tool-call')!
+        expect(expanded).toMatchObject({ tool: { state: 'error', result: { exit_code: 1, output: 'Traceback: invalid input' } } })
+    })
+
     it('retains the visible process seat and expansion when earlier tools join a partial page', () => {
         const h = harness()
         const tools = [2, 3, 4].map(index => row(`tool${index}`, {

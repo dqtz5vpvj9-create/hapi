@@ -5,6 +5,7 @@ import { sdkMessageIdentity, sdkSidechainPrompt } from '@hapi/protocol/messageDe
 import { isClaudeChatVisibleMessage } from '@hapi/protocol/messages'
 import { parseAgentTimestampMs } from '@/chat/agentTimestamp'
 import { isCodexCommandResultError } from '@/chat/codexCommandResult'
+import { canonicalToolName } from '@/chat/toolNames'
 
 function normalizeToolResultPermissions(value: unknown): ToolResultPermission | undefined {
     if (!isObject(value)) return undefined
@@ -1161,7 +1162,7 @@ export function normalizeAgentRecord(
                 content: [{
                     type: 'tool-call',
                     id: data.callId,
-                    name: asString(data.name) ?? 'unknown',
+                    name: canonicalToolName(asString(data.name) ?? 'unknown'),
                     input: data.input,
                     description: asString(data.description),
                     nativeTitle: asString(data.nativeTitle ?? data.title),

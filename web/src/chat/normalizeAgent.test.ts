@@ -140,6 +140,38 @@ describe('normalizeAgentRecord — agentTimestamp exposure', () => {
         })
     })
 
+    it('canonicalizes lowercase ACP tool names while keeping the native title', () => {
+        const cases = [
+            ['bash', 'Bash'],
+            ['read', 'Read'],
+            ['edit', 'Edit'],
+            ['write', 'Write']
+        ] as const
+
+        for (const [acpName, canonicalName] of cases) {
+            const normalized = normalizeAgentRecord(`msg-${acpName}`, null, 1, {
+                type: 'codex',
+                data: {
+                    type: 'tool-call',
+                    callId: `call-${acpName}`,
+                    name: acpName,
+                    input: {},
+                    nativeTitle: acpName,
+                    nativeKind: 'other'
+                }
+            })
+
+            expect(normalized).toMatchObject({
+                content: [{
+                    type: 'tool-call',
+                    name: canonicalName,
+                    nativeTitle: acpName,
+                    nativeKind: 'other'
+                }]
+            })
+        }
+    })
+
     it('preserves tool progress separately from the tool input', () => {
         const normalized = normalizeAgentRecord('progress-row-1', null, 1, {
             type: 'codex',

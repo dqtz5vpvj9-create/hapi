@@ -216,8 +216,10 @@ export function QueuedMessagesBar({
     pendingScheduleRevision,
     onEdit,
     canSteer,
+    compacting = false,
 }: {
     sessionId: string
+    compacting?: boolean
     api: ApiClient | null
     /** Current composer schedule, used only to guard an asynchronous edit restore. */
     pendingSchedule: PendingSchedule | null
@@ -356,7 +358,7 @@ export function QueuedMessagesBar({
             <div className="px-3 pb-0 pt-2 text-sm text-[var(--app-fg-muted)]">
                 <div className="flex items-center gap-1.5 mb-1.5 text-xs font-medium text-[var(--app-hint)]">
                     <ClockIcon />
-                    <span>{queued.every(message => message.deliveryState === 'dispatching') ? t('queuedMessages.confirming') : 'Queued'}</span>
+                    <span>{compacting ? t('session.item.compacting') : queued.every(message => message.deliveryState === 'dispatching') ? t('queuedMessages.confirming') : 'Queued'}</span>
                 </div>
                 <ul
                     className="flex flex-col gap-1.5 max-h-32 sm:max-h-48 overflow-y-auto"
@@ -536,7 +538,7 @@ export function QueuedMessagesBar({
                                         </span>
                                     ) : null}
                                     {steerPending || msg.deliveryState === 'dispatching' ? (
-                                        <div className="mt-1 text-xs text-[var(--app-hint)]">{t('queuedMessages.confirming')}</div>
+                                        <div className="mt-1 text-xs text-[var(--app-hint)]">{t(compacting ? 'queuedMessages.confirmingWhileCompacting' : 'queuedMessages.confirming')}</div>
                                     ) : null}
                                     {msg.deliveryState === 'indeterminate' ? (
                                         <div className="mt-1 text-xs text-[var(--app-warning-text)]">

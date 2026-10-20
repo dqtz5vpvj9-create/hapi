@@ -145,8 +145,10 @@ describe('useActiveSuggestions', () => {
         await waitFor(() => expect(result.current[0].map((item) => item.key)).toEqual(['old-handler']))
 
         rerender({ handler: replacementHandler })
-        expect(result.current[0]).toEqual([])
-        expect(result.current[1]).toBe(-1)
+        // Keep the current rows visible while the replacement handler loads;
+        // blanking the menu for a frame is what made the skill list flicker.
+        expect(result.current[0].map((item) => item.key)).toEqual(['old-handler'])
+        expect(result.current[1]).toBe(0)
 
         await waitFor(() => expect(replacementHandler).toHaveBeenCalledWith('@query'))
         expect(oldHandler).toHaveBeenCalledTimes(1)

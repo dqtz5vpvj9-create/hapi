@@ -15,7 +15,10 @@ type SuggestionHandler = (query: string) => Promise<Suggestion[]>
 
 interface SuggestionInput {
     query: string | null
-    handler: SuggestionHandler
+    // The handler is deliberately excluded: callers commonly recreate it when
+    // session or query data refreshes, and treating that as a new input made
+    // the open menu blank for a frame (and could loop when the caller was the
+    // same component that owns this hook).
     clampSelection: boolean
     autoSelectFirst: boolean
     allowEmptyQuery: boolean
@@ -77,7 +80,31 @@ class ValueSync<T> {
 
 interface SuggestionRequest {
     input: SuggestionInput
+    handler: SuggestionHandler
     generation: number
+}
+
+/** Refresh results are swapped in place; only visual changes should re-render. */
+function areSuggestionsEquivalent(a: readonly Suggestion[], b: readonly Suggestion[]): boolean {
+    if (a === b) return true
+    if (a.length !== b.length) return false
+    for (let index = 0; index < a.length; index++) {
+        const left = a[index]
+        const right = b[index]
+        if (
+            left.key !== right.key
+            || left.text !== right.text
+            || left.label !== right.label
+            || left.description !== right.description
+            || left.content !== right.content
+            || left.source !== right.source
+            || left.sessionMention?.id !== right.sessionMention?.id
+            || left.sessionMention?.title !== right.sessionMention?.title
+        ) {
+            return false
+        }
+    }
+    return true
 }
 
 /**
@@ -98,7 +125,6 @@ export function useActiveSuggestions(
 
     const latestInputRef = useRef<SuggestionInput>({
         query,
-        handler,
         clampSelection,
         autoSelectFirst,
         allowEmptyQuery,
@@ -111,21 +137,19 @@ export function useActiveSuggestions(
         const latestInput = latestInputRef.current
         if (
             latestInput.query !== query
-            || latestInput.handler !== handler
             || latestInput.clampSelection !== clampSelection
             || latestInput.autoSelectFirst !== autoSelectFirst
             || latestInput.allowEmptyQuery !== allowEmptyQuery
         ) {
             latestInputRef.current = {
                 query,
-                handler,
                 clampSelection,
                 autoSelectFirst,
                 allowEmptyQuery,
                 version: latestInput.version + 1,
             }
         }
-    }, [query, handler, clampSelection, autoSelectFirst, allowEmptyQuery])
+    }, [query, clampSelection, autoSelectFirst, allowEmptyQuery])
 
     // State for suggestions
     const [state, setState] = useState<{
@@ -184,8 +208,8 @@ export function useActiveSuggestions(
     const generationRef = useRef(0)
 
     useEffect(() => {
-        const sync = new ValueSync<SuggestionRequest>(async ({ input, generation }) => {
-            const { query: nextQuery, handler: requestHandler } = input
+        const sync = new ValueSync<SuggestionRequest>(async ({ input, handler: requestHandler, generation }) => {
+            const { query: nextQuery } = input
             if (nextQuery === null || (!allowEmptyQuery && nextQuery === '')) return
 
             const suggestions = await requestHandler(nextQuery)
@@ -204,6 +228,20 @@ export function useActiveSuggestions(
             setState((prev) => {
                 // React may defer this updater until another query is current.
                 if (!isCurrentRequest()) return prev
+
+                const sameInput = prev.input !== null
+                    && prev.input.query === input.query
+                    && prev.input.clampSelection === input.clampSelection
+                    && prev.input.autoSelectFirst === input.autoSelectFirst
+                    && prev.input.allowEmptyQuery === input.allowEmptyQuery
+                    && prev.input.version === input.version
+
+                // A handler refresh that returns the same rows must not replace
+                // state: the update would re-render the composer, recreate the
+                // handler, and start the request again in an endless flicker.
+                if (sameInput && areSuggestionsEquivalent(prev.suggestions, suggestions)) {
+                    return prev
+                }
 
                 if (prev.selected >= 0 && prev.selected < prev.suggestions.length) {
                     const previousKey = prev.suggestions[prev.selected].key
@@ -236,18 +274,20 @@ export function useActiveSuggestions(
         }
     }, [clampSelection, autoSelectFirst, allowEmptyQuery])
 
+    // A new handler can refresh the current query, but it is not part of the
+    // input identity: the old rows stay visible until replacement data arrives.
     useEffect(() => {
         const generation = ++generationRef.current
         const latestInput = latestInputRef.current
         syncRef.current?.setValue({
             input: latestInput,
+            handler,
             generation,
         })
     }, [query, handler, clampSelection, autoSelectFirst, allowEmptyQuery])
 
     const latestInput = latestInputRef.current
     const currentInputVersion = latestInput.query === query
-        && latestInput.handler === handler
         && latestInput.clampSelection === clampSelection
         && latestInput.autoSelectFirst === autoSelectFirst
         && latestInput.allowEmptyQuery === allowEmptyQuery
@@ -256,7 +296,6 @@ export function useActiveSuggestions(
 
     const stateMatchesInput = state.input !== null
         && state.input.query === query
-        && state.input.handler === handler
         && state.input.clampSelection === clampSelection
         && state.input.autoSelectFirst === autoSelectFirst
         && state.input.allowEmptyQuery === allowEmptyQuery

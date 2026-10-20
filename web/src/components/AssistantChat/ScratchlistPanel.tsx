@@ -593,7 +593,7 @@ export function ScratchlistDrawer({
                 <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-[var(--app-fg)]">
                     <NoteIcon />
                     <span className="flex-1 truncate">
-                        {t('scratchlist.title')}
+                        {t('scratchlist.drawerTitle')}
                     </span>
                     <span
                         className="rounded-full border border-[var(--app-border)] bg-[var(--app-bg)]/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--app-hint)]"

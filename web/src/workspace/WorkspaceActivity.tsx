@@ -10,7 +10,7 @@ export function WorkspaceActivity({ session, label = false }: { session?: Activi
     const { kind } = classifySessionActivity(session)
     const text = t(kind === 'offline' ? 'misc.offline' : kind === 'idle' ? 'misc.online'
         : kind === 'error' ? 'session.item.error' : kind === 'input' ? 'session.item.needsInput'
-        : kind === 'permission' ? 'misc.permissionRequired' : 'session.item.running')
+        : kind === 'permission' ? 'misc.permissionRequired' : kind === 'running' && session?.execution?.compacting ? 'session.item.compacting' : 'session.item.running')
     return <span className="workspace-activity" data-state={kind} title={text} aria-label={text}>
         <span className="workspace-activity-dot" aria-hidden="true" />
         {label ? <span>{text}</span> : null}

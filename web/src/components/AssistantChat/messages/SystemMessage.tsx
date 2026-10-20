@@ -34,6 +34,12 @@ export function HappySystemMessage() {
         return custom?.kind === 'compact-summary' ? custom.event : undefined
     })
 
+    const details = useAuiState(s => {
+        const custom = s.message.metadata.custom as Partial<HappyChatMessageMetadata> | undefined
+        const event = custom?.kind === 'event' ? custom.event : undefined
+        return event && event.type === 'error' && typeof event.details === 'string' ? event.details : undefined
+    })
+
     if (role !== 'system') return null
 
     // Pi compaction summaries are real content, not status: render them as an
@@ -68,6 +74,7 @@ export function HappySystemMessage() {
                     <span>{text}</span>
                     <MessageTimestamp className="text-[10px]" />
                 </span>
+                {details ? <details className="mt-1 text-left"><summary>Details / 详情</summary><pre className="whitespace-pre-wrap break-words">{details}</pre></details> : null}
             </div>
         </MessagePrimitive.Root>
     )

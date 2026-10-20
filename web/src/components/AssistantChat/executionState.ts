@@ -3,12 +3,13 @@ import type { VisibleChatBlock } from '@/chat/toolGroups'
 import type { ToolCallBlock } from '@/chat/types'
 import type { Session } from '@/types/api'
 
-export type ExecutionPresentation = { running: boolean; activeToolId: string | null; thinking: boolean }
+export type ExecutionPresentation = { running: boolean; activeToolId: string | null; thinking: boolean; compacting?: boolean }
 
 /** Only the connected, authoritative current turn may animate. */
 export function getExecutionPresentation(session: Session, blocks: readonly VisibleChatBlock[], connected: boolean, atTail: boolean): ExecutionPresentation {
     const stopped = { running: false, activeToolId: null, thinking: false }
     if (!connected || classifySessionActivity(toSessionSummary(session)).kind !== 'running') return stopped
+    if (session.execution?.compacting) return { running: true, activeToolId: null, thinking: atTail, compacting: true }
     const tools: ToolCallBlock[] = []
     let terminalEventAt = -1
     let latestProgressAt = -1

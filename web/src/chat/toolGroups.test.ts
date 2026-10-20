@@ -512,3 +512,23 @@ describe('buildVisibleChatBlocks', () => {
         expect(isToolGroupBlock(previous[0]) && isToolGroupBlock(next[0]) && previous[0].id === next[0].id).toBe(true)
     })
 })
+
+describe('transcript visibility', () => {
+    it('leaves queued user messages to the composer queue bar', () => {
+        const queued: ChatBlock = {
+            kind: 'user-text',
+            id: 'queued',
+            localId: null,
+            createdAt: 1,
+            invokedAt: null,
+            status: 'queued',
+            text: 'hold on',
+        }
+        const invoked: ChatBlock = { ...queued, id: 'invoked', invokedAt: 2, status: 'sent' }
+        const failed: ChatBlock = { ...queued, id: 'failed', status: 'failed' }
+
+        const visible = buildVisibleChatBlocks([queued, invoked, failed], { hasMoreMessages: false })
+
+        expect(visible.map((block) => block.id)).toEqual(['invoked', 'failed'])
+    })
+})

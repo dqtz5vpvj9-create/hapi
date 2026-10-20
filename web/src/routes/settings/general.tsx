@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation, type Locale } from '@/lib/use-translation'
 import { useAppContext } from '@/lib/app-context'
+import { SessionBulkActions } from '@/components/settings/SessionBulkActions'
 import { CompanionPairing } from '@/components/settings/CompanionPairing'
 import { SettingsChoiceGroup, SettingsPageContent, SettingsSection, SettingsSwitch } from '@/components/settings/SettingsPrimitives'
 import { queryKeys } from '@/lib/query-keys'
@@ -84,6 +85,7 @@ export default function SettingsGeneralPage() {
                     ) : null}
                 </SettingsSection>
             ) : null}
+            <SessionBulkActions />
             <SettingsSection title={t('settings.companion.title')}>
                 <div className="px-3 py-3">
                     <CompanionPairing baseUrl={baseUrl} />

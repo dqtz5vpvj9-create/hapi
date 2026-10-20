@@ -120,6 +120,33 @@ export function usePwaUpdate() {
         }
     }, [])
 
+    // 中文注释：等待中的版本只在页面切到后台后才自动应用。前台有正在流的回合时
+    // 保持旧页面不打断，但离开页面（锁屏、切 App）再回来就一定是最新版本。
+    useEffect(() => {
+        if (!needRefresh) return
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const applyWhenHidden = () => {
+            if (document.visibilityState !== 'hidden' || timer !== undefined) return
+            timer = setTimeout(() => {
+                timer = undefined
+                void requestPwaUpdateReload(updateSWRef.current)
+            }, 5000)
+        }
+        const cancelWhenVisible = () => {
+            if (document.visibilityState === 'visible' && timer !== undefined) {
+                clearTimeout(timer)
+                timer = undefined
+            }
+        }
+        document.addEventListener('visibilitychange', applyWhenHidden)
+        document.addEventListener('visibilitychange', cancelWhenVisible)
+        return () => {
+            if (timer !== undefined) clearTimeout(timer)
+            document.removeEventListener('visibilitychange', applyWhenHidden)
+            document.removeEventListener('visibilitychange', cancelWhenVisible)
+        }
+    }, [needRefresh])
+
     const reload = useCallback(() => {
         void requestPwaUpdateReload(updateSWRef.current)
     }, [])

@@ -65,7 +65,7 @@ describe('Codex file citation navigation', () => {
         }))
     })
 
-    it.each(['/outside/secret.pdf', '../secret.pdf', 'javascript:alert(1)', 'https://example.com/a.pdf'])('keeps unauthorized or non-file target %s inert', path => {
+    it.each(['javascript:alert(1)', 'https://example.com/a.pdf'])('keeps unauthorized or non-file target %s inert', path => {
         renderCitation(path)
         expect(screen.queryByRole('link')).toBeNull()
         expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull()

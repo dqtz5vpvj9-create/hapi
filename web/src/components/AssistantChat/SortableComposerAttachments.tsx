@@ -4,7 +4,9 @@ import {
     type KeyboardEvent as ReactKeyboardEvent,
     type MouseEvent as ReactMouseEvent,
     type PointerEvent as ReactPointerEvent,
+    createContext,
     useCallback,
+    useContext,
     useEffect,
     useMemo,
     useRef,
@@ -38,6 +40,14 @@ type AttachmentDropTarget = {
     id: string
     position: AttachmentDropPosition
 }
+
+const AttachmentDragHandleContext = createContext<AttachmentDragHandleProps | undefined>(undefined)
+
+function AttachmentWithHandle() {
+    return <AttachmentItem dragHandleProps={useContext(AttachmentDragHandleContext)} />
+}
+
+const attachmentComponents = { Attachment: AttachmentWithHandle }
 
 function findAttachmentDropTarget(clientX: number, clientY: number): AttachmentDropTarget | null {
     if (typeof document.elementsFromPoint !== 'function') return null
@@ -97,11 +107,7 @@ function SortableComposerAttachment(props: SortableComposerAttachmentProps) {
                 onSurfaceContextMenu: handleContextMenu,
                 onSurfaceClick: handleClick,
             },
-        [attachment.name, disabled, handleKeyDown, handlePointerDown],
-    )
-    const AttachmentWithHandle = useCallback(
-        () => <AttachmentItem dragHandleProps={dragHandleProps} />,
-        [dragHandleProps],
+        [attachment.name, disabled, handleKeyDown, handlePointerDown, handleSurfacePointerDown, handleContextMenu, handleClick],
     )
 
     return (
@@ -110,10 +116,9 @@ function SortableComposerAttachment(props: SortableComposerAttachmentProps) {
             data-hapi-composer-attachment-dragging={isDragging || undefined}
             className={isDragging ? 'opacity-60' : undefined}
         >
-            <ComposerPrimitive.AttachmentByIndex
-                index={index}
-                components={{ Attachment: AttachmentWithHandle }}
-            />
+            <AttachmentDragHandleContext.Provider value={dragHandleProps}>
+                <ComposerPrimitive.AttachmentByIndex index={index} components={attachmentComponents} />
+            </AttachmentDragHandleContext.Provider>
         </div>
     )
 }

@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode, type SyntheticEvent, type WheelEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode, type SyntheticEvent, type WheelEvent } from 'react'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import './media-preview.css'
 import { CloseIcon } from '@/components/icons'
+import { usePane } from '@/workspace/PaneContext'
 
 const MIN_IMAGE_SCALE = 0.25
 const MAX_IMAGE_SCALE = 8
@@ -47,12 +49,15 @@ export function ImagePreview(props: {
     onTriggerContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void
     onTriggerClick?: (event: MouseEvent<HTMLButtonElement>) => void
 }) {
+    const pane = usePane()
+    const triggerRef = useRef<HTMLButtonElement>(null)
     const [retry, setRetry] = useState(0)
     const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
     const [failedSrc, setFailedSrc] = useState<string | null>(null)
     const imageReady = Boolean(props.src) && loadedSrc === props.src
     const imageFailed = Boolean(props.src) && failedSrc === props.src
     const [viewerOpen, setViewerOpen] = useState(false)
+    const viewerVisible = viewerOpen && (!pane || pane.focused)
     const [previewImages, setPreviewImages] = useState<PreviewImage[]>([])
     const [previewIndex, setPreviewIndex] = useState(0)
     const [scale, setScale] = useState(1)
@@ -72,7 +77,9 @@ export function ImagePreview(props: {
         event.preventDefault()
         event.stopPropagation()
         const galleryId = props.galleryId ?? ''
-        const triggers = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-image-preview-trigger]'))
+        const galleryRoot = event.currentTarget.closest('[data-pane-id]')
+            ?? event.currentTarget.closest('[data-session-id]') ?? document
+        const triggers = Array.from(galleryRoot.querySelectorAll<HTMLButtonElement>('[data-image-preview-trigger]'))
             .filter((trigger) => (trigger.dataset.imagePreviewGallery ?? '') === galleryId && trigger.querySelector('img')?.getAttribute('src'))
         const images = triggers.flatMap((trigger): PreviewImage[] => {
             const image = trigger.querySelector('img')
@@ -131,6 +138,10 @@ export function ImagePreview(props: {
         backdropPressRef.current = null
         resetView()
     }, [resetView])
+
+    useLayoutEffect(() => {
+        if (viewerOpen && pane && !pane.focused) closeViewer()
+    }, [viewerOpen, pane?.focused, closeViewer])
 
     const showPreview = useCallback((index: number) => {
         setPreviewIndex(index)
@@ -250,12 +261,9 @@ export function ImagePreview(props: {
     }, [closeViewer])
 
     useEffect(() => {
-        if (!viewerOpen) return
+        if (!viewerVisible) return
 
         const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                closeViewer()
-            }
             if (event.key === '0') {
                 resetView()
             }
@@ -275,7 +283,7 @@ export function ImagePreview(props: {
 
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [closeViewer, previewImages.length, previewIndex, resetView, showPreview, viewerOpen, zoomBy])
+    }, [previewImages.length, previewIndex, resetView, showPreview, viewerVisible, zoomBy])
 
     const activePreview = previewImages[previewIndex] ?? {
         src: props.src,
@@ -287,6 +295,7 @@ export function ImagePreview(props: {
     return (
         <>
             <button
+                ref={triggerRef}
                 type="button"
                 onPointerDown={handleTriggerPointerDown}
                 onMouseDown={stopEvent}
@@ -319,15 +328,19 @@ export function ImagePreview(props: {
                 {!props.frame ? <span className="sr-only">{props.fileName}</span> : null}
             </button>
 
-            {viewerOpen ? (
-                <div
+            <DialogPrimitive.Root open={viewerVisible} onOpenChange={next => { if (!next) closeViewer() }}>
+                <DialogPrimitive.Portal>
+                <DialogPrimitive.Overlay className="fixed inset-0 z-50" />
+                <DialogPrimitive.Content
                     className="fixed inset-0 z-50 flex flex-col bg-black/90 text-white"
-                    role="dialog"
-                    aria-modal="true"
                     aria-label={activePreview.label}
+                    aria-modal="true"
+                    aria-labelledby={undefined}
+                    aria-describedby={undefined}
+                    onCloseAutoFocus={event => { event.preventDefault(); if (!pane || pane.focused) triggerRef.current?.focus() }}
                 >
                     <div className="flex items-center gap-2 border-b border-white/10 bg-black/50 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
-                        <div className="min-w-0 flex-1 truncate text-sm font-medium">{activePreview.fileName}</div>
+                        <DialogPrimitive.Title className="min-w-0 flex-1 truncate text-sm font-medium">{activePreview.fileName}</DialogPrimitive.Title>
                         {hasMultiplePreviews ? (
                             <>
                                 <button
@@ -410,8 +423,9 @@ export function ImagePreview(props: {
                             }}
                         />
                     </div>
-                </div>
-            ) : null}
+                </DialogPrimitive.Content>
+                </DialogPrimitive.Portal>
+            </DialogPrimitive.Root>
         </>
     )
 }

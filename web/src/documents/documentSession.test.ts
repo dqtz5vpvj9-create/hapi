@@ -72,6 +72,51 @@ describe('document ownership', () => {
         expect(store.isTemporary(first.id)).toBe(true)
         expect(store.get().workspaces.find(w => w.id === first.id)).toBeDefined()
     })
+    it('returns to the initiating file browser without closing a pinned document or another chat', () => {
+        const store = new WorkspaceStore(crypto.randomUUID())
+        store.enter('A'); const source = store.focusedPane()!
+        const tool = { view: 'directories' as const, query: 'notes' }
+        store.setPaneTool(source.id, source.resource, tool)
+        store.openDocument(source.id, source.resource, file(), false, tool)
+        store.setPaneTool(source.id, source.resource, null)
+        const document = store.focusedPane()!
+        store.documents.get(file()).patch({ pinned: true })
+        store.openSession('B', 'horizontal')
+        expect(store.returnFromDocument(document.id)).toBe(true)
+        expect(store.getPaneTools(source.id, source.resource)?.current).toEqual(tool)
+        expect(store.focusedPane()!.id).toBe(source.id)
+        expect(panes(store.active()!.root)).toHaveLength(3)
+        expect(panes(store.active()!.root).find(p => p.id === document.id)?.resource).toEqual(file())
+    })
+    it('replaces a reused preview return target with its latest initiating browser', () => {
+        const store = new WorkspaceStore(crypto.randomUUID())
+        store.enter('A'); const a = store.focusedPane()!
+        const toolA = { view: 'directories' as const, query: 'from A' }, toolB = { view: 'directories' as const, query: 'from B' }
+        store.openDocument(a.id, a.resource, file(), false, toolA)
+        const documentId = store.focusedPane()!.id
+        store.openSession('B', 'horizontal'); const b = store.focusedPane()!
+        store.openDocument(b.id, b.resource, file(), false, toolB)
+        expect(store.returnFromDocument(documentId)).toBe(true)
+        expect(store.getPaneTools(a.id, a.resource)?.current).toBeUndefined()
+        expect(store.getPaneTools(b.id, b.resource)?.current).toEqual(toolB)
+        expect(store.focusedPane()!.id).toBe(b.id)
+    })
+    it('does not restore a stale browser after its source is rebound or closed', () => {
+        for (const action of ['rebind', 'close'] as const) {
+            const store = new WorkspaceStore(crypto.randomUUID())
+            store.enter('A'); const source = store.focusedPane()!
+            store.setPaneTool(source.id, source.resource, { view: 'directories' })
+            store.openDocument(source.id, source.resource, file(), false, { view: 'directories' })
+            const documentId = store.focusedPane()!.id
+            if (action === 'rebind') store.bind(source.id, { kind: 'chat', sessionId: 'B' })
+            if (action === 'close') store.closePane(source.id)
+            expect(store.returnFromDocument(documentId)).toBe(false)
+            if (action === 'rebind') store.bind(source.id, source.resource)
+            expect(store.returnFromDocument(documentId)).toBe(false)
+            expect(store.getPaneTools(source.id, source.resource)?.current).toBeUndefined()
+            expect(store.focusedPane()!.id).toBe(documentId)
+        }
+    })
     it('does not discard a dirty document when canceling close or rebinding the pane', () => {
         const store = new WorkspaceStore(crypto.randomUUID())
         store.enter('A'); const source = store.focusedPane()!

@@ -442,7 +442,7 @@ export function NativeCodexThread(props: HappyThreadProps) {
                                 onBeforeLayout={beforeVirtualLayout} onAfterLayout={viewport.restoreVirtualLayout} />
                             </NativePageCommit>
                         </div>
-                        {execution.thinking ? <div role="status" className="hapi-execution-thinking"><span className="hapi-execution-sweep">{t('session.item.thinking')}</span></div> : null}
+                        {execution.thinking ? <div role="status" data-execution-state={execution.compacting ? 'compacting' : 'thinking'} className="hapi-execution-thinking"><span className="hapi-execution-sweep">{t(execution.compacting ? 'session.item.compacting' : 'session.item.thinking')}</span></div> : null}
                         <div aria-hidden="true" style={{ height: 'var(--native-reading-tail-room, 0px)', overflowAnchor: 'none' }} />
                     </div>
                 </div>

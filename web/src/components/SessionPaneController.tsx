@@ -384,6 +384,13 @@ export function SessionPaneController(props: {
     } = useSkills(api, sessionId)
     // Mention pool is stricter than sidebar (#1506): titled sessions only; match via sessionMatchesQuery.
     const { sessions: allSessions } = useSessions(api)
+    // The session list refreshes on every SSE summary tick. Reading it through
+    // a ref keeps the autocomplete handler stable so an open suggestion menu is
+    // not torn down and rebuilt several times per second.
+    const allSessionsRef = useRef(allSessions)
+    useEffect(() => {
+        allSessionsRef.current = allSessions
+    }, [allSessions])
     const { machines: mentionMachines } = useMachines(api, true)
     const mentionMachineLabelsById = useMachineLabels(mentionMachines)
     // Same fallbacks as share picker / SessionList search.
@@ -403,7 +410,7 @@ export function SessionPaneController(props: {
             // v1: plain-text expansion (same grammar as Copy reference) — #1213.
             // v2: segmented rich composer with inline session tokens — #1215.
             // Match via sessionMatchesQuery (share/sidebar); label/insert via getSessionTitle.
-            const sessionHits = matchSessionsForMention(allSessions, search, {
+            const sessionHits = matchSessionsForMention(allSessionsRef.current, search, {
                 excludeId: sessionId,
                 limit: 20,
                 resolveMachineLabel: resolveMentionMachineLabel,
@@ -452,7 +459,6 @@ export function SessionPaneController(props: {
         agentType,
         api,
         sessionId,
-        allSessions,
         resolveMentionMachineLabel,
         getSkillSuggestions,
         getSlashSuggestions,

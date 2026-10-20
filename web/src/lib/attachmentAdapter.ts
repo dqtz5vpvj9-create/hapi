@@ -2,6 +2,7 @@ import type { AttachmentAdapter, PendingAttachment, CompleteAttachment, Attachme
 import type { ApiClient } from '@/api/client'
 import type { AttachmentMetadata } from '@/types/api'
 import { isImageMimeType } from '@/lib/fileAttachments'
+import { shrinkImageFile } from '@/lib/imageShrink'
 import { randomId } from '@/lib/randomId'
 import {
     completeDraftAttachmentUpload,
@@ -97,7 +98,9 @@ export function createAttachmentAdapter(
         // this adapter's add() method can run.
         accept: '*',
 
-        async *add({ file }): AsyncGenerator<PendingAttachment> {
+        async *add({ file: picked }): AsyncGenerator<PendingAttachment> {
+            // 中文注释：截图先降采样再上传，避免大图在传输上限处被整张丢弃。
+            const file = await shrinkImageFile(picked)
             // Upload paths are scoped to the session that created them. An
             // inactive composer may resume into a different session id, so its
             // persisted file must follow the normal resolve/transfer flow and

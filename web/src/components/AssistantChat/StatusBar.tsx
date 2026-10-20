@@ -33,7 +33,8 @@ function getConnectionStatus(
     voiceStatus: ConversationStatus | undefined,
     backgroundTaskCount: number,
     t: (key: string) => string,
-    execution?: NativeRuntimeState | null
+    execution?: NativeRuntimeState | null,
+    model?: string | null
 ): { text: string; color: string; dotColor: string; isPulsing: boolean } {
     const activity = classifySessionActivity({ active, thinking, execution, backgroundTaskCount,
         pendingRequestKinds: computePendingRequestKinds(agentState), blockingRequestKinds: computeBlockingRequestKinds(agentState) })
@@ -72,11 +73,11 @@ function getConnectionStatus(
     }
 
     if (activity.kind === 'running') {
-        const vibingMessage = t('session.item.running')
+        const vibingMessage = t(execution?.compacting ? 'session.item.compacting' : 'session.item.running')
         return {
             text: vibingMessage,
-            color: 'text-[var(--app-badge-success-text)]',
-            dotColor: 'bg-[var(--app-badge-success-text)]',
+            color: /astra/i.test(model ?? '') ? 'text-yellow-500' : 'text-[var(--app-badge-success-text)]',
+            dotColor: /astra/i.test(model ?? '') ? 'bg-yellow-500' : 'bg-[var(--app-badge-success-text)]',
             isPulsing: true
         }
     }
@@ -213,8 +214,8 @@ export function StatusBar(props: {
     const detailsGlassRef = useGlassSurface<HTMLDivElement>()
     const contextGlassRef = useGlassSurface<HTMLDivElement>()
     const connectionStatus = useMemo(
-        () => getConnectionStatus(props.active, props.thinking, props.agentState, props.voiceStatus, props.backgroundTaskCount ?? 0, t, props.execution),
-        [props.active, props.thinking, props.agentState, props.voiceStatus, props.backgroundTaskCount, props.execution, t]
+        () => getConnectionStatus(props.active, props.thinking, props.agentState, props.voiceStatus, props.backgroundTaskCount ?? 0, t, props.execution, props.model),
+        [props.active, props.thinking, props.agentState, props.voiceStatus, props.backgroundTaskCount, props.execution, props.model, t]
     )
 
     const contextHeuristicModel = props.contextModel ?? props.model

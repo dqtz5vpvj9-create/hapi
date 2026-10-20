@@ -181,17 +181,8 @@ function safeSetItem(key: string, value: string): void {
     }
 }
 
-function safeRemoveItem(key: string): void {
-    if (!isBrowser()) return
-    try {
-        localStorage.removeItem(key)
-    } catch {
-        // Ignore storage errors
-    }
-}
-
 export function parseColorTheme(raw: string | null): ColorThemePreset {
-    return COLOR_THEME_OPTIONS.some((option) => option.value === raw) ? raw as ColorThemePreset : 'default'
+    return COLOR_THEME_OPTIONS.some((option) => option.value === raw) ? raw as ColorThemePreset : 'codex'
 }
 
 export function getStoredColorTheme(): ColorThemePreset {
@@ -342,11 +333,7 @@ export function useColorTheme(): { colorTheme: ColorThemePreset; setColorTheme: 
     const setColorTheme = useCallback((theme: ColorThemePreset) => {
         setColorThemeState(theme)
         applyColorTheme(theme, getDocumentColorScheme())
-        if (theme === 'default') {
-            safeRemoveItem(COLOR_THEME_KEY)
-        } else {
-            safeSetItem(COLOR_THEME_KEY, theme)
-        }
+        safeSetItem(COLOR_THEME_KEY, theme)
         window.dispatchEvent(new CustomEvent('hapi-color-theme-change', { detail: theme }))
     }, [])
 

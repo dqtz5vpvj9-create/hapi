@@ -1,3 +1,6 @@
+import { MachineCodexAccounts } from '@/components/settings/MachineCodexAccounts'
+import { MachineCodexHomes } from '@/components/settings/MachineCodexHomes'
+import { MachineDshBundles } from '@/components/settings/MachineDshBundles'
 import { useRef, useState } from 'react'
 import { RunnerSetupHint } from '@/components/RunnerSetupHint'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -15,6 +18,9 @@ function MachineRow(props: { api: ApiClient | null; machine: Machine }) {
     const { t } = useTranslation()
     const queryClient = useQueryClient()
     const [editing, setEditing] = useState(false)
+    const [accountsOpen, setAccountsOpen] = useState(false)
+    const [homesOpen, setHomesOpen] = useState(false)
+    const [bundlesOpen, setBundlesOpen] = useState(false)
     const [draft, setDraft] = useState('')
     const [error, setError] = useState<string | null>(null)
     const savingRef = useRef(false)
@@ -112,6 +118,18 @@ function MachineRow(props: { api: ApiClient | null; machine: Machine }) {
                 {!props.machine.active && props.machine.activeAt > 0 ? ` · ${t('settings.machines.lastSeen')}: ${new Date(props.machine.activeAt).toLocaleString()}` : ''}
             </div>
             {!props.machine.active ? <p className="mt-1 text-xs text-[var(--app-hint)]">{t('settings.machines.offlineHint')}</p> : null}
+            <button type="button" className="mt-3 rounded-lg border border-[var(--app-divider)] px-3 py-2 text-sm text-[var(--app-link)] disabled:opacity-50"
+                disabled={!props.machine.active || !props.api} aria-expanded={accountsOpen}
+                onClick={() => setAccountsOpen(open => !open)}>{t('newSession.codexAccount')}</button>
+            {accountsOpen && props.api && props.machine.active ? <MachineCodexAccounts api={props.api} machineId={props.machine.id} /> : null}
+            <button type="button" className="mt-2 rounded-lg border border-[var(--app-divider)] px-3 py-2 text-sm text-[var(--app-link)] disabled:opacity-50"
+                disabled={!props.machine.active || !props.api} aria-expanded={homesOpen}
+                onClick={() => setHomesOpen(open => !open)}>{t('settings.machines.codexHomes')}</button>
+            {homesOpen && props.api && props.machine.active ? <MachineCodexHomes api={props.api} machineId={props.machine.id} /> : null}
+            <button type="button" className="mt-2 rounded-lg border border-[var(--app-divider)] px-3 py-2 text-sm text-[var(--app-link)] disabled:opacity-50"
+                disabled={!props.machine.active || !props.api} aria-expanded={bundlesOpen}
+                onClick={() => setBundlesOpen(open => !open)}>{t('settings.machines.dshBundles')}</button>
+            {bundlesOpen && props.api && props.machine.active ? <MachineDshBundles api={props.api} machineId={props.machine.id} /> : null}
             {error ? <div role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</div> : null}
         </div>
     )

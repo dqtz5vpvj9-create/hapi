@@ -106,26 +106,20 @@ export const ReasoningGroup: FC<HappyReasoningGroupProps> = ({
     })
     const { reasoningCollapsed } = useReasoningCollapse()
     const chatContext = useOptionalHappyChatContext()
-
-    useEffect(() => {
-        if (!isStreaming) return
-        const nextOpen = !reasoningCollapsed
-        if (nextOpen) {
-            followLatestRef.current = true
-        }
-        setIsOpen(nextOpen)
-    }, [isStreaming, reasoningCollapsed])
-
-    useEffect(() => {
-        if (isOpen || followLatestRef.current) return
-        followLatestRef.current = true
-        chatContext?.onNestedScrollFollowChange?.(true)
-    }, [isOpen, chatContext])
-
-    useLayoutEffect(() => {
-        const scroll = scrollRef.current
-        if (!scroll || !isOpen || !isStreaming || !followLatestRef.current) return
-        scroll.scrollTop = scroll.scrollHeight
+    // Collapsed rows carry one line of the reasoning so the transcript stays
+    // scannable without opening every block.
+    const preview = useAuiState((state) => {
+        const parts = state.message.parts.slice(startIndex, endIndex === undefined ? undefined : endIndex + 1)
+        const text = parts
+            .filter((part) => part.type === 'reasoning')
+            .map((part) => (part as { text?: string }).text ?? '')
+            .join('\n')
+        // Same rule as DSH: while streaming, summarize with the first line of the
+        // latest completed paragraph; once settled, the block's first line.
+        const paragraph = text.split(/\r?\n(?:[\t ]*\r?\n)+/).filter((chunk) => chunk.trim() !== '')
+        const source = isStreaming ? paragraph[paragraph.length - 1] ?? text : text
+        const firstLine = source.split('\n').map((line) => line.trim()).find((line) => line !== '') ?? ''
+        return firstLine.replaceAll('**', '').slice(0, 160)
     })
 
     const handleToggle = () => {
@@ -135,6 +129,21 @@ export const ReasoningGroup: FC<HappyReasoningGroupProps> = ({
         }
         setIsOpen(nextOpen)
     }
+
+    // Collapsing a panel the reader had opened releases the outer chat's
+    // follow-tail hold so it scrolls again; a panel that was never opened
+    // leaves that hold alone.
+    const wasOpenRef = useRef(false)
+    useEffect(() => {
+        if (isOpen) {
+            wasOpenRef.current = true
+            return
+        }
+        if (!wasOpenRef.current) return
+        wasOpenRef.current = false
+        followLatestRef.current = true
+        chatContext?.onNestedScrollFollowChange?.(true)
+    }, [isOpen, chatContext])
 
     const syncNestedFollow = useCallback(() => {
         const scroll = scrollRef.current
@@ -203,20 +212,23 @@ export const ReasoningGroup: FC<HappyReasoningGroupProps> = ({
     }, [])
 
     return (
-        <div data-hapi-share-exclude="true" className="aui-reasoning-group my-3 overflow-hidden rounded-2xl bg-[var(--app-reasoning-bg)]">
+        <div data-hapi-share-exclude="true" className="aui-reasoning-group my-1 overflow-hidden">
             <button
                 type="button"
                 onClick={handleToggle}
                 className={cn(
-                    'flex w-full items-center gap-1.5 px-3.5 py-2.5 text-left text-xs font-medium',
-                    'text-[var(--app-hint)] hover:text-[var(--app-fg)]',
+                    'flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs',
+                    'text-[var(--app-hint)] hover:bg-[var(--app-subtle-bg)] hover:text-[var(--app-fg)]',
                     'transition-colors cursor-pointer select-none'
                 )}
             >
                 <ChevronIcon open={isOpen} />
-                <span>Reasoning</span>
+                <span className="shrink-0">Reasoning</span>
+                {!isOpen && !reasoningCollapsed && preview ? (
+                    <span className="min-w-0 truncate opacity-60">{preview}</span>
+                ) : null}
                 {isStreaming && (
-                    <span className="ml-1 flex items-center gap-1 text-[var(--app-hint)]">
+                    <span className="ml-1 flex shrink-0 items-center gap-1 text-[var(--app-hint)]">
                         <ShimmerDot />
                     </span>
                 )}
@@ -242,7 +254,7 @@ export const ReasoningGroup: FC<HappyReasoningGroupProps> = ({
                     // (onNestedScrollFollowChange) already pauses the outer
                     // auto-follow while the user scrolls inside this panel, so
                     // contain is not needed to stop the two from fighting.
-                    className="aui-reasoning-scroll max-h-[60vh] overflow-y-auto border-t border-[var(--app-divider)] px-3.5 py-3"
+                    className="aui-reasoning-scroll mb-1 ml-6 max-h-[60vh] overflow-y-auto text-[13px]"
                 >
                     {children}
                 </div>

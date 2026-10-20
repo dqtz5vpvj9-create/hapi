@@ -133,7 +133,7 @@ describe('WorkspacePane diff return origin', () => {
         const openDocument = vi.spyOn(store, 'openDocument')
         fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
         await navigate('/sessions/$sessionId/file', { path: btoa('plain.ts'), tab: 'directories', query: 'plain' })
-        expect(openDocument).toHaveBeenCalledWith(pane.id, pane.resource, { kind: 'document', sessionId: 'A', document: { kind: 'file', path: '/synthetic/project/plain.ts', machineId: 'fixture-machine' } })
+        expect(openDocument).toHaveBeenCalledWith(pane.id, pane.resource, { kind: 'document', sessionId: 'A', document: { kind: 'file', path: '/synthetic/project/plain.ts', machineId: 'fixture-machine' } }, false, { view: 'directories' })
         expect(screen.queryByTestId('diff')).not.toBeInTheDocument()
         expect(screen.queryByTestId('tool')).not.toBeInTheDocument()
     })

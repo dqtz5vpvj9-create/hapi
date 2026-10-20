@@ -4,7 +4,7 @@
  * Product rule (#1452): never paint a clickable control that SPA-404s.
  * Prefer session file preview when the target looks like a workspace file;
  * known in-app routes stay navigable; unsupported explicit files reveal in the
- * session file manager, and targets outside the session remain inert text.
+ * session file manager. File authorization belongs to the backend machine policy.
  */
 
 import { COMMON_FILE_EXTENSIONS } from '@/lib/remark-file-path-links'
@@ -151,8 +151,7 @@ export function isWithinWorkspace(absPath: string, workspacePath: string): boole
 function isRepoRelativeCandidate(path: string): boolean {
     if (path.includes('://')) return false
     if (path.startsWith('/') || path.startsWith('~/') || path === '~') return false
-    if (path.startsWith('../') || path.includes('/../')) return false
-    // Drive-qualified paths need workspace containment — never treat as relative.
+    // Drive-qualified paths are absolute, even on a POSIX browser.
     if (isWindowsAbsolutePath(path)) return false
     return hasKnownFileExtension(path)
 }
@@ -168,7 +167,7 @@ function looksPathLike(path: string): boolean {
 /**
  * Classify a scheme-less markdown href for the chat <A> renderer.
  *
- * @param workspacePath session metadata.path when available (enables ~/ expansion + containment)
+ * @param workspacePath session metadata.path when available (resolves relative and ~/ paths)
  */
 export function classifyNoSchemeHref(
     href: string,
@@ -193,32 +192,21 @@ export function classifyNoSchemeHref(
     const path = stripLineSuffix(decodedPath)
     const workspacePath = options.workspacePath ?? null
 
+    if (/[\x00-\x1f]/.test(path) || (!isWindowsAbsolutePath(path) && /^[a-z][a-z0-9+.-]*:/i.test(path))) return { action: 'inert' }
+
     if (isRepoRelativeCandidate(path)) {
         return { action: 'file', path }
     }
 
-    // Absolute / tilde targets need workspace metadata so we can fail closed on
-    // out-of-tree paths (remark deliberately does not rewrite POSIX abs).
-    if (isWindowsAbsolutePath(path) && hasKnownFileExtension(path)) {
-        if (!workspacePath || !isWithinWorkspace(path, workspacePath)) {
-            return { action: 'inert' }
-        }
-        return { action: 'file', path }
-    }
-
-    if (path.startsWith('/') && hasKnownFileExtension(path)) {
-        if (!workspacePath || !isWithinWorkspace(path, workspacePath)) {
-            return { action: 'inert' }
-        }
+    // cwd is navigation context, not an access boundary. The machine reader
+    // applies configured workspace roots and filesystem permissions.
+    if ((isWindowsAbsolutePath(path) || path.startsWith('/')) && hasKnownFileExtension(path)) {
         return { action: 'file', path }
     }
 
     if (path.startsWith('~/') || path === '~') {
         const expanded = expandTildePath(path, workspacePath)
         if (!expanded) return { action: 'inert' }
-        if (!workspacePath || !isWithinWorkspace(expanded, workspacePath)) {
-            return { action: 'inert' }
-        }
         if (hasKnownFileExtension(path)) return { action: 'file', path: expanded }
         const target = fileManagerTargetFromPath(expanded, workspacePath)
         return target ? { action: 'files', target } : { action: 'inert' }

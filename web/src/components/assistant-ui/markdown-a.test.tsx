@@ -328,22 +328,20 @@ describe('markdown <A> component — fail-closed path-like hrefs (#1452)', () =>
         expect(document.querySelector('.aui-md-a-inert')).toBeNull()
     })
 
-    it('keeps outside-workspace absolute file href inert even with chat present', () => {
+    it('opens absolute files outside cwd when chat is present', () => {
         renderA(
             { href: '/etc/passwd.sh', children: 'etc' },
             chatContext()
         )
-        expect(document.querySelector('a')).toBeNull()
-        expect(document.querySelector('.aui-md-a-inert')?.textContent).toBe('etc')
+        expect(document.querySelector('a')?.getAttribute('href')).toContain('/sessions/session-1/file?')
     })
 
-    it('keeps outside-workspace Windows absolute href inert despite drive colon looking like a scheme', () => {
+    it('opens Windows files outside cwd through the file reader', () => {
         renderA(
             { href: 'D:/outside/secret.ts#L1', children: 'win' },
             chatContext()
         )
-        expect(document.querySelector('a')).toBeNull()
-        expect(document.querySelector('.aui-md-a-inert')?.textContent).toBe('win')
+        expect(document.querySelector('a')?.getAttribute('href')).toContain('/sessions/session-1/file?')
     })
 
     it('routes hapi-file-candidate Windows href through containment to FilePathAnchor', () => {
@@ -392,13 +390,12 @@ describe('markdown <A> component — fail-closed path-like hrefs (#1452)', () =>
         expect(document.querySelector('.aui-md-a-inert')?.textContent).toBe('enc')
     })
 
-    it('treats percent-encoded backslash Windows href as inert when outside workspace', () => {
+    it('opens percent-encoded Windows files outside cwd', () => {
         renderA(
             { href: 'D:%5Coutside%5Csecret.ts', children: 'win' },
             chatContext()
         )
-        expect(document.querySelector('a')).toBeNull()
-        expect(document.querySelector('.aui-md-a-inert')?.textContent).toBe('win')
+        expect(document.querySelector('a')?.getAttribute('href')).toContain('/sessions/session-1/file?')
     })
 
     it('expands ~/ and routes to FilePathAnchor when workspace metadata is present', () => {

@@ -297,6 +297,7 @@ function HappyNestedBlockList(props: {
                                     {presentation.icon ? <span aria-hidden="true">{presentation.icon}</span> : null}
                                     <span>{presentation.text}</span>
                                 </span>
+                                {block.event.type === 'error' && typeof block.event.details === 'string' ? <details className="text-left"><summary>Details / 详情</summary><pre className="whitespace-pre-wrap break-words">{block.event.details}</pre></details> : null}
                             </div>
                         </div>
                     )

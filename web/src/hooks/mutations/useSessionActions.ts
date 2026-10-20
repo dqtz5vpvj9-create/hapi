@@ -19,6 +19,7 @@ export function useSessionActions(
     abortError: Error | null
     archiveSession: () => Promise<void>
     reopenSession: () => Promise<ReopenSessionResponse>
+    restartSession: () => Promise<void>
     switchSession: () => Promise<void>
     setPermissionMode: (mode: PermissionMode) => Promise<void>
     setCollaborationMode: (mode: CodexCollaborationMode) => Promise<void>
@@ -94,6 +95,16 @@ export function useSessionActions(
                 throw new Error('Session unavailable')
             }
             await api.archiveSession(sessionId)
+        },
+        onSuccess: () => void invalidateSession(),
+    })
+
+    const restartMutation = useMutation({
+        mutationFn: async () => {
+            if (!api || !sessionId) {
+                throw new Error('Session unavailable')
+            }
+            await api.restartSession(sessionId)
         },
         onSuccess: () => void invalidateSession(),
     })
@@ -286,6 +297,7 @@ export function useSessionActions(
         abortError: abortMutation.error,
         archiveSession: archiveMutation.mutateAsync,
         reopenSession: reopenMutation.mutateAsync,
+        restartSession: restartMutation.mutateAsync,
         switchSession: switchMutation.mutateAsync,
         setPermissionMode: permissionMutation.mutateAsync,
         setCollaborationMode: collaborationMutation.mutateAsync,

@@ -276,8 +276,10 @@ export function WorkspaceSurface(props: { foreground?: boolean; sessions?: Sessi
             {prefix ? <span className="workspace-prefix">Ctrl-b</span> : null}
             {state.sync.status === 'offline' || state.sync.status === 'error' ? <button type="button" className="workspace-sync-state" data-state={state.sync.status} title={state.sync.error ?? t('workspace.offline')} onClick={() => store.retrySync()}>{t(state.sync.status === 'offline' ? 'workspace.offline' : 'workspace.syncFailed')}</button> : null}
             {state.sync.status === 'syncing' && state.sync.pending > 0 ? <span className="workspace-sync-pending" title={t('workspace.syncing')}>↑{state.sync.pending}</span> : null}
-            {mobile && focusedNode ? focusedNode.resource.kind === 'chat' ? <div className="workspace-header-dock" data-workspace-header={focusedNode.id} />
-                : <PaneMenu id={focusedNode.id} store={store} onPick={props.onPick} onMoveNew={moveToNewWindow} /> : null}
+            {mobile && focusedNode ? <>
+                <div className="workspace-header-dock" data-workspace-header={focusedNode.id} />
+                {focusedNode.resource.kind !== 'chat' ? <PaneMenu id={focusedNode.id} store={store} onPick={props.onPick} onMoveNew={moveToNewWindow} /> : null}
+            </> : null}
             <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}><Popover.Trigger asChild><button type="button" aria-label={t('workspace.actions')}>···</button></Popover.Trigger>
                 <Popover.Portal><Popover.Content className="workspace-menu" side="top" align="end" sideOffset={8} collisionPadding={8}>
                     <button type="button" onClick={() => { setMenuOpen(false); createWindow() }}>{t('workspace.create')}</button>
@@ -367,8 +369,8 @@ const WorkspaceLayout = memo(function WorkspaceLayout(props: {
                     if (mobile) return
                     values.buttons.push(<span key="number" className="workspace-header-number">{allPanes.findIndex(p => p.id === id) + 1}</span>)
                     values.buttons.push(<button type="button" key="zoom" className="workspace-header-zoom" aria-label={t('workspace.zoom')} title={t('workspace.zoom')} onPointerDown={e => e.stopPropagation()} onClick={() => { store.focus(id); store.zoom() }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 3H3v5m0-5 6 6M16 3h5v5m0-5-6 6M3 16v5h5m-5 0 6-6m12 1v5h-5m5 0-6-6" /></svg></button>)
-                    if (allPanes.find(p => p.id === id)?.resource.kind === 'chat') values.buttons.push(<div key="chat-actions" className="workspace-header-dock" data-workspace-header={id} />)
-                    else values.buttons.push(<PaneMenu key="pane-menu" id={id} store={store} onPick={props.onPick} onMoveNew={props.onMoveNew} />)
+                    values.buttons.push(<div key="pane-actions" className="workspace-header-dock" data-workspace-header={id} />)
+                    if (allPanes.find(p => p.id === id)?.resource.kind !== 'chat') values.buttons.push(<PaneMenu key="pane-menu" id={id} store={store} onPick={props.onPick} onMoveNew={props.onMoveNew} />)
                 }} />
     )
 })

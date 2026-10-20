@@ -96,6 +96,15 @@ afterEach(() => {
 })
 
 describe('SortableComposerAttachments', () => {
+    it('preserves the mounted attachment when its ordering callbacks update', () => {
+        const view = render(<SortableComposerAttachments attachments={attachments} orderedAttachmentIds={['a', 'b', 'c']} onReorder={vi.fn()} />)
+        const handle = screen.getByRole('button', { name: 'Reorder attachment a.png' })
+        handle.focus()
+        view.rerender(<SortableComposerAttachments attachments={attachments} orderedAttachmentIds={['a', 'b', 'c']} onReorder={vi.fn()} />)
+        expect(screen.getByRole('button', { name: 'Reorder attachment a.png' })).toBe(handle)
+        expect(handle).toHaveFocus()
+    })
+
     it('reorders an image or file when its drag handle crosses another attachment', () => {
         const elementsFromPoint = vi.fn(() => [
             document.querySelector('[data-hapi-composer-attachment-id="c"]')!,

@@ -32,6 +32,7 @@ import { useNativeToolDetail, NativeDependencyStatus } from '@/components/ToolCa
 import { TraceSection } from '@/components/ToolCard/trace'
 import { isSubagentToolName } from '@/chat/subagentTool'
 import { CommandCard, TERMINAL_TOOL_NAMES } from '@/components/ToolCard/CommandCard'
+import { SUBAGENT_DELEGATION_TOOL_NAMES, SubagentToolLink } from '@/components/ToolCard/SubagentToolLink'
 
 const ELAPSED_INTERVAL_MS = 1000
 const TERMINAL_RELATED_TOOL_NAMES = new Set(['Bash', 'CodexBash', 'shell_command', 'run_shell_command', 'ssh'])
@@ -555,6 +556,8 @@ function ToolCardInner(props: ToolCardProps) {
                     </DialogContent>
                 </Dialog>
             </CardHeader>
+
+            {SUBAGENT_DELEGATION_TOOL_NAMES.has(toolName) ? <SubagentToolLink block={props.block} /> : null}
 
             {hasBody ? (
                 <CardContent className="px-3 pb-3 pt-1">

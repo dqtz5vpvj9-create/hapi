@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import type { Session } from '@/types/api'
 import { getSessionTitle } from '@/lib/sessionTitle'
 
-const APP_TITLE = 'HAPI'
+import { APP_TITLE } from '@/lib/runtime-config'
 
 export function useSessionBrowserTitle(session: Session | null): void {
     const sessionTitle = session ? getSessionTitle(session) : null

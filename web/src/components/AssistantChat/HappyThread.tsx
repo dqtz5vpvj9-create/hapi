@@ -2156,7 +2156,7 @@ export function HappyThread(props: HappyThreadProps) {
                                     components={THREAD_MESSAGE_COMPONENTS}
                                 />
                             </div>
-                            {execution.thinking ? <div role="status" data-execution-state="thinking" className="hapi-execution-thinking"><span className="hapi-execution-sweep">{t('session.item.thinking')}</span></div> : null}
+                            {execution.thinking ? <div role="status" data-execution-state={execution.compacting ? 'compacting' : 'thinking'} className="hapi-execution-thinking"><span className="hapi-execution-sweep">{t(execution.compacting ? 'session.item.compacting' : 'session.item.thinking')}</span></div> : null}
                         </div>
                     </div>
                 </ThreadPrimitive.Viewport>

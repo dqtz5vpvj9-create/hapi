@@ -1,3 +1,4 @@
+import { APP_TITLE } from '@/lib/runtime-config'
 import { workspacePresentation } from '@/workspace/presentation'
 import { WorkspaceStore, workspaceStorageKey, panes } from '@/workspace/workspaceStore'
 import { WorkspaceSync } from '@/workspace/workspaceSync'
@@ -580,7 +581,7 @@ function AppInner() {
         // Telegram auth failed
         return withPwaBanner(
             <div className="p-4 space-y-3">
-                <div className="text-base font-semibold">{t('login.title')}</div>
+                <div className="text-base font-semibold">{APP_TITLE}</div>
                 <div className="text-sm text-red-600">
                     {authError ?? t('login.error.authFailed')}
                 </div>

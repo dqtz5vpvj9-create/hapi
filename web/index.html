@@ -78,10 +78,10 @@
                 }
 
                 var scheme = getInitialScheme()
-                var colorTheme = 'default'
+                var colorTheme = 'codex'
                 try {
                     var storedColorTheme = localStorage.getItem('hapi-color-theme')
-                    if (storedColorTheme && themeBackgrounds[storedColorTheme]) colorTheme = storedColorTheme
+                    if (storedColorTheme === 'default' || (storedColorTheme && themeBackgrounds[storedColorTheme])) colorTheme = storedColorTheme
                 } catch (error) {
                     // Ignore storage errors.
                 }

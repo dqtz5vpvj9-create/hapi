@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { precacheAndRoute } from 'workbox-precaching'
+import { matchPrecache, precacheAndRoute } from 'workbox-precaching'
 import { registerRoute } from 'workbox-routing'
 import { CacheFirst, NetworkFirst } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
@@ -28,6 +28,25 @@ type PushPayload = {
         url?: string
     }
 }
+
+// Installed PWAs start at the scope root. Precache's index alias otherwise
+// serves an older app here even while a deep session URL loads the new build.
+// Register before precache so online launches and ordinary refreshes use the
+// current entry; keep the most recently loaded entry available offline.
+const appRoot = new URL(import.meta.env.BASE_URL, self.location.origin).pathname
+const navigation = new NetworkFirst({ cacheName: 'app-navigation' })
+registerRoute(
+    ({ request, url }) => request.mode === 'navigate'
+        && url.origin === self.location.origin
+        && (url.pathname === appRoot || url.pathname === `${appRoot}index.html`),
+    async (context) => {
+        try {
+            return await navigation.handle({ ...context, request: new Request(context.request, { cache: 'no-cache' }) })
+        } catch {
+            return await matchPrecache(`${appRoot}index.html`) ?? Response.error()
+        }
+    },
+)
 
 precacheAndRoute(self.__WB_MANIFEST)
 

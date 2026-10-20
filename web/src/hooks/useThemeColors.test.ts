@@ -14,6 +14,7 @@ function setScheme(scheme: string): void {
 describe('useThemeColors', () => {
     beforeEach(() => {
         localStorage.clear()
+        localStorage.setItem('hapi-color-theme', 'default')
         document.documentElement.removeAttribute('data-theme')
         document.documentElement.removeAttribute('style')
     })

@@ -8,3 +8,15 @@
 .model-effort-fast{display:flex;align-items:center;justify-content:space-between;min-height:56px;border-top:1px solid var(--app-divider);margin-top:16px;padding-top:8px}.model-effort-fast button{width:52px;height:44px;position:relative;border:0;background:transparent;cursor:pointer}.model-effort-fast button:before{content:'';position:absolute;inset:8px 0;border-radius:20px;background:var(--app-hint);opacity:.5}.model-effort-fast button[aria-checked=true]:before{background:var(--app-link);opacity:1}.model-effort-fast button span{position:absolute;width:22px;height:22px;top:11px;left:4px;background:#fff;border-radius:50%;transition:transform .15s}.model-effort-fast button[aria-checked=true] span{transform:translateX(22px)}
 .model-effort-notice,.model-effort-error{font-size:12px;padding:8px 0;overflow-wrap:anywhere}.model-effort-notice{color:var(--app-hint)}.model-effort-error{color:var(--app-warning,#c44536)}.model-effort-popover button:focus-visible,.model-effort-capsule:focus-visible,.model-effort-popover input:focus-visible{outline:2px solid var(--app-link);outline-offset:2px}
 @media(max-width:600px){.model-effort-popover{width:340px;max-height:min(70dvh,var(--radix-popover-content-available-height,70dvh));border-radius:20px}.model-effort-capsule{max-width:min(45vw,100%);padding:0 10px;font-size:12px}}
+
+/* Keep the picker compact and make every effort label a readable touch target. */
+.model-effort-popover{width:320px;padding:12px;border-radius:16px;border-color:var(--app-border);box-shadow:0 8px 28px #0002}
+.model-effort-heading h2{font-size:14px;color:var(--app-fg);font-weight:600}
+.model-effort-slider{margin-top:12px}
+.model-effort-stops{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+.model-effort-stops button{white-space:nowrap;overflow-wrap:normal;font-size:12px;min-height:36px;padding:4px}
+.model-effort-stops button[aria-pressed=true]{background:var(--app-secondary-bg);color:var(--app-fg)}
+.model-effort-fast{margin-top:10px;min-height:44px;font-size:14px}
+.composer-model-slot{order:-3;display:inline-flex;min-width:0;flex:0 1 auto}
+.composer-model-slot .model-effort-capsule{background:transparent;min-height:32px;padding:0 4px;border-radius:6px;max-width:190px;font-size:12px}
+@media(max-width:600px){.model-effort-popover{width:320px;border-radius:16px}.composer-model-slot .model-effort-capsule{max-width:145px;font-size:11px}}

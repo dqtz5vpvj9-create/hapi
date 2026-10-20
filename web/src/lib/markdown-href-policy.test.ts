@@ -78,7 +78,7 @@ describe('expandTildePath', () => {
     })
 })
 
-describe('classifyNoSchemeHref — fail-closed (#1452)', () => {
+describe('classifyNoSchemeHref — local file routing', () => {
     const workspace = '/home/ada/coding/hapi'
 
     it.each([
@@ -166,15 +166,15 @@ describe('classifyNoSchemeHref — fail-closed (#1452)', () => {
         })
     })
 
-    it('renders absolute paths outside the workspace as inert', () => {
+    it('opens absolute files outside cwd through the authorized reader', () => {
         expect(classifyNoSchemeHref('/etc/passwd.sh', { workspacePath: workspace })).toEqual({
-            action: 'inert',
+            action: 'file', path: '/etc/passwd.sh',
         })
     })
 
-    it('does not treat Windows absolute paths as repo-relative (containment required)', () => {
-        expect(classifyNoSchemeHref('D:\\outside\\secret.ts')).toEqual({ action: 'inert' })
-        expect(classifyNoSchemeHref('D:/outside/secret.ts#L1')).toEqual({ action: 'inert' })
+    it('opens Windows absolute file references without cwd metadata', () => {
+        expect(classifyNoSchemeHref('D:\\outside\\secret.ts')).toEqual({ action: 'file', path: 'D:\\outside\\secret.ts' })
+        expect(classifyNoSchemeHref('D:/outside/secret.ts#L1')).toEqual({ action: 'file', path: 'D:/outside/secret.ts' })
     })
 
     it('routes in-workspace Windows absolute paths to file preview', () => {
@@ -200,13 +200,13 @@ describe('classifyNoSchemeHref — fail-closed (#1452)', () => {
         })
     })
 
-    it('renders absolute paths without workspace metadata as inert (fail closed)', () => {
-        expect(classifyNoSchemeHref('/home/ada/coding/hapi/docs/a.md')).toEqual({ action: 'inert' })
+    it('opens absolute paths without cwd metadata', () => {
+        expect(classifyNoSchemeHref('/home/ada/coding/hapi/docs/a.md')).toEqual({ action: 'file', path: '/home/ada/coding/hapi/docs/a.md' })
     })
 
-    it('rejects tilde paths that lexically escape the workspace via ..', () => {
+    it('lets the reader authorize tilde paths outside cwd', () => {
         expect(classifyNoSchemeHref('~/coding/hapi/../secret.ts', { workspacePath: workspace })).toEqual({
-            action: 'inert',
+            action: 'file', path: '/home/ada/coding/hapi/../secret.ts',
         })
     })
 
@@ -226,8 +226,8 @@ describe('classifyNoSchemeHref — fail-closed (#1452)', () => {
         expect(classifyNoSchemeHref('./relative-route')).toEqual({ action: 'inert' })
     })
 
-    it('renders parent-relative escape attempts as inert', () => {
-        expect(classifyNoSchemeHref('../escape.md')).toEqual({ action: 'inert' })
+    it('resolves parent-relative files through the reader', () => {
+        expect(classifyNoSchemeHref('../escape.md')).toEqual({ action: 'file', path: '../escape.md' })
     })
 
     it('keeps real app routes navigable', () => {

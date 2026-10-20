@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ImagePreview } from './ImagePreview'
+import { PaneContext, type PaneContextValue } from '@/workspace/PaneContext'
 
 function renderGallery() {
     render(
@@ -12,6 +13,36 @@ function renderGallery() {
 }
 
 describe('ImagePreview gallery navigation', () => {
+    it('portals outside the clipped pane and excludes other pane galleries', () => {
+        const { container } = render(<>
+            <div data-pane-id="left">
+                <ImagePreview src="/first.png" fileName="first.png" label="First image" />
+                <ImagePreview src="/second.png" fileName="second.png" label="Second image" />
+            </div>
+            <div data-pane-id="right"><ImagePreview src="/other.png" fileName="other.png" label="Other pane" /></div>
+        </>)
+        fireEvent.click(screen.getByRole('button', { name: /first image/i }))
+        const dialog = screen.getByRole('dialog', { name: 'First image' })
+        expect(container.contains(dialog)).toBe(false)
+        expect(within(dialog).getByText('1 / 2')).toBeInTheDocument()
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Next image' }))
+        expect(screen.getByRole('dialog', { name: 'Second image' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Next image' })).toBeDisabled()
+    })
+
+    it('dismisses a portaled viewer before retaining its owning workspace', () => {
+        const pane: PaneContextValue = { paneId: 'left', sessionId: 'chat', focused: true,
+            root: { current: null }, navigate: vi.fn(), beforeHide: new Set() }
+        const child = <ImagePreview src="/first.png" fileName="first.png" label="First image" />
+        const view = render(<PaneContext.Provider value={pane}>{child}</PaneContext.Provider>)
+        fireEvent.click(screen.getByRole('button', { name: /first image/i }))
+        expect(screen.getByRole('dialog')).toBeInTheDocument()
+        view.rerender(<PaneContext.Provider value={{ ...pane, focused: false }}>{child}</PaneContext.Provider>)
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        view.rerender(<PaneContext.Provider value={pane}>{child}</PaneContext.Provider>)
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
     it('navigates between rendered image previews with toolbar buttons', () => {
         renderGallery()
 

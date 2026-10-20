@@ -573,10 +573,7 @@ export function UnifiedButton(props: {
         className = 'bg-black text-white'
         ariaLabel = t('composer.stop')
     } else if (routesToScratchlist) {
-        // Amber send button - matches the scratchlist drawer accent.
-        // Single visual signal carries the "this goes to the scratchlist"
-        // contract; without it, the modal state is invisible to the user.
-        icon = <SendIcon />
+        icon = <ScratchlistToggleIcon />
         className = 'bg-amber-500 text-white hover:bg-amber-600'
         ariaLabel = t('scratchlist.sendToScratchlist')
     } else if (hasText) {
@@ -611,9 +608,10 @@ export function UnifiedButton(props: {
             disabled={isDisabled}
             aria-label={ariaLabel}
             title={ariaLabel}
-            className={`${routesToScratchlist ? '' : 'app-composer-primary'} ml-1 flex shrink-0 self-end h-8 w-8 max-sm:h-11 max-sm:w-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+            className={`${routesToScratchlist ? 'w-auto px-3 gap-1.5' : 'app-composer-primary w-8 max-sm:w-11'} ml-1 flex shrink-0 self-end h-8 max-sm:h-11 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
         >
             {icon}
+            {routesToScratchlist && !isVoiceActive ? <span className="text-xs font-medium whitespace-nowrap">{t('scratchlist.sendToScratchlist')}</span> : null}
         </button>
     )
 }
@@ -766,10 +764,14 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
             disabled={props.controlsDisabled || hasSchedule || props.goalMode} /> : null}
         {modeLabel ? <div className="composer-refinement-mode" role="status">
             <span>{modeLabel}</span>
-            <button type="button" onClick={clearSendMode} aria-label={t('composer.refinement.cancelMode')} title={t('composer.refinement.cancelMode')}>×</button>
+            <button type="button" onClick={clearSendMode} className={scratchlistActive ? 'composer-draft-exit' : undefined}
+                aria-label={t(scratchlistActive ? 'scratchlist.exitMode' : 'composer.refinement.cancelMode')}>
+                {scratchlistActive ? t('scratchlist.exitMode') : '×'}
+            </button>
         </div> : null}
         <div className="app-composer-toolbar composer-refinement-toolbar" data-dual-action={running && showSend}>
             <div data-testid="composer-toolbar-items" className="composer-refinement-controls">
+                {props.modelControl ? <span className="composer-model-slot">{props.modelControl}</span> : null}
                 {props.workspace ? (props.onReferenceSession ? <button type="button"
                     className="composer-refinement-icon workspace-reference-session"
                     aria-label={t('composer.refinement.referenceSession')} title={t('composer.refinement.referenceSession')}
@@ -837,7 +839,6 @@ function RefinedComposerToolbar(props: ComposerButtonsProps) {
                     aria-label={t('composer.switchRemote')} disabled={props.switchDisabled} onClick={props.onSwitch}><SwitchToRemoteIcon /></button> : null}
             </div>
             <div className="composer-refinement-send-controls">
-                {props.modelControl}
                 {props.workspace ? <ComposerExpandButton expanded={props.expanded} onToggle={props.onExpandedToggle} /> : null}
                 {props.onSchedule || props.onScratchlistToggle ? <Popover.Root open={sendOptionsOpen} onOpenChange={open => { setSendOptionsOpen(open); if (open) setShowSchedulePicker(false) }}>
                     <Popover.Trigger asChild>

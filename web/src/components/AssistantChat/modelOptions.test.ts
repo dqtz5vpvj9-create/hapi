@@ -408,3 +408,21 @@ describe('getModelOptionsForFlavor — pi normalize filter', () => {
         ])
     })
 })
+
+describe('Qoder CN session model options', () => {
+    it('uses the session-advertised catalog like DSH', () => {
+        const live = [
+            { value: 'deepseek-v4.1-flash-1017', label: 'DeepSeek-V4.1-Flash-1017' },
+            { value: 'qwen-max', label: 'Qwen Max' }
+        ]
+
+        expect(getModelOptionsForFlavor('qoder', 'deepseek-v4.1-flash-1017', live)).toEqual(live)
+        expect(getNextModelForFlavor('qoder', 'deepseek-v4.1-flash-1017', live))
+            .toBe('qwen-max')
+    })
+
+    it('does not fall back to Claude presets before the session catalog arrives', () => {
+        expect(getModelOptionsForFlavor('qoder', null, [])).toEqual([])
+        expect(getNextModelForFlavor('qoder', 'qwen-max', [])).toBe('qwen-max')
+    })
+})

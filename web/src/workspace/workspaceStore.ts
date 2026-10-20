@@ -11,6 +11,8 @@ export { panes, removePane, updateNode } from '@hapi/protocol/workspaces'
 export type { PaneNode, PaneResource, SplitNode, WorkspaceDocument, WorkspaceNode } from '@hapi/protocol/workspaces'
 
 type PendingOperation = { operation: WorkspaceOperation; attempted: boolean }
+export type PaneTool = { view: 'directories' | 'changes'; query?: string; target?: string; revealKey?: number } | { view: 'file'; path?: string; staged?: boolean; query?: string; returnTo?: { view: 'directories' | 'changes'; query?: string; target?: string; revealKey?: number } }
+type PaneTools = { resource: PaneResource; current: PaneTool | null; last: PaneTool | null }
 export type WorkspaceState = {
     version: 1
     mode: 'single' | 'workspace'
@@ -24,7 +26,7 @@ export type WorkspaceState = {
 }
 export const emptyPane = (): PaneNode => ({ type: 'pane', id: crypto.randomUUID(), resource: { kind: 'empty' } })
 const initial = (synchronized: boolean): WorkspaceState => ({
-    version: 1, mode: 'single', workspaces: [], activeId: null, focused: {}, zoomed: {}, lastChat: null,
+    version: 1, mode: 'workspace', workspaces: [], activeId: null, focused: {}, zoomed: {}, lastChat: null,
     temporaryIds: [], sync: { status: synchronized ? 'syncing' : 'local', initialized: !synchronized, pending: 0 },
 })
 function sameTree(a: WorkspaceNode, b: WorkspaceNode): boolean {
@@ -44,6 +46,9 @@ export class WorkspaceStore {
     readonly documents: DocumentRegistry
     leaveRequest?: { sessions: DocumentSession[]; finish: (leave: boolean) => void }
     private previewSlots = new Map<string, string>()
+    // Local navigation survives pane remounts; it is not part of the shared layout.
+    private documentReturns = new Map<string, { sourcePaneId: string; expected: PaneResource; document: DocumentResource; tool: PaneTool }>()
+    private paneTools = new Map<string, PaneTools>()
     private state: WorkspaceState
     private listeners = new Set<() => void>()
     private confirmed: WorkspaceSnapshot | null = null
@@ -61,7 +66,7 @@ export class WorkspaceStore {
         try {
             const saved = JSON.parse(storage?.getItem(key) ?? 'null')
             if (saved?.version === 1 && Array.isArray(saved.workspaces) && saved.workspaces.every((w: unknown) => WorkspaceDocumentSchema.safeParse(w).success)) {
-                this.state = { ...this.state, mode: saved.mode, activeId: saved.activeId, lastChat: saved.lastChat,
+                this.state = { ...this.state, mode: saved.presentationDefault === 'tmux-v1' ? saved.mode : 'workspace', activeId: saved.activeId, lastChat: saved.lastChat,
                     workspaces: saved.workspaces, focused: saved.focused ?? {}, zoomed: saved.zoomed ?? {} }
                 if (saved.synchronization) {
                     this.confirmed = saved.synchronization.confirmed ? WorkspaceSnapshotSchema.parse({ ...saved.synchronization.confirmed, schemaVersion: 2 }) : null
@@ -100,7 +105,7 @@ export class WorkspaceStore {
         }
     }
     private persist() {
-        try { this.storage?.setItem(this.key, JSON.stringify({ ...this.state, synchronization: { confirmed: this.confirmed, pending: this.pending, temporary: [...this.temporary.values()] } })) }
+        try { this.storage?.setItem(this.key, JSON.stringify({ ...this.state, presentationDefault: 'tmux-v1', synchronization: { confirmed: this.confirmed, pending: this.pending, temporary: [...this.temporary.values()] } })) }
         catch { /* Browser quota does not make an open editor unusable. */ }
     }
     private commit(next: WorkspaceState, capture = true) {
@@ -113,6 +118,15 @@ export class WorkspaceStore {
             if (owner && owner.id !== previousActive) { this.state.activeId = owner.id; this.state.focused[owner.id] = previous.id }
         }
         this.repairFocus()
+        const live = new Map(this.state.workspaces.flatMap(w => panes(w.root)).map(p => [p.id, p]))
+        for (const [id, tools] of this.paneTools) {
+            const pane = live.get(id)
+            if (!pane || !sameResource(pane.resource, tools.resource)) this.paneTools.delete(id)
+        }
+        for (const [id, origin] of this.documentReturns) {
+            const target = live.get(id), source = live.get(origin.sourcePaneId)
+            if (!target || !source || !sameResource(target.resource, origin.document) || !sameResource(source.resource, origin.expected)) this.documentReturns.delete(id)
+        }
         this.persist()
         this.listeners.forEach(listener => listener())
     }
@@ -268,7 +282,18 @@ export class WorkspaceStore {
         }
         this.commit({ ...this.state }, false)
     }
-    /** A confirmed file operation applies to open documents in every window. */
+    getPaneTools(id: string, resource: PaneResource): PaneTools | undefined {
+        const value = this.paneTools.get(id)
+        return value && sameResource(value.resource, resource) ? value : undefined
+    }
+    setPaneTool(id: string, resource: PaneResource, tool: PaneTool | null) {
+        const pane = this.state.workspaces.flatMap(w => panes(w.root)).find(p => p.id === id)
+        if (!pane || !sameResource(pane.resource, resource)) return
+        const previous = this.getPaneTools(id, resource)
+        this.paneTools.set(id, { resource, current: tool, last: tool ?? previous?.last ?? null })
+        for (const listener of this.listeners) listener()
+    }
+    /** A confirmed file operation applies to open documents in every workspace. */
     relocateDocuments(owner: { sessionId: string; machineId?: string }, from: string, to: string) {
         for (const pane of this.state.workspaces.flatMap(w => panes(w.root))) {
             const resource = pane.resource
@@ -283,23 +308,40 @@ export class WorkspaceStore {
         for (const pane of this.state.workspaces.flatMap(w => panes(w.root))) {
             const resource = pane.resource
             if (resource.kind !== 'document' || resource.document.kind !== 'file' || !sameFileMachine(resource, owner)) continue
-            if (paths.some(path => filePathSuffix(resource.document.kind === 'file' ? resource.document.path : '', path) !== null)) this.removePaneNow(pane.id)
+            const filePath = resource.document.path
+            if (paths.some(path => filePathSuffix(filePath, path) !== null)) this.removePaneNow(pane.id)
         }
     }
-    openDocument(sourcePaneId: string, expected: PaneResource, resource: DocumentResource, beside = false) {
+    returnFromDocument(paneId: string): boolean {
+        const origin = this.documentReturns.get(paneId)
+        const all = this.state.workspaces.flatMap(w => panes(w.root))
+        const source = all.find(p => p.id === origin?.sourcePaneId)
+        const target = all.find(p => p.id === paneId)
+        if (!origin || !source || !target || !sameResource(target.resource, origin.document) || !sameResource(source.resource, origin.expected)) return false
+        this.setPaneTool(source.id, source.resource, origin.tool)
+        this.focus(source.id)
+        return true
+    }
+    openDocument(sourcePaneId: string, expected: PaneResource, resource: DocumentResource, beside = false, returnTool?: PaneTool) {
         const all = this.state.workspaces.flatMap(w => panes(w.root))
         const source = all.find(p => p.id === sourcePaneId)
         if (!source || !sameResource(source.resource, expected)) return
         const document = this.documents.get(resource)
         document.patch({ targetSessionId: expected.kind === 'empty' ? resource.sessionId : expected.sessionId })
+        const rememberReturn = (id: string) => {
+            this.documentReturns.delete(id)
+            if (returnTool) this.documentReturns.set(id, { sourcePaneId, expected, document: resource, tool: returnTool })
+        }
         const existing = all.find(p => sameResource(p.resource, resource))
-        if (existing) { this.focus(existing.id); return }
+        if (existing) { if (returnTool) rememberReturn(existing.id); this.focus(existing.id); return }
         const slot = all.find(p => p.id === this.previewSlots.get(resource.sessionId))
         if (!beside && slot?.resource.kind === 'document' && !this.documents.isDirty(slot.resource) && !this.documents.get(slot.resource).state.pinned) {
+            rememberReturn(slot.id)
             this.bind(slot.id, resource); this.focus(slot.id); return
         }
         const w = this.state.workspaces.find(w => panes(w.root).some(p => p.id === sourcePaneId))!
         const added = { ...emptyPane(), resource }
+        rememberReturn(added.id)
         this.previewSlots.set(resource.sessionId, added.id)
         this.execute({ type: 'split', paneId: sourcePaneId, splitId: crypto.randomUUID(), axis: 'horizontal', added }, {
             activeId: w.id, focused: { ...this.state.focused, [w.id]: added.id }, zoomed: { ...this.state.zoomed, [w.id]: false },

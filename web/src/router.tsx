@@ -15,6 +15,7 @@ import { App } from '@/App'
 import { SessionWorkspace, type WorkspaceView } from '@/components/SessionWorkspace'
 import { encodeBase64 } from '@/lib/utils'
 const SessionFileWorkbench = lazyRouteComponent(() => import('@/file-workbench/SessionFileWorkbench'), 'SessionFileWorkbench')
+const SubagentSessionPage = lazyRouteComponent(() => import('@/components/SubagentChat/SubagentSessionPage'), 'SubagentSessionPage')
 import { isRemoteTerminalSupported } from '@/utils/terminalSupport'
 
 import { SessionList } from '@/components/SessionList'
@@ -287,6 +288,11 @@ function SessionsPage() {
                         sessions={sessions}
                         selectedSessionId={selectedSessionId}
                         onSelect={selectSession}
+                        onOpenSubagent={(parentSessionId, subagentId) => navigate({
+                            to: '/sessions/$sessionId/subagents/$subagentId',
+                            params: { sessionId: parentSessionId, subagentId },
+                            ...PRESERVE_SESSION_SIDEBAR_SCROLL,
+                        })}
                         onOpenPane={workspace ? openSessionInPane : undefined}
                         onNewSession={() => navigate({
                             to: '/sessions/new',
@@ -349,11 +355,14 @@ function SessionDetailRoute() {
     const { api } = useAppContext()
     const pathname = useLocation({ select: location => location.pathname })
     const { sessionId } = useParams({ from: '/sessions/$sessionId' })
+    const matchRoute = useMatchRoute()
     const navigate = useNavigate()
     const { session, notFound: sessionNotFound } = useSession(api, sessionId)
     useSessionBrowserTitle(session)
     const basePath = `/sessions/${sessionId}`
     const isChat = pathname === basePath || pathname === `${basePath}/`
+    // A subagent child route owns the chat slot; the workspace panel stays closed.
+    const isSubagent = Boolean(matchRoute({ to: '/sessions/$sessionId/subagents/$subagentId' }))
     const workspaceSearch = useSearch({ strict: false })
     const view: WorkspaceView = pathname.endsWith('/terminal') ? 'terminal'
         : pathname.endsWith('/file') ? 'file'
@@ -410,7 +419,7 @@ function SessionDetailRoute() {
 
     return <SessionWorkspace
         key={sessionId}
-        open={!isChat}
+        open={!isChat && !isSubagent}
         view={view}
         path={session?.metadata?.path}
         terminalAvailable={!!session?.active && isRemoteTerminalSupported(session.metadata)}
@@ -423,7 +432,7 @@ function SessionDetailRoute() {
             }
         }}
         onClose={() => navigate({ to: '/sessions/$sessionId', params: { sessionId }, ...PRESERVE_SESSION_SIDEBAR_SCROLL })}
-        chat={<SessionPage />}
+        chat={isSubagent ? <SubagentSessionPage /> : <SessionPage />}
         panel={view === 'directories' || (view === 'file' && workspaceSearch.staged === undefined)
             ? <SessionFileWorkbench sessionId={sessionId} search={parseSessionFilesSearch(workspaceSearch)}
                 requested={view === 'file' ? { path: workspaceSearch.path, document: workspaceSearch.document } : undefined}
@@ -652,6 +661,14 @@ const sessionTerminalRoute = createRoute({
     component: TerminalPage,
 })
 
+// Subagent conversations render inside the session chat slot, so this route
+// only claims the path; `SessionDetailRoute` swaps the chat surface.
+const sessionSubagentRoute = createRoute({
+    getParentRoute: () => sessionDetailRoute,
+    path: 'subagents/$subagentId',
+    component: () => null,
+})
+
 type SessionFileSearch = {
     document?: string
     path: string
@@ -840,6 +857,7 @@ export const routeTree = rootRoute.addChildren([
             sessionTerminalRoute,
             sessionFilesRoute,
             sessionFileRoute,
+            sessionSubagentRoute,
         ]),
     ]),
     browseRoute,

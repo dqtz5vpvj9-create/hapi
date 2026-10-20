@@ -52,6 +52,37 @@ if (params.has('presenceSample')) {
         session.thinking = session.execution.status === 'active'
     }
 }
+const dshTranscript = [
+    { id: 'session-ada:0', role: 'user', kind: 'message', createdAt: createdAt + 1_000,
+        text: '你在 web/src/components/SubagentChat 里核对：子代理页是否复用了主会话的消息组件？把结论和证据行号发我。' },
+    { id: 'session-ada:1', role: 'assistant', kind: 'reasoning', createdAt: createdAt + 2_000,
+        text: '先确认 SubagentConversation 使用的线程组件，再对照主会话 SessionChat 的渲染入口。' },
+    { id: 'session-ada:2', role: 'assistant', kind: 'message', createdAt: createdAt + 3_000,
+        text: '先看一下两处组件引用和 runtime 构造。' },
+    { id: 'session-ada:3', role: 'tool', kind: 'tool-call', toolName: 'bash', callId: 'call-1', createdAt: createdAt + 4_000,
+        text: 'bash\n{"command":"rg -n \"THREAD_MESSAGE_COMPONENTS|AssistantRuntimeProvider\" web/src/components/SubagentChat web/src/components/SessionChat.tsx"}',
+        input: { command: 'rg -n "THREAD_MESSAGE_COMPONENTS|AssistantRuntimeProvider" web/src/components/SubagentChat web/src/components/SessionChat.tsx' } },
+    { id: 'session-ada:4', role: 'tool', kind: 'tool-result', callId: 'call-1', createdAt: createdAt + 5_000,
+        text: 'web/src/components/SubagentChat/SubagentConversation.tsx:13: import { MessageSkeleton, THREAD_MESSAGE_COMPONENTS } from "@/components/AssistantChat/HappyThread"\nweb/src/components/SessionChat.tsx:1981: <AssistantRuntimeProvider runtime={runtime}>',
+        output: 'web/src/components/SubagentChat/SubagentConversation.tsx:13: import { MessageSkeleton, THREAD_MESSAGE_COMPONENTS } from "@/components/AssistantChat/HappyThread"\nweb/src/components/SessionChat.tsx:1981: <AssistantRuntimeProvider runtime={runtime}>' },
+    { id: 'session-ada:5', role: 'assistant', kind: 'message', createdAt: createdAt + 6_000,
+        text: '结论：子代理页确实复用了主会话的 THREAD_MESSAGE_COMPONENTS 与 HappyChatProvider；差异只在数据来源（HTTP 分页转录 vs Hub 消息流）和输入框。证据：SubagentConversation.tsx 第 13、171–188 行；SessionChat.tsx 第 1981 行。' },
+]
+if (params.has('dshSubagents')) {
+    const target = sessions[0]!
+    target.metadata = {
+        ...target.metadata!,
+        name: 'DSH 子代理验收',
+        flavor: 'dsh',
+        codexNativeSession: false,
+        dshSessionId: 'dsh-root-fixture',
+        dshSubagents: [
+            { sessionId: 'session-ada', name: 'Ada', label: '核对子代理 UI', mode: 'continuable', activity: 'running', teamStatus: 'running', provider: 'spawn', createdAt, settledMs: 12_500, openSince: Date.now() - 42_000 },
+            { sessionId: 'session-ops', label: '一次性侦察', mode: 'one-shot', activity: 'inactive', createdAt, settledMs: 3_100, lastTurnCompleted: true },
+        ],
+    }
+    target.model = 'deepseek-flash'
+}
 function message(sessionId: string, seq: number, text?: string): DecryptedMessage {
     const meta = { nativeExecution: { threadId: sessionId, turnId: `${sessionId}-turn-${Math.ceil(seq / 2)}`, itemId: `${sessionId}-${seq}`, phase: 'final_answer', turn: { status: 'completed', started: true, ended: true } } }
     const richAnswer = params.has('rich') && seq === 320
@@ -63,6 +94,17 @@ function message(sessionId: string, seq: number, text?: string): DecryptedMessag
     } as DecryptedMessage
 }
 const history = new Map(sessions.map(s => [s.id, Array.from({ length: 320 }, (_, i) => message(s.id, i + 1))]))
+if (params.has('dshSubagents')) {
+    // The root conversation shows the delegation call whose card links into the
+    // child page, which is the entry point the fixture screenshots exercise.
+    history.get('chat-1')!.push({
+        id: 'chat-1-m-321', seq: 321, localId: null, createdAt: createdAt + 321, invokedAt: createdAt + 321,
+        content: { role: 'agent', meta: {}, content: { type: 'codex', data: { type: 'tool-call', callId: 'call-spawn', name: 'spawn_teammate', input: { name: 'Ada', description: '核对子代理 UI', task: '核对子代理页是否复用主会话的消息组件。' } } } },
+    } as DecryptedMessage, {
+        id: 'chat-1-m-322', seq: 322, localId: null, createdAt: createdAt + 322, invokedAt: createdAt + 322,
+        content: { role: 'agent', meta: {}, content: { type: 'codex', data: { type: 'tool-call-result', callId: 'call-spawn', output: 'Spawned teammate Ada · session-ada' } } },
+    } as DecryptedMessage)
+}
 const streams = new Set<FixtureSource>()
 let eventId = 0
 let bodyPaused = false
@@ -239,9 +281,31 @@ window.fetch = async (input, init) => {
         const id = match?.[1] ?? '', suffix = match?.[2] ?? ''
         const session = sessions.find(s => s.id === id)
         if (session && !suffix) data = { session }
+        else if (session && params.has('dshSubagents') && /^\/dsh-subagents\//.test(suffix)) {
+            const action = suffix.split('/')[3]
+            const childId = decodeURIComponent(suffix.split('/')[2] ?? '')
+            const childMessages = childId === 'session-ops'
+                ? [
+                    { id: 'session-ops:0', role: 'user', kind: 'message', createdAt: createdAt + 1_000, text: '跑一次侦察：确认 sessionQuery 在 ACP profile 里挂载。' },
+                    { id: 'session-ops:1', role: 'assistant', kind: 'message', createdAt: createdAt + 2_000, text: '一次性侦察结论：`session-query-sqlite` 由 `dsh-base` 挂载，`openAt: never` 只禁用全文搜索，精确读取（`readSession`）仍然可用。' },
+                ]
+                : dshTranscript
+            if (action === 'messages' && method === 'GET') data = { sessionId: childId, messages: childMessages, before: null, hasMore: false, after: childMessages.length, epoch: 'fixture-epoch', hasLater: false, reset: false }
+            else if (action === 'prompt' && method === 'POST') { probe.sends.push({ sessionId: id, ...JSON.parse(String(init?.body)) }); data = { messageId: 'fixture-child-message' } }
+            else if (action === 'interrupt' && method === 'POST') data = { accepted: true }
+            else { probe.unhandled.push(`${method} ${path}`); return fixtureJson({ error: `Unhandled fixture route: ${path}` }, { status: 404 }) }
+        }
         else if (session && suffix === '/read-state' && method === 'PUT') {
             const { expectedVersion, seenAt, manualUnreadAt } = JSON.parse(String(init?.body))
             data = { applied: true, state: { version: expectedVersion + 1, seenAt, manualUnreadAt } }
+        }
+        else if (session && params.has('fileBrowser') && (suffix === '/git-status' || suffix === '/git-diff-numstat')) data = { success: true, stdout: '' }
+        else if (session && params.has('fileBrowser') && suffix === '/directory') {
+            const directory = url.searchParams.get('path') ?? ''
+            data = { success: true, entries: directory === '' ? [{ name: 'build', type: 'directory' }] : [
+                ...Array.from({ length: 30 }, (_, i) => ({ name: `file-${String(i).padStart(2, '0')}.txt`, type: 'file', size: 20 })),
+                { name: 'Readify.apk', type: 'file', size: 3 }, { name: 'PLAN.md', type: 'file', size: 100 },
+            ] }
         }
         else if (session && suffix === '/files') data = { success: true, files: [] }
         else if (session && suffix === '/document-preview' && previewPdf) data = { previewId: 'fixture-pdf', length: previewPdf.length, version: 'fixture-v1' }
@@ -253,7 +317,9 @@ window.fetch = async (input, init) => {
         else if (session && suffix === '/document-preview' && params.get('documentSample')) return realFetch('http://127.0.0.1:5194/slides.pdf')
         else if (session && suffix === '/file-info') data = { success: true, entries: [{ path: url.searchParams.get('path'), size: new TextEncoder().encode(documentText()).length, modified: documentText().length }] }
         else if (session && suffix === '/file') {
-            if (params.has('htmlDocument')) {
+            if (params.has('fileBrowser') && url.searchParams.get('path')?.endsWith('.apk')) {
+                data = { success: true, content: bytesBase64(new Uint8Array([0x50, 0, 0xff])), size: 3, writable: false }
+            } else if (params.has('htmlDocument')) {
                 const path = url.searchParams.get('path') ?? ''
                 const text = path === htmlReportPath && params.has('htmlIsolation') ? htmlIsolationReport : path === htmlReportPath && params.has('htmlMixed') ? htmlReportFiles[path].replace('<head>', '<head>\r\n') : path === htmlReportPath ? localStorage.getItem('fixture:document-text') ?? htmlReportFiles[path] : htmlReportFiles[path]
                 if (method === 'PUT') {
@@ -383,5 +449,5 @@ if (paneCount && !params.has('join') && !localStorage.getItem(workspaceStorageKe
     }
     if (params.has('savedSingle')) store.leave()
 }
-const router = createAppRouter(createMemoryHistory({ initialEntries: [params.has('singleDocument') ? `/sessions/chat-1/file?path=${encodeURIComponent(btoa('/mnt/cache/src/hapi/PLAN.md'))}` : params.has('list') ? '/sessions?view=list' : params.has('single') ? '/sessions/chat-1' : paneCount ? '/sessions/workspace' : '/sessions'] }))
+const router = createAppRouter(createMemoryHistory({ initialEntries: [params.has('singleDocument') ? `/sessions/chat-1/file?path=${encodeURIComponent(btoa('/mnt/cache/src/hapi/PLAN.md'))}` : params.has('list') ? '/sessions?view=list' : params.has('subagent') ? `/sessions/chat-1/subagents/${params.get('subagent') === 'ops' ? 'session-ops' : 'session-ada'}` : params.has('single') ? '/sessions/chat-1' : params.has('dshSubagents') ? '/sessions/chat-1' : paneCount ? '/sessions/workspace' : '/sessions'] }))
 createRoot(document.getElementById('root')!).render(<React.StrictMode><I18nProvider><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RouterProvider router={router} /></QueryClientProvider></I18nProvider></React.StrictMode>)

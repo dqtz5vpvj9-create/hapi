@@ -46,3 +46,24 @@ describe('PowerShell entry-point prefixes', () => {
         expect(getCodexCommandText({ command })).toBe(expected)
     })
 })
+
+describe('cross-platform shell prefixes', () => {
+    it.each([
+        ['/usr/bin/zsh -lc "git status --short"', 'git status --short'],
+        ["/bin/bash -lc 'rg needle src'", 'rg needle src'],
+        ['sh -c "echo \\"hello\\""', 'echo "hello"'],
+        ["/bin/dash -c 'pwd'", 'pwd'],
+        ["fish -l -c 'ls -la'", 'ls -la'],
+        ['"C:\\Windows\\System32\\cmd.exe" /d /s /c "dir /b"', 'dir /b'],
+        ['cmd /C echo hello', 'echo hello'],
+    ])('shows the script for %s', (command, expected) => {
+        expect(getCodexCommandText({ command })).toBe(expected)
+    })
+    it.each(['bash -lc "echo hello" argument', 'python -c "print(1)"', 'zsh script.sh', 'sh -c "incomplete'])('preserves ambiguous invocations: %s', command => {
+        expect(getCodexCommandText({ command })).toBe(command)
+    })
+    it('supports Windows and Unix argv forms', () => {
+        expect(getCodexCommandText({ command: ['cmd.exe', '/d', '/s', '/c', 'dir /b'] })).toBe('dir /b')
+        expect(getCodexCommandText({ command: ['/bin/zsh', '-l', '-c', 'echo "hello"'] })).toBe('echo "hello"')
+    })
+})

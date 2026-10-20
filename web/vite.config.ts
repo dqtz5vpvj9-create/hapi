@@ -26,6 +26,7 @@ const base = process.env.VITE_BASE_URL || '/'
 const shareAction = shareTargetPathnameFromBase(base)
 const hubTarget = process.env.VITE_HUB_PROXY || 'http://127.0.0.1:3006'
 const appVersion = readAppVersion()
+const appTitle = process.env.VITE_APP_TITLE?.trim() || 'HAPI'
 
 function readAppVersion(): string {
     const buildInfoPath = resolve(__dirname, '../shared/src/buildInfo.ts')
@@ -125,6 +126,14 @@ export default defineConfig(({ mode }) => ({
     plugins: [
         react(),
         spaFallback(),
+        {
+            name: 'app-title',
+            transformIndexHtml(html) {
+                const title = appTitle.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;')
+                return html.replace('<title>HAPI</title>', `<title>${title}</title>`)
+                    .replace('name="apple-mobile-web-app-title" content="HAPI"', `name="apple-mobile-web-app-title" content="${title}"`)
+            },
+        },
         copyKaTeXFonts(),
         pdfAssets(),
         VitePWA({
@@ -136,8 +145,8 @@ export default defineConfig(({ mode }) => ({
             srcDir: 'src',
             filename: 'sw.ts',
             manifest: {
-                name: 'HAPI',
-                short_name: 'HAPI',
+                name: appTitle,
+                short_name: appTitle,
                 description: 'AI-powered development assistant',
                 // An installed Android WebAPK stores theme_color once at install time and uses it
                 // as a fixed toolbar color, so any value here pins the status bar to one appearance.
@@ -259,6 +268,12 @@ export default defineConfig(({ mode }) => ({
         emptyOutDir: true,
         rollupOptions: {
             output: {
+                // A .js worker works on hosts whose MIME table predates .mjs.
+                // Its new URL also replaces the previously cached incorrect MIME header.
+                assetFileNames(asset) {
+                    return asset.names.some(name => name.endsWith('.mjs'))
+                        ? 'assets/[name]-[hash].js' : 'assets/[name]-[hash][extname]'
+                },
                 manualChunks(id) {
                     return getVendorChunkName(id)
                 }

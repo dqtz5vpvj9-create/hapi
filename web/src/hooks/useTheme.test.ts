@@ -6,8 +6,18 @@ import { useColorTheme } from '@/hooks/useColorTheme'
 describe('useTheme', () => {
     beforeEach(() => {
         localStorage.clear()
+        localStorage.setItem('hapi-color-theme', 'default')
         document.documentElement.removeAttribute('data-theme')
         document.head.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.remove())
+    })
+
+    it('initializes a fresh client with Codex Glass', () => {
+        localStorage.removeItem('hapi-color-theme')
+        localStorage.setItem('hapi-appearance', 'light')
+        initializeTheme()
+        expect(document.documentElement).toHaveAttribute('data-color-theme', 'codex')
+        expect(document.documentElement.style.getPropertyValue('--app-bg')).toBe('#fafafa')
+        expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content).toBe('#fafafa')
     })
 
     it('applies the stored dark appearance to the document and browser theme color', () => {
@@ -36,7 +46,7 @@ describe('useTheme', () => {
 
         act(() => preset.current.setColorTheme('default'))
         expect(document.documentElement.style.getPropertyValue('--app-bg')).toBe('')
-        expect(localStorage.getItem('hapi-color-theme')).toBeNull()
+        expect(localStorage.getItem('hapi-color-theme')).toBe('default')
         expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content).toBe(getThemeColor('light'))
     })
 

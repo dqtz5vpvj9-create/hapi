@@ -8,11 +8,6 @@ import { I18nProvider } from '@/lib/i18n-context'
 import { ToastProvider } from '@/lib/toast-context'
 import { SessionList } from './SessionList'
 
-vi.mock('./CodexSubagentDialog', () => ({
-    CodexSubagentDialog: (props: { threadId: string; parentSessionId: string }) =>
-        <div data-testid="native-child-dialog" data-thread={props.threadId} data-parent={props.parentSessionId} />
-}))
-
 const SEARCH_LABEL = 'Search sessions (title, path, Agent, machine name, ID, and more)'
 const SEARCH_PLACEHOLDER = 'Search title/path/Agent/machine/ID…'
 
@@ -73,9 +68,11 @@ const all = [
 ]
 function mount(selectedSessionId?: string, sessions = all, api: ApiClient | null = null) {
     const onSelect = vi.fn()
+    const onOpenSubagent = vi.fn()
     const element = <SessionList sessions={sessions} selectedSessionId={selectedSessionId} onSelect={onSelect}
+        onOpenSubagent={onOpenSubagent}
         onNewSession={vi.fn()} onRefresh={vi.fn()} isLoading={false} api={api} />
-    return { onSelect, ...renderWithProviders(element) }
+    return { onSelect, onOpenSubagent, ...renderWithProviders(element) }
 }
 describe('SessionList native subagents', () => {
     const nativeRoot = makeSession({ id: 'parent', active: true, updatedAt: 200, metadata: {
@@ -86,14 +83,47 @@ describe('SessionList native subagents', () => {
         ],
     } })
     it('shows native children without independent HAPI rows and opens their exact thread under the original parent', () => {
-        const { onSelect } = mount(undefined, [nativeRoot], {} as ApiClient)
+        const { onSelect, onOpenSubagent } = mount(undefined, [nativeRoot], {} as ApiClient)
         fireEvent.click(screen.getByRole('button', { name: 'Subagents (1)' }))
         fireEvent.click(screen.getByText('Native Ada'))
-        expect(screen.getByTestId('native-child-dialog').getAttribute('data-thread')).toBe('native-child')
-        expect(screen.getByTestId('native-child-dialog').getAttribute('data-parent')).toBe('parent')
+        expect(onOpenSubagent).toHaveBeenLastCalledWith('parent', 'native-child')
         expect(onSelect).not.toHaveBeenCalled()
         fireEvent.click(screen.getAllByRole('button', { name: 'Subagents (1)' })[1])
         expect(screen.getByText('Native Mobile')).toBeTruthy()
+    })
+    it('lists DSH children with their flavor, mode and team status and opens the shared subagent route', () => {
+        const dshRoot = makeSession({ id: 'dsh-parent', active: true, updatedAt: 200, metadata: {
+            name: 'DSH task', path: '/project', flavor: 'dsh', machineId: 'm',
+            dshSubagents: [
+                { sessionId: 'session-ada', name: 'Ada', mode: 'continuable', activity: 'running', teamStatus: 'running', provider: 'spawn', createdAt: 1, settledMs: 1200 },
+                { sessionId: 'session-ops', label: 'ops one-shot', mode: 'one-shot', activity: 'inactive', createdAt: 2 },
+            ],
+        } })
+        const { onOpenSubagent, container } = mount(undefined, [dshRoot], {} as ApiClient)
+        fireEvent.click(screen.getByRole('button', { name: 'Subagents (2)' }))
+        const ada = container.querySelector('[data-native-subagent-id="session-ada"]')!
+        expect(ada.getAttribute('data-subagent-flavor')).toBe('dsh')
+        expect(ada.getAttribute('data-subagent-status')).toBe('running')
+        expect(screen.getByText('Ada')).toBeTruthy()
+        expect(screen.getByText('ops one-shot')).toBeTruthy()
+        expect(ada.textContent).toContain('DSH · Continuable · Running')
+        expect(container.querySelector('[data-native-subagent-id="session-ops"]')!.textContent).toContain('One-shot')
+        fireEvent.click(screen.getByText('Ada'))
+        expect(onOpenSubagent).toHaveBeenLastCalledWith('dsh-parent', 'session-ada')
+        fireEvent.click(screen.getByText('ops one-shot'))
+        expect(onOpenSubagent).toHaveBeenLastCalledWith('dsh-parent', 'session-ops')
+    })
+    it('folds DSH children under the parent in the Recent view', () => {
+        const dshRoot = makeSession({ id: 'dsh-parent', active: true, updatedAt: 200, metadata: {
+            name: 'DSH task', path: '/project', flavor: 'dsh', machineId: 'm',
+            dshSubagents: [{ sessionId: 'session-ada', name: 'Ada', mode: 'continuable', activity: 'inactive', createdAt: 1 }],
+        } })
+        const { onOpenSubagent } = mount(undefined, [dshRoot], {} as ApiClient)
+        fireEvent.click(screen.getByRole('button', { name: 'Recent' }))
+        expect(screen.queryByText('Ada')).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Subagents (1)' }))
+        fireEvent.click(screen.getByText('Ada'))
+        expect(onOpenSubagent).toHaveBeenLastCalledWith('dsh-parent', 'session-ada')
     })
     it('finds a native child nickname and retains its root even though the child has no HAPI row', () => {
         mount(undefined, [nativeRoot, all[3]])

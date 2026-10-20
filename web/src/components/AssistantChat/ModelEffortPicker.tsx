@@ -15,6 +15,7 @@ export type ModelEffortPickerProps = {
     fast?: boolean
     onFastChange?: (fast: boolean) => void
     onClearFast?: () => void
+    disabledHint?: string
     disabled?: boolean
     loading?: boolean
     error?: string | null
@@ -39,19 +40,20 @@ export function ModelEffortPicker(props: ModelEffortPickerProps) {
     const caption = [modelLabel, effortLabel].filter(Boolean).join(' · ')
     return <Popover.Root modal open={open} onOpenChange={next => { setOpen(next); if (next) setPage('effort') }}>
         <Popover.Trigger asChild>
-            <button type="button" className="model-effort-capsule" disabled={props.disabled} aria-label={caption} title={caption}>
+            <button type="button" className="model-effort-capsule" aria-label={caption} title={caption}>
                 {props.fast ? <span aria-label="Fast" className="model-effort-lightning">ϟ</span> : null}
                 <span className="model-effort-caption">{caption}</span><span aria-hidden="true">⌄</span>
             </button>
         </Popover.Trigger>
         <Popover.Portal>
-            <Popover.Content aria-labelledby={headingId} className="model-effort-popover" side="top" align="end" sideOffset={10} collisionPadding={12}
+            <Popover.Content aria-labelledby={headingId} className="model-effort-popover" side="top" align="start" sideOffset={10} collisionPadding={12}
                 onEscapeKeyDown={event => { if (event.isComposing || event.keyCode === 229) event.preventDefault() }}>
                 <div className="model-effort-heading">
                     {page === 'model' ? <button type="button" className="model-effort-icon" aria-label={t('common.back')} onClick={() => setPage('effort')}>‹</button> : null}
-                    <h2 id={headingId}>{page === 'model' ? t('misc.model') : effortLabel ?? t('misc.reasoningEffort')}</h2>
+                    <h2 id={headingId}>{page === 'model' ? t('misc.model') : t('misc.reasoningEffort')}</h2>
                     <Popover.Close className="model-effort-icon" aria-label={t('composer.modelPicker.close')}>×</Popover.Close>
                 </div>
+                {props.disabled && props.disabledHint ? <div role="status" className="model-effort-notice">{props.disabledHint}</div> : null}
                 {props.loading ? <div role="status" className="model-effort-notice">{t('loading')}</div> : null}
                 {props.error ? <div role="alert" className="model-effort-error">{props.error}</div> : null}
                 {props.notice ? <div role="status" className="model-effort-notice">{props.notice}</div> : null}

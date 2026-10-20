@@ -48,7 +48,6 @@ export function useAnchoredMenu(options: {
         const menuEl = menuRef.current
         if (!menuEl) return
 
-        const menuRect = menuEl.getBoundingClientRect()
         const viewport = window.visualViewport
         const viewportWidth = viewport?.width ?? window.innerWidth
         const viewportHeight = viewport?.height ?? window.innerHeight
@@ -57,8 +56,10 @@ export function useAnchoredMenu(options: {
         const padding = 8
         const gap = 8
 
-        const height = Math.min(menuRect.height, viewportHeight - padding * 2)
-        const width = Math.min(menuRect.width, viewportWidth - padding * 2)
+        // The pop animation scales the rendered rectangle. Position using the
+        // layout size so the fully expanded menu still fits the viewport.
+        const height = Math.min(menuEl.offsetHeight, viewportHeight - padding * 2)
+        const width = Math.min(menuEl.offsetWidth, viewportWidth - padding * 2)
         const spaceBelow = viewportTop + viewportHeight - anchorPoint.y
         const spaceAbove = anchorPoint.y - viewportTop
         const openAbove = spaceBelow < height + gap && spaceAbove > spaceBelow

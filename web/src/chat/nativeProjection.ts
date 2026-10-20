@@ -301,7 +301,7 @@ function isProcessMember(block: ChatBlock): boolean {
     // HAPI business adaptation: rich results and unresolved interactions remain
     // reachable even when a completed process is collapsed.
     return block.tool.permission?.status !== 'pending'
-        && block.tool.state !== 'pending' && block.tool.state !== 'running' && block.tool.state !== 'error'
+        && block.tool.state !== 'pending' && block.tool.state !== 'running'
         && !richToolParts(block.tool.result) && block.children.length === 0
         && !independentTool(block)
 }
@@ -316,7 +316,7 @@ function independentTool(block: Extract<ChatBlock, { kind: 'tool-call' }>) {
 function isGroupMember(block: ChatBlock) {
     return block.kind === 'agent-reasoning' || (block.kind === 'tool-call'
         && !independentTool(block) && block.tool.permission?.status !== 'pending'
-        && block.tool.state !== 'error' && !richToolParts(block.tool.result) && block.children.length === 0)
+        && !richToolParts(block.tool.result) && block.children.length === 0)
 }
 
 function sameDisclosure<T extends object>(left: T | undefined, right: T | undefined): boolean {

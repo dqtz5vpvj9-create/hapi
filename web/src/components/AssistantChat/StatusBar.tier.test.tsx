@@ -10,11 +10,13 @@ describe('session status and confirmed tier', () => {
         const bar = (serviceTier?: string | null) => <I18nProvider><StatusBar compact={compact}
             active thinking agentState={null} agentFlavor="codex" permissionMode="yolo" serviceTier={serviceTier} /></I18nProvider>
         const view = render(bar('priority'))
-        expect(view.container.querySelector('[data-service-tier="fast"]')).toHaveTextContent('Fast')
+        expect(view.container.querySelector('[data-service-tier="fast"] svg')).toBeTruthy()
+        expect(view.container.querySelector('[data-service-tier="fast"]')?.textContent).toBe('')
+        expect(view.container.querySelector('[data-service-tier="fast"]')).toHaveAttribute('aria-label', 'Fast Mode: Fast')
         expect(screen.getByText('Yolo').className).toContain('text-[var(--app-fg)]')
         view.rerender(bar('standard'))
-        expect(view.container.querySelector('[data-service-tier="standard"]')).toHaveTextContent('Standard')
-        for (const tier of [null, undefined, 'unknown']) {
+        expect(view.container.querySelector('[data-service-tier]')).toBeNull()
+        for (const tier of [null, undefined, 'unknown', 'default']) {
             view.rerender(bar(tier))
             expect(view.container.querySelector('[data-service-tier]')).toBeNull()
         }

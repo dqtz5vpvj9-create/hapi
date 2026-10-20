@@ -25,6 +25,7 @@ function getMachineOptionLabel(machine: Machine, updateRequiredLabel: string): s
 export function MachineSelector(props: {
     machines: Machine[]
     machineId: string | null
+    compact?: boolean
     isLoading?: boolean
     isDisabled: boolean
     onChange: (machineId: string) => void
@@ -40,8 +41,8 @@ export function MachineSelector(props: {
         ? getMachineTitle(lastSelectedMachine) : props.machineId?.slice(0, 8)
 
     return (
-        <div className="flex flex-col gap-1.5 px-3 py-3">
-            <label htmlFor={controlId} className="text-xs font-medium text-[var(--app-hint)]">
+        <div className={props.compact ? "min-w-0 max-w-full" : "flex flex-col gap-1.5 px-3 py-3"}>
+            <label htmlFor={controlId} className={props.compact ? "sr-only" : "text-xs font-medium text-[var(--app-hint)]"}>
                 {t('newSession.machine')}
             </label>
             <SelectControl
@@ -49,7 +50,7 @@ export function MachineSelector(props: {
                 value={props.machineId ?? ''}
                 onChange={(e) => props.onChange(e.target.value)}
                 disabled={props.isDisabled}
-                className="rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] py-2 pl-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--app-link)] disabled:opacity-50"
+                className={props.compact ? "min-h-11 rounded-lg border-0 bg-transparent pl-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--app-link)] disabled:opacity-50" : "rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] py-2 pl-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--app-link)] disabled:opacity-50"}
             >
                 {props.isLoading && (
                     <option value="">{t('loading.machines')}</option>
@@ -64,7 +65,7 @@ export function MachineSelector(props: {
                 ) : null}
                 {props.machines.map((m) => (
                     <option key={m.id} value={m.id}>
-                        {getMachineOptionLabel(m, t('runner.skew.updateRequired'))}
+                        {props.compact ? getMachineTitle(m) : getMachineOptionLabel(m, t('runner.skew.updateRequired'))}
                     </option>
                 ))}
             </SelectControl>

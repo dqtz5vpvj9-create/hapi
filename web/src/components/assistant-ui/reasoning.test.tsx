@@ -105,7 +105,7 @@ describe('ReasoningGroup', () => {
         expect(scroll.tabIndex).toBe(0)
     })
 
-    it('auto-expands while streaming', () => {
+    it('stays collapsed while streaming and shows the running indicator', () => {
         const { container, rerender } = renderGroup()
         setStreaming()
         rerender(
@@ -113,7 +113,27 @@ describe('ReasoningGroup', () => {
                 <div data-testid="reasoning-content">thinking text</div>
             </ReasoningGroup>
         )
-        expect(isCollapsed(container)).toBe(false)
+        expect(isCollapsed(container)).toBe(true)
+        expect(container.querySelector('.animate-pulse')).toBeInTheDocument()
+    })
+
+    it('stays collapsed when the reasoning settles', () => {
+        const { container, rerender } = renderGroup()
+        setStreaming()
+        rerender(
+            <ReasoningGroup>
+                <div data-testid="reasoning-content">thinking text</div>
+            </ReasoningGroup>
+        )
+        expect(isCollapsed(container)).toBe(true)
+
+        setHydratedReasoning()
+        rerender(
+            <ReasoningGroup>
+                <div data-testid="reasoning-content">thinking text</div>
+            </ReasoningGroup>
+        )
+        expect(isCollapsed(container)).toBe(true)
     })
 
     it('stays collapsed while streaming when the preference is enabled', () => {
@@ -128,55 +148,31 @@ describe('ReasoningGroup', () => {
         expect(isCollapsed(container)).toBe(true)
     })
 
-    it('collapses an auto-expanded streaming block when the preference is enabled from another tab', () => {
-        const { container, rerender } = renderGroup()
-        setStreaming()
-        rerender(
-            <ReasoningGroup>
-                <div data-testid="reasoning-content">thinking text</div>
-            </ReasoningGroup>
-        )
+    it('leaves a reader-opened block open when the preference changes in another tab', () => {
+        const { container } = renderGroup()
+        fireEvent.click(container.querySelector('button')!)
         expect(isCollapsed(container)).toBe(false)
-
-        const scroll = container.querySelector('.aui-reasoning-scroll') as HTMLDivElement
-        Object.defineProperties(scroll, {
-            scrollHeight: { configurable: true, value: 500 },
-            clientHeight: { configurable: true, value: 100 },
-        })
-        scroll.scrollTop = 100
-        fireEvent.scroll(scroll)
-        expect(onNestedScrollFollowChange).toHaveBeenLastCalledWith(false)
 
         act(() => {
             window.localStorage.setItem(STORAGE_KEY, 'true')
             window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY }))
         })
 
-        expect(isCollapsed(container)).toBe(true)
-        expect(onNestedScrollFollowChange).toHaveBeenLastCalledWith(true)
+        expect(isCollapsed(container)).toBe(false)
     })
 
-    it('opens a streaming reasoning panel at the latest content and follows new output at the bottom', () => {
-        window.localStorage.setItem(STORAGE_KEY, 'true')
+    it('opens on click while streaming and stays open as new output arrives', () => {
         setStreaming()
         const { container, rerender } = renderGroup()
-        const scroll = container.querySelector('.aui-reasoning-scroll') as HTMLDivElement
-        let scrollHeight = 500
-        Object.defineProperties(scroll, {
-            scrollHeight: { configurable: true, get: () => scrollHeight },
-            clientHeight: { configurable: true, get: () => 100 },
-        })
-
         fireEvent.click(container.querySelector('button')!)
-        expect(scroll.scrollTop).toBe(500)
+        expect(isCollapsed(container)).toBe(false)
 
-        scrollHeight = 700
         rerender(
             <ReasoningGroup>
                 <div data-testid="reasoning-content">more thinking text</div>
             </ReasoningGroup>
         )
-        expect(scroll.scrollTop).toBe(700)
+        expect(isCollapsed(container)).toBe(false)
     })
 
     it('stops following new output after the user scrolls away from the bottom', () => {
@@ -208,6 +204,7 @@ describe('ReasoningGroup', () => {
             scrollHeight: { configurable: true, value: 500 },
             clientHeight: { configurable: true, value: 100 },
         })
+        fireEvent.click(container.querySelector('button')!)
         scroll.scrollTop = 100
         fireEvent.scroll(scroll)
         expect(onNestedScrollFollowChange).toHaveBeenLastCalledWith(false)
@@ -216,7 +213,7 @@ describe('ReasoningGroup', () => {
 
         expect(isCollapsed(container)).toBe(true)
         expect(scroll.tabIndex).toBe(-1)
-        expect(onNestedScrollFollowChange).toHaveBeenLastCalledWith(true)
+        expect(onNestedScrollFollowChange.mock.calls.some(([follow]) => follow === true)).toBe(true)
     })
 
     it('restores follow-tail after a pointer gesture ends without scrolling', () => {
@@ -285,7 +282,7 @@ describe('ReasoningGroup', () => {
         expect(scroll.className).not.toContain('overscroll-y-contain')
     })
 
-    it('does not show a running indicator when only the message status is running', () => {
+    it('stays collapsed while the turn runs; the reader opens it', () => {
         setHydratedReasoning()
         const { container } = renderGroup()
 
@@ -305,7 +302,7 @@ describe('ReasoningGroup', () => {
             </ReasoningGroup>
         )
         expect(container.querySelector('.animate-pulse')).toBeInTheDocument()
-        expect(isCollapsed(container)).toBe(false)
+        expect(isCollapsed(container)).toBe(true)
     })
 })
 

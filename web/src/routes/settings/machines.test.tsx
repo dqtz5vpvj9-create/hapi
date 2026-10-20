@@ -7,9 +7,10 @@ import SettingsMachinesPage from '@/routes/settings/machines'
 
 const renameMachineMock = vi.fn()
 const machinesMock = vi.fn()
+const accountsMock = vi.fn().mockResolvedValue({ success: true, accounts: [], currentAccountId: null })
 
 vi.mock('@/lib/app-context', () => ({
-    useAppContext: () => ({ api: { renameMachine: renameMachineMock } }),
+    useAppContext: () => ({ api: { renameMachine: renameMachineMock, getMachineCodexAccounts: accountsMock } }),
 }))
 
 vi.mock('@/hooks/queries/useMachines', () => ({
@@ -58,6 +59,13 @@ describe('SettingsMachinesPage', () => {
 
     afterEach(() => {
         cleanup()
+    })
+
+    it('opens account management from the machine settings button', async () => {
+        renderPage()
+        fireEvent.click(screen.getByRole('button', { name: 'Codex account' }))
+        await waitFor(() => expect(accountsMock).toHaveBeenCalledWith('machine-1'))
+        expect(screen.getByRole('button', { name: /device/i })).toBeTruthy()
     })
 
     it('falls back to the hostname and always shows host and platform', () => {

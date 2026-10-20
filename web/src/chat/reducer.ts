@@ -5,6 +5,7 @@ import { traceMessages, type TracedMessage } from '@/chat/tracer'
 import { dedupeAgentEvents, foldApiErrorEvents } from '@/chat/reducerEvents'
 import { collectTitleChanges, collectToolIdsFromMessages, ensureToolBlock, getPermissions } from '@/chat/reducerTools'
 import { reduceTimeline } from '@/chat/reducerTimeline'
+import { canonicalToolName } from '@/chat/toolNames'
 import { isRedundantGoalStatusMessageText } from '@hapi/protocol/messages'
 
 // Calculate context size from usage data
@@ -168,7 +169,7 @@ export function reduceChatBlocks(
         ensureToolBlock(rootResult.blocks, rootResult.toolBlocksById, id, {
             createdAt,
             localId: null,
-            name: entry.toolName,
+            name: canonicalToolName(entry.toolName),
             input: entry.input,
             description: null,
             permission: entry.permission

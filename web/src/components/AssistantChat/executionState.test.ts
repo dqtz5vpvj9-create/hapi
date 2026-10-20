@@ -54,3 +54,15 @@ it('does not suppress native execution for a nonblocking question or a previous 
     expect(getExecutionPresentation(active, [previous], true, true).running).toBe(true)
     expect(getExecutionPresentation({ ...active, execution: { ...active.execution!, waitingOn: ['input'] } }, [], true, true).running).toBe(false)
 })
+
+
+it('shows live compaction instead of animating an old tool, and clears on idle/offline', () => {
+    const active: Session = { ...session, execution: { owner: 'machine', generation: 'g', sequence: 1,
+        status: 'active', waitingOn: [], turnId: 'turn', startedAt: 100, completedAt: null, compacting: true } };
+    expect(getExecutionPresentation(active, [tool('old', 'running')], true, true)).toEqual({
+        running: true, activeToolId: null, thinking: true, compacting: true,
+    });
+    expect(getExecutionPresentation(active, [], true, false).thinking).toBe(false);
+    expect(getExecutionPresentation(active, [], false, true).compacting).not.toBe(true);
+    expect(getExecutionPresentation({ ...active, execution: { ...active.execution!, status: 'idle' } }, [], true, true).compacting).not.toBe(true);
+});

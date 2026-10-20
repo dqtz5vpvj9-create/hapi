@@ -69,3 +69,11 @@ describe('readiness notification lifecycle with real SSE cache updates', () => {
         expect(h.result.current.toasts).toHaveLength(0)
     })
 })
+
+it('dismisses and rejects readiness after an execution error', () => {
+    const h = setup()
+    h.send(h.ready('a'))
+    act(() => h.client.setQueryData(queryKeys.session('a'), { session: { id: 'a', thinking: false, execution: { status: 'systemError' } } }))
+    h.send(h.ready('a'))
+    expect(h.result.current.toasts).toHaveLength(0)
+})

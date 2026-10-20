@@ -6,6 +6,19 @@ import { workspaceModel, workspaceTree } from './layoutAdapter'
 beforeEach(() => localStorage.clear())
 
 describe('workspace tasks', () => {
+    it('upgrades the old default without discarding saved navigation', () => {
+        localStorage.setItem('old-mode', JSON.stringify({ version: 1, mode: 'single', workspaces: [], activeId: null, lastChat: 'A' }))
+        const store = new WorkspaceStore('old-mode')
+        expect(store.get().mode).toBe('workspace')
+        expect(store.get().lastChat).toBe('A')
+    })
+    it('defaults to tmux while preserving an explicit single-conversation preference', () => {
+        const store = new WorkspaceStore('default-mode')
+        expect(store.get().mode).toBe('workspace')
+        store.enter('A')
+        store.leave()
+        expect(new WorkspaceStore('default-mode').get().mode).toBe('single')
+    })
     it('keeps existing chats unique, restores split sizes on reload and returns from single view', () => {
         const store = new WorkspaceStore('test')
         store.enter('A')

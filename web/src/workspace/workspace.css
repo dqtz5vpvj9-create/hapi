@@ -42,6 +42,9 @@
 .workspace-shell .flexlayout__splitter_horz::after { inset: 0; }
 .workspace-shell .flexlayout__tab { background: var(--app-bg); }
 .workspace-header-dock { display: flex; align-items: center; }
+.workspace-header-action { display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; color: var(--app-hint); border-radius: 4px; }
+.workspace-header-action:hover, .workspace-header-action[aria-pressed=true] { color: var(--app-fg); background: var(--app-subtle-bg); }
+.workspace-header-action:disabled { opacity: .4; }
 .workspace-chat-actions .app-header-back, .workspace-chat-actions .app-header-title { display: none !important; }
 .workspace-chat-actions .app-header-layout { display: flex !important; padding: 0 !important; min-height: 28px !important; gap: 0 !important; }
 .workspace-chat-actions .app-header-actions { min-height: 28px !important; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
@@ -235,4 +238,27 @@
     [data-workspace-layout] .app-session-row-status:empty { display: none; }
     [data-workspace-layout] .app-session-row-main > div:first-child { gap: 5px; }
     [data-workspace-layout] .app-session-machine-icon { font-size: 12px; flex-basis: 14px; }
+}
+
+/* Long activity labels must stay inside their own flex item. */
+.workspace-pane [data-workspace-composer] [data-testid="composer-toolbar-items"] {
+    flex-wrap: nowrap;
+}
+.workspace-pane [data-workspace-composer] .composer-model-slot {
+    flex: 0 1 145px;
+    min-width: 0;
+    max-width: 100%;
+}
+.workspace-pane [data-workspace-composer] .composer-model-slot .model-effort-capsule {
+    min-width: 0 !important;
+    max-width: 100%;
+}
+.workspace-pane [data-workspace-composer] .workspace-activity {
+    min-width: 0;
+    max-width: 90px;
+    flex-shrink: 1;
+}
+.workspace-pane [data-workspace-composer] .workspace-activity > span:not(.workspace-activity-dot) {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }

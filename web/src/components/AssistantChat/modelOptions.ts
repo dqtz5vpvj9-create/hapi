@@ -118,9 +118,10 @@ export function getModelOptionsForFlavor(
     currentModel?: string | null,
     customOptions?: ModelOption[]
 ): ModelOption[] {
-    if (flavor === 'dsh') {
-        // DSH accepts only the session's advertised opaque provider/model values.
-        // A removed current value must not be reintroduced as a selectable option.
+    if (flavor === 'dsh' || flavor === 'qoder') {
+        // DSH and Qoder CN accept only the session's advertised opaque
+        // provider/model values. A removed current value must not be
+        // reintroduced, and an empty catalog must not surface Claude presets.
         return customOptions ?? []
     }
     if (flavor === 'agy') {
@@ -180,7 +181,7 @@ export function getNextModelForFlavor(
     currentModel?: string | null,
     customOptions?: ModelOption[]
 ): string | null {
-    if (flavor === 'dsh') {
+    if (flavor === 'dsh' || flavor === 'qoder') {
         if (!customOptions?.length) return currentModel ?? null
         const currentIndex = customOptions.findIndex(option => option.value === currentModel)
         return customOptions[(currentIndex + 1) % customOptions.length]?.value ?? null
