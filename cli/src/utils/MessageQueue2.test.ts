@@ -9,6 +9,26 @@ describe('MessageQueue2', () => {
         expect(queue.isClosed()).toBe(false);
     });
 
+    it('delivers one message per batch when the queue caps the batch size', async () => {
+        const queue = new MessageQueue2<string>(mode => mode, null, { maxBatchSize: 1 });
+
+        queue.push('first', 'dsh');
+        queue.push('second', 'dsh');
+        queue.push('third', 'dsh');
+
+        const first = await queue.waitForMessagesAndGetAsString();
+        expect(first?.message).toBe('first');
+        expect(first?.items).toHaveLength(1);
+        expect(queue.size()).toBe(2);
+
+        const second = await queue.waitForMessagesAndGetAsString();
+        expect(second?.message).toBe('second');
+
+        const third = await queue.waitForMessagesAndGetAsString();
+        expect(third?.message).toBe('third');
+        expect(queue.size()).toBe(0);
+    });
+
     it('should push and retrieve messages with same mode', async () => {
         const queue = new MessageQueue2<string>(mode => mode);
         
@@ -693,3 +713,13 @@ describe('MessageQueue2', () => {
         expect(batch3?.mode.type).toBe('B');
     });
 });
+it('preserves each attachment when adjacent ACP prompts are batched', async () => {
+    const queue = new MessageQueue2<string>(value => value)
+    const attachment = { id: 'shot', filename: 'shot.png', path: '/workspace/shot.png', mimeType: 'image/png', size: 4 }
+    queue.push('look', 'acp', 'one', [attachment])
+    queue.push('explain', 'acp', 'two')
+    const batch = await queue.waitForMessagesAndGetAsString()
+    expect(batch?.items[0]?.attachments).toEqual([attachment])
+    expect(batch?.items[1]?.attachments).toBeUndefined()
+    expect(batch?.message).toBe('look\nexplain')
+})

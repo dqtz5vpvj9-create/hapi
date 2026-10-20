@@ -50,3 +50,23 @@ The following files/directories are derived from happy-cli:
 - src/projectPath.ts
 - src/lib.ts
 - src/index.ts
+
+---
+
+The Codex account switching implementation in src/codex/accounts/ and
+src/codex/shared/ adapts runtime-login and credential-management techniques
+from the following MIT-licensed projects. The MIT License terms reproduced
+above apply to these portions.
+
+Happier (runtime account application and verification)
+https://github.com/happier-dev/happier
+Copyright (c) 2026 Happy Coder Contributors
+
+CC Switch (Codex OAuth refresh-token rotation)
+https://github.com/farion1231/cc-switch
+Copyright (c) 2025 Jason Young
+
+codex-swap (isolated credential profiles while retaining the existing Codex
+home and conversation history)
+https://github.com/maddada/codex-swap
+Copyright (c) 2026 codex-swap contributors

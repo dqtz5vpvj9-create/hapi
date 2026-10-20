@@ -102,7 +102,8 @@ class GrokRemoteLauncher extends RemoteLauncherBase {
             this.messageBuffer.addMessage(message, 'status')
         })
 
-        await backend.initialize()
+        await backend.initialize();
+        this.session.client.updateMetadata?.(metadata => ({ ...metadata, acpPromptCapabilities: { image: backend.supportsImageInput?.() === true } }))
 
         const acpMcpServers = toAcpMcpServers(mcpServers)
         // Fork children must load the exact native id hub forked. Falling back to
@@ -309,7 +310,7 @@ class GrokRemoteLauncher extends RemoteLauncherBase {
                 text = `${getGrokTitleInstruction()}\n\n${text}`
                 this.instructionsSent = true
             }
-            const promptContent: PromptContent[] = [{ type: 'text', text }]
+            const promptContent: PromptContent[] = [{ type: 'text', text, ...(batch.items?.some(item => item.attachments?.length) ? { attachments: batch.items.flatMap(item => item.attachments ?? []) } : {}) }]
             const localId = batch.items
                 ?.map((item) => item.localId)
                 .find((id): id is string => typeof id === 'string' && id.length > 0)

@@ -23,6 +23,7 @@ import {
     SessionServiceTierRequestSchema,
     SessionModelRequestSchema,
     SessionPermissionModeRequestSchema,
+    SwitchCodexAccountRequestSchema,
     UpdateSessionSummaryRequestSchema,
     supportsModelChange,
     supportsEffort,
@@ -377,6 +378,15 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
 
         await engine.abortSession(sessionResult.sessionId)
+        return c.json({ ok: true })
+    })
+
+    app.post('/sessions/:id/restart', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        if (sessionResult instanceof Response) return sessionResult
+        await engine.restartSession(sessionResult.sessionId)
         return c.json({ ok: true })
     })
 
@@ -815,6 +825,24 @@ export function createSessionsRoutes(getSyncEngine: () => SyncEngine | null): Ho
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to apply model'
             return c.json({ error: message }, 409)
+        }
+    })
+
+    app.post('/sessions/:id/codex-account', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine, { requireActive: true })
+        if (sessionResult instanceof Response) return sessionResult
+        if (sessionResult.session.metadata?.flavor !== 'codex') {
+            return c.json({ error: 'Account switching is only supported for Codex sessions' }, 400)
+        }
+        const parsed = SwitchCodexAccountRequestSchema.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success) return c.json({ error: 'Invalid body' }, 400)
+        try {
+            const result = await engine.switchCodexAccount(sessionResult.sessionId, parsed.data.accountId)
+            return c.json(result, result.success ? 200 : 409)
+        } catch (error) {
+            return c.json({ success: false, error: error instanceof Error ? error.message : 'Failed to switch Codex account' }, 409)
         }
     })
 

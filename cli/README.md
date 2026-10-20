@@ -41,6 +41,8 @@ Choose a supported coding agent from your terminal and control its sessions remo
   Note: OpenCode supports local and remote modes; local mode streams via OpenCode plugins.
 - `hapi dsh` - Start DeepSeek Harness through ACP. See `src/dsh/runDsh.ts`.
   DSH is remote-only; install the official `@deepseek-ai/dsh` runtime and configure its model provider separately.
+- `hapi qoder` - Start Qoder CN through ACP. See `src/qoder/runQoder.ts`.
+  Qoder CN is remote-only; install the CLI from qoder.cn and sign in once with `qoderclicn login` on the runner machine.
 - `hapi resume [sessionId]` - List resumable sessions for this machine or resume one locally.
 - `hapi ping-peer <session-id-prefix> <message>` - Resume (if needed) and message another session. Prefer this or MCP `ping_peer` / `list_peers` over reinventing JWT+curl. Also `--message-file` / `--list`.
 - `hapi inspect-peer <session-id-or-prefix>` - Read-only peer metadata + recent message text (no resume). Prefer this or MCP `inspect_peer` when a user cites `[title](/sessions/<id>)` or Copy-reference `See session "…" (/sessions/<id>) for context`. `/sessions/<id>` is a hub path, not a local file. Optional `--limit`.
@@ -203,6 +205,10 @@ never creates a replacement session. Servers advertising `session/close` are
 closed before the transport and HAPI MCP bridge stop, allowing DSH to drain and
 persist its runtime. Older servers remain usable for fresh sessions.
 
+HAPI syncs DSH's runtime session title into the HAPI session list on activation
+(including a resume, which reads the stored native title immediately) and after
+each turn, including turns that fail or are aborted.
+
 Model and reasoning controls use the server's advertised `configOptions`,
 including provider groups and the empty-string provider default. The model ID
 is opaque (DSH may encode it as a JSON provider/model pair). `--model` and
@@ -223,6 +229,7 @@ the DSH composition still owns its overall permission policy.
 - `HAPI_EXPERIMENTAL` - Enable experimental features (true/1/yes).
 - `HAPI_EXTRA_HEADERS_JSON` - JSON object of extra headers to send on CLI → hub requests, e.g. `{"Cookie":"CF_Authorization=..."}`. Can also be set as the `extraHeaders` object in `~/.hapi/settings.json` (environment variable wins).
 - `HAPI_CLAUDE_PATH` - Path to a specific `claude` executable.
+- `HAPI_QODER_PATH` - Path to a specific `qoderclicn` executable for `hapi qoder`.
 - `HAPI_DSH_ACP_COMMAND` - ACP server executable for `hapi dsh` (default: `dsh`, launched with `--profile acp`).
 - `HAPI_DSH_ACP_CONFIG` - Optional absolute Cordis patch path for the official CLI (`--patch`), or config path for an explicit custom ACP server (`--config`).
 - `HAPI_DSH_ACP_ARGS_JSON` - Optional JSON array replacing all ACP server arguments; takes precedence over `HAPI_DSH_ACP_CONFIG`.

@@ -10,7 +10,7 @@ import packageJson from '../../package.json';
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { isBunCompiled, projectPath } from '@/projectPath';
-import { isProcessAlive, getHapiRunnerProcessIdentity, killProcess } from '@/utils/process';
+import { isProcessAlive, getProcessStartMarkerAsync, getHapiRunnerProcessIdentity, killProcess } from '@/utils/process';
 import { configuration } from '@/configuration';
 import { hashRunnerCliApiToken, hashRunnerExtraHeaders, isRunnerStateCompatibleWithIdentity } from './runnerIdentity';
 
@@ -45,15 +45,13 @@ async function runnerPost(path: string, body?: any): Promise<{ error?: string } 
     };
   }
 
-  if (!isProcessAlive(state.pid)) {
-    const errorMessage = 'Runner is not running, file is stale';
-    logger.debug(`[CONTROL CLIENT] ${errorMessage}`);
-    return {
-      error: errorMessage
-    };
-  }
-
   try {
+    if (!(process.platform === 'win32' ? await getProcessStartMarkerAsync(state.pid) : isProcessAlive(state.pid))) {
+      const errorMessage = 'Runner is not running, file is stale';
+      logger.debug(`[CONTROL CLIENT] ${errorMessage}`);
+      return { error: errorMessage };
+    }
+
     const timeout = process.env.HAPI_RUNNER_HTTP_TIMEOUT ? parseInt(process.env.HAPI_RUNNER_HTTP_TIMEOUT) : 10_000;
     const response = await fetch(`http://127.0.0.1:${state.httpPort}${path}`, {
       method: 'POST',

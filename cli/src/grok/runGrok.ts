@@ -88,7 +88,8 @@ export async function runGrok(opts: {
                 model: currentModel ?? undefined,
                 effort: currentEffort ?? undefined
             },
-            localId
+            localId,
+            message.content.attachments
         )
     })
     session.onCancelQueuedMessage((localId) => queue.cancelByLocalId(localId))

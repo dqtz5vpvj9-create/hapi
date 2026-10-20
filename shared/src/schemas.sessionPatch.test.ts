@@ -102,3 +102,12 @@ describe('SessionPatchSchema structured patches (closes #884 follow-up)', () => 
         expect(SessionPatchSchema.safeParse(fullSession).success).toBe(false);
     });
 });
+
+
+it('preserves live compaction in the versioned execution patch', () => {
+    const parsed = SessionPatchSchema.parse({ executionVersion: 2, execution: {
+        owner: 'machine', generation: 'g', sequence: 2, status: 'active', waitingOn: [],
+        turnId: 'turn', startedAt: 100, completedAt: null, compacting: true,
+    } });
+    expect(parsed.execution?.compacting).toBe(true);
+});

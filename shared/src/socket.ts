@@ -295,7 +295,7 @@ export interface ClientToServerEvents {
   /** CLI agent finished session/load (or equivalent) and can accept prompts. */
     'session-ready': (data: { sid: string; time: number }) => void
     'session-end': (data: { sid: string; time: number; reason?: SessionEndReason }) => void
-    'messages-consumed': (data: { sid: string; localIds: string[]; clearQueuedThinkingGrace?: boolean; steered?: boolean }) => void
+    'messages-consumed': (data: { sid: string; localIds: string[]; clearQueuedThinkingGrace?: boolean; steered?: boolean }, cb?: (response: { ok: boolean }) => void) => void
     'messages-indeterminate': (data: { sid: string; localIds: string[] }) => void
     /** Native shared-engine queue projection. null = positively acknowledged removal. */
     'native-history-changed': (data: { sid: string; updatedAt?: number; activityOnly?: boolean }) => void

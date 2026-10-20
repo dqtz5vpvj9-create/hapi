@@ -10,7 +10,7 @@ vi.mock('cross-spawn', () => ({
     }
 }))
 
-import { getHapiRunnerProcessIdentity, killProcess } from './process'
+import { getHapiRunnerProcessIdentity, isProcessAlive, killProcess } from './process'
 
 const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')
 
@@ -39,6 +39,21 @@ function unavailable(command: string) {
         error
     }
 }
+
+describe('Windows tasklist PID recognition', () => {
+    afterEach(() => {
+        vi.restoreAllMocks()
+        if (originalPlatformDescriptor) Object.defineProperty(process, 'platform', originalPlatformDescriptor)
+    })
+
+    it.each([[5544, true], [554, false], [55440, false]])('recognizes PID %i without probing signal zero', (pid, expected) => {
+        setPlatform('win32')
+        spawnSyncMock.mockReturnValue(completed('hapi.exe                      5544 Console                    1     5,000 K'))
+        const signal = vi.spyOn(process, 'kill')
+        expect(isProcessAlive(pid)).toBe(expected)
+        expect(signal).not.toHaveBeenCalled()
+    })
+})
 
 describe('getHapiRunnerProcessIdentity on Windows', () => {
     beforeAll(() => {

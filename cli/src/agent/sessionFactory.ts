@@ -12,6 +12,8 @@ import { configuration } from '@/configuration'
 import { logger } from '@/ui/logger'
 import { runtimePath } from '@/projectPath'
 import { getInvokedCwd } from '@/utils/invokedCwd'
+import { codexHomesForMachine } from '@/codex/utils/codexHomes'
+import { codexKeyProfileMetadata } from '@/codex/utils/codexKeyProfiles'
 import { readWorktreeEnv } from '@/utils/worktreeEnv'
 import { CURRENT_MACHINE_CAPABILITIES } from '@hapi/protocol/runnerCapabilities'
 import { exportHapiSessionEnv } from '@/agent/hapiSessionEnv'
@@ -26,6 +28,8 @@ const HubReservedSessionIdSchema = z.string().uuid()
 
 export type SessionBootstrapOptions = {
     reportStarted?: boolean
+    /** Atomically register the machine with a fresh session instead of two requests. */
+    inlineMachineRegistration?: boolean
     /** Multi-session workers inject session identity into each child, never process.env. */
     exportSessionEnv?: boolean
     flavor: string
@@ -99,6 +103,8 @@ export function buildMachineMetadata(options?: {
         happyHomeDir: configuration.happyHomeDir,
         happyLibDir: runtimePath(),
         workspaceRoots: options?.workspaceRoots,
+        codexHomes: codexHomesForMachine(),
+        codexKeyProfiles: codexKeyProfileMetadata(),
     }
     if (!options?.asRunner) {
         return base
@@ -145,6 +151,8 @@ export function buildSessionMetadata(options: {
             terminal: true
         },
         worktree: worktreeInfo ?? undefined,
+        codexAccountId: process.env.HAPI_CODEX_ACCOUNT_ID?.trim() || undefined,
+        codexAccountLabel: process.env.HAPI_CODEX_ACCOUNT_LABEL?.trim() || undefined,
         ...options.metadataOverrides
     }
 }
@@ -158,7 +166,10 @@ function pickExistingSessionMetadata(metadata: Metadata | null | undefined): Par
     if (metadata.summary !== undefined) preserved.summary = metadata.summary
     if (metadata.claudeSessionId !== undefined) preserved.claudeSessionId = metadata.claudeSessionId
     if (metadata.codexSessionId !== undefined) preserved.codexSessionId = metadata.codexSessionId
+    if (metadata.codexStoreId !== undefined) preserved.codexStoreId = metadata.codexStoreId
     if (metadata.codexSourceSessionId !== undefined) preserved.codexSourceSessionId = metadata.codexSourceSessionId
+    if (metadata.codexAccountId !== undefined) preserved.codexAccountId = metadata.codexAccountId
+    if (metadata.codexAccountLabel !== undefined) preserved.codexAccountLabel = metadata.codexAccountLabel
     if (metadata.geminiSessionId !== undefined) preserved.geminiSessionId = metadata.geminiSessionId
     if (metadata.dshSessionId !== undefined) preserved.dshSessionId = metadata.dshSessionId
     if (metadata.opencodeSessionId !== undefined) preserved.opencodeSessionId = metadata.opencodeSessionId
@@ -250,10 +261,10 @@ export async function bootstrapSession(options: SessionBootstrapOptions): Promis
     const api = await ApiClient.create()
 
     const machineId = await getMachineIdOrExit()
-    await api.getOrCreateMachine({
-        machineId,
-        metadata: buildMachineMetadata()
-    })
+    const machineMetadata = buildMachineMetadata()
+    if (!options.inlineMachineRegistration) {
+        await api.getOrCreateMachine({ machineId, metadata: machineMetadata })
+    }
 
     const metadata = buildSessionMetadata({
         flavor: options.flavor,
@@ -268,6 +279,7 @@ export async function bootstrapSession(options: SessionBootstrapOptions): Promis
             ? { id: reservedHubId, adopt: true as const }
             : newHubId ? { id: newHubId } : {}),
         tag: sessionTag,
+        ...(options.inlineMachineRegistration ? { machine: { id: machineId, metadata: machineMetadata } } : {}),
         metadata,
         state: agentState,
         model: options.model,

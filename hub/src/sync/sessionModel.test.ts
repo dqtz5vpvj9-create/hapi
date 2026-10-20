@@ -3236,6 +3236,56 @@ describe('session model', () => {
         }
     })
 
+    it('does not infer a Qoder resume target from stale Claude metadata', () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(
+            store,
+            {} as never,
+            new RpcRegistry(),
+            { broadcast() {} } as never
+        )
+
+        try {
+            const session = engine.getOrCreateSession(
+                'local-resume-qoder-fresh-only',
+                {
+                    path: '/tmp/project',
+                    host: 'localhost',
+                    machineId: 'machine-1',
+                    flavor: 'qoder',
+                    claudeSessionId: 'stale-claude-id'
+                },
+                null,
+                'default'
+            )
+
+            expect(engine.resolveLocalResumeTarget(session.id, 'default')).toEqual({
+                type: 'error',
+                message: 'Resume session ID unavailable. Start a new session in this directory, or retry after the agent has initialized.',
+                code: 'resume_unavailable'
+            })
+        } finally {
+            engine.stop()
+        }
+    })
+
+    it('resolves a capability-confirmed Qoder root within its own namespace', () => {
+        const store = new Store(':memory:')
+        const engine = new SyncEngine(store, {} as never, new RpcRegistry(), { broadcast() {} } as never)
+        try {
+            const session = engine.getOrCreateSession('qoder-resumable', {
+                path: '/tmp/project', host: 'localhost', machineId: 'machine-1', flavor: 'qoder',
+                qoderSessionId: 'persisted-qoder-root', claudeSessionId: 'stale'
+            }, null, 'owner')
+            expect(engine.resolveLocalResumeTarget(session.id, 'owner')).toMatchObject({
+                type: 'success', target: { flavor: 'qoder', agentSessionId: 'persisted-qoder-root' }
+            })
+            expect(engine.resolveLocalResumeTarget(session.id, 'foreign')).toMatchObject({ type: 'error', code: 'access_denied' })
+        } finally {
+            engine.stop()
+        }
+    })
+
     it('returns resume_unavailable when a cursor session lacks cursorSessionId', () => {
         const store = new Store(':memory:')
         const engine = new SyncEngine(

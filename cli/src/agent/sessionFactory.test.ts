@@ -104,6 +104,7 @@ describe('bootstrapExistingSession', () => {
 
     it('loads an existing HAPI session and reports it to the runner', async () => {
         const session = createSession()
+        session.metadata = { ...session.metadata!, codexStoreId: '/canonical/codex' }
         const sessionClient = {
             updateMetadata: vi.fn()
         }
@@ -118,6 +119,7 @@ describe('bootstrapExistingSession', () => {
             workingDirectory: '/tmp/project'
         })
 
+        expect(result.metadata.codexStoreId).toBe('/canonical/codex')
         expect(result.sessionInfo.id).toBe('hapi-session-1')
         expect(process.env[HAPI_SESSION_ID_ENV]).toBe('hapi-session-1')
         expect(result.workingDirectory).toBe('/tmp/project')
@@ -420,6 +422,20 @@ describe('bootstrapSession HAPI_SESSION_ID export', () => {
 
         expect(result.sessionInfo.id).toBe('hub-session-42')
         expect(process.env[HAPI_SESSION_ID_ENV]).toBe('hub-session-42')
+    })
+
+    it('registers machine and fresh session atomically without exporting a provisional identity', async () => {
+        const session = createSession()
+        getOrCreateSessionMock.mockResolvedValue(session)
+        sessionSyncClientMock.mockReturnValue({ isPending: () => false })
+        readSettingsMock.mockResolvedValue({ machineId: 'machine-1' })
+        await bootstrapSession({ flavor: 'codex', workingDirectory: '/project',
+            inlineMachineRegistration: true, reportStarted: false, exportSessionEnv: false })
+        expect(getOrCreateMachineMock).not.toHaveBeenCalled()
+        expect(getOrCreateSessionMock).toHaveBeenCalledWith(expect.objectContaining({
+            machine: { id: 'machine-1', metadata: expect.objectContaining({ platform: expect.any(String) }) }
+        }))
+        expect(process.env[HAPI_SESSION_ID_ENV]).toBeUndefined()
     })
 
     it('passes reservedSessionId as getOrCreateSession id (adopt-stub, #1911)', async () => {

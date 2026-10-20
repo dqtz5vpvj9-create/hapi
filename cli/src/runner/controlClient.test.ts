@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { readRunnerStateMock, isProcessAliveMock, identityMock, killProcessMock } = vi.hoisted(() => ({
+const { readRunnerStateMock, isProcessAliveMock, startMarkerMock, identityMock, killProcessMock } = vi.hoisted(() => ({
     readRunnerStateMock: vi.fn(),
     isProcessAliveMock: vi.fn(),
+    startMarkerMock: vi.fn(),
     identityMock: vi.fn(),
     killProcessMock: vi.fn(),
 }))
@@ -15,6 +16,7 @@ vi.mock('@/persistence', () => ({
 
 vi.mock('@/utils/process', () => ({
     isProcessAlive: isProcessAliveMock,
+    getProcessStartMarkerAsync: startMarkerMock,
     getHapiRunnerProcessIdentity: identityMock,
     killProcess: killProcessMock,
 }))
@@ -92,4 +94,34 @@ describe('stopRunner identity gate', () => {
             expect(killProcessMock).not.toHaveBeenCalled()
         }
     )
+})
+
+
+describe('Windows notification liveness', () => {
+    afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks() })
+    it('uses an asynchronous generation query rather than synchronous tasklist', async () => {
+        vi.stubGlobal('process', { ...process, platform: 'win32' })
+        readRunnerStateMock.mockResolvedValue({ pid: 42, httpPort: 3210 })
+        let release!: (marker: string) => void
+        startMarkerMock.mockReturnValue(new Promise<string>(resolve => { release = resolve }))
+        const fetch = vi.fn(async () => new Response(JSON.stringify({ status: 'stopped' })))
+        vi.stubGlobal('fetch', fetch)
+        const stopping = stopRunnerSession('session-1')
+        await vi.waitFor(() => expect(startMarkerMock).toHaveBeenCalledWith(42))
+        expect(fetch).not.toHaveBeenCalled()
+        release('generation')
+        await expect(stopping).resolves.toBe('stopped')
+        expect(isProcessAliveMock).not.toHaveBeenCalled()
+    })
+    it('does not contact a stale or unqueryable runner', async () => {
+        vi.stubGlobal('process', { ...process, platform: 'win32' })
+        readRunnerStateMock.mockResolvedValue({ pid: 42, httpPort: 3210 })
+        const fetch = vi.fn()
+        vi.stubGlobal('fetch', fetch)
+        startMarkerMock.mockResolvedValue(null)
+        await expect(stopRunnerSession('session-1')).resolves.toBe('still_alive')
+        startMarkerMock.mockRejectedValue(new Error('probe failed'))
+        await expect(stopRunnerSession('session-1')).resolves.toBe('still_alive')
+        expect(fetch).not.toHaveBeenCalled()
+    })
 })

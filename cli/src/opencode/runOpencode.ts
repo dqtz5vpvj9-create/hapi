@@ -245,7 +245,7 @@ export async function runOpencode(opts: {
             });
             const pushPlain = () => {
                 const formattedText = formatMessageWithAttachments(message.content.text, message.content.attachments);
-                messageQueue.push(formattedText, buildMode(), localId);
+                messageQueue.push(formattedText, buildMode(), localId, message.content.attachments);
             };
             try {
                 if (wasCancelled()) return;
@@ -421,7 +421,7 @@ export async function runOpencode(opts: {
                 }
 
                 const formattedText = formatMessageWithAttachments(text, message.content.attachments);
-                messageQueue.push(formattedText, buildMode(), localId);
+                messageQueue.push(formattedText, buildMode(), localId, message.content.attachments);
             } catch (error) {
                 logger.debug('[opencode] Failed to handle user message', error);
                 if (!wasCancelled()) {
@@ -450,7 +450,7 @@ export async function runOpencode(opts: {
                         permissionMode: currentPermissionMode,
                         model: sessionModel,
                         modelReasoningEffort: sessionModelReasoningEffort
-                    }, held.localId);
+                    }, held.localId, held.message.content.attachments);
                 }
                 heldDuringClear.length = 0;
             }

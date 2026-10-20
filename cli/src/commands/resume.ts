@@ -3,6 +3,7 @@ import React from 'react'
 import { render } from 'ink'
 import { existsSync } from 'node:fs'
 import type { LocalResumeTarget, ResumableSession } from '@hapi/protocol'
+import type { QoderPermissionMode } from '@hapi/protocol/modes'
 import type {
     AgyPermissionMode,
     ClaudePermissionMode,
@@ -211,6 +212,21 @@ async function dispatchLocalResume(target: LocalResumeTarget): Promise<void> {
         return
     }
 
+    if (target.flavor === 'qoder') {
+        const { runQoder } = await import('@/qoder/runQoder')
+        await runQoder({
+            existingSessionId: base.existingSessionId,
+            workingDirectory: base.workingDirectory,
+            resumeSessionId: base.resumeSessionId,
+            startedBy: base.startedBy,
+            startingMode: 'remote',
+            permissionMode: base.permissionMode as QoderPermissionMode | undefined,
+            model: target.model ?? undefined,
+            effort: target.effort ?? undefined
+        })
+        return
+    }
+
     const { runCursor } = await import('@/cursor/runCursor')
     await runCursor({
         existingSessionId: base.existingSessionId,
@@ -275,14 +291,18 @@ export const resumeCommand: CommandDefinition = {
                 throw new Error('Session is already controlled by a local terminal')
             }
 
-            // AGY is remote-only with per-turn spawns: an in-flight turn cannot
-            // be handed off (the whole-session abort would discard the prompt
-            // without the interrupt handler's consume+restore recovery). Reject
-            // while ACTIVE, not just thinking: keepalive-delivered thinking is a
-            // volatile snapshot, and a turn can start (or its update be missed)
-            // between the fetch above and the handoff request below.
-            if ((target.flavor === 'agy' || target.flavor === 'dsh') && target.active) {
-                throw new Error(`${target.flavor === 'agy' ? 'Antigravity' : 'DeepSeek Harness'} is active. Stop it before resuming.`)
+            // AGY, DSH and Qoder CN are remote-only with per-turn spawns: an
+            // in-flight turn cannot be handed off (the whole-session abort would
+            // discard the prompt without the interrupt handler's consume+restore
+            // recovery). Reject while ACTIVE, not just thinking: keepalive-
+            // delivered thinking is a volatile snapshot, and a turn can start (or
+            // its update be missed) between the fetch above and the handoff
+            // request below.
+            if ((target.flavor === 'agy' || target.flavor === 'dsh' || target.flavor === 'qoder') && target.active) {
+                const label = target.flavor === 'agy'
+                    ? 'Antigravity'
+                    : target.flavor === 'dsh' ? 'DeepSeek Harness' : 'Qoder CN'
+                throw new Error(`${label} is active. Stop it before resuming.`)
             }
 
             if (target.active) {

@@ -175,6 +175,7 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
 
             try {
                 await backend.initialize();
+        this.session.client.updateMetadata?.(metadata => ({ ...metadata, acpPromptCapabilities: { image: backend?.supportsImageInput?.() === true } }));
                 break;
             } catch (error) {
                 const errMsg = error instanceof Error ? error.message : String(error);
@@ -283,6 +284,7 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
                             recentStderrHint = hint;
                         });
                         await backend.initialize();
+        this.session.client.updateMetadata?.(metadata => ({ ...metadata, acpPromptCapabilities: { image: backend?.supportsImageInput?.() === true } }));
                         await backend.authenticateIfAvailable('cursor_login');
                         this.extensionAdapter = new CursorExtensionAdapter(
                             session.client,
@@ -344,6 +346,7 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
                             recentStderrHint = hint;
                         });
                         await backend.initialize();
+        this.session.client.updateMetadata?.(metadata => ({ ...metadata, acpPromptCapabilities: { image: backend?.supportsImageInput?.() === true } }));
                         await backend.authenticateIfAvailable('cursor_login');
                         this.extensionAdapter = new CursorExtensionAdapter(
                             session.client,
@@ -506,7 +509,8 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
                 try {
                     steer = backend.beginSoftSteerPrompt(acpSessionId, [{
                         type: 'text',
-                        text: taken.item.message
+                        text: taken.item.message,
+                        attachments: taken.item.attachments
                     }]);
                 } catch (error) {
                     if (isAcpIndeterminateError(error)) {
@@ -625,7 +629,8 @@ class CursorAcpRemoteLauncher extends RemoteLauncherBase {
             // prepend instructions onto user turns (prompt-injection false positive).
             const promptContent: PromptContent[] = [{
                 type: 'text',
-                text: batch.message
+                text: batch.message,
+                ...(batch.items?.some(item => item.attachments?.length) ? { attachments: batch.items.flatMap(item => item.attachments ?? []) } : {})
             }];
 
             session.onThinkingChange(true);

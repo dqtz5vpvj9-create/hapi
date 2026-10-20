@@ -1,9 +1,35 @@
-import { Hono } from 'hono'
-import { CodexSubagentMessagesQuerySchema } from '@hapi/protocol/apiTypes'
+import { Hono, type Context } from 'hono'
+import { CodexSubagentMessagesQuerySchema, DshSubagentMessagesQuerySchema, PromptDshSubagentRequestSchema } from '@hapi/protocol/apiTypes'
 import { MessageOutlineQuerySchema, MessageContextQuerySchema, MessageDependenciesQuerySchema, MessagesQuerySchema, QueuedStateRequestSchema, SendMessageRequestSchema } from '@hapi/protocol'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
+
+/**
+ * Resolve the authorized DSH parent for a `/dsh-subagents/:subagentId/...`
+ * route: same session access rules as other routes, plus the child must be
+ * mirrored on the parent metadata and owned by an online machine in this
+ * namespace. The RPC channel is the parent session; the child id travels in
+ * the request body/path.
+ */
+function resolveDshSubagentParent(
+    c: Context<WebAppEnv>,
+    engine: SyncEngine,
+    options?: { requireActive?: boolean }
+): { parentSessionId: string } | Response {
+    const parent = requireSessionFromParam(c, engine, options)
+    if (parent instanceof Response) return parent
+    const subagentId = c.req.param('subagentId')
+    const metadata = parent.session.metadata
+    const machine = metadata?.machineId ? engine.getMachine(metadata.machineId) : undefined
+    if (metadata?.flavor !== 'dsh' || !metadata.dshSessionId
+        || !(metadata.dshSubagents ?? []).some(item => item.sessionId === subagentId)
+        || !machine || machine.namespace !== c.get('namespace')) {
+        return c.json({ error: 'Subagent session is unavailable' }, 404)
+    }
+    if (!machine.active) return c.json({ error: 'Machine is offline' }, 503)
+    return { parentSessionId: parent.sessionId }
+}
 
 export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
@@ -27,6 +53,45 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         try { return c.json(await engine.readCodexSubagentMessages(machine.id, { ...query.data,
             rootThreadId: metadata.codexSessionId, threadId: c.req.param('threadId') })) }
         catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Subagent history unavailable' }, 409) }
+    })
+
+    app.get('/sessions/:id/dsh-subagents/:subagentId/messages', async (c) => {
+        c.header('Cache-Control', 'private, no-store')
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const target = resolveDshSubagentParent(c, engine, { requireActive: true })
+        if (target instanceof Response) return target
+        const query = DshSubagentMessagesQuerySchema.safeParse(c.req.query())
+        if (!query.success) return c.json({ error: 'Invalid query', issues: query.error.flatten() }, 400)
+        try {
+            return c.json(await engine.readDshSubagentMessages(target.parentSessionId, { ...query.data,
+                sessionId: c.req.param('subagentId') }))
+        } catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Subagent history unavailable' }, 409) }
+    })
+
+    app.post('/sessions/:id/dsh-subagents/:subagentId/prompt', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const target = resolveDshSubagentParent(c, engine, { requireActive: true })
+        if (target instanceof Response) return target
+        const body = await c.req.json().catch(() => null)
+        const parsed = PromptDshSubagentRequestSchema.safeParse({
+            ...(body && typeof body === 'object' ? body : {}),
+            sessionId: c.req.param('subagentId')
+        })
+        if (!parsed.success) return c.json({ error: 'Invalid body', issues: parsed.error.flatten() }, 400)
+        try { return c.json(await engine.promptDshSubagent(target.parentSessionId, parsed.data)) }
+        catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Subagent input unavailable' }, 409) }
+    })
+
+    app.post('/sessions/:id/dsh-subagents/:subagentId/interrupt', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const target = resolveDshSubagentParent(c, engine)
+        if (target instanceof Response) return target
+        try {
+            return c.json(await engine.interruptDshSubagent(target.parentSessionId, { sessionId: c.req.param('subagentId') }))
+        } catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Subagent interrupt unavailable' }, 409) }
     })
 
     app.get('/sessions/:id/messages/outline', async (c) => {

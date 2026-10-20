@@ -28,6 +28,11 @@ export type McpServerHttp = {
 export type PromptContent = {
     type: 'text';
     text: string;
+    attachments?: import('@/api/types').AttachmentMetadata[];
+} | {
+    type: 'image';
+    mimeType: string;
+    data: string;
 };
 
 export type PlanItem = {

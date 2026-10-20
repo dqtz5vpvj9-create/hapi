@@ -78,6 +78,7 @@ export class CopilotRemoteLauncher extends RemoteLauncherBase {
         });
 
         await backend.initialize();
+        this.session.client.updateMetadata?.(metadata => ({ ...metadata, acpPromptCapabilities: { image: backend.supportsImageInput?.() === true } }));
 
         const resumeSessionId = session.sessionId;
         const acpMcpServers = toAcpMcpServers(mcpServers);
@@ -183,7 +184,8 @@ export class CopilotRemoteLauncher extends RemoteLauncherBase {
 
             const promptContent: PromptContent[] = [{
                 type: 'text',
-                text: batch.message
+                text: batch.message,
+                ...(batch.items?.some(item => item.attachments?.length) ? { attachments: batch.items.flatMap(item => item.attachments ?? []) } : {})
             }];
 
             session.onThinkingChange(true);

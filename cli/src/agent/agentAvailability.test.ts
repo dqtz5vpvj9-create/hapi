@@ -155,3 +155,34 @@ describe('agent executable resolution', () => {
         expect(resolveExecutable(appCommand, { pathValue: '' })).toBe(appCommand)
     })
 })
+
+describe('Qoder CN availability', () => {
+    it('reports an installed qoderclicn in the catalog', async () => {
+        const directory = await mkdtemp(join(tmpdir(), 'hapi-agent-path-'))
+        await makeExecutable(directory, 'qoderclicn')
+
+        expect(getAgentLaunchCommand('qoder', {})).toBe('qoderclicn')
+        expect(getAgentAvailability('qoder', { PATH: directory }))
+            .toEqual({ agent: 'qoder', available: true })
+        expect(getAgentAvailabilityResponse({ PATH: directory }).agents)
+            .toContainEqual({ agent: 'qoder', available: true })
+    })
+
+    it('accepts the legacy qodercn binary when qoderclicn is absent', async () => {
+        const directory = await mkdtemp(join(tmpdir(), 'hapi-agent-path-'))
+        await makeExecutable(directory, 'qodercn')
+
+        expect(getAgentAvailability('qoder', { PATH: directory }))
+            .toEqual({ agent: 'qoder', available: true })
+    })
+
+    it('honors HAPI_QODER_PATH and reports missing installs', async () => {
+        const directory = await mkdtemp(join(tmpdir(), 'hapi-agent-path-'))
+        const binary = await makeExecutable(directory, 'qoder-custom')
+
+        expect(getAgentAvailability('qoder', { PATH: '', HAPI_QODER_PATH: binary }))
+            .toEqual({ agent: 'qoder', available: true })
+        expect(getAgentAvailability('qoder', { PATH: '' }))
+            .toEqual({ agent: 'qoder', available: false, reason: 'not_found' })
+    })
+})

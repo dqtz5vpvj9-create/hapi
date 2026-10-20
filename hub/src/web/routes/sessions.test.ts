@@ -63,6 +63,7 @@ function createApp(session: Session, opts?: {
     getSessionExport?: (sessionId: string, session: Session, options?: { force?: boolean }) => unknown
     sessionExists?: boolean
     archiveSession?: (sessionId: string) => Promise<void>
+    restartSession?: (sessionId: string) => Promise<void>
     getCursorChatStoreStatus?: SyncEngine['getCursorChatStoreStatus']
     listCodexModelsForSession?: SyncEngine['listCodexModelsForSession']
     forkConversation?: SyncEngine['forkConversation']
@@ -160,6 +161,7 @@ function createApp(session: Session, opts?: {
             status: { onDisk: true, store: 'acp' as const }
         })),
         archiveSession: archiveSessionMock,
+        restartSession: opts?.restartSession ?? (async () => {}),
         setSessionPinMode: opts?.setSessionPinMode ?? (() => {}),
         getSessionExport: opts?.getSessionExport ?? (() => ({
             type: 'success',
@@ -1833,5 +1835,33 @@ describe('native historical fork request', () => {
             expect((await request(body)).status).toBe(400)
         }
         expect(calls).toHaveLength(1)
+    })
+
+    it('restarts a live session through the restart route', async () => {
+        const session = createSession()
+        const calls: string[] = []
+        const { app } = createApp(session, {
+            restartSession: async (sessionId: string) => { calls.push(sessionId) }
+        })
+
+        const response = await app.request('/api/sessions/session-1/restart', { method: 'POST' })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ ok: true })
+        expect(calls).toEqual(['session-1'])
+    })
+
+    it('refuses to restart an inactive session', async () => {
+        const session = createSession({ active: false })
+        const calls: string[] = []
+        const { app } = createApp(session, {
+            restartSession: async (sessionId: string) => { calls.push(sessionId) }
+        })
+
+        const response = await app.request('/api/sessions/session-1/restart', { method: 'POST' })
+
+        expect(response.status).toBe(409)
+        expect(await response.json()).toEqual({ error: 'Session is inactive', code: 'session_inactive' })
+        expect(calls).toEqual([])
     })
 })

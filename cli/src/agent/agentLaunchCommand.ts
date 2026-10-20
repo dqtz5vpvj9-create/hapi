@@ -17,6 +17,7 @@ const DEFAULT_COMMANDS: Record<AgentFlavor, string> = {
     kimi: 'kimi',
     opencode: 'opencode',
     pi: 'pi',
+    qoder: 'qoderclicn',
 }
 
 /** Command source shared by availability preflight and agent launchers. */
@@ -27,6 +28,7 @@ export function getAgentLaunchCommand(
     if (flavor === 'claude') return env.HAPI_CLAUDE_PATH?.trim() || DEFAULT_COMMANDS.claude
     if (flavor === 'copilot') return env.COPILOT_CLI_PATH?.trim() || DEFAULT_COMMANDS.copilot
     if (flavor === 'dsh') return env.HAPI_DSH_ACP_COMMAND?.trim() || DEFAULT_COMMANDS.dsh
+    if (flavor === 'qoder') return env.HAPI_QODER_PATH?.trim() || DEFAULT_COMMANDS.qoder
     return DEFAULT_COMMANDS[flavor]
 }
 

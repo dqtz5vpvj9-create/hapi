@@ -79,6 +79,13 @@ export async function getWindowsProcessStartMarkers(pids: readonly number[]): Pr
   return await queryWindowsProcessGenerations(unique);
 }
 
+/** Keep Windows startup and session admission off synchronous WMI queries. */
+export async function getProcessStartMarkerAsync(pid: number): Promise<string | null> {
+  return isWindows()
+    ? (await getWindowsProcessStartMarkers([pid])).get(pid) ?? null
+    : getProcessStartMarker(pid);
+}
+
 /** Stable marker for one OS PID generation; null means the platform probe failed. */
 export function getProcessStartMarker(pid: number): string | null {
   if (!isProcessAlive(pid)) return null;

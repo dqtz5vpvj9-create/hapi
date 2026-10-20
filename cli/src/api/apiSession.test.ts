@@ -1012,3 +1012,20 @@ it('reliably delivers capacity transitions even when unchanged-thinking heartbea
     expect(socket.emitted.filter(e => e.event === 'session-alive')).toHaveLength(3)
     client.close()
 })
+
+it('delivers compaction transitions reliably while routine heartbeats are dropped', () => {
+    socketHarness.sockets.length = 0;
+    const client = new ApiSessionClient('token', createSession({ namespace: 'default' }));
+    const socket = socketHarness.sockets[0]!;
+    socket.dropVolatile = true;
+    socket.emitted.length = 0;
+    const execution = { owner: 'machine', generation: 'g', sequence: 1, status: 'active' as const,
+        waitingOn: [], turnId: 'turn', startedAt: null, completedAt: null };
+    client.keepAlive(true, 'remote', { execution });
+    client.keepAlive(true, 'remote', { execution: { ...execution, compacting: true } });
+    client.keepAlive(true, 'remote', { execution: { ...execution, compacting: true } });
+    client.keepAlive(true, 'remote', { execution });
+    expect(socket.emitted.filter(e => e.event === 'session-alive').map(e =>
+        (e.args[0] as { execution: { compacting?: boolean } }).execution.compacting === true)).toEqual([false, true, false]);
+    client.close();
+});

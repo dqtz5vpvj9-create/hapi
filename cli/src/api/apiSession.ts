@@ -282,6 +282,7 @@ export class ApiSessionClient extends EventEmitter {
     private state: ApiSessionClientState
     private lastReportedThinking: boolean | undefined
     private lastReportedCapacityRecovery: string | undefined
+    private lastReportedCompacting = false
     private readonly materializer?: ApiSessionClientOptions['materialize']
     private readonly onMaterialized?: ApiSessionClientOptions['onMaterialized']
     private materializationTask: Promise<boolean> | null = null
@@ -1184,6 +1185,7 @@ export class ApiSessionClient extends EventEmitter {
     } | {
         type: 'error'
         message: string
+        details?: string
     } | {
         type: 'permission-mode-changed'
         mode: SessionPermissionMode
@@ -1313,9 +1315,11 @@ export class ApiSessionClient extends EventEmitter {
         // Turn transitions must survive an occupied transport. Routine
         // heartbeats may be dropped; a stop must not wait for the next one.
         const capacityRecovery = JSON.stringify(runtime?.execution?.capacityRecovery ?? null)
-        const transport = this.lastReportedThinking === thinking && this.lastReportedCapacityRecovery === capacityRecovery
+        const compacting = runtime?.execution?.compacting === true
+        const transport = this.lastReportedThinking === thinking && this.lastReportedCapacityRecovery === capacityRecovery && this.lastReportedCompacting === compacting
             ? this.socket.volatile : this.socket
         this.lastReportedCapacityRecovery = capacityRecovery
+        this.lastReportedCompacting = compacting
         this.lastReportedThinking = thinking
         transport.emit('session-alive', {
             sid: this.sessionId,
@@ -1374,6 +1378,20 @@ export class ApiSessionClient extends EventEmitter {
             return response?.ok === true
         } catch (error) {
             logger.debug('[API] Failed to persist steer delivery state', error)
+            return false
+        }
+    }
+
+    /** Commit a steered row and wait for the hub's persisted ACK. */
+    async emitMessagesConsumedWithAck(localIds: string[], options?: { steered?: boolean }): Promise<boolean> {
+        if (localIds.length === 0 || this.state !== 'active') return false
+        const payload: { sid: string; localIds: string[]; steered?: boolean } = { sid: this.sessionId, localIds }
+        if (options?.steered) payload.steered = true
+        try {
+            const response = await this.socket.timeout(5_000).emitWithAck('messages-consumed', payload)
+            return response?.ok === true
+        } catch (error) {
+            logger.debug('[API] Failed to acknowledge consumed steer', error)
             return false
         }
     }

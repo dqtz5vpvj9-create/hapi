@@ -57,7 +57,8 @@
         "test:codex-lineage": "bun test tests/codex-lineage.integration.test.ts",
         "test:codex-search": "bun test tests/codex-session-search.integration.test.ts tests/codex-catalog.integration.test.ts",
         "check:bundle": "node scripts/testing/check-web-budget.mjs",
-        "test:native-fork": "bun test tests/native-fork.integration.test.ts"
+        "test:native-fork": "bun test tests/native-fork.integration.test.ts",
+        "deploy:production": "bun run scripts/deploy/production.ts"
     },
     "devDependencies": {
         "@playwright/test": "^1.64.1",

@@ -112,3 +112,23 @@ it('broadcasts capacity state and cancellation immediately, rejecting stale coun
     expect(f.events.length).toBe(canceled); expect(f.session.execution?.capacityRecovery).toBeNull();
     f.store.close();
 });
+
+it('broadcasts compaction start and finish immediately within the ordinary heartbeat throttle', () => {
+    const f = fixture();
+    try {
+        const time = Date.now();
+        f.cache.handleSessionAlive({ sid: f.session.id, time, thinking: true, execution: f.execution(1) });
+        f.events.length = 0;
+        f.cache.handleSessionAlive({ sid: f.session.id, time, thinking: true, execution: { ...f.execution(2), compacting: true } });
+        expect(f.events).toHaveLength(1);
+        expect((f.events[0] as Extract<SyncEvent, { type: 'session-updated' }>).data?.execution?.compacting).toBe(true);
+        const version = f.session.executionVersion!;
+        f.cache.handleSessionAlive({ sid: f.session.id, time, thinking: true, execution: f.execution(3) });
+        expect(f.events).toHaveLength(2);
+        expect((f.events[1] as Extract<SyncEvent, { type: 'session-updated' }>).data?.execution?.compacting).not.toBe(true);
+        expect(f.session.executionVersion!).toBeGreaterThan(version);
+        f.cache.handleSessionAlive({ sid: f.session.id, time, thinking: true, execution: { ...f.execution(2), compacting: true } });
+        expect(f.session.execution?.compacting).not.toBe(true);
+        expect(f.events).toHaveLength(2);
+    } finally { f.store.close(); }
+});

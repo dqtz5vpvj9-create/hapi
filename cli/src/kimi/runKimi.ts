@@ -111,7 +111,7 @@ export async function runKimi(opts: {
             permissionMode: currentPermissionMode,
             model: resolvedModel
         };
-        messageQueue.push(formattedText, mode, localId);
+        messageQueue.push(formattedText, mode, localId, message.content.attachments);
     });
 
     session.onCancelQueuedMessage((localId) => {

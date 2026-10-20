@@ -144,7 +144,7 @@ export async function runCopilot(opts: {
             };
             const pushPlain = () => {
                 const formattedText = formatMessageWithAttachments(message.content.text, message.content.attachments);
-                messageQueue.push(formattedText, buildMode(), localId);
+                messageQueue.push(formattedText, buildMode(), localId, message.content.attachments);
             };
             let recognizedSlash = false;
             try {
@@ -218,7 +218,7 @@ export async function runCopilot(opts: {
                 }
 
                 const formattedText = formatMessageWithAttachments(text, message.content.attachments);
-                messageQueue.push(formattedText, buildMode(), localId);
+                messageQueue.push(formattedText, buildMode(), localId, message.content.attachments);
             } catch (error) {
                 logger.debug('[copilot] Failed to handle user message', error);
                 if (wasCancelled()) return;

@@ -24,4 +24,14 @@ describe('MetadataSchema cursorSessionProtocol', () => {
         expect(result.success).toBe(true);
         expect(result.data?.conversationHistoryEntryIds).toEqual({ 'local-user-id': 'pi-entry-id' });
     });
+
+    it('persists the local Codex account binding without credentials', () => {
+        const result = MetadataSchema.parse({
+            ...base,
+            codexAccountId: 'codex_0123456789abcdef01234567',
+            codexAccountLabel: 'Research account',
+        });
+        expect(result.codexAccountId).toBe('codex_0123456789abcdef01234567');
+        expect(result.codexAccountLabel).toBe('Research account');
+    });
 });

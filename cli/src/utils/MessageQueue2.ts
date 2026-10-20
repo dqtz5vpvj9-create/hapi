@@ -1,7 +1,9 @@
+import type { AttachmentMetadata } from '@/api/types';
 import { logger } from "@/ui/logger";
 
 export interface QueueItem<T> {
     message: string;
+    attachments?: AttachmentMetadata[];
     mode: T;
     modeHash: string;
     localId?: string;
@@ -37,12 +39,21 @@ export class MessageQueue2<T> {
     private nextEnqueueOrder = 0;
     private previousEnqueueOrder = -1;
 
+    /**
+     * Upper bound on how many queued messages one batch may join. Queues that
+     * mirror a client that processes one prompt per turn pass 1; the default
+     * keeps the historical join-everything behavior.
+     */
+    private readonly maxBatchSize: number;
+
     constructor(
         modeHasher: (mode: T) => string,
-        onMessageHandler: ((message: string, mode: T) => void) | null = null
+        onMessageHandler: ((message: string, mode: T) => void) | null = null,
+        options: { maxBatchSize?: number } = {}
     ) {
         this.modeHasher = modeHasher;
         this.onMessageHandler = onMessageHandler;
+        this.maxBatchSize = options.maxBatchSize ?? Number.POSITIVE_INFINITY;
         logger.debug(`[MessageQueue2] Initialized`);
     }
 
@@ -56,7 +67,7 @@ export class MessageQueue2<T> {
     /**
      * Push a message to the queue with a mode.
      */
-    push(message: string, mode: T, localId?: string): void {
+    push(message: string, mode: T, localId?: string, attachments?: AttachmentMetadata[]): void {
         if (this.closed) {
             throw new Error('Cannot push to closed queue');
         }
@@ -66,6 +77,7 @@ export class MessageQueue2<T> {
 
         const item = {
             message,
+            ...(attachments?.length ? { attachments } : {}),
             mode,
             modeHash,
             localId,
@@ -95,7 +107,7 @@ export class MessageQueue2<T> {
      * Push a message immediately without batching delay.
      * Does not clear the queue or enforce isolation.
      */
-    pushImmediate(message: string, mode: T, localId?: string): void {
+    pushImmediate(message: string, mode: T, localId?: string, attachments?: AttachmentMetadata[]): void {
         if (this.closed) {
             throw new Error('Cannot push to closed queue');
         }
@@ -105,6 +117,7 @@ export class MessageQueue2<T> {
 
         const item = {
             message,
+            ...(attachments?.length ? { attachments } : {}),
             mode,
             modeHash,
             localId,
@@ -137,7 +150,7 @@ export class MessageQueue2<T> {
      * Use this when a slash command must run alone but earlier prompts must
      * still be delivered in order.
      */
-    pushIsolated(message: string, mode: T, localId?: string): void {
+    pushIsolated(message: string, mode: T, localId?: string, attachments?: AttachmentMetadata[]): void {
         if (this.closed) {
             throw new Error('Cannot push to closed queue');
         }
@@ -147,6 +160,7 @@ export class MessageQueue2<T> {
 
         const item = {
             message,
+            ...(attachments?.length ? { attachments } : {}),
             mode,
             modeHash,
             localId,
@@ -175,7 +189,7 @@ export class MessageQueue2<T> {
      * Clears any pending messages and ensures this message is never batched with others.
      * Used for special commands that require dedicated processing.
      */
-    pushIsolateAndClear(message: string, mode: T, localId?: string): void {
+    pushIsolateAndClear(message: string, mode: T, localId?: string, attachments?: AttachmentMetadata[]): void {
         if (this.closed) {
             throw new Error('Cannot push to closed queue');
         }
@@ -191,6 +205,7 @@ export class MessageQueue2<T> {
 
         const item = {
             message,
+            ...(attachments?.length ? { attachments } : {}),
             mode,
             modeHash,
             localId,
@@ -219,7 +234,7 @@ export class MessageQueue2<T> {
     /**
      * Push a message to the beginning of the queue with a mode.
      */
-    unshift(message: string, mode: T, localId?: string): void {
+    unshift(message: string, mode: T, localId?: string, attachments?: AttachmentMetadata[]): void {
         if (this.closed) {
             throw new Error('Cannot unshift to closed queue');
         }
@@ -229,6 +244,7 @@ export class MessageQueue2<T> {
 
         const item = {
             message,
+            ...(attachments?.length ? { attachments } : {}),
             mode,
             modeHash,
             localId,
@@ -261,7 +277,7 @@ export class MessageQueue2<T> {
      * that failed transiently and must retry without batching against sibling
      * prompts).
      */
-    unshiftIsolated(message: string, mode: T, localId?: string): void {
+    unshiftIsolated(message: string, mode: T, localId?: string, attachments?: AttachmentMetadata[]): void {
         if (this.closed) {
             throw new Error('Cannot unshift to closed queue');
         }
@@ -271,6 +287,7 @@ export class MessageQueue2<T> {
 
         const item = {
             message,
+            ...(attachments?.length ? { attachments } : {}),
             mode,
             modeHash,
             localId,
@@ -551,7 +568,7 @@ export class MessageQueue2<T> {
      * Wait for messages and return all messages with the same mode as a single string
      * Returns { message: string, mode: T } or null if aborted/closed
      */
-    async waitForMessagesAndGetAsString(abortSignal?: AbortSignal): Promise<{ message: string, mode: T, isolate: boolean, hash: string, items: Array<{ message: string, localId?: string }> } | null> {
+    async waitForMessagesAndGetAsString(abortSignal?: AbortSignal): Promise<{ message: string, mode: T, isolate: boolean, hash: string, items: Array<{ message: string, localId?: string, attachments?: AttachmentMetadata[] }> } | null> {
         // If we have messages, return them immediately
         if (this.queue.length > 0) {
             return this.collectBatch();
@@ -575,7 +592,7 @@ export class MessageQueue2<T> {
     /**
      * Collect a batch of messages with the same mode, respecting isolation requirements
      */
-    private collectBatch(): { message: string, mode: T, hash: string, isolate: boolean, items: Array<{ message: string, localId?: string }> } | null {
+    private collectBatch(): { message: string, mode: T, hash: string, isolate: boolean, items: Array<{ message: string, localId?: string, attachments?: AttachmentMetadata[] }> } | null {
         if (this.queue.length === 0) {
             return null;
         }
@@ -587,7 +604,7 @@ export class MessageQueue2<T> {
         // `message` string below so callers that need to requeue individual
         // messages (e.g. restoring a failed batch with each item's own
         // localId intact) don't have to re-split an already-joined string.
-        const items: Array<{ message: string, localId?: string }> = [];
+        const items: Array<{ message: string, localId?: string, attachments?: AttachmentMetadata[] }> = [];
         let mode = firstItem.mode;
         let isolate = firstItem.isolate ?? false;
         const targetModeHash = firstItem.modeHash;
@@ -596,17 +613,18 @@ export class MessageQueue2<T> {
         if (firstItem.isolate) {
             const item = this.queue.shift()!;
             sameModeMessages.push(item.message);
-            items.push({ message: item.message, localId: item.localId });
+            items.push({ message: item.message, localId: item.localId, ...(item.attachments?.length ? { attachments: item.attachments } : {}) });
             if (item.localId) consumedLocalIds.push(item.localId);
             logger.debug(`[MessageQueue2] Collected isolated message with mode hash: ${targetModeHash}`);
         } else {
             // Collect all messages with the same mode until we hit an isolated message
             while (this.queue.length > 0 &&
+                sameModeMessages.length < this.maxBatchSize &&
                 this.queue[0].modeHash === targetModeHash &&
                 !this.queue[0].isolate) {
                 const item = this.queue.shift()!;
                 sameModeMessages.push(item.message);
-                items.push({ message: item.message, localId: item.localId });
+                items.push({ message: item.message, localId: item.localId, ...(item.attachments?.length ? { attachments: item.attachments } : {}) });
                 if (item.localId) consumedLocalIds.push(item.localId);
             }
             logger.debug(`[MessageQueue2] Collected batch of ${sameModeMessages.length} messages with mode hash: ${targetModeHash}`);

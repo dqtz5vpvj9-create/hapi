@@ -10,12 +10,13 @@ export function enqueueCursorUserMessage(
     messageQueue: MessageQueue2<EnhancedMode>,
     formattedText: string,
     enhancedMode: EnhancedMode,
-    localId?: string
+    localId?: string,
+    attachments?: import('@/api/types').AttachmentMetadata[]
 ): void {
     const specialCommand = parseCursorSpecialCommand(formattedText);
     if (specialCommand.type !== null) {
-        messageQueue.pushIsolated(formattedText.trim(), enhancedMode, localId);
+        messageQueue.pushIsolated(formattedText.trim(), enhancedMode, localId, attachments);
         return;
     }
-    messageQueue.push(formattedText, enhancedMode, localId);
+    messageQueue.push(formattedText, enhancedMode, localId, attachments);
 }
