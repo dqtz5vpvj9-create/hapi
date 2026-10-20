@@ -318,7 +318,7 @@ export class QoderRemoteLauncher extends RemoteLauncherBase {
     private async applyModel(sessionId: string, model: string): Promise<void> {
         const backend = this.backend
         if (!backend) throw new Error('Qoder CN is not ready')
-        await backend.setModel(sessionId, model, { flavor: 'qoder' })
+        await backend.setConfigOption(sessionId, 'model', model)
         this.currentBackendModel = model
         this.session.publishModel(model)
         this.publishConfigOptions()
