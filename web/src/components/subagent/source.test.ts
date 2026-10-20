@@ -105,6 +105,19 @@ describe('native subagent source', () => {
         expect(interruptDshSubagent).toHaveBeenCalledWith('parent', 'session-child')
     })
 
+    it('reuses one request id after an ambiguous failure and mints a new one after success', async () => {
+        const { api, promptDshSubagent } = makeApi()
+        promptDshSubagent.mockRejectedValueOnce(new Error('connection lost'))
+        promptDshSubagent.mockResolvedValue({ messageId: 'session-child:9' })
+        const source = createSubagentSource(api, dshRef('continuable'), 'auth')
+        await expect(source.prompt!('retry me', 'queue')).rejects.toThrow('connection lost')
+        await source.prompt!('retry me', 'queue')
+        await source.prompt!('retry me', 'queue')
+        const ids = promptDshSubagent.mock.calls.map(call => call[2].requestId)
+        expect(ids[1]).toBe(ids[0])
+        expect(ids[2]).not.toBe(ids[0])
+    })
+
     it('reports when the creating API identity is no longer current', () => {
         const { api, changeAuth } = makeApi()
         const source = createSubagentSource(api, codexRef, 'auth')

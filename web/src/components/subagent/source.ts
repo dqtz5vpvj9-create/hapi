@@ -97,12 +97,15 @@ export function createSubagentSource(
     }
 
     if (ref.mode === 'continuable') {
+        let pending: { text: string; delivery: 'queue' | 'steer'; requestId: string } | undefined
         source.prompt = async (text, delivery) => {
-            await api.promptDshSubagent(ref.parentSessionId, ref.sessionId, {
-                text,
-                delivery,
-                requestId: createRequestId(),
-            })
+            // Reuse the identity after an ambiguous failure: a lost response may
+            // hide an accepted prompt, and the Hub deduplicates this request id.
+            if (!pending || pending.text !== text || pending.delivery !== delivery) {
+                pending = { text, delivery, requestId: createRequestId() }
+            }
+            await api.promptDshSubagent(ref.parentSessionId, ref.sessionId, pending)
+            pending = undefined
         }
         source.interrupt = async () => {
             await api.interruptDshSubagent(ref.parentSessionId, ref.sessionId)

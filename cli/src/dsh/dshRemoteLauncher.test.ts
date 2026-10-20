@@ -70,7 +70,7 @@ vi.mock('./utils/dshControl', () => ({
     createDshControl: vi.fn(async () => ({
         patch: '/tmp/hapi-dsh-control.yaml',
         env: {},
-        claimRoot: vi.fn(async () => {}),
+            claimRoot: vi.fn(async () => {}),
         getTitle: harness.getTitle,
         setPermission: vi.fn(async () => {}),
         preflight: vi.fn(async () => {}),

@@ -286,13 +286,10 @@ export class DshRemoteLauncher extends RemoteLauncherBase {
                 const failure = formatDshError(claimError)
                 this.session.sendSessionEvent({ type: 'error', ...failure })
                 this.messageBuffer.addMessage(failure.message, 'status')
-                // A non-default sandbox must fail closed rather than run with
-                // the wrong policy. Default keeps the session usable, but no
-                // longer advertises live control it could not establish.
-                if (this.session.getPermissionMode() !== 'default') throw claimError
-                this.control = null
-                // Control is gone, so fall back to the generic ACP title path.
-                backend.setSessionInfoUpdateListener(({ title }) => this.syncNativeTitle(title))
+                // Native DSH persists sandbox modes. Continuing after a failed
+                // root claim can resume a previously YOLO session while HAPI
+                // reports the weaker default, so every mode fails closed.
+                throw claimError
             }
         }
         if (this.shouldExit) return

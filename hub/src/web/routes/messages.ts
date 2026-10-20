@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono'
 import { CodexSubagentMessagesQuerySchema, DshSubagentMessagesQuerySchema, PromptDshSubagentRequestSchema } from '@hapi/protocol/apiTypes'
 import { MessageOutlineQuerySchema, MessageContextQuerySchema, MessageDependenciesQuerySchema, MessagesQuerySchema, QueuedStateRequestSchema, SendMessageRequestSchema } from '@hapi/protocol'
+import type { PromptDshSubagentResponse } from '@hapi/protocol/apiTypes'
 import type { SyncEngine } from '../../sync/syncEngine'
 import type { WebAppEnv } from '../middleware/auth'
 import { requireSessionFromParam, requireSyncEngine } from './guards'
@@ -33,6 +34,18 @@ function resolveDshSubagentParent(
 
 export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
+    // A lost HTTP response must not duplicate a child prompt when the browser
+    // retries the same caller-minted request id. Successful receipts are kept
+    // briefly; an in-flight entry also coalesces concurrent retries.
+    const promptEntries = new Map<string, {
+        text: string
+        delivery: string
+        expiresAt: number
+        response?: PromptDshSubagentResponse
+        promise: Promise<PromptDshSubagentResponse>
+    }>()
+    const promptKey = (namespace: string, parentSessionId: string, subagentId: string, requestId: string) =>
+        [namespace, parentSessionId, subagentId, requestId].join('\0')
 
     app.get('/sessions/:id/codex-subagents/:threadId/messages', async (c) => {
         c.header('Cache-Control', 'private, no-store')
@@ -80,8 +93,37 @@ export function createMessagesRoutes(getSyncEngine: () => SyncEngine | null): Ho
             sessionId: c.req.param('subagentId')
         })
         if (!parsed.success) return c.json({ error: 'Invalid body', issues: parsed.error.flatten() }, 400)
-        try { return c.json(await engine.promptDshSubagent(target.parentSessionId, parsed.data)) }
-        catch (error) { return c.json({ error: error instanceof Error ? error.message : 'Subagent input unavailable' }, 409) }
+        const key = promptKey(c.get('namespace'), target.parentSessionId, c.req.param('subagentId'), parsed.data.requestId)
+        let entry = promptEntries.get(key)
+        if (entry && entry.expiresAt <= Date.now()) { promptEntries.delete(key); entry = undefined }
+        if (entry && (entry.text !== parsed.data.text || entry.delivery !== parsed.data.delivery)) {
+            return c.json({ error: 'requestId was already used for a different prompt' }, 409)
+        }
+        if (!entry) {
+            const created = {
+                text: parsed.data.text,
+                delivery: parsed.data.delivery,
+                expiresAt: Number.POSITIVE_INFINITY,
+                promise: Promise.resolve({} as PromptDshSubagentResponse),
+            }
+            created.promise = engine.promptDshSubagent(target.parentSessionId, parsed.data)
+            promptEntries.set(key, created)
+            entry = created
+        }
+        try {
+            const response = entry.response ?? await entry.promise
+            entry.response = response
+            entry.expiresAt = Date.now() + 5 * 60_000
+            if (promptEntries.size > 1000) {
+                for (const [candidate, value] of promptEntries) {
+                    if (value.expiresAt <= Date.now()) promptEntries.delete(candidate)
+                }
+            }
+            return c.json(response)
+        } catch (error) {
+            if (promptEntries.get(key) === entry) promptEntries.delete(key)
+            return c.json({ error: error instanceof Error ? error.message : 'Subagent input unavailable' }, 409)
+        }
     })
 
     app.post('/sessions/:id/dsh-subagents/:subagentId/interrupt', async (c) => {

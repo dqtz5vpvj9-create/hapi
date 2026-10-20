@@ -833,10 +833,11 @@ export class AcpSdkBackend implements AgentBackend {
 
         const promptRequestEpoch = this.beginPromptRequest();
         try {
-            await this.transport.sendRequest('session/prompt', {
-                sessionId,
-                prompt: (await prepareAcpPrompt(content, this.supportsImageInput())).prompt
-            }, { timeoutMs: Infinity });
+            const prepared = (await prepareAcpPrompt(content, this.supportsImageInput())).prompt;
+            if (promptRequestEpoch !== this.promptRequestEpoch) {
+                throw new Error('ACP soft steer was cancelled before dispatch');
+            }
+            await this.transport.sendRequest('session/prompt', { sessionId, prompt: prepared }, { timeoutMs: Infinity });
         } finally {
             this.finishPromptRequest(promptRequestEpoch);
         }
@@ -863,7 +864,12 @@ export class AcpSdkBackend implements AgentBackend {
         const dispatch = (prompt: PromptContent[]) => transport.sendRequestWithDispatch('session/prompt',
             { sessionId, prompt }, { timeoutMs: Infinity, dispatchTimeoutMs: 20_000 });
         const request = content.some(block => block.type === 'image' || block.attachments?.length)
-            ? prepareAcpPrompt(content, this.supportsImageInput()).then(prepared => dispatch(prepared.prompt))
+            ? prepareAcpPrompt(content, this.supportsImageInput()).then(prepared => {
+                if (promptRequestEpoch !== this.promptRequestEpoch) {
+                    throw new Error('ACP soft steer was cancelled before dispatch');
+                }
+                return dispatch(prepared.prompt);
+            })
             : Promise.resolve(dispatch(content.map(block => block.type === 'text' ? { type: 'text', text: block.text } : block)));
         const completed = (async () => {
             try {

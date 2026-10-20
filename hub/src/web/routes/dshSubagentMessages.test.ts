@@ -138,6 +138,23 @@ describe('DSH child input HTTP boundary', () => {
         }]])
     })
 
+    it('coalesces a retry with the same request id instead of accepting it twice', async () => {
+        const { prompt, prompts } = fixture()
+        const first = await prompt({ text: 'once only', requestId: 'retry-safe' })
+        const second = await prompt({ text: 'once only', requestId: 'retry-safe' })
+        expect(first.status).toBe(200)
+        expect(second.status).toBe(200)
+        expect(await second.json()).toEqual({ messageId: 'child-message-1' })
+        expect(prompts).toHaveLength(1)
+    })
+
+    it('rejects a reused request id with different content', async () => {
+        const { prompt, prompts } = fixture()
+        expect((await prompt({ text: 'first', requestId: 'retry-conflict' })).status).toBe(200)
+        expect((await prompt({ text: 'second', requestId: 'retry-conflict' })).status).toBe(409)
+        expect(prompts).toHaveLength(1)
+    })
+
     it('defaults delivery to queue and lets the path own the child session id', async () => {
         const { prompt, prompts } = fixture()
         const response = await prompt({ text: 'more', requestId: 'req-2', sessionId: 'ignored-child' })
