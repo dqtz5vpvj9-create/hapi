@@ -1,0 +1,1006 @@
+{
+  "device": "Lis-iMac (Windows)",
+  "nativeCodexVersion": "0.162.0",
+  "harnessRuntime": "Bun 1.4.0",
+  "scope": "runSharedRuntime entry to internal readiness; isolated empty Codex config; real native and Hub; mock local Runner acknowledgement; no model request; not browser E2E",
+  "trials": [
+    {
+      "variant": "baseline",
+      "trial": 1,
+      "processExitCode": 0,
+      "productionGenerationPreserved": true,
+      "cleanupCompleted": false,
+      "stages": [
+        {
+          "stage": "runtime.enter",
+          "elapsedMs": 0.12319999999999709,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.version",
+          "elapsedMs": 149.7734,
+          "durationMs": 148.2064,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.spawned",
+          "elapsedMs": 366.1495,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 374.3958,
+          "durationMs": 4.195100000000025,
+          "outcome": "error"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 477.3426999999999,
+          "durationMs": 1.9209999999999354,
+          "outcome": "error"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 579.2258999999999,
+          "durationMs": 0.9483999999999924,
+          "outcome": "error"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 685.6325999999999,
+          "durationMs": 5.264599999999973,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.capabilities",
+          "elapsedMs": 690.394,
+          "durationMs": 4.19399999999996,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.bootstrap",
+          "elapsedMs": 1013.7855999999999,
+          "durationMs": 314.9758999999999,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.prepare",
+          "elapsedMs": 1019.3741,
+          "durationMs": 5.148000000000138,
+          "outcome": "ok"
+        },
+        {
+          "stage": "thread/start",
+          "elapsedMs": 1039.9769999999999,
+          "durationMs": 18.801600000000008,
+          "outcome": "ok"
+        },
+        {
+          "stage": "ownership.reserve",
+          "elapsedMs": 1047.7644,
+          "durationMs": 7.004900000000134,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.materialize",
+          "elapsedMs": 2545.3145,
+          "durationMs": 1497.0482000000002,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.subscribe",
+          "elapsedMs": 2774.4001,
+          "durationMs": 227.87890000000016,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.refresh",
+          "elapsedMs": 2811.3759,
+          "durationMs": 35.877899999999954,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.children",
+          "elapsedMs": 2813.3349,
+          "durationMs": 1.6662999999998647,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.goal",
+          "elapsedMs": 2814.6562,
+          "durationMs": 1.0032999999998538,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.bind",
+          "elapsedMs": 2814.8903,
+          "durationMs": 269.27620000000024,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.subscribe",
+          "elapsedMs": 2821.3597,
+          "durationMs": 6.283200000000306,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.activate",
+          "elapsedMs": 2822.7204,
+          "durationMs": 1.0343000000002576,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.flush",
+          "elapsedMs": 2825.0344999999998,
+          "durationMs": 2.0603000000000975,
+          "outcome": "ok"
+        },
+        {
+          "stage": "binding.persist",
+          "elapsedMs": 2827.2599999999998,
+          "durationMs": 2.005999999999858,
+          "outcome": "ok"
+        },
+        {
+          "stage": "runner.notify",
+          "elapsedMs": 5581.6126,
+          "durationMs": 2754.0748000000003,
+          "outcome": "ok"
+        },
+        {
+          "stage": "session.ready",
+          "elapsedMs": 5582.0371000000005,
+          "outcome": "ok"
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "trial": 2,
+      "processExitCode": 0,
+      "productionGenerationPreserved": true,
+      "cleanupCompleted": false,
+      "stages": [
+        {
+          "stage": "runtime.enter",
+          "elapsedMs": 0.11299999999999955,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.version",
+          "elapsedMs": 152.3992,
+          "durationMs": 150.62490000000003,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.spawned",
+          "elapsedMs": 268.541,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 273.3281,
+          "durationMs": 2.4342999999999506,
+          "outcome": "error"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 376.02180000000004,
+          "durationMs": 1.1304000000000087,
+          "outcome": "error"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 481.35020000000003,
+          "durationMs": 2.453700000000026,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.capabilities",
+          "elapsedMs": 484.4015,
+          "durationMs": 2.76400000000001,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.bootstrap",
+          "elapsedMs": 803.9950000000001,
+          "durationMs": 313.6038,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.prepare",
+          "elapsedMs": 812.8084000000001,
+          "durationMs": 8.031999999999925,
+          "outcome": "ok"
+        },
+        {
+          "stage": "thread/start",
+          "elapsedMs": 839.2189000000001,
+          "durationMs": 23.287900000000036,
+          "outcome": "ok"
+        },
+        {
+          "stage": "ownership.reserve",
+          "elapsedMs": 847.76,
+          "durationMs": 7.494699999999966,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.materialize",
+          "elapsedMs": 2263.2447,
+          "durationMs": 1415.1374999999998,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.subscribe",
+          "elapsedMs": 2492.0401,
+          "durationMs": 227.44950000000017,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.refresh",
+          "elapsedMs": 2546.5989,
+          "durationMs": 53.67460000000028,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.children",
+          "elapsedMs": 2547.9926,
+          "durationMs": 1.099800000000414,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.goal",
+          "elapsedMs": 2548.7201,
+          "durationMs": 0.5585999999998421,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.bind",
+          "elapsedMs": 2548.8545,
+          "durationMs": 285.163,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.subscribe",
+          "elapsedMs": 2554.2333,
+          "durationMs": 5.273499999999785,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.activate",
+          "elapsedMs": 2555.2706000000003,
+          "durationMs": 0.7831999999998516,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.flush",
+          "elapsedMs": 2558.5017000000003,
+          "durationMs": 2.9661999999998443,
+          "outcome": "ok"
+        },
+        {
+          "stage": "binding.persist",
+          "elapsedMs": 2560.0059,
+          "durationMs": 1.2777000000000953,
+          "outcome": "ok"
+        },
+        {
+          "stage": "runner.notify",
+          "elapsedMs": 5381.303,
+          "durationMs": 2821.1308000000004,
+          "outcome": "ok"
+        },
+        {
+          "stage": "session.ready",
+          "elapsedMs": 5381.7057,
+          "outcome": "ok"
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "trial": 3,
+      "processExitCode": 0,
+      "productionGenerationPreserved": true,
+      "cleanupCompleted": false,
+      "stages": [
+        {
+          "stage": "runtime.enter",
+          "elapsedMs": 0.14820000000000277,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.version",
+          "elapsedMs": 218.02399999999997,
+          "durationMs": 216.33249999999998,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.spawned",
+          "elapsedMs": 416.64420000000007,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 423.5341000000001,
+          "durationMs": 3.8670000000000755,
+          "outcome": "error"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 526.6257,
+          "durationMs": 1.6978000000000293,
+          "outcome": "error"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 628.7696,
+          "durationMs": 1.5580999999999676,
+          "outcome": "error"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 732.8855,
+          "durationMs": 2.338200000000029,
+          "outcome": "error"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 834.6967999999999,
+          "durationMs": 1.3757999999997992,
+          "outcome": "error"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 940.3851999999999,
+          "durationMs": 3.608799999999974,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.capabilities",
+          "elapsedMs": 944.7371,
+          "durationMs": 3.6812999999999647,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.bootstrap",
+          "elapsedMs": 1351.7463,
+          "durationMs": 399.3765999999998,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.prepare",
+          "elapsedMs": 1365.3887,
+          "durationMs": 12.83420000000001,
+          "outcome": "ok"
+        },
+        {
+          "stage": "thread/start",
+          "elapsedMs": 1401.2376,
+          "durationMs": 30.585599999999886,
+          "outcome": "ok"
+        },
+        {
+          "stage": "ownership.reserve",
+          "elapsedMs": 1411.8267,
+          "durationMs": 9.637500000000045,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.materialize",
+          "elapsedMs": 3220.0483,
+          "durationMs": 1807.8782999999999,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.subscribe",
+          "elapsedMs": 3455.5665,
+          "durationMs": 233.9375,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.refresh",
+          "elapsedMs": 3494.3208999999997,
+          "durationMs": 37.563300000000254,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.children",
+          "elapsedMs": 3496.3914,
+          "durationMs": 1.8609999999998763,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.goal",
+          "elapsedMs": 3497.5764,
+          "durationMs": 0.9158999999999651,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.bind",
+          "elapsedMs": 3497.7358999999997,
+          "durationMs": 277.174,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.subscribe",
+          "elapsedMs": 3503.9997999999996,
+          "durationMs": 6.126499999999851,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.activate",
+          "elapsedMs": 3504.99,
+          "durationMs": 0.7920999999996639,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.flush",
+          "elapsedMs": 3508.7974999999997,
+          "durationMs": 3.5715000000000146,
+          "outcome": "ok"
+        },
+        {
+          "stage": "binding.persist",
+          "elapsedMs": 3511.9107,
+          "durationMs": 2.4623999999998887,
+          "outcome": "ok"
+        },
+        {
+          "stage": "runner.notify",
+          "elapsedMs": 7828.8881,
+          "durationMs": 4316.7979000000005,
+          "outcome": "ok"
+        },
+        {
+          "stage": "session.ready",
+          "elapsedMs": 7837.318499999999,
+          "outcome": "ok"
+        }
+      ]
+    },
+    {
+      "variant": "optimized-v5",
+      "trial": 1,
+      "processExitCode": 0,
+      "productionGenerationPreserved": true,
+      "cleanupCompleted": false,
+      "stages": [
+        {
+          "stage": "runtime.enter",
+          "elapsedMs": 0.11540000000002237,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.version",
+          "elapsedMs": 156.92720000000003,
+          "durationMs": 155.16500000000002,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.spawned",
+          "elapsedMs": 689.5276000000001,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 698.8716999999999,
+          "durationMs": 4.459300000000098,
+          "outcome": "error"
+        },
+        {
+          "stage": "git.inspect",
+          "elapsedMs": 1262.9583,
+          "durationMs": 1104.1421,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 1296.6844,
+          "durationMs": 5.626499999999851,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.capabilities",
+          "elapsedMs": 1301.5039000000002,
+          "durationMs": 4.49129999999991,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.bootstrap",
+          "elapsedMs": 1325.0162,
+          "durationMs": 628.3568999999999,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.prepare",
+          "elapsedMs": 1336.634,
+          "durationMs": 10.90020000000004,
+          "outcome": "ok"
+        },
+        {
+          "stage": "thread/start",
+          "elapsedMs": 1374.8245000000002,
+          "durationMs": 29.31989999999996,
+          "outcome": "ok"
+        },
+        {
+          "stage": "ownership.reserve",
+          "elapsedMs": 1386.2579,
+          "durationMs": 10.519399999999905,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.materialize",
+          "elapsedMs": 2314.1131,
+          "durationMs": 927.5263,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.queue",
+          "elapsedMs": 2341.3972999999996,
+          "durationMs": 24.369900000000143,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.bind",
+          "elapsedMs": 2341.7255999999998,
+          "durationMs": 27.192999999999756,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.subscribe",
+          "elapsedMs": 2581.1632,
+          "durationMs": 239.2251000000001,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.activate",
+          "elapsedMs": 2582.9343999999996,
+          "durationMs": 1.3195000000000618,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.flush",
+          "elapsedMs": 2591.3143999999998,
+          "durationMs": 8.111899999999878,
+          "outcome": "ok"
+        },
+        {
+          "stage": "binding.persist",
+          "elapsedMs": 2593.3568999999998,
+          "durationMs": 1.7935999999999694,
+          "outcome": "ok"
+        },
+        {
+          "stage": "runner.notify",
+          "elapsedMs": 2600.1996999999997,
+          "durationMs": 6.595299999999952,
+          "outcome": "ok"
+        },
+        {
+          "stage": "session.ready",
+          "elapsedMs": 2600.4894,
+          "outcome": "ok"
+        }
+      ]
+    },
+    {
+      "variant": "optimized-v5",
+      "trial": 2,
+      "processExitCode": 0,
+      "productionGenerationPreserved": true,
+      "cleanupCompleted": false,
+      "stages": [
+        {
+          "stage": "runtime.enter",
+          "elapsedMs": 0.13119999999997844,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.version",
+          "elapsedMs": 198.8218,
+          "durationMs": 196.9955,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.spawned",
+          "elapsedMs": 796.6142,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 806.2872,
+          "durationMs": 5.415899999999965,
+          "outcome": "error"
+        },
+        {
+          "stage": "git.inspect",
+          "elapsedMs": 1440.2955,
+          "durationMs": 1238.0831,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 1685.7419,
+          "durationMs": 5.646499999999833,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.capabilities",
+          "elapsedMs": 1691.955,
+          "durationMs": 5.7309999999999945,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.bootstrap",
+          "elapsedMs": 1716.1896,
+          "durationMs": 912.6454000000001,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.prepare",
+          "elapsedMs": 1726.5215,
+          "durationMs": 9.57770000000005,
+          "outcome": "ok"
+        },
+        {
+          "stage": "thread/start",
+          "elapsedMs": 1757.4364,
+          "durationMs": 25.504399999999805,
+          "outcome": "ok"
+        },
+        {
+          "stage": "ownership.reserve",
+          "elapsedMs": 1767.4139,
+          "durationMs": 9.185100000000148,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.materialize",
+          "elapsedMs": 2702.8621,
+          "durationMs": 935.1741999999999,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.queue",
+          "elapsedMs": 2732.0731,
+          "durationMs": 25.240800000000036,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.bind",
+          "elapsedMs": 2732.4868,
+          "durationMs": 29.311099999999897,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.subscribe",
+          "elapsedMs": 2974.9934,
+          "durationMs": 242.3137999999999,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.activate",
+          "elapsedMs": 2977.0254,
+          "durationMs": 1.6381000000001222,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.flush",
+          "elapsedMs": 2984.8201,
+          "durationMs": 7.501099999999951,
+          "outcome": "ok"
+        },
+        {
+          "stage": "binding.persist",
+          "elapsedMs": 2987.2138,
+          "durationMs": 2.130000000000109,
+          "outcome": "ok"
+        },
+        {
+          "stage": "runner.notify",
+          "elapsedMs": 2994.02,
+          "durationMs": 6.520100000000184,
+          "outcome": "ok"
+        },
+        {
+          "stage": "session.ready",
+          "elapsedMs": 2994.3079,
+          "outcome": "ok"
+        }
+      ]
+    },
+    {
+      "variant": "optimized-v5",
+      "trial": 3,
+      "processExitCode": 0,
+      "productionGenerationPreserved": true,
+      "cleanupCompleted": false,
+      "stages": [
+        {
+          "stage": "runtime.enter",
+          "elapsedMs": 0.12540000000001328,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.version",
+          "elapsedMs": 164.0908,
+          "durationMs": 162.19960000000003,
+          "outcome": "ok"
+        },
+        {
+          "stage": "git.inspect",
+          "elapsedMs": 609.3829,
+          "durationMs": 443.39820000000003,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.spawned",
+          "elapsedMs": 639.1611,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 647.6142,
+          "durationMs": 4.5312000000000126,
+          "outcome": "error"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 849.2464,
+          "durationMs": 6.034400000000005,
+          "outcome": "error"
+        },
+        {
+          "stage": "hub.bootstrap",
+          "elapsedMs": 877.8308,
+          "durationMs": 231.96259999999995,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 961.0802000000001,
+          "durationMs": 11.417299999999841,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.capabilities",
+          "elapsedMs": 963.4417000000001,
+          "durationMs": 1.6603999999999814,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.prepare",
+          "elapsedMs": 974.9190000000001,
+          "durationMs": 7.292900000000145,
+          "outcome": "ok"
+        },
+        {
+          "stage": "thread/start",
+          "elapsedMs": 1003.9582,
+          "durationMs": 24.258000000000038,
+          "outcome": "ok"
+        },
+        {
+          "stage": "ownership.reserve",
+          "elapsedMs": 1013.2068999999999,
+          "durationMs": 8.435600000000022,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.materialize",
+          "elapsedMs": 1947.3729,
+          "durationMs": 933.7349000000002,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.queue",
+          "elapsedMs": 2008.0249999999999,
+          "durationMs": 53.52689999999984,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.bind",
+          "elapsedMs": 2008.4846,
+          "durationMs": 60.31619999999975,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.subscribe",
+          "elapsedMs": 2283.0167,
+          "durationMs": 274.25930000000017,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.activate",
+          "elapsedMs": 2285.4227,
+          "durationMs": 2.102100000000064,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.flush",
+          "elapsedMs": 2289.1174,
+          "durationMs": 3.3832000000002154,
+          "outcome": "ok"
+        },
+        {
+          "stage": "binding.persist",
+          "elapsedMs": 2292.5987999999998,
+          "durationMs": 3.207499999999982,
+          "outcome": "ok"
+        },
+        {
+          "stage": "runner.notify",
+          "elapsedMs": 2301.813,
+          "durationMs": 8.961700000000292,
+          "outcome": "ok"
+        },
+        {
+          "stage": "session.ready",
+          "elapsedMs": 2302.2222,
+          "outcome": "ok"
+        }
+      ]
+    },
+    {
+      "variant": "optimized-final",
+      "trial": 1,
+      "processExitCode": 1,
+      "productionGenerationPreserved": true,
+      "cleanupCompleted": false,
+      "cleanupFailure": "Full native process-tree shutdown could not be verified",
+      "stages": [
+        {
+          "stage": "runtime.enter",
+          "elapsedMs": 0.1303999999999519,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.version",
+          "elapsedMs": 379.2543,
+          "durationMs": 375.9225,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.spawned",
+          "elapsedMs": 953.1088,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 965.0437999999999,
+          "durationMs": 7.0733000000000175,
+          "outcome": "error"
+        },
+        {
+          "stage": "git.inspect",
+          "elapsedMs": 1303.2601,
+          "durationMs": 921.8171000000001,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.bootstrap",
+          "elapsedMs": 1438.4358,
+          "durationMs": 477.22299999999996,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.initialize",
+          "elapsedMs": 1440.5341999999998,
+          "durationMs": 40.984100000000126,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.capabilities",
+          "elapsedMs": 1469.7294,
+          "durationMs": 28.78579999999988,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.prepare",
+          "elapsedMs": 1480.6252,
+          "durationMs": 9.364900000000034,
+          "outcome": "ok"
+        },
+        {
+          "stage": "thread/start",
+          "elapsedMs": 1506.3351,
+          "durationMs": 20.9534000000001,
+          "outcome": "ok"
+        },
+        {
+          "stage": "ownership.reserve",
+          "elapsedMs": 1514.2446,
+          "durationMs": 7.307000000000016,
+          "outcome": "ok"
+        },
+        {
+          "stage": "native.materialize",
+          "elapsedMs": 2428.2068,
+          "durationMs": 913.6119999999999,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.queue",
+          "elapsedMs": 2462.8899,
+          "durationMs": 30.339600000000246,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.bind",
+          "elapsedMs": 2463.16,
+          "durationMs": 34.43859999999995,
+          "outcome": "ok"
+        },
+        {
+          "stage": "control.subscribe",
+          "elapsedMs": 2693.6558999999997,
+          "durationMs": 230.26769999999988,
+          "outcome": "ok"
+        },
+        {
+          "stage": "root.activate",
+          "elapsedMs": 2695.4892999999997,
+          "durationMs": 1.5661999999997533,
+          "outcome": "ok"
+        },
+        {
+          "stage": "hub.flush",
+          "elapsedMs": 2704.5087,
+          "durationMs": 8.784099999999853,
+          "outcome": "ok"
+        },
+        {
+          "stage": "binding.persist",
+          "elapsedMs": 2706.801,
+          "durationMs": 1.9825000000000728,
+          "outcome": "ok"
+        },
+        {
+          "stage": "runner.notify",
+          "elapsedMs": 2712.7689,
+          "durationMs": 5.5943999999999505,
+          "outcome": "ok"
+        },
+        {
+          "stage": "session.ready",
+          "elapsedMs": 2713.0152,
+          "outcome": "ok"
+        },
+        {
+          "stage": "shutdown.begin",
+          "elapsedMs": 3117.966,
+          "outcome": "ok"
+        },
+        {
+          "stage": "shutdown.gateway",
+          "elapsedMs": 3124.0481,
+          "outcome": "ok"
+        },
+        {
+          "stage": "shutdown.operations",
+          "elapsedMs": 3124.2592,
+          "outcome": "ok"
+        },
+        {
+          "stage": "shutdown.suspended",
+          "elapsedMs": 3124.5083,
+          "outcome": "ok"
+        },
+        {
+          "stage": "shutdown.engine",
+          "elapsedMs": 34299.676,
+          "durationMs": 31174.818100000004,
+          "outcome": "ok"
+        },
+        {
+          "stage": "shutdown.roots",
+          "elapsedMs": 34301.0184,
+          "outcome": "ok"
+        }
+      ]
+    }
+  ]
+}

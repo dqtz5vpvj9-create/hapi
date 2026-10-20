@@ -72,6 +72,21 @@ against the deployed installation. Credentials stay in the existing restricted
 Role arguments are passed directly to `CreateProcessW`, with Windows argument
 quoting, Unicode environment and current directories. No resident shell is used.
 
+For Codex's elevated Windows sandbox, `sandboxBootstrapGroupSid` names the
+installed `CodexSandboxUsers` group. `configure-rust-host.ps1` records it when
+the group exists. This gives sandbox runners initialization access to HAPI's
+private bootstrap station/desktop (masks `0x2006e` / `0x200cf`), without granting
+ACL/owner changes or access to the interactive desktop. Pipe, job and token
+descriptors still permit only the owner and SYSTEM. After first-time Codex
+sandbox setup, regenerate configuration if the group was previously absent.
+
+Codex 0.162.0-alpha.17.2 also hardcodes `WinSta0` when starting a child on a
+private desktop. Its command runner needs the matching
+[Session 0 patch](../../scripts/windows/patches/codex-0.162.0-alpha.17.2-session0.patch)
+when used with a noninteractive station. See the
+[repair and acceptance record](../../docs/operations/2026-10-19-windows-sandbox-session0.md).
+Changing bootstrap ACLs alone does not resolve that upstream startup error.
+
 `@codex` resolves the newest installed desktop executable at each launch, like
 `resolve-codex.ps1`. PATH prefixes, executable paths and workspace roots are
 configuration data, not baked into the executable.

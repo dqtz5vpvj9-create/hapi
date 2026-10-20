@@ -75,6 +75,12 @@ object PermissionModes {
         PermissionMode.Debug, PermissionMode.AutoReview, PermissionMode.Yolo,
     )
 
+    /** `QODER_PERMISSION_MODES`; ids are translated at launch by the CLI. */
+    val QODER = listOf(
+        PermissionMode.Default, PermissionMode.AcceptEdits,
+        PermissionMode.Plan, PermissionMode.BypassPermissions,
+    )
+
     /**
      * `getPermissionModesForFlavor`: branch-for-branch port. Pi has no runtime
      * permission switching (always auto-approve) → empty; `null`/unknown
@@ -91,6 +97,7 @@ object PermissionModes {
         "agy" -> AGY
         "cursor" -> CURSOR
         "pi" -> emptyList()
+        "qoder" -> QODER
         else -> CLAUDE
     }
 

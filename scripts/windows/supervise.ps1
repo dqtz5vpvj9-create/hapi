@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-trap { ('{0:o} {1}' -f [DateTime]::UtcNow, $_.ToString()) | Add-Content -LiteralPath 'D:\hapi\logs\supervisor-fatal.log'; exit 1 }
+trap { ('{0:o} {1} {2} {3}' -f [DateTime]::UtcNow, $_.ToString(), $_.InvocationInfo.PositionMessage, $_.ScriptStackTrace) | Add-Content -LiteralPath 'D:\hapi\logs\supervisor-fatal.log'; exit 1 }
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $env:TEMP = 'D:\hapi\temp'
 $env:TMP = $env:TEMP
@@ -24,8 +24,12 @@ function Write-StateFile($Path, $Value) {
 }
 function Write-Event($Text) {
     $path = 'D:\hapi\logs\supervisor.log'
-    if ((Test-Path -LiteralPath $path) -and (Get-Item -LiteralPath $path).Length -gt 4MB) { Move-Item -LiteralPath $path -Destination "$path.previous" -Force }
-    ('{0:o} {1}' -f [DateTime]::UtcNow, $Text) | Add-Content -LiteralPath $path
+    try {
+        if ((Test-Path -LiteralPath $path) -and (Get-Item -LiteralPath $path).Length -gt 4MB) { Move-Item -LiteralPath $path -Destination "$path.previous" -Force }
+        ('{0:o} {1}' -f [DateTime]::UtcNow, $Text) | Add-Content -LiteralPath $path
+    } catch [IO.IOException], [UnauthorizedAccessException] {
+        [Console]::Error.WriteLine(('Supervisor event publication failed: {0}; {1}' -f $_.Exception.Message, $Text))
+    }
 }
 function Call-Native($Method, $Parameters) {
     $rpc.Request($Method, ($Parameters | ConvertTo-Json -Depth 8 -Compress)).GetAwaiter().GetResult() | ConvertFrom-Json
@@ -116,7 +120,13 @@ try {
                 }
                 $restorePending = [bool]$restoreFailed
                 $savedThreads = if ($restorePending) { @($savedThreads + $loaded | Select-Object -Unique) } else { $loaded }
-                Write-StateFile $snapshotFile @{ threadIds=$savedThreads }
+                try {
+                    Write-StateFile $snapshotFile @{ threadIds=$savedThreads }
+                } catch [IO.IOException], [UnauthorizedAccessException] {
+                    # Persistence is retried on the next probe. Disk contention
+                    # does not mean the native protocol failed or justify killing it.
+                    [Console]::Error.WriteLine(('Native root snapshot publication failed: {0}' -f $_.Exception.Message))
+                }
                 $healthy = $true; $lastHealthy = [DateTime]::UtcNow
             } catch {
                 $healthy = $false
@@ -132,7 +142,13 @@ try {
         if ($healthy) { Ensure-Role native }
         $roleStatus = @{}
         foreach ($name in $roles.Keys) { $roleStatus[$name] = @{ pid=if($roles[$name].process){$roles[$name].process.Id}else{$null}; failures=$roles[$name].failures } }
-        Write-StateFile 'D:\hapi\state\supervisor.json' @{ timestamp=[DateTime]::UtcNow.ToString('o'); pid=$PID; session=(Get-Process -Id $PID).SessionId; nativeReady=$healthy; restorePending=$restorePending; roles=$roleStatus }
+        try {
+            Write-StateFile 'D:\hapi\state\supervisor.json' @{ timestamp=[DateTime]::UtcNow.ToString('o'); pid=$PID; session=(Get-Process -Id $PID).SessionId; nativeReady=$healthy; restorePending=$restorePending; roles=$roleStatus }
+        } catch [IO.IOException], [UnauthorizedAccessException] {
+            # A reader can deny replacement of this observational file on Windows.
+            # Keep live engines running and publish again on the next loop.
+            [Console]::Error.WriteLine(('Supervisor status publication failed: {0}' -f $_.Exception.Message))
+        }
         Start-Sleep -Seconds 1
     }
 } finally {

@@ -21,6 +21,7 @@ sealed interface AgentFlavor {
     data object Kimi : AgentFlavor { override val id = "kimi" }
     data object Opencode : AgentFlavor { override val id = "opencode" }
     data object Pi : AgentFlavor { override val id = "pi" }
+    data object Qoder : AgentFlavor { override val id = "qoder" }
 
     /** A flavor this client build does not know. */
     data class Other(val raw: String) : AgentFlavor {
@@ -30,7 +31,7 @@ sealed interface AgentFlavor {
     companion object {
         /** `AGENT_FLAVORS` — declaration order preserved. */
         val KNOWN: List<AgentFlavor> = listOf(
-            Agy, Claude, Codex, Dsh, Copilot, Cursor, Gemini, Grok, Kimi, Opencode, Pi,
+            Agy, Claude, Codex, Dsh, Copilot, Cursor, Gemini, Grok, Kimi, Opencode, Pi, Qoder,
         )
 
         /**
@@ -72,6 +73,7 @@ object Flavors {
         "cursor" to setOf(FlavorCapability.ModelChange),
         "opencode" to setOf(FlavorCapability.ModelChange),
         "pi" to setOf(FlavorCapability.ModelChange, FlavorCapability.Effort),
+        "qoder" to setOf(FlavorCapability.ModelChange, FlavorCapability.Effort),
     )
 
     private val LABELS: Map<String, String> = mapOf(
@@ -86,6 +88,7 @@ object Flavors {
         "cursor" to "Cursor",
         "opencode" to "OpenCode",
         "pi" to "Pi",
+        "qoder" to "Qoder CN",
     )
 
     fun hasCapability(flavor: String?, capability: FlavorCapability): Boolean =

@@ -90,7 +90,7 @@ class CatalogTest {
     @Test
     fun `agent flavors match AGENT_FLAVORS and CREATABLE excludes gemini`() {
         assertEquals(
-            listOf("agy", "claude", "codex", "dsh", "copilot", "cursor", "gemini", "grok", "kimi", "opencode", "pi"),
+            listOf("agy", "claude", "codex", "dsh", "copilot", "cursor", "gemini", "grok", "kimi", "opencode", "pi", "qoder"),
             AgentFlavor.KNOWN.map { it.id }
         )
         assertFalse(AgentFlavor.CREATABLE.contains(AgentFlavor.Gemini))
@@ -113,6 +113,16 @@ class CatalogTest {
         assertFalse(Flavors.supportsModelChange("dsh"))
         assertFalse(Flavors.supportsModelChange("unknown"))
         assertEquals("Antigravity", Flavors.label("agy"))
+        assertTrue(Flavors.supportsModelChange("qoder"))
+        assertTrue(Flavors.supportsEffort("qoder"))
+        assertEquals("Qoder CN", Flavors.label("qoder"))
+        assertEquals(
+            listOf(
+                PermissionMode.Default, PermissionMode.AcceptEdits,
+                PermissionMode.Plan, PermissionMode.BypassPermissions,
+            ),
+            PermissionModes.forFlavor("qoder"),
+        )
         assertEquals("Grok Build", Flavors.label("grok"))
         assertEquals("OpenCode", Flavors.label("opencode"))
         assertEquals("DeepSeek Harness", Flavors.label("dsh"))

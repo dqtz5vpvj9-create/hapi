@@ -2,6 +2,10 @@
 
 This is the host-specific Windows deployment in `D:\hapi`, not a generic installer. Linux remains the only HAPI Hub. Native history stays in the existing user Codex store; the supervisor persists only the IDs of loaded root threads, not another copy of their messages.
 
+## Workspace drives
+
+`start-hapi.ps1` explicitly allows the user profile, `D:\`, `E:\` (DevDrive) and `F:\` (RepoDrive). Both development volumes use ReFS. The browser lists these Runner workspace roots; mounting a new Windows volume does not automatically grant HAPI access to it. Add its intended path to the launcher's `--workspace-root` arguments, then gracefully reload only the Runner so its path policy and advertised roots change together. Keep the supervisor, native bridge and Codex engines running. Directory browsing and session creation use the same root boundary; verify both after adding a drive.
+
 ## Process ownership
 
 `HAPI-background` is a Windows Scheduled Task for `LIS-IMAC\lixinrui` using S4U logon. It has boot, logon and recurring one-minute triggers, unlimited execution time, and IgnoreNew instance policy. The recurring trigger also recovers a successful/unexpected exit that RestartOnFailure alone would miss. SSH only installs and dispatches tasks.
@@ -78,6 +82,8 @@ The scripts in `tests/` target this installed `D:\hapi` runtime. Upload the Powe
 For the Node tests, set `HAPI_API_URL`, `CLI_API_TOKEN`, `HAPI_WINDOWS_MACHINE_ID`, `HAPI_WINDOWS_SESSION_ID` and `HAPI_ACCEPTANCE_DIR`; `HAPI_WINDOWS_SSH` defaults to `Lis-iMac`. Keep credentials outside shell history and logs. `fault-matrix.mjs` terminates production backend roles and should run only in an agreed test window with no unrelated active turns. `runner-survival.mjs` creates a temporary session and makes one standard-tier model request after two Runner faults. Its report records the created session ID, which must be archived and deleted after inspection. These are device integration tests, not an unattended production health check.
 
 ## Recovery and limits
+
+The October 9 session-creation repair replaces synchronous Windows process queries in ownership admission, startup recovery and Runner pruning. See the [incident, installed binaries and acceptance results](../../docs/operations/2026-10-09-windows-session-admission.md). The Runner executable path stays stable for supervisor adoption; its date-shaped filename is not a build revision.
 
 Inspect the two tasks, supervisor heartbeat, role logs and native RPC before declaring the device healthy. A running task alone is insufficient. To stop the backend intentionally, disable `HAPI-background` before stopping it, otherwise its recurring trigger brings it back. Wait for the owned process tree to exit before restarting or rolling back.
 

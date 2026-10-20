@@ -2,7 +2,8 @@ param(
     [string]$Root = 'D:\hapi',
     [string]$RunnerExecutable = 'D:\hapi\bin\hapi-20261004.exe',
     [string]$NativeExecutable = 'D:\hapi\bin\hapi-admission-20261009.exe',
-    [string[]]$WorkspaceRoots = @($env:USERPROFILE, 'D:\', 'E:\', 'F:\')
+    [string[]]$WorkspaceRoots = @($env:USERPROFILE, 'D:\', 'E:\', 'F:\'),
+    [string]$SandboxBootstrapGroupSid = (Get-LocalGroup -Name 'CodexSandboxUsers' -ErrorAction SilentlyContinue).SID.Value
 )
 $ErrorActionPreference = 'Stop'
 $runnerArguments = @('runner', 'start-sync')
@@ -20,6 +21,7 @@ $config = @{
         native = @{ executable=$NativeExecutable; arguments=@('codex','--native-daemon','ws+unix://localhost/\./pipe/hapi-native-preview-20261004:/rpc'); directory=$env:USERPROFILE; hubCredentials=$true }
     }
 }
+if ($SandboxBootstrapGroupSid) { $config.sandboxBootstrapGroupSid = $SandboxBootstrapGroupSid }
 $destination = Join-Path $Root 'config\windows-host.json'
 $config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $destination -Encoding utf8NoBOM
 Write-Output "Configuration written: $destination. No task or process was changed."

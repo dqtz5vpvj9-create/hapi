@@ -63,7 +63,8 @@ object NewSessionLogic {
      * `web/src/lib/codexFamilyPermissionAgents.ts`).
      */
     fun usesNativePermissionSelect(flavor: String?): Boolean =
-        flavor == "claude" || flavor == "grok" || usesCodexFamilyPermissionModes(flavor)
+        flavor == "claude" || flavor == "grok" || flavor == "qoder" ||
+            usesCodexFamilyPermissionModes(flavor)
 
     /**
      * Exact spawn body (`POST /api/machines/:id/spawn`), field-for-field port

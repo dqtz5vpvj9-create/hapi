@@ -127,7 +127,8 @@ public enum NewSessionLogic {
     /// through the same native select (web `usesNativePermissionSelect`,
     /// `web/src/lib/codexFamilyPermissionAgents.ts`).
     public static func usesNativePermissionSelect(_ flavor: AgentFlavor) -> Bool {
-        flavor == .claude || flavor == .grok || usesCodexFamilyPermissionModes(flavor)
+        flavor == .claude || flavor == .grok || flavor == .qoder
+            || usesCodexFamilyPermissionModes(flavor)
     }
 
     /// `resolveHapiYoloPermissionMode` (`shared/src/agentConfig.ts`) — the
@@ -137,6 +138,7 @@ public enum NewSessionLogic {
         case .claude, .grok: return .bypassPermissions
         case .agy: return .alwaysProceed
         case .codex, .copilot, .cursor, .gemini, .kimi, .opencode: return .yolo
+        case .qoder: return .bypassPermissions
         case .dsh, .pi, .other: return nil
         }
     }

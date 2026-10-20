@@ -49,8 +49,15 @@ fn owned(handle: HANDLE) -> Result<OwnedHandle> {
 pub struct Descriptor(*mut c_void);
 impl Descriptor {
     pub fn for_user() -> Result<Self> {
+        Self::for_user_and_participant(None)
+    }
+
+    fn for_user_and_participant(participant: Option<(&str, u32)>) -> Result<Self> {
         let sid = identity()?.user_sid;
-        let sddl = wide(format!("D:P(A;;GA;;;SY)(A;;GA;;;{sid})S:(ML;;NW;;;ME)"));
+        let participant = participant
+            .map(|(sid, access)| format!("(A;;0x{access:x};;;{sid})"))
+            .unwrap_or_default();
+        let sddl = wide(format!("D:P(A;;GA;;;SY)(A;;GA;;;{sid}){participant}S:(ML;;NW;;;ME)"));
         let mut descriptor = null_mut();
         // SAFETY: input is NUL-terminated; API allocates the descriptor.
         unsafe {
@@ -582,14 +589,26 @@ pub fn bootstrap(config: &Config, path: &Path) -> Result<()> {
     // S4U batch desktop ACLs can depend on an enabled Administrators SID. Use
     // the same private station/desktop strategy as TaskHost.cs, never WinSta0.
     let name = format!("HapiBatch-{}", std::process::id());
-    let attributes = descriptor.attributes();
+    // Codex's separate sandbox accounts must initialize USER32 before their
+    // runner can enter its policy-specific private desktop. Grant only the
+    // standard noninteractive participant rights, not WRITE_DAC/WRITE_OWNER.
+    // Pipe/job/token descriptors remain restricted to the owner and SYSTEM.
+    let participant = config.sandbox_bootstrap_group_sid.as_deref();
+    let station_descriptor = Descriptor::for_user_and_participant(
+        participant.map(|sid| (sid, 0x2006E)),
+    )?;
+    let desktop_descriptor = Descriptor::for_user_and_participant(
+        participant.map(|sid| (sid, 0x200CF)),
+    )?;
+    let station_attributes = station_descriptor.attributes();
+    let desktop_attributes = desktop_descriptor.attributes();
     let mut desktop = Desktop {
         station: null_mut(),
         desktop: null_mut(),
     };
     let previous = unsafe { GetProcessWindowStation() };
     desktop.station =
-        unsafe { CreateWindowStationW(wide(&name).as_ptr(), 0, 0xF037F, &attributes) };
+        unsafe { CreateWindowStationW(wide(&name).as_ptr(), 0, 0xF037F, &station_attributes) };
     ensure!(
         !desktop.station.is_null(),
         "create private station: {}",
@@ -605,7 +624,7 @@ pub fn bootstrap(config: &Config, path: &Path) -> Result<()> {
             null(),
             0,
             0xF01FF,
-            &attributes,
+            &desktop_attributes,
         )
     };
     let desktop_error = std::io::Error::last_os_error();

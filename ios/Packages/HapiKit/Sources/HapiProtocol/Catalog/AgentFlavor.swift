@@ -19,11 +19,13 @@ public enum AgentFlavor: Equatable, Hashable, Sendable {
     case kimi
     case opencode
     case pi
+    case qoder
     case other(String)
 
     /// Order matches `AGENT_FLAVORS`.
     public static let knownFlavors: [AgentFlavor] = [
         .agy, .claude, .codex, .dsh, .copilot, .cursor, .gemini, .grok, .kimi, .opencode, .pi,
+        .qoder,
     ]
 
     /// Flavors offered when creating a new session (`CREATABLE_AGENT_FLAVORS`).
@@ -51,6 +53,7 @@ extension AgentFlavor: RawRepresentable {
         case "kimi": self = .kimi
         case "opencode": self = .opencode
         case "pi": self = .pi
+        case "qoder": self = .qoder
         default: self = .other(rawValue)
         }
     }
@@ -68,6 +71,7 @@ extension AgentFlavor: RawRepresentable {
         case .kimi: return "kimi"
         case .opencode: return "opencode"
         case .pi: return "pi"
+        case .qoder: return "qoder"
         case .other(let raw): return raw
         }
     }
@@ -102,6 +106,7 @@ extension AgentFlavor {
         case .kimi: return "Kimi"
         case .opencode: return "OpenCode"
         case .pi: return "Pi"
+        case .qoder: return "Qoder CN"
         case .other: return "Unknown"
         }
     }
@@ -118,7 +123,7 @@ extension AgentFlavor {
     /// `hasCapability(flavor, 'effort')` — claude, grok, and pi only.
     public var supportsEffort: Bool {
         switch self {
-        case .claude, .grok, .pi: return true
+        case .claude, .grok, .pi, .qoder: return true
         default: return false
         }
     }

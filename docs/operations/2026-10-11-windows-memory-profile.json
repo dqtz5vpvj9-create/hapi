@@ -1,0 +1,6617 @@
+{
+  "schema": 1,
+  "units": "MiB (2^20 bytes); WS sum includes shared pages; privateWs is a separate counter",
+  "reported_old_baseline": {
+    "wsMiB": 335,
+    "privateCommitGiB": 1.17,
+    "not_remeasured_under_identical_workload": true
+  },
+  "versions": {
+    "codex": "0.162.0-alpha.2",
+    "runnerBinary": "hapi-20261004.exe",
+    "nativeBridgeBinary": "hapi-admission-20261009.exe"
+  },
+  "sample_utc": [
+    "2026-10-11T01:29:00.9716289Z",
+    "2026-10-11T01:29:23.5699542Z",
+    "2026-10-11T01:29:43.9126324Z",
+    "2026-10-11T01:30:03.7697010Z"
+  ],
+  "groups": {
+    "powershell_hosts": {
+      "count": 6,
+      "pids": [
+        1745940,
+        1756524,
+        1768096,
+        1808648,
+        1865052,
+        1866840
+      ],
+      "medianMiB": {
+        "ws": 178.605,
+        "privateBytes": 368.475,
+        "privateWs": 78.857
+      }
+    },
+    "runner_and_native_bridge": {
+      "count": 2,
+      "pids": [
+        1739952,
+        1866236
+      ],
+      "medianMiB": {
+        "ws": 226.086,
+        "privateBytes": 911.74,
+        "privateWs": 185.494
+      }
+    },
+    "separate_hapi_session_and_stdio_bridge": {
+      "count": 2,
+      "pids": [
+        1746144,
+        1799760
+      ],
+      "medianMiB": {
+        "ws": 49.0,
+        "privateBytes": 548.602,
+        "privateWs": 40.393
+      }
+    },
+    "shared_codex_engine": {
+      "count": 1,
+      "pids": [
+        1506000
+      ],
+      "medianMiB": {
+        "ws": 406.236,
+        "privateBytes": 1007.699,
+        "privateWs": 346.453
+      }
+    },
+    "separate_codex_engine": {
+      "count": 1,
+      "pids": [
+        1813928
+      ],
+      "medianMiB": {
+        "ws": 31.887,
+        "privateBytes": 78.707,
+        "privateWs": 19.006
+      }
+    },
+    "shared_node_mcp_entrypoints": {
+      "count": 34,
+      "pids": [
+        181316,
+        1252676,
+        1362976,
+        1452432,
+        1542176,
+        1644484,
+        1706036,
+        1710980,
+        1721332,
+        1726056,
+        1730056,
+        1730916,
+        1735736,
+        1736736,
+        1738920,
+        1745924,
+        1748780,
+        1749384,
+        1753384,
+        1761308,
+        1762696,
+        1775332,
+        1778784,
+        1778812,
+        1778892,
+        1781080,
+        1786540,
+        1812200,
+        1812228,
+        1814516,
+        1828604,
+        1847516,
+        1851048,
+        1861680
+      ],
+      "medianMiB": {
+        "ws": 124.969,
+        "privateBytes": 1305.629,
+        "privateWs": 53.457
+      }
+    },
+    "shared_code_runtimes": {
+      "count": 52,
+      "pids": [
+        771840,
+        1257304,
+        1380640,
+        1409316,
+        1607508,
+        1743544,
+        1756900,
+        1829340,
+        1846760,
+        1854228,
+        1857732,
+        1860752,
+        1860928,
+        1861124,
+        1862356,
+        1862896,
+        1862964,
+        1863572,
+        1864304,
+        1864696,
+        1865140,
+        1865176,
+        1865432,
+        1866672,
+        1866756,
+        1866876,
+        1867132,
+        1867428,
+        1867688,
+        1868448,
+        1868604,
+        1868752,
+        1868812,
+        1869512,
+        1869596,
+        1870600,
+        1870680,
+        1870876,
+        1871664,
+        1871808,
+        1871820,
+        1872880,
+        1873064,
+        1873084,
+        1873108,
+        1874472,
+        1874988,
+        1875720,
+        1876024,
+        1876996,
+        1877496,
+        1877632
+      ],
+      "medianMiB": {
+        "ws": 566.529,
+        "privateBytes": 483.848,
+        "privateWs": 99.723
+      }
+    },
+    "hapi_service_core": {
+      "count": 8,
+      "pids": [
+        1739952,
+        1745940,
+        1756524,
+        1768096,
+        1808648,
+        1865052,
+        1866236,
+        1866840
+      ],
+      "medianMiB": {
+        "ws": 404.691,
+        "privateBytes": 1280.166,
+        "privateWs": 264.385
+      }
+    },
+    "core_helpers_and_consoles": {
+      "count": 10,
+      "pids": [
+        1444084,
+        1598892,
+        1687320,
+        1727528,
+        1730836,
+        1742312,
+        1851516,
+        1861004,
+        1873312,
+        1876828
+      ],
+      "medianMiB": {
+        "ws": 25.117,
+        "privateBytes": 11.016,
+        "privateWs": 4.219
+      }
+    }
+  },
+  "processes": [
+    {
+      "pid": 1745940,
+      "parent": 3256,
+      "name": "pwsh.exe",
+      "role": "task-host",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:30.4168630Z",
+      "executable": "c:\\progra~1\\powers~1\\7\\pwsh.exe"
+    },
+    {
+      "pid": 1742312,
+      "parent": 1745940,
+      "name": "conhost.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:30.6782160Z",
+      "executable": "C:\\WINDOWS\\system32\\conhost.exe"
+    },
+    {
+      "pid": 1756524,
+      "parent": 1745940,
+      "name": "pwsh.exe",
+      "role": "supervisor",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:32.2540150Z",
+      "executable": "c:\\progra~1\\powers~1\\7\\pwsh.exe"
+    },
+    {
+      "pid": 1730836,
+      "parent": 1756524,
+      "name": "conhost.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:32.4567230Z",
+      "executable": "C:\\WINDOWS\\system32\\conhost.exe"
+    },
+    {
+      "pid": 1768096,
+      "parent": 1756524,
+      "name": "pwsh.exe",
+      "role": "wrapper-engine",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:34.1972880Z",
+      "executable": "c:\\progra~1\\powers~1\\7\\pwsh.exe"
+    },
+    {
+      "pid": 1598892,
+      "parent": 1768096,
+      "name": "conhost.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:34.2967590Z",
+      "executable": "C:\\WINDOWS\\system32\\conhost.exe"
+    },
+    {
+      "pid": 1506000,
+      "parent": 1768096,
+      "name": "codex.exe",
+      "role": "codex-app-server",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:35.2225660Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\bin\\9691020b546a15b2\\codex.exe"
+    },
+    {
+      "pid": 1781080,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:37.7213800Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1542176,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:37.7706810Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1762696,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:39.4283600Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1644484,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:40.0901160Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1745924,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:40.3558990Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1812228,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:40.3921800Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1721332,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:40.7255320Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1778784,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:40.7902680Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1710980,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:41.4625120Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1730056,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:41.5127150Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1812200,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:41.9025440Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1735736,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:41.9142220Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1452432,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:42.2839780Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1362976,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:42.3292580Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1730916,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:42.5452430Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1778892,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:42.6119510Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1726056,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:42.7311870Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1738920,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:42.8943550Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1749384,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:43.2062520Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1814516,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:43.2578280Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1775332,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:43.5209590Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1761308,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:43.5670690Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1753384,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:43.9287380Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1786540,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:43.9493250Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1778812,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:44.0162170Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1736736,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:44.0446830Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1808648,
+      "parent": 1756524,
+      "name": "pwsh.exe",
+      "role": "wrapper-native",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:44.1984170Z",
+      "executable": "c:\\progra~1\\powers~1\\7\\pwsh.exe"
+    },
+    {
+      "pid": 1687320,
+      "parent": 1808648,
+      "name": "conhost.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:47.0354230Z",
+      "executable": "C:\\WINDOWS\\system32\\conhost.exe"
+    },
+    {
+      "pid": 1739952,
+      "parent": 1808648,
+      "name": "hapi-admission-20261009.exe",
+      "role": "hapi-native-bridge",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:50.8578190Z",
+      "executable": "D:\\hapi\\bin\\hapi-admission-20261009.exe"
+    },
+    {
+      "pid": 1727528,
+      "parent": 1739952,
+      "name": "process-markers-v5.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:52.8132480Z",
+      "executable": "D:\\hapi\\state\\runtime\\0.30.7\\tools\\windows\\process-markers-v5.exe"
+    },
+    {
+      "pid": 1444084,
+      "parent": 1727528,
+      "name": "conhost.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:13:52.9335400Z",
+      "executable": "C:\\WINDOWS\\system32\\conhost.exe"
+    },
+    {
+      "pid": 1257304,
+      "parent": 1506000,
+      "name": "codex-code-mode-host.exe",
+      "role": "codex-other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:17:34.0698340Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\bin\\9691020b546a15b2\\codex-code-mode-host.exe"
+    },
+    {
+      "pid": 1799760,
+      "parent": 1719492,
+      "name": "hapi-20261004.exe",
+      "role": "hapi-other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:41:56.9821580Z",
+      "executable": "D:\\hapi\\bin\\hapi-20261004.exe"
+    },
+    {
+      "pid": 1813928,
+      "parent": 1799760,
+      "name": "codex.exe",
+      "role": "codex-app-server",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:42:01.5737590Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\bin\\9691020b546a15b2\\codex.EXE"
+    },
+    {
+      "pid": 1746144,
+      "parent": 1813928,
+      "name": "hapi-20261004.exe",
+      "role": "hapi-other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:42:02.6081070Z",
+      "executable": "D:\\hapi\\bin\\hapi-20261004.exe"
+    },
+    {
+      "pid": 1607508,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:46:52.1512460Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1252676,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:46:52.1646620Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1748780,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-10T02:46:52.2325880Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1861680,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T00:08:01.3728670Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1847516,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T00:08:01.3859960Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1851048,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T00:49:41.6154090Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1868752,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T00:49:41.6198350Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1828604,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T00:49:41.6438680Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1866840,
+      "parent": 1756524,
+      "name": "pwsh.exe",
+      "role": "wrapper-runner",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T00:58:32.6557390Z",
+      "executable": "c:\\progra~1\\powers~1\\7\\pwsh.exe"
+    },
+    {
+      "pid": 1861004,
+      "parent": 1866840,
+      "name": "conhost.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T00:58:32.7566310Z",
+      "executable": "C:\\WINDOWS\\system32\\conhost.exe"
+    },
+    {
+      "pid": 1866236,
+      "parent": 1866840,
+      "name": "hapi-20261004.exe",
+      "role": "hapi-runner",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T00:58:33.5074790Z",
+      "executable": "D:\\hapi\\bin\\hapi-20261004.exe"
+    },
+    {
+      "pid": 1876828,
+      "parent": 1866236,
+      "name": "process-markers-v5.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T00:58:34.1468150Z",
+      "executable": "D:\\hapi\\state\\runtime\\0.30.7\\tools\\windows\\process-markers-v5.exe"
+    },
+    {
+      "pid": 1851516,
+      "parent": 1876828,
+      "name": "conhost.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T00:58:34.2438000Z",
+      "executable": "C:\\WINDOWS\\system32\\conhost.exe"
+    },
+    {
+      "pid": 1706036,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:01:49.5754800Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 181316,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "mcp-tool",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:01:49.5982850Z",
+      "executable": "C:\\nvm4w\\nodejs\\node.exe"
+    },
+    {
+      "pid": 1866672,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9226640Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1860928,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9269460Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1872880,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9316290Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1868812,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9344000Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1862356,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9390150Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1877632,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9427560Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1873064,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9476830Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1871808,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9541130Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1870876,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9602400Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1870600,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9653970Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1866876,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9700000Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1860752,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9746630Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1864304,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9835500Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1870680,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9904300Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1868448,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:15.9954290Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1873084,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.0008070Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1869596,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.1378520Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1857732,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.1831610Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1743544,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.1868990Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1874988,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.1916190Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1874472,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.1980610Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1871664,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.2030890Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1865432,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.2109490Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1877496,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.2170700Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1865140,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.2224910Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1380640,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.2291650Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1868604,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.2345880Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1861124,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.2414260Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1865176,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.2505120Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1867428,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.2542190Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1873108,
+      "parent": 1506000,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.2588680Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1871820,
+      "parent": 1506000,
+      "name": "node.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.2644180Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node.exe"
+    },
+    {
+      "pid": 1854228,
+      "parent": 1860928,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.4085140Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1864696,
+      "parent": 1870600,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.5900330Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1756900,
+      "parent": 1380640,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:16.9777930Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1409316,
+      "parent": 1871808,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:17.0331660Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1876024,
+      "parent": 1868448,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:17.7130090Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1875720,
+      "parent": 1871820,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:17.7289110Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1862896,
+      "parent": 1857732,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:17.8080310Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1869512,
+      "parent": 1872880,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:17.9606950Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1867132,
+      "parent": 1869596,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:18.2810980Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1863572,
+      "parent": 1860752,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:18.4166550Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1876996,
+      "parent": 1868604,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:18.5362420Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1862964,
+      "parent": 1862356,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:18.8893420Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1846760,
+      "parent": 1861124,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:19.1841550Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1829340,
+      "parent": 1874472,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:19.5442850Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1866756,
+      "parent": 1870680,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:20.1483970Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 771840,
+      "parent": 1865432,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:20.7717580Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1867688,
+      "parent": 1865176,
+      "name": "node_repl.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:03:20.8250270Z",
+      "executable": "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_repl.exe"
+    },
+    {
+      "pid": 1865052,
+      "parent": 1756524,
+      "name": "pwsh.exe",
+      "role": "wrapper-pipe",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:19:00.2736440Z",
+      "executable": "c:\\progra~1\\powers~1\\7\\pwsh.exe"
+    },
+    {
+      "pid": 1873312,
+      "parent": 1865052,
+      "name": "conhost.exe",
+      "role": "other",
+      "hapiTree": true,
+      "session": 0,
+      "created": "2026-10-11T01:19:00.4196730Z",
+      "executable": "C:\\WINDOWS\\system32\\conhost.exe"
+    }
+  ],
+  "samples": [
+    {
+      "utc": "2026-10-11T01:29:00.9716289Z",
+      "metrics": [
+        {
+          "pid": 1745940,
+          "ws": 6930432,
+          "privateBytes": 83324928,
+          "privateWs": 1994752,
+          "cpuSeconds": 8.984375,
+          "handles": 610,
+          "threads": 16
+        },
+        {
+          "pid": 1742312,
+          "ws": 1110016,
+          "privateBytes": 1683456,
+          "privateWs": 344064,
+          "cpuSeconds": 10.6875,
+          "handles": 132,
+          "threads": 4
+        },
+        {
+          "pid": 1756524,
+          "ws": 53895168,
+          "privateBytes": 94416896,
+          "privateWs": 28520448,
+          "cpuSeconds": 4597.671875,
+          "handles": 639,
+          "threads": 18
+        },
+        {
+          "pid": 1730836,
+          "ws": 1142784,
+          "privateBytes": 1171456,
+          "privateWs": 352256,
+          "cpuSeconds": 0.109375,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1768096,
+          "ws": 12898304,
+          "privateBytes": 45367296,
+          "privateWs": 7712768,
+          "cpuSeconds": 11.078125,
+          "handles": 623,
+          "threads": 18
+        },
+        {
+          "pid": 1598892,
+          "ws": 1126400,
+          "privateBytes": 1191936,
+          "privateWs": 368640,
+          "cpuSeconds": 0.8125,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1506000,
+          "ws": 436854784,
+          "privateBytes": 1056649216,
+          "privateWs": 392642560,
+          "cpuSeconds": 5037.265625,
+          "handles": 1530,
+          "threads": 218
+        },
+        {
+          "pid": 1781080,
+          "ws": 1560576,
+          "privateBytes": 33648640,
+          "privateWs": 548864,
+          "cpuSeconds": 0.90625,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1542176,
+          "ws": 1290240,
+          "privateBytes": 46903296,
+          "privateWs": 573440,
+          "cpuSeconds": 0.953125,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1762696,
+          "ws": 1335296,
+          "privateBytes": 34369536,
+          "privateWs": 589824,
+          "cpuSeconds": 0.75,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1644484,
+          "ws": 1601536,
+          "privateBytes": 46231552,
+          "privateWs": 544768,
+          "cpuSeconds": 0.734375,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1745924,
+          "ws": 1466368,
+          "privateBytes": 33075200,
+          "privateWs": 589824,
+          "cpuSeconds": 0.78125,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1812228,
+          "ws": 1470464,
+          "privateBytes": 45883392,
+          "privateWs": 577536,
+          "cpuSeconds": 0.59375,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1721332,
+          "ws": 1597440,
+          "privateBytes": 34316288,
+          "privateWs": 614400,
+          "cpuSeconds": 0.75,
+          "handles": 183,
+          "threads": 9
+        },
+        {
+          "pid": 1778784,
+          "ws": 1232896,
+          "privateBytes": 46084096,
+          "privateWs": 565248,
+          "cpuSeconds": 0.90625,
+          "handles": 183,
+          "threads": 9
+        },
+        {
+          "pid": 1710980,
+          "ws": 1314816,
+          "privateBytes": 33771520,
+          "privateWs": 581632,
+          "cpuSeconds": 0.65625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1730056,
+          "ws": 1236992,
+          "privateBytes": 46723072,
+          "privateWs": 565248,
+          "cpuSeconds": 0.640625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1812200,
+          "ws": 1376256,
+          "privateBytes": 34848768,
+          "privateWs": 577536,
+          "cpuSeconds": 0.71875,
+          "handles": 185,
+          "threads": 9
+        },
+        {
+          "pid": 1735736,
+          "ws": 1355776,
+          "privateBytes": 46137344,
+          "privateWs": 622592,
+          "cpuSeconds": 0.96875,
+          "handles": 185,
+          "threads": 9
+        },
+        {
+          "pid": 1452432,
+          "ws": 1286144,
+          "privateBytes": 32923648,
+          "privateWs": 544768,
+          "cpuSeconds": 0.71875,
+          "handles": 186,
+          "threads": 9
+        },
+        {
+          "pid": 1362976,
+          "ws": 1368064,
+          "privateBytes": 47038464,
+          "privateWs": 610304,
+          "cpuSeconds": 0.71875,
+          "handles": 186,
+          "threads": 9
+        },
+        {
+          "pid": 1730916,
+          "ws": 1290240,
+          "privateBytes": 33574912,
+          "privateWs": 552960,
+          "cpuSeconds": 0.65625,
+          "handles": 187,
+          "threads": 9
+        },
+        {
+          "pid": 1778892,
+          "ws": 1347584,
+          "privateBytes": 47419392,
+          "privateWs": 573440,
+          "cpuSeconds": 0.90625,
+          "handles": 187,
+          "threads": 9
+        },
+        {
+          "pid": 1726056,
+          "ws": 1323008,
+          "privateBytes": 34721792,
+          "privateWs": 577536,
+          "cpuSeconds": 0.578125,
+          "handles": 188,
+          "threads": 9
+        },
+        {
+          "pid": 1738920,
+          "ws": 1232896,
+          "privateBytes": 47005696,
+          "privateWs": 520192,
+          "cpuSeconds": 0.734375,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1749384,
+          "ws": 1585152,
+          "privateBytes": 33091584,
+          "privateWs": 598016,
+          "cpuSeconds": 0.671875,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1814516,
+          "ws": 1269760,
+          "privateBytes": 46780416,
+          "privateWs": 585728,
+          "cpuSeconds": 0.765625,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1775332,
+          "ws": 1478656,
+          "privateBytes": 33632256,
+          "privateWs": 364544,
+          "cpuSeconds": 0.734375,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1761308,
+          "ws": 1310720,
+          "privateBytes": 47742976,
+          "privateWs": 593920,
+          "cpuSeconds": 0.875,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1753384,
+          "ws": 1269760,
+          "privateBytes": 33525760,
+          "privateWs": 585728,
+          "cpuSeconds": 0.6875,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1786540,
+          "ws": 1314816,
+          "privateBytes": 46125056,
+          "privateWs": 622592,
+          "cpuSeconds": 0.84375,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1778812,
+          "ws": 1499136,
+          "privateBytes": 34455552,
+          "privateWs": 561152,
+          "cpuSeconds": 0.609375,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1736736,
+          "ws": 1404928,
+          "privateBytes": 47083520,
+          "privateWs": 577536,
+          "cpuSeconds": 0.828125,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1808648,
+          "ws": 7041024,
+          "privateBytes": 42442752,
+          "privateWs": 2715648,
+          "cpuSeconds": 7.921875,
+          "handles": 614,
+          "threads": 18
+        },
+        {
+          "pid": 1687320,
+          "ws": 1531904,
+          "privateBytes": 1196032,
+          "privateWs": 409600,
+          "cpuSeconds": 0.125,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1739952,
+          "ws": 173404160,
+          "privateBytes": 635871232,
+          "privateWs": 153620480,
+          "cpuSeconds": 825.34375,
+          "handles": 338,
+          "threads": 40
+        },
+        {
+          "pid": 1727528,
+          "ws": 1212416,
+          "privateBytes": 806912,
+          "privateWs": 315392,
+          "cpuSeconds": 317.8125,
+          "handles": 47,
+          "threads": 1
+        },
+        {
+          "pid": 1444084,
+          "ws": 1142784,
+          "privateBytes": 1183744,
+          "privateWs": 376832,
+          "cpuSeconds": 0.125,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1257304,
+          "ws": 19496960,
+          "privateBytes": 20926464,
+          "privateWs": 13307904,
+          "cpuSeconds": 14.59375,
+          "handles": 171,
+          "threads": 19
+        },
+        {
+          "pid": 1799760,
+          "ws": 29892608,
+          "privateBytes": 303640576,
+          "privateWs": 24940544,
+          "cpuSeconds": 104.296875,
+          "handles": 213,
+          "threads": 17
+        },
+        {
+          "pid": 1813928,
+          "ws": 33333248,
+          "privateBytes": 82530304,
+          "privateWs": 19853312,
+          "cpuSeconds": 1828.109375,
+          "handles": 447,
+          "threads": 45
+        },
+        {
+          "pid": 1746144,
+          "ws": 21168128,
+          "privateBytes": 257626112,
+          "privateWs": 17469440,
+          "cpuSeconds": 32.359375,
+          "handles": 108,
+          "threads": 6
+        },
+        {
+          "pid": 1607508,
+          "ws": 1527808,
+          "privateBytes": 3489792,
+          "privateWs": 565248,
+          "cpuSeconds": 0.109375,
+          "handles": 136,
+          "threads": 28
+        },
+        {
+          "pid": 1252676,
+          "ws": 1241088,
+          "privateBytes": 34021376,
+          "privateWs": 536576,
+          "cpuSeconds": 0.640625,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1748780,
+          "ws": 1339392,
+          "privateBytes": 46272512,
+          "privateWs": 593920,
+          "cpuSeconds": 0.796875,
+          "handles": 191,
+          "threads": 9
+        },
+        {
+          "pid": 1861680,
+          "ws": 6062080,
+          "privateBytes": 33644544,
+          "privateWs": 3383296,
+          "cpuSeconds": 0.296875,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1847516,
+          "ws": 6086656,
+          "privateBytes": 46985216,
+          "privateWs": 3706880,
+          "cpuSeconds": 0.296875,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1851048,
+          "ws": 13778944,
+          "privateBytes": 33329152,
+          "privateWs": 4149248,
+          "cpuSeconds": 0.34375,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1868752,
+          "ws": 4243456,
+          "privateBytes": 3575808,
+          "privateWs": 1466368,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1828604,
+          "ws": 12849152,
+          "privateBytes": 46325760,
+          "privateWs": 2801664,
+          "cpuSeconds": 0.515625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1866840,
+          "ws": 38281216,
+          "privateBytes": 37781504,
+          "privateWs": 8626176,
+          "cpuSeconds": 1.875,
+          "handles": 653,
+          "threads": 18
+        },
+        {
+          "pid": 1861004,
+          "ws": 4448256,
+          "privateBytes": 1175552,
+          "privateWs": 593920,
+          "cpuSeconds": 0.09375,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1866236,
+          "ws": 64667648,
+          "privateBytes": 314486784,
+          "privateWs": 42680320,
+          "cpuSeconds": 8.375,
+          "handles": 248,
+          "threads": 39
+        },
+        {
+          "pid": 1876828,
+          "ws": 2707456,
+          "privateBytes": 757760,
+          "privateWs": 323584,
+          "cpuSeconds": 0.578125,
+          "handles": 47,
+          "threads": 1
+        },
+        {
+          "pid": 1851516,
+          "ws": 4542464,
+          "privateBytes": 1163264,
+          "privateWs": 503808,
+          "cpuSeconds": 0.046875,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1706036,
+          "ws": 31895552,
+          "privateBytes": 34107392,
+          "privateWs": 11862016,
+          "cpuSeconds": 0.515625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 181316,
+          "ws": 21966848,
+          "privateBytes": 47251456,
+          "privateWs": 14200832,
+          "cpuSeconds": 0.5,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1866672,
+          "ws": 7376896,
+          "privateBytes": 3457024,
+          "privateWs": 1347584,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1860928,
+          "ws": 19779584,
+          "privateBytes": 21729280,
+          "privateWs": 2015232,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1872880,
+          "ws": 21024768,
+          "privateBytes": 21540864,
+          "privateWs": 3129344,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868812,
+          "ws": 6451200,
+          "privateBytes": 3448832,
+          "privateWs": 647168,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862356,
+          "ws": 19849216,
+          "privateBytes": 21495808,
+          "privateWs": 3559424,
+          "cpuSeconds": 0.109375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1877632,
+          "ws": 7892992,
+          "privateBytes": 3534848,
+          "privateWs": 1159168,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1873064,
+          "ws": 7286784,
+          "privateBytes": 3555328,
+          "privateWs": 1232896,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1871808,
+          "ws": 21377024,
+          "privateBytes": 21659648,
+          "privateWs": 4796416,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1870876,
+          "ws": 7090176,
+          "privateBytes": 3383296,
+          "privateWs": 643072,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1870600,
+          "ws": 22134784,
+          "privateBytes": 21508096,
+          "privateWs": 4308992,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1866876,
+          "ws": 6868992,
+          "privateBytes": 3440640,
+          "privateWs": 606208,
+          "cpuSeconds": 0.046875,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1860752,
+          "ws": 21381120,
+          "privateBytes": 21757952,
+          "privateWs": 3805184,
+          "cpuSeconds": 0.09375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1864304,
+          "ws": 6135808,
+          "privateBytes": 3416064,
+          "privateWs": 1114112,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1870680,
+          "ws": 20176896,
+          "privateBytes": 21528576,
+          "privateWs": 2076672,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868448,
+          "ws": 23072768,
+          "privateBytes": 22540288,
+          "privateWs": 6393856,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1873084,
+          "ws": 6254592,
+          "privateBytes": 3420160,
+          "privateWs": 1101824,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1869596,
+          "ws": 19791872,
+          "privateBytes": 21405696,
+          "privateWs": 2904064,
+          "cpuSeconds": 0.1875,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1857732,
+          "ws": 20877312,
+          "privateBytes": 21405696,
+          "privateWs": 3530752,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1743544,
+          "ws": 7417856,
+          "privateBytes": 3448832,
+          "privateWs": 1118208,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1874988,
+          "ws": 6000640,
+          "privateBytes": 3424256,
+          "privateWs": 753664,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1874472,
+          "ws": 19767296,
+          "privateBytes": 22130688,
+          "privateWs": 3223552,
+          "cpuSeconds": 0.1875,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1871664,
+          "ws": 7577600,
+          "privateBytes": 3530752,
+          "privateWs": 1146880,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865432,
+          "ws": 19406848,
+          "privateBytes": 21430272,
+          "privateWs": 1794048,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1877496,
+          "ws": 6447104,
+          "privateBytes": 3469312,
+          "privateWs": 1282048,
+          "cpuSeconds": 0.046875,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865140,
+          "ws": 6328320,
+          "privateBytes": 3506176,
+          "privateWs": 741376,
+          "cpuSeconds": 0.125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1380640,
+          "ws": 19546112,
+          "privateBytes": 21327872,
+          "privateWs": 2371584,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868604,
+          "ws": 22536192,
+          "privateBytes": 22020096,
+          "privateWs": 5292032,
+          "cpuSeconds": 0.09375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1861124,
+          "ws": 20193280,
+          "privateBytes": 21295104,
+          "privateWs": 3538944,
+          "cpuSeconds": 0.109375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1865176,
+          "ws": 21217280,
+          "privateBytes": 21409792,
+          "privateWs": 2961408,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1867428,
+          "ws": 5799936,
+          "privateBytes": 3383296,
+          "privateWs": 700416,
+          "cpuSeconds": 0.140625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1873108,
+          "ws": 5943296,
+          "privateBytes": 3399680,
+          "privateWs": 651264,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1871820,
+          "ws": 20893696,
+          "privateBytes": 21458944,
+          "privateWs": 4681728,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1854228,
+          "ws": 7016448,
+          "privateBytes": 3485696,
+          "privateWs": 1064960,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1864696,
+          "ws": 7372800,
+          "privateBytes": 3457024,
+          "privateWs": 651264,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1756900,
+          "ws": 6627328,
+          "privateBytes": 3497984,
+          "privateWs": 1507328,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1409316,
+          "ws": 7057408,
+          "privateBytes": 3489792,
+          "privateWs": 1101824,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1876024,
+          "ws": 7499776,
+          "privateBytes": 3477504,
+          "privateWs": 671744,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1875720,
+          "ws": 6131712,
+          "privateBytes": 3461120,
+          "privateWs": 733184,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862896,
+          "ws": 6078464,
+          "privateBytes": 3436544,
+          "privateWs": 651264,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1869512,
+          "ws": 5701632,
+          "privateBytes": 3440640,
+          "privateWs": 704512,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1867132,
+          "ws": 7749632,
+          "privateBytes": 3395584,
+          "privateWs": 638976,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1863572,
+          "ws": 6066176,
+          "privateBytes": 3502080,
+          "privateWs": 954368,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1876996,
+          "ws": 6303744,
+          "privateBytes": 3489792,
+          "privateWs": 634880,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862964,
+          "ws": 7385088,
+          "privateBytes": 3629056,
+          "privateWs": 1052672,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1846760,
+          "ws": 6029312,
+          "privateBytes": 3448832,
+          "privateWs": 724992,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1829340,
+          "ws": 7708672,
+          "privateBytes": 3522560,
+          "privateWs": 1511424,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1866756,
+          "ws": 6733824,
+          "privateBytes": 3469312,
+          "privateWs": 851968,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 771840,
+          "ws": 6512640,
+          "privateBytes": 3506176,
+          "privateWs": 741376,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1867688,
+          "ws": 6176768,
+          "privateBytes": 3493888,
+          "privateWs": 1413120,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865052,
+          "ws": 68358144,
+          "privateBytes": 82923520,
+          "privateWs": 32669696,
+          "cpuSeconds": 5.84375,
+          "handles": 752,
+          "threads": 18
+        },
+        {
+          "pid": 1873312,
+          "ws": 7352320,
+          "privateBytes": 1183744,
+          "privateWs": 815104,
+          "cpuSeconds": 0.0625,
+          "handles": 98,
+          "threads": 2
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-11T01:29:23.5699542Z",
+      "metrics": [
+        {
+          "pid": 1745940,
+          "ws": 6930432,
+          "privateBytes": 83324928,
+          "privateWs": 1994752,
+          "cpuSeconds": 8.984375,
+          "handles": 610,
+          "threads": 16
+        },
+        {
+          "pid": 1742312,
+          "ws": 1110016,
+          "privateBytes": 1683456,
+          "privateWs": 344064,
+          "cpuSeconds": 10.6875,
+          "handles": 132,
+          "threads": 4
+        },
+        {
+          "pid": 1756524,
+          "ws": 53927936,
+          "privateBytes": 94420992,
+          "privateWs": 28553216,
+          "cpuSeconds": 4600.0625,
+          "handles": 642,
+          "threads": 18
+        },
+        {
+          "pid": 1730836,
+          "ws": 1142784,
+          "privateBytes": 1171456,
+          "privateWs": 352256,
+          "cpuSeconds": 0.109375,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1768096,
+          "ws": 12898304,
+          "privateBytes": 45367296,
+          "privateWs": 7712768,
+          "cpuSeconds": 11.078125,
+          "handles": 623,
+          "threads": 18
+        },
+        {
+          "pid": 1598892,
+          "ws": 1126400,
+          "privateBytes": 1191936,
+          "privateWs": 368640,
+          "cpuSeconds": 0.8125,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1506000,
+          "ws": 415084544,
+          "privateBytes": 1056649216,
+          "privateWs": 364814336,
+          "cpuSeconds": 5037.796875,
+          "handles": 1530,
+          "threads": 218
+        },
+        {
+          "pid": 1781080,
+          "ws": 1560576,
+          "privateBytes": 33648640,
+          "privateWs": 548864,
+          "cpuSeconds": 0.90625,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1542176,
+          "ws": 1290240,
+          "privateBytes": 46903296,
+          "privateWs": 573440,
+          "cpuSeconds": 0.953125,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1762696,
+          "ws": 1335296,
+          "privateBytes": 34369536,
+          "privateWs": 589824,
+          "cpuSeconds": 0.75,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1644484,
+          "ws": 1601536,
+          "privateBytes": 46231552,
+          "privateWs": 544768,
+          "cpuSeconds": 0.734375,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1745924,
+          "ws": 1466368,
+          "privateBytes": 33075200,
+          "privateWs": 589824,
+          "cpuSeconds": 0.78125,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1812228,
+          "ws": 1470464,
+          "privateBytes": 45883392,
+          "privateWs": 577536,
+          "cpuSeconds": 0.59375,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1721332,
+          "ws": 1597440,
+          "privateBytes": 34316288,
+          "privateWs": 614400,
+          "cpuSeconds": 0.75,
+          "handles": 183,
+          "threads": 9
+        },
+        {
+          "pid": 1778784,
+          "ws": 1232896,
+          "privateBytes": 46084096,
+          "privateWs": 565248,
+          "cpuSeconds": 0.90625,
+          "handles": 183,
+          "threads": 9
+        },
+        {
+          "pid": 1710980,
+          "ws": 1314816,
+          "privateBytes": 33771520,
+          "privateWs": 581632,
+          "cpuSeconds": 0.65625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1730056,
+          "ws": 1236992,
+          "privateBytes": 46723072,
+          "privateWs": 565248,
+          "cpuSeconds": 0.640625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1812200,
+          "ws": 1376256,
+          "privateBytes": 34848768,
+          "privateWs": 577536,
+          "cpuSeconds": 0.71875,
+          "handles": 185,
+          "threads": 9
+        },
+        {
+          "pid": 1735736,
+          "ws": 1355776,
+          "privateBytes": 46137344,
+          "privateWs": 622592,
+          "cpuSeconds": 0.96875,
+          "handles": 185,
+          "threads": 9
+        },
+        {
+          "pid": 1452432,
+          "ws": 1286144,
+          "privateBytes": 32923648,
+          "privateWs": 544768,
+          "cpuSeconds": 0.71875,
+          "handles": 186,
+          "threads": 9
+        },
+        {
+          "pid": 1362976,
+          "ws": 1368064,
+          "privateBytes": 47038464,
+          "privateWs": 610304,
+          "cpuSeconds": 0.71875,
+          "handles": 186,
+          "threads": 9
+        },
+        {
+          "pid": 1730916,
+          "ws": 1290240,
+          "privateBytes": 33574912,
+          "privateWs": 552960,
+          "cpuSeconds": 0.65625,
+          "handles": 187,
+          "threads": 9
+        },
+        {
+          "pid": 1778892,
+          "ws": 1347584,
+          "privateBytes": 47419392,
+          "privateWs": 573440,
+          "cpuSeconds": 0.90625,
+          "handles": 187,
+          "threads": 9
+        },
+        {
+          "pid": 1726056,
+          "ws": 1323008,
+          "privateBytes": 34721792,
+          "privateWs": 577536,
+          "cpuSeconds": 0.578125,
+          "handles": 188,
+          "threads": 9
+        },
+        {
+          "pid": 1738920,
+          "ws": 1232896,
+          "privateBytes": 47005696,
+          "privateWs": 520192,
+          "cpuSeconds": 0.734375,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1749384,
+          "ws": 1585152,
+          "privateBytes": 33091584,
+          "privateWs": 598016,
+          "cpuSeconds": 0.671875,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1814516,
+          "ws": 1269760,
+          "privateBytes": 46780416,
+          "privateWs": 585728,
+          "cpuSeconds": 0.765625,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1775332,
+          "ws": 1478656,
+          "privateBytes": 33632256,
+          "privateWs": 364544,
+          "cpuSeconds": 0.734375,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1761308,
+          "ws": 1310720,
+          "privateBytes": 47742976,
+          "privateWs": 593920,
+          "cpuSeconds": 0.875,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1753384,
+          "ws": 1269760,
+          "privateBytes": 33525760,
+          "privateWs": 585728,
+          "cpuSeconds": 0.6875,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1786540,
+          "ws": 1314816,
+          "privateBytes": 46125056,
+          "privateWs": 622592,
+          "cpuSeconds": 0.84375,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1778812,
+          "ws": 1499136,
+          "privateBytes": 34455552,
+          "privateWs": 561152,
+          "cpuSeconds": 0.609375,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1736736,
+          "ws": 1404928,
+          "privateBytes": 47083520,
+          "privateWs": 577536,
+          "cpuSeconds": 0.828125,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1808648,
+          "ws": 7041024,
+          "privateBytes": 42442752,
+          "privateWs": 2715648,
+          "cpuSeconds": 7.921875,
+          "handles": 614,
+          "threads": 18
+        },
+        {
+          "pid": 1687320,
+          "ws": 1531904,
+          "privateBytes": 1196032,
+          "privateWs": 409600,
+          "cpuSeconds": 0.125,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1739952,
+          "ws": 171372544,
+          "privateBytes": 638595072,
+          "privateWs": 152322048,
+          "cpuSeconds": 825.5625,
+          "handles": 339,
+          "threads": 41
+        },
+        {
+          "pid": 1727528,
+          "ws": 1212416,
+          "privateBytes": 806912,
+          "privateWs": 315392,
+          "cpuSeconds": 318.484375,
+          "handles": 47,
+          "threads": 1
+        },
+        {
+          "pid": 1444084,
+          "ws": 1142784,
+          "privateBytes": 1183744,
+          "privateWs": 376832,
+          "cpuSeconds": 0.125,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1257304,
+          "ws": 18763776,
+          "privateBytes": 20078592,
+          "privateWs": 11665408,
+          "cpuSeconds": 14.609375,
+          "handles": 170,
+          "threads": 18
+        },
+        {
+          "pid": 1799760,
+          "ws": 29913088,
+          "privateBytes": 303640576,
+          "privateWs": 24961024,
+          "cpuSeconds": 104.3125,
+          "handles": 213,
+          "threads": 17
+        },
+        {
+          "pid": 1813928,
+          "ws": 33431552,
+          "privateBytes": 82579456,
+          "privateWs": 19894272,
+          "cpuSeconds": 1828.125,
+          "handles": 448,
+          "threads": 46
+        },
+        {
+          "pid": 1746144,
+          "ws": 21176320,
+          "privateBytes": 257617920,
+          "privateWs": 17338368,
+          "cpuSeconds": 32.359375,
+          "handles": 108,
+          "threads": 6
+        },
+        {
+          "pid": 1607508,
+          "ws": 1527808,
+          "privateBytes": 3489792,
+          "privateWs": 565248,
+          "cpuSeconds": 0.109375,
+          "handles": 136,
+          "threads": 28
+        },
+        {
+          "pid": 1252676,
+          "ws": 1241088,
+          "privateBytes": 34021376,
+          "privateWs": 536576,
+          "cpuSeconds": 0.640625,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1748780,
+          "ws": 1339392,
+          "privateBytes": 46272512,
+          "privateWs": 593920,
+          "cpuSeconds": 0.796875,
+          "handles": 191,
+          "threads": 9
+        },
+        {
+          "pid": 1861680,
+          "ws": 6062080,
+          "privateBytes": 33644544,
+          "privateWs": 3383296,
+          "cpuSeconds": 0.296875,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1847516,
+          "ws": 6086656,
+          "privateBytes": 46985216,
+          "privateWs": 3706880,
+          "cpuSeconds": 0.296875,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1851048,
+          "ws": 13778944,
+          "privateBytes": 33329152,
+          "privateWs": 4149248,
+          "cpuSeconds": 0.34375,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1868752,
+          "ws": 4243456,
+          "privateBytes": 3575808,
+          "privateWs": 1466368,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1828604,
+          "ws": 12849152,
+          "privateBytes": 46325760,
+          "privateWs": 2801664,
+          "cpuSeconds": 0.515625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1866840,
+          "ws": 38948864,
+          "privateBytes": 38297600,
+          "privateWs": 9187328,
+          "cpuSeconds": 1.890625,
+          "handles": 653,
+          "threads": 18
+        },
+        {
+          "pid": 1861004,
+          "ws": 4448256,
+          "privateBytes": 1175552,
+          "privateWs": 593920,
+          "cpuSeconds": 0.09375,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1866236,
+          "ws": 64692224,
+          "privateBytes": 315011072,
+          "privateWs": 47874048,
+          "cpuSeconds": 8.4375,
+          "handles": 248,
+          "threads": 39
+        },
+        {
+          "pid": 1876828,
+          "ws": 2707456,
+          "privateBytes": 757760,
+          "privateWs": 323584,
+          "cpuSeconds": 0.578125,
+          "handles": 47,
+          "threads": 1
+        },
+        {
+          "pid": 1851516,
+          "ws": 4542464,
+          "privateBytes": 1163264,
+          "privateWs": 503808,
+          "cpuSeconds": 0.046875,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1706036,
+          "ws": 31895552,
+          "privateBytes": 34107392,
+          "privateWs": 11862016,
+          "cpuSeconds": 0.515625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 181316,
+          "ws": 21966848,
+          "privateBytes": 47251456,
+          "privateWs": 14200832,
+          "cpuSeconds": 0.5,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1866672,
+          "ws": 7376896,
+          "privateBytes": 3457024,
+          "privateWs": 1347584,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1860928,
+          "ws": 19779584,
+          "privateBytes": 21729280,
+          "privateWs": 2015232,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1872880,
+          "ws": 21024768,
+          "privateBytes": 21540864,
+          "privateWs": 3129344,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868812,
+          "ws": 6451200,
+          "privateBytes": 3448832,
+          "privateWs": 647168,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862356,
+          "ws": 19849216,
+          "privateBytes": 21495808,
+          "privateWs": 3559424,
+          "cpuSeconds": 0.109375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1877632,
+          "ws": 7892992,
+          "privateBytes": 3534848,
+          "privateWs": 1159168,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1873064,
+          "ws": 7286784,
+          "privateBytes": 3555328,
+          "privateWs": 1232896,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1871808,
+          "ws": 21377024,
+          "privateBytes": 21659648,
+          "privateWs": 4796416,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1870876,
+          "ws": 7090176,
+          "privateBytes": 3383296,
+          "privateWs": 643072,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1870600,
+          "ws": 22134784,
+          "privateBytes": 21508096,
+          "privateWs": 4308992,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1866876,
+          "ws": 6868992,
+          "privateBytes": 3440640,
+          "privateWs": 606208,
+          "cpuSeconds": 0.046875,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1860752,
+          "ws": 21381120,
+          "privateBytes": 21757952,
+          "privateWs": 3805184,
+          "cpuSeconds": 0.09375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1864304,
+          "ws": 6135808,
+          "privateBytes": 3416064,
+          "privateWs": 1114112,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1870680,
+          "ws": 20176896,
+          "privateBytes": 21528576,
+          "privateWs": 2076672,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868448,
+          "ws": 23072768,
+          "privateBytes": 22540288,
+          "privateWs": 6393856,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1873084,
+          "ws": 6254592,
+          "privateBytes": 3420160,
+          "privateWs": 1101824,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1869596,
+          "ws": 19791872,
+          "privateBytes": 21405696,
+          "privateWs": 2904064,
+          "cpuSeconds": 0.1875,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1857732,
+          "ws": 20877312,
+          "privateBytes": 21405696,
+          "privateWs": 3530752,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1743544,
+          "ws": 7417856,
+          "privateBytes": 3448832,
+          "privateWs": 1118208,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1874988,
+          "ws": 6000640,
+          "privateBytes": 3424256,
+          "privateWs": 753664,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1874472,
+          "ws": 19767296,
+          "privateBytes": 22130688,
+          "privateWs": 3223552,
+          "cpuSeconds": 0.1875,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1871664,
+          "ws": 7577600,
+          "privateBytes": 3530752,
+          "privateWs": 1146880,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865432,
+          "ws": 19406848,
+          "privateBytes": 21430272,
+          "privateWs": 1794048,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1877496,
+          "ws": 6447104,
+          "privateBytes": 3469312,
+          "privateWs": 1282048,
+          "cpuSeconds": 0.046875,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865140,
+          "ws": 6328320,
+          "privateBytes": 3506176,
+          "privateWs": 741376,
+          "cpuSeconds": 0.125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1380640,
+          "ws": 19546112,
+          "privateBytes": 21327872,
+          "privateWs": 2371584,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868604,
+          "ws": 22536192,
+          "privateBytes": 22020096,
+          "privateWs": 5292032,
+          "cpuSeconds": 0.09375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1861124,
+          "ws": 20193280,
+          "privateBytes": 21295104,
+          "privateWs": 3538944,
+          "cpuSeconds": 0.109375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1865176,
+          "ws": 21217280,
+          "privateBytes": 21409792,
+          "privateWs": 2961408,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1867428,
+          "ws": 5799936,
+          "privateBytes": 3383296,
+          "privateWs": 700416,
+          "cpuSeconds": 0.140625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1873108,
+          "ws": 5943296,
+          "privateBytes": 3399680,
+          "privateWs": 651264,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1871820,
+          "ws": 20893696,
+          "privateBytes": 21458944,
+          "privateWs": 4681728,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1854228,
+          "ws": 7016448,
+          "privateBytes": 3485696,
+          "privateWs": 1064960,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1864696,
+          "ws": 7372800,
+          "privateBytes": 3457024,
+          "privateWs": 651264,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1756900,
+          "ws": 6627328,
+          "privateBytes": 3497984,
+          "privateWs": 1507328,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1409316,
+          "ws": 7057408,
+          "privateBytes": 3489792,
+          "privateWs": 1101824,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1876024,
+          "ws": 7499776,
+          "privateBytes": 3477504,
+          "privateWs": 671744,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1875720,
+          "ws": 6131712,
+          "privateBytes": 3461120,
+          "privateWs": 733184,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862896,
+          "ws": 6078464,
+          "privateBytes": 3436544,
+          "privateWs": 651264,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1869512,
+          "ws": 5701632,
+          "privateBytes": 3440640,
+          "privateWs": 704512,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1867132,
+          "ws": 7749632,
+          "privateBytes": 3395584,
+          "privateWs": 638976,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1863572,
+          "ws": 6066176,
+          "privateBytes": 3502080,
+          "privateWs": 954368,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1876996,
+          "ws": 6303744,
+          "privateBytes": 3489792,
+          "privateWs": 634880,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862964,
+          "ws": 7385088,
+          "privateBytes": 3629056,
+          "privateWs": 1052672,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1846760,
+          "ws": 6029312,
+          "privateBytes": 3448832,
+          "privateWs": 724992,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1829340,
+          "ws": 7708672,
+          "privateBytes": 3522560,
+          "privateWs": 1511424,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1866756,
+          "ws": 6733824,
+          "privateBytes": 3469312,
+          "privateWs": 851968,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 771840,
+          "ws": 6512640,
+          "privateBytes": 3506176,
+          "privateWs": 741376,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1867688,
+          "ws": 6176768,
+          "privateBytes": 3493888,
+          "privateWs": 1413120,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865052,
+          "ws": 67411968,
+          "privateBytes": 82776064,
+          "privateWs": 32972800,
+          "cpuSeconds": 5.875,
+          "handles": 752,
+          "threads": 20
+        },
+        {
+          "pid": 1873312,
+          "ws": 7372800,
+          "privateBytes": 1220608,
+          "privateWs": 835584,
+          "cpuSeconds": 0.0625,
+          "handles": 98,
+          "threads": 3
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-11T01:29:43.9126324Z",
+      "metrics": [
+        {
+          "pid": 1745940,
+          "ws": 6930432,
+          "privateBytes": 83324928,
+          "privateWs": 1994752,
+          "cpuSeconds": 8.984375,
+          "handles": 610,
+          "threads": 16
+        },
+        {
+          "pid": 1742312,
+          "ws": 1110016,
+          "privateBytes": 1683456,
+          "privateWs": 344064,
+          "cpuSeconds": 10.6875,
+          "handles": 132,
+          "threads": 4
+        },
+        {
+          "pid": 1756524,
+          "ws": 53911552,
+          "privateBytes": 94375936,
+          "privateWs": 28536832,
+          "cpuSeconds": 4601.265625,
+          "handles": 640,
+          "threads": 17
+        },
+        {
+          "pid": 1730836,
+          "ws": 1142784,
+          "privateBytes": 1171456,
+          "privateWs": 352256,
+          "cpuSeconds": 0.109375,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1768096,
+          "ws": 12898304,
+          "privateBytes": 45367296,
+          "privateWs": 7712768,
+          "cpuSeconds": 11.078125,
+          "handles": 623,
+          "threads": 18
+        },
+        {
+          "pid": 1598892,
+          "ws": 1126400,
+          "privateBytes": 1191936,
+          "privateWs": 368640,
+          "cpuSeconds": 0.8125,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1506000,
+          "ws": 449945600,
+          "privateBytes": 1101651968,
+          "privateWs": 349712384,
+          "cpuSeconds": 5038.515625,
+          "handles": 1532,
+          "threads": 218
+        },
+        {
+          "pid": 1781080,
+          "ws": 1560576,
+          "privateBytes": 33648640,
+          "privateWs": 548864,
+          "cpuSeconds": 0.90625,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1542176,
+          "ws": 1290240,
+          "privateBytes": 46903296,
+          "privateWs": 573440,
+          "cpuSeconds": 0.953125,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1762696,
+          "ws": 1335296,
+          "privateBytes": 34369536,
+          "privateWs": 589824,
+          "cpuSeconds": 0.75,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1644484,
+          "ws": 1601536,
+          "privateBytes": 46231552,
+          "privateWs": 544768,
+          "cpuSeconds": 0.734375,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1745924,
+          "ws": 1466368,
+          "privateBytes": 33075200,
+          "privateWs": 589824,
+          "cpuSeconds": 0.78125,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1812228,
+          "ws": 1470464,
+          "privateBytes": 45883392,
+          "privateWs": 577536,
+          "cpuSeconds": 0.59375,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1721332,
+          "ws": 1597440,
+          "privateBytes": 34316288,
+          "privateWs": 614400,
+          "cpuSeconds": 0.75,
+          "handles": 183,
+          "threads": 9
+        },
+        {
+          "pid": 1778784,
+          "ws": 1232896,
+          "privateBytes": 46084096,
+          "privateWs": 565248,
+          "cpuSeconds": 0.90625,
+          "handles": 183,
+          "threads": 9
+        },
+        {
+          "pid": 1710980,
+          "ws": 1314816,
+          "privateBytes": 33771520,
+          "privateWs": 581632,
+          "cpuSeconds": 0.65625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1730056,
+          "ws": 1236992,
+          "privateBytes": 46723072,
+          "privateWs": 565248,
+          "cpuSeconds": 0.640625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1812200,
+          "ws": 1376256,
+          "privateBytes": 34848768,
+          "privateWs": 577536,
+          "cpuSeconds": 0.71875,
+          "handles": 185,
+          "threads": 9
+        },
+        {
+          "pid": 1735736,
+          "ws": 1355776,
+          "privateBytes": 46137344,
+          "privateWs": 622592,
+          "cpuSeconds": 0.96875,
+          "handles": 185,
+          "threads": 9
+        },
+        {
+          "pid": 1452432,
+          "ws": 1286144,
+          "privateBytes": 32923648,
+          "privateWs": 544768,
+          "cpuSeconds": 0.71875,
+          "handles": 186,
+          "threads": 9
+        },
+        {
+          "pid": 1362976,
+          "ws": 1368064,
+          "privateBytes": 47038464,
+          "privateWs": 610304,
+          "cpuSeconds": 0.71875,
+          "handles": 186,
+          "threads": 9
+        },
+        {
+          "pid": 1730916,
+          "ws": 1290240,
+          "privateBytes": 33574912,
+          "privateWs": 552960,
+          "cpuSeconds": 0.65625,
+          "handles": 187,
+          "threads": 9
+        },
+        {
+          "pid": 1778892,
+          "ws": 1347584,
+          "privateBytes": 47419392,
+          "privateWs": 573440,
+          "cpuSeconds": 0.90625,
+          "handles": 187,
+          "threads": 9
+        },
+        {
+          "pid": 1726056,
+          "ws": 1323008,
+          "privateBytes": 34721792,
+          "privateWs": 577536,
+          "cpuSeconds": 0.578125,
+          "handles": 188,
+          "threads": 9
+        },
+        {
+          "pid": 1738920,
+          "ws": 1232896,
+          "privateBytes": 47005696,
+          "privateWs": 520192,
+          "cpuSeconds": 0.734375,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1749384,
+          "ws": 1585152,
+          "privateBytes": 33091584,
+          "privateWs": 598016,
+          "cpuSeconds": 0.671875,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1814516,
+          "ws": 1269760,
+          "privateBytes": 46780416,
+          "privateWs": 585728,
+          "cpuSeconds": 0.765625,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1775332,
+          "ws": 1478656,
+          "privateBytes": 33632256,
+          "privateWs": 364544,
+          "cpuSeconds": 0.734375,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1761308,
+          "ws": 1310720,
+          "privateBytes": 47742976,
+          "privateWs": 593920,
+          "cpuSeconds": 0.875,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1753384,
+          "ws": 1269760,
+          "privateBytes": 33525760,
+          "privateWs": 585728,
+          "cpuSeconds": 0.6875,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1786540,
+          "ws": 1314816,
+          "privateBytes": 46125056,
+          "privateWs": 622592,
+          "cpuSeconds": 0.84375,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1778812,
+          "ws": 1499136,
+          "privateBytes": 34455552,
+          "privateWs": 561152,
+          "cpuSeconds": 0.609375,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1736736,
+          "ws": 1404928,
+          "privateBytes": 47083520,
+          "privateWs": 577536,
+          "cpuSeconds": 0.828125,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1808648,
+          "ws": 7041024,
+          "privateBytes": 42442752,
+          "privateWs": 2715648,
+          "cpuSeconds": 7.921875,
+          "handles": 614,
+          "threads": 18
+        },
+        {
+          "pid": 1687320,
+          "ws": 1531904,
+          "privateBytes": 1196032,
+          "privateWs": 409600,
+          "cpuSeconds": 0.125,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1739952,
+          "ws": 167268352,
+          "privateBytes": 640311296,
+          "privateWs": 147849216,
+          "cpuSeconds": 825.921875,
+          "handles": 340,
+          "threads": 42
+        },
+        {
+          "pid": 1727528,
+          "ws": 1212416,
+          "privateBytes": 806912,
+          "privateWs": 315392,
+          "cpuSeconds": 318.671875,
+          "handles": 47,
+          "threads": 1
+        },
+        {
+          "pid": 1444084,
+          "ws": 1142784,
+          "privateBytes": 1183744,
+          "privateWs": 376832,
+          "cpuSeconds": 0.125,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1257304,
+          "ws": 21147648,
+          "privateBytes": 23969792,
+          "privateWs": 10903552,
+          "cpuSeconds": 14.625,
+          "handles": 173,
+          "threads": 20
+        },
+        {
+          "pid": 1799760,
+          "ws": 30187520,
+          "privateBytes": 318685184,
+          "privateWs": 24686592,
+          "cpuSeconds": 104.34375,
+          "handles": 220,
+          "threads": 24
+        },
+        {
+          "pid": 1813928,
+          "ws": 33439744,
+          "privateBytes": 82530304,
+          "privateWs": 19963904,
+          "cpuSeconds": 1828.125,
+          "handles": 447,
+          "threads": 45
+        },
+        {
+          "pid": 1746144,
+          "ws": 21491712,
+          "privateBytes": 272674816,
+          "privateWs": 17473536,
+          "cpuSeconds": 32.40625,
+          "handles": 115,
+          "threads": 13
+        },
+        {
+          "pid": 1607508,
+          "ws": 1527808,
+          "privateBytes": 3489792,
+          "privateWs": 565248,
+          "cpuSeconds": 0.109375,
+          "handles": 136,
+          "threads": 28
+        },
+        {
+          "pid": 1252676,
+          "ws": 1241088,
+          "privateBytes": 34021376,
+          "privateWs": 536576,
+          "cpuSeconds": 0.640625,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1748780,
+          "ws": 1339392,
+          "privateBytes": 46272512,
+          "privateWs": 593920,
+          "cpuSeconds": 0.796875,
+          "handles": 191,
+          "threads": 9
+        },
+        {
+          "pid": 1861680,
+          "ws": 6062080,
+          "privateBytes": 33644544,
+          "privateWs": 3383296,
+          "cpuSeconds": 0.296875,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1847516,
+          "ws": 6086656,
+          "privateBytes": 46985216,
+          "privateWs": 3706880,
+          "cpuSeconds": 0.296875,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1851048,
+          "ws": 13778944,
+          "privateBytes": 33329152,
+          "privateWs": 4149248,
+          "cpuSeconds": 0.34375,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1868752,
+          "ws": 4243456,
+          "privateBytes": 3575808,
+          "privateWs": 1466368,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1828604,
+          "ws": 12849152,
+          "privateBytes": 46325760,
+          "privateWs": 2801664,
+          "cpuSeconds": 0.515625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1866840,
+          "ws": 38170624,
+          "privateBytes": 37588992,
+          "privateWs": 8409088,
+          "cpuSeconds": 1.890625,
+          "handles": 653,
+          "threads": 18
+        },
+        {
+          "pid": 1861004,
+          "ws": 4448256,
+          "privateBytes": 1175552,
+          "privateWs": 593920,
+          "cpuSeconds": 0.09375,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1866236,
+          "ws": 64847872,
+          "privateBytes": 318140416,
+          "privateWs": 42692608,
+          "cpuSeconds": 8.484375,
+          "handles": 249,
+          "threads": 40
+        },
+        {
+          "pid": 1876828,
+          "ws": 2707456,
+          "privateBytes": 757760,
+          "privateWs": 323584,
+          "cpuSeconds": 0.578125,
+          "handles": 47,
+          "threads": 1
+        },
+        {
+          "pid": 1851516,
+          "ws": 4542464,
+          "privateBytes": 1163264,
+          "privateWs": 503808,
+          "cpuSeconds": 0.046875,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1706036,
+          "ws": 31895552,
+          "privateBytes": 34107392,
+          "privateWs": 11862016,
+          "cpuSeconds": 0.515625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 181316,
+          "ws": 21966848,
+          "privateBytes": 47251456,
+          "privateWs": 14200832,
+          "cpuSeconds": 0.5,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1866672,
+          "ws": 7376896,
+          "privateBytes": 3457024,
+          "privateWs": 1347584,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1860928,
+          "ws": 19779584,
+          "privateBytes": 21729280,
+          "privateWs": 2015232,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1872880,
+          "ws": 21024768,
+          "privateBytes": 21540864,
+          "privateWs": 3129344,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868812,
+          "ws": 6451200,
+          "privateBytes": 3448832,
+          "privateWs": 647168,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862356,
+          "ws": 19849216,
+          "privateBytes": 21495808,
+          "privateWs": 3559424,
+          "cpuSeconds": 0.109375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1877632,
+          "ws": 7892992,
+          "privateBytes": 3534848,
+          "privateWs": 1159168,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1873064,
+          "ws": 7286784,
+          "privateBytes": 3555328,
+          "privateWs": 1232896,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1871808,
+          "ws": 21377024,
+          "privateBytes": 21659648,
+          "privateWs": 4796416,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1870876,
+          "ws": 7090176,
+          "privateBytes": 3383296,
+          "privateWs": 643072,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1870600,
+          "ws": 22134784,
+          "privateBytes": 21508096,
+          "privateWs": 4308992,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1866876,
+          "ws": 6868992,
+          "privateBytes": 3440640,
+          "privateWs": 606208,
+          "cpuSeconds": 0.046875,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1860752,
+          "ws": 21381120,
+          "privateBytes": 21757952,
+          "privateWs": 3805184,
+          "cpuSeconds": 0.09375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1864304,
+          "ws": 6135808,
+          "privateBytes": 3416064,
+          "privateWs": 1114112,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1870680,
+          "ws": 20176896,
+          "privateBytes": 21528576,
+          "privateWs": 2076672,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868448,
+          "ws": 23072768,
+          "privateBytes": 22540288,
+          "privateWs": 6393856,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1873084,
+          "ws": 6254592,
+          "privateBytes": 3420160,
+          "privateWs": 1101824,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1869596,
+          "ws": 19791872,
+          "privateBytes": 21405696,
+          "privateWs": 2904064,
+          "cpuSeconds": 0.1875,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1857732,
+          "ws": 20877312,
+          "privateBytes": 21405696,
+          "privateWs": 3530752,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1743544,
+          "ws": 7417856,
+          "privateBytes": 3448832,
+          "privateWs": 1118208,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1874988,
+          "ws": 6000640,
+          "privateBytes": 3424256,
+          "privateWs": 753664,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1874472,
+          "ws": 19767296,
+          "privateBytes": 22130688,
+          "privateWs": 3223552,
+          "cpuSeconds": 0.1875,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1871664,
+          "ws": 7577600,
+          "privateBytes": 3530752,
+          "privateWs": 1146880,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865432,
+          "ws": 19406848,
+          "privateBytes": 21430272,
+          "privateWs": 1794048,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1877496,
+          "ws": 6447104,
+          "privateBytes": 3469312,
+          "privateWs": 1282048,
+          "cpuSeconds": 0.046875,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865140,
+          "ws": 6328320,
+          "privateBytes": 3506176,
+          "privateWs": 741376,
+          "cpuSeconds": 0.125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1380640,
+          "ws": 19546112,
+          "privateBytes": 21327872,
+          "privateWs": 2371584,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868604,
+          "ws": 22536192,
+          "privateBytes": 22020096,
+          "privateWs": 5292032,
+          "cpuSeconds": 0.09375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1861124,
+          "ws": 20193280,
+          "privateBytes": 21295104,
+          "privateWs": 3538944,
+          "cpuSeconds": 0.109375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1865176,
+          "ws": 21217280,
+          "privateBytes": 21409792,
+          "privateWs": 2961408,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1867428,
+          "ws": 5799936,
+          "privateBytes": 3383296,
+          "privateWs": 700416,
+          "cpuSeconds": 0.140625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1873108,
+          "ws": 5943296,
+          "privateBytes": 3399680,
+          "privateWs": 651264,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1871820,
+          "ws": 20893696,
+          "privateBytes": 21458944,
+          "privateWs": 4681728,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1854228,
+          "ws": 7016448,
+          "privateBytes": 3485696,
+          "privateWs": 1064960,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1864696,
+          "ws": 7372800,
+          "privateBytes": 3457024,
+          "privateWs": 651264,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1756900,
+          "ws": 6627328,
+          "privateBytes": 3497984,
+          "privateWs": 1507328,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1409316,
+          "ws": 7057408,
+          "privateBytes": 3489792,
+          "privateWs": 1101824,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1876024,
+          "ws": 7499776,
+          "privateBytes": 3477504,
+          "privateWs": 671744,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1875720,
+          "ws": 6131712,
+          "privateBytes": 3461120,
+          "privateWs": 733184,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862896,
+          "ws": 6078464,
+          "privateBytes": 3436544,
+          "privateWs": 651264,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1869512,
+          "ws": 5701632,
+          "privateBytes": 3440640,
+          "privateWs": 704512,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1867132,
+          "ws": 7749632,
+          "privateBytes": 3395584,
+          "privateWs": 638976,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1863572,
+          "ws": 6066176,
+          "privateBytes": 3502080,
+          "privateWs": 954368,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1876996,
+          "ws": 6303744,
+          "privateBytes": 3489792,
+          "privateWs": 634880,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862964,
+          "ws": 7385088,
+          "privateBytes": 3629056,
+          "privateWs": 1052672,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1846760,
+          "ws": 6029312,
+          "privateBytes": 3448832,
+          "privateWs": 724992,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1829340,
+          "ws": 7708672,
+          "privateBytes": 3522560,
+          "privateWs": 1511424,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1866756,
+          "ws": 6733824,
+          "privateBytes": 3469312,
+          "privateWs": 851968,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 771840,
+          "ws": 6512640,
+          "privateBytes": 3506176,
+          "privateWs": 741376,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1867688,
+          "ws": 6176768,
+          "privateBytes": 3493888,
+          "privateWs": 1413120,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865052,
+          "ws": 67526656,
+          "privateBytes": 82915328,
+          "privateWs": 32268288,
+          "cpuSeconds": 5.953125,
+          "handles": 765,
+          "threads": 23
+        },
+        {
+          "pid": 1873312,
+          "ws": 7372800,
+          "privateBytes": 1220608,
+          "privateWs": 835584,
+          "cpuSeconds": 0.078125,
+          "handles": 98,
+          "threads": 3
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-11T01:30:03.7697010Z",
+      "metrics": [
+        {
+          "pid": 1745940,
+          "ws": 7086080,
+          "privateBytes": 83415040,
+          "privateWs": 1994752,
+          "cpuSeconds": 8.984375,
+          "handles": 610,
+          "threads": 18
+        },
+        {
+          "pid": 1742312,
+          "ws": 1110016,
+          "privateBytes": 1683456,
+          "privateWs": 344064,
+          "cpuSeconds": 10.6875,
+          "handles": 132,
+          "threads": 4
+        },
+        {
+          "pid": 1756524,
+          "ws": 53972992,
+          "privateBytes": 94470144,
+          "privateWs": 30044160,
+          "cpuSeconds": 4602.609375,
+          "handles": 640,
+          "threads": 19
+        },
+        {
+          "pid": 1730836,
+          "ws": 1142784,
+          "privateBytes": 1171456,
+          "privateWs": 352256,
+          "cpuSeconds": 0.125,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1768096,
+          "ws": 13135872,
+          "privateBytes": 45461504,
+          "privateWs": 7720960,
+          "cpuSeconds": 11.09375,
+          "handles": 623,
+          "threads": 20
+        },
+        {
+          "pid": 1598892,
+          "ws": 1126400,
+          "privateBytes": 1191936,
+          "privateWs": 368640,
+          "cpuSeconds": 0.8125,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1506000,
+          "ws": 400703488,
+          "privateBytes": 1051328512,
+          "privateWs": 361750528,
+          "cpuSeconds": 5039.59375,
+          "handles": 1533,
+          "threads": 218
+        },
+        {
+          "pid": 1781080,
+          "ws": 1560576,
+          "privateBytes": 33648640,
+          "privateWs": 548864,
+          "cpuSeconds": 0.90625,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1542176,
+          "ws": 1290240,
+          "privateBytes": 46903296,
+          "privateWs": 573440,
+          "cpuSeconds": 0.953125,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1762696,
+          "ws": 1335296,
+          "privateBytes": 34369536,
+          "privateWs": 589824,
+          "cpuSeconds": 0.75,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1644484,
+          "ws": 1601536,
+          "privateBytes": 46231552,
+          "privateWs": 544768,
+          "cpuSeconds": 0.734375,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1745924,
+          "ws": 1466368,
+          "privateBytes": 33075200,
+          "privateWs": 589824,
+          "cpuSeconds": 0.78125,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1812228,
+          "ws": 1470464,
+          "privateBytes": 45883392,
+          "privateWs": 577536,
+          "cpuSeconds": 0.59375,
+          "handles": 182,
+          "threads": 9
+        },
+        {
+          "pid": 1721332,
+          "ws": 1597440,
+          "privateBytes": 34316288,
+          "privateWs": 614400,
+          "cpuSeconds": 0.75,
+          "handles": 183,
+          "threads": 9
+        },
+        {
+          "pid": 1778784,
+          "ws": 1232896,
+          "privateBytes": 46084096,
+          "privateWs": 565248,
+          "cpuSeconds": 0.90625,
+          "handles": 183,
+          "threads": 9
+        },
+        {
+          "pid": 1710980,
+          "ws": 1314816,
+          "privateBytes": 33771520,
+          "privateWs": 581632,
+          "cpuSeconds": 0.65625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1730056,
+          "ws": 1236992,
+          "privateBytes": 46723072,
+          "privateWs": 565248,
+          "cpuSeconds": 0.640625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1812200,
+          "ws": 1376256,
+          "privateBytes": 34848768,
+          "privateWs": 577536,
+          "cpuSeconds": 0.71875,
+          "handles": 185,
+          "threads": 9
+        },
+        {
+          "pid": 1735736,
+          "ws": 1355776,
+          "privateBytes": 46137344,
+          "privateWs": 622592,
+          "cpuSeconds": 0.96875,
+          "handles": 185,
+          "threads": 9
+        },
+        {
+          "pid": 1452432,
+          "ws": 1286144,
+          "privateBytes": 32923648,
+          "privateWs": 544768,
+          "cpuSeconds": 0.71875,
+          "handles": 186,
+          "threads": 9
+        },
+        {
+          "pid": 1362976,
+          "ws": 1368064,
+          "privateBytes": 47038464,
+          "privateWs": 610304,
+          "cpuSeconds": 0.71875,
+          "handles": 186,
+          "threads": 9
+        },
+        {
+          "pid": 1730916,
+          "ws": 1290240,
+          "privateBytes": 33574912,
+          "privateWs": 552960,
+          "cpuSeconds": 0.65625,
+          "handles": 187,
+          "threads": 9
+        },
+        {
+          "pid": 1778892,
+          "ws": 1347584,
+          "privateBytes": 47419392,
+          "privateWs": 573440,
+          "cpuSeconds": 0.90625,
+          "handles": 187,
+          "threads": 9
+        },
+        {
+          "pid": 1726056,
+          "ws": 1323008,
+          "privateBytes": 34721792,
+          "privateWs": 577536,
+          "cpuSeconds": 0.578125,
+          "handles": 188,
+          "threads": 9
+        },
+        {
+          "pid": 1738920,
+          "ws": 1232896,
+          "privateBytes": 47005696,
+          "privateWs": 520192,
+          "cpuSeconds": 0.734375,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1749384,
+          "ws": 1585152,
+          "privateBytes": 33091584,
+          "privateWs": 598016,
+          "cpuSeconds": 0.671875,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1814516,
+          "ws": 1269760,
+          "privateBytes": 46780416,
+          "privateWs": 585728,
+          "cpuSeconds": 0.765625,
+          "handles": 189,
+          "threads": 9
+        },
+        {
+          "pid": 1775332,
+          "ws": 1478656,
+          "privateBytes": 33632256,
+          "privateWs": 364544,
+          "cpuSeconds": 0.734375,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1761308,
+          "ws": 1310720,
+          "privateBytes": 47742976,
+          "privateWs": 593920,
+          "cpuSeconds": 0.875,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1753384,
+          "ws": 1269760,
+          "privateBytes": 33525760,
+          "privateWs": 585728,
+          "cpuSeconds": 0.6875,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1786540,
+          "ws": 1314816,
+          "privateBytes": 46125056,
+          "privateWs": 622592,
+          "cpuSeconds": 0.84375,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1778812,
+          "ws": 1499136,
+          "privateBytes": 34455552,
+          "privateWs": 561152,
+          "cpuSeconds": 0.609375,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1736736,
+          "ws": 1404928,
+          "privateBytes": 47083520,
+          "privateWs": 577536,
+          "cpuSeconds": 0.828125,
+          "handles": 192,
+          "threads": 9
+        },
+        {
+          "pid": 1808648,
+          "ws": 7184384,
+          "privateBytes": 42536960,
+          "privateWs": 2715648,
+          "cpuSeconds": 7.921875,
+          "handles": 614,
+          "threads": 20
+        },
+        {
+          "pid": 1687320,
+          "ws": 1531904,
+          "privateBytes": 1196032,
+          "privateWs": 409600,
+          "cpuSeconds": 0.125,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1739952,
+          "ws": 176967680,
+          "privateBytes": 658984960,
+          "privateWs": 149970944,
+          "cpuSeconds": 826.40625,
+          "handles": 339,
+          "threads": 41
+        },
+        {
+          "pid": 1727528,
+          "ws": 1212416,
+          "privateBytes": 806912,
+          "privateWs": 315392,
+          "cpuSeconds": 318.859375,
+          "handles": 47,
+          "threads": 1
+        },
+        {
+          "pid": 1444084,
+          "ws": 1142784,
+          "privateBytes": 1183744,
+          "privateWs": 376832,
+          "cpuSeconds": 0.125,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1257304,
+          "ws": 20959232,
+          "privateBytes": 22310912,
+          "privateWs": 12926976,
+          "cpuSeconds": 14.65625,
+          "handles": 171,
+          "threads": 19
+        },
+        {
+          "pid": 1799760,
+          "ws": 30183424,
+          "privateBytes": 318685184,
+          "privateWs": 24961024,
+          "cpuSeconds": 104.375,
+          "handles": 220,
+          "threads": 24
+        },
+        {
+          "pid": 1813928,
+          "ws": 33497088,
+          "privateBytes": 82530304,
+          "privateWs": 20000768,
+          "cpuSeconds": 1828.140625,
+          "handles": 447,
+          "threads": 45
+        },
+        {
+          "pid": 1746144,
+          "ws": 21487616,
+          "privateBytes": 270548992,
+          "privateWs": 17473536,
+          "cpuSeconds": 32.421875,
+          "handles": 115,
+          "threads": 12
+        },
+        {
+          "pid": 1607508,
+          "ws": 1527808,
+          "privateBytes": 3489792,
+          "privateWs": 565248,
+          "cpuSeconds": 0.109375,
+          "handles": 136,
+          "threads": 28
+        },
+        {
+          "pid": 1252676,
+          "ws": 1241088,
+          "privateBytes": 34021376,
+          "privateWs": 536576,
+          "cpuSeconds": 0.640625,
+          "handles": 190,
+          "threads": 9
+        },
+        {
+          "pid": 1748780,
+          "ws": 1339392,
+          "privateBytes": 46272512,
+          "privateWs": 593920,
+          "cpuSeconds": 0.796875,
+          "handles": 191,
+          "threads": 9
+        },
+        {
+          "pid": 1861680,
+          "ws": 6062080,
+          "privateBytes": 33644544,
+          "privateWs": 3383296,
+          "cpuSeconds": 0.296875,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1847516,
+          "ws": 6086656,
+          "privateBytes": 46985216,
+          "privateWs": 3706880,
+          "cpuSeconds": 0.296875,
+          "handles": 181,
+          "threads": 9
+        },
+        {
+          "pid": 1851048,
+          "ws": 13778944,
+          "privateBytes": 33329152,
+          "privateWs": 4149248,
+          "cpuSeconds": 0.34375,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1868752,
+          "ws": 4243456,
+          "privateBytes": 3575808,
+          "privateWs": 1466368,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1828604,
+          "ws": 12849152,
+          "privateBytes": 46325760,
+          "privateWs": 2801664,
+          "cpuSeconds": 0.515625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1866840,
+          "ws": 38244352,
+          "privateBytes": 37683200,
+          "privateWs": 8409088,
+          "cpuSeconds": 1.953125,
+          "handles": 653,
+          "threads": 20
+        },
+        {
+          "pid": 1861004,
+          "ws": 4448256,
+          "privateBytes": 1175552,
+          "privateWs": 593920,
+          "cpuSeconds": 0.09375,
+          "handles": 99,
+          "threads": 2
+        },
+        {
+          "pid": 1866236,
+          "ws": 64765952,
+          "privateBytes": 315736064,
+          "privateWs": 42737664,
+          "cpuSeconds": 8.75,
+          "handles": 248,
+          "threads": 39
+        },
+        {
+          "pid": 1876828,
+          "ws": 2707456,
+          "privateBytes": 757760,
+          "privateWs": 323584,
+          "cpuSeconds": 0.578125,
+          "handles": 47,
+          "threads": 1
+        },
+        {
+          "pid": 1851516,
+          "ws": 4542464,
+          "privateBytes": 1163264,
+          "privateWs": 503808,
+          "cpuSeconds": 0.046875,
+          "handles": 98,
+          "threads": 2
+        },
+        {
+          "pid": 1706036,
+          "ws": 31895552,
+          "privateBytes": 34107392,
+          "privateWs": 11862016,
+          "cpuSeconds": 0.515625,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 181316,
+          "ws": 21966848,
+          "privateBytes": 47251456,
+          "privateWs": 14200832,
+          "cpuSeconds": 0.5,
+          "handles": 184,
+          "threads": 9
+        },
+        {
+          "pid": 1866672,
+          "ws": 7376896,
+          "privateBytes": 3457024,
+          "privateWs": 1347584,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1860928,
+          "ws": 19779584,
+          "privateBytes": 21729280,
+          "privateWs": 2015232,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1872880,
+          "ws": 21024768,
+          "privateBytes": 21540864,
+          "privateWs": 3129344,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868812,
+          "ws": 6451200,
+          "privateBytes": 3448832,
+          "privateWs": 647168,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862356,
+          "ws": 19849216,
+          "privateBytes": 21495808,
+          "privateWs": 3559424,
+          "cpuSeconds": 0.109375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1877632,
+          "ws": 7892992,
+          "privateBytes": 3534848,
+          "privateWs": 1159168,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1873064,
+          "ws": 7286784,
+          "privateBytes": 3555328,
+          "privateWs": 1232896,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1871808,
+          "ws": 21377024,
+          "privateBytes": 21659648,
+          "privateWs": 4796416,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1870876,
+          "ws": 7090176,
+          "privateBytes": 3383296,
+          "privateWs": 643072,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1870600,
+          "ws": 22134784,
+          "privateBytes": 21508096,
+          "privateWs": 4308992,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1866876,
+          "ws": 6868992,
+          "privateBytes": 3440640,
+          "privateWs": 606208,
+          "cpuSeconds": 0.046875,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1860752,
+          "ws": 21381120,
+          "privateBytes": 21757952,
+          "privateWs": 3805184,
+          "cpuSeconds": 0.09375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1864304,
+          "ws": 6135808,
+          "privateBytes": 3416064,
+          "privateWs": 1114112,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1870680,
+          "ws": 20176896,
+          "privateBytes": 21528576,
+          "privateWs": 2076672,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868448,
+          "ws": 23072768,
+          "privateBytes": 22540288,
+          "privateWs": 6393856,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1873084,
+          "ws": 6254592,
+          "privateBytes": 3420160,
+          "privateWs": 1101824,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1869596,
+          "ws": 19791872,
+          "privateBytes": 21405696,
+          "privateWs": 2904064,
+          "cpuSeconds": 0.1875,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1857732,
+          "ws": 20877312,
+          "privateBytes": 21405696,
+          "privateWs": 3530752,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1743544,
+          "ws": 7417856,
+          "privateBytes": 3448832,
+          "privateWs": 1118208,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1874988,
+          "ws": 6000640,
+          "privateBytes": 3424256,
+          "privateWs": 753664,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1874472,
+          "ws": 19767296,
+          "privateBytes": 22130688,
+          "privateWs": 3223552,
+          "cpuSeconds": 0.1875,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1871664,
+          "ws": 7577600,
+          "privateBytes": 3530752,
+          "privateWs": 1146880,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865432,
+          "ws": 19406848,
+          "privateBytes": 21430272,
+          "privateWs": 1794048,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1877496,
+          "ws": 6447104,
+          "privateBytes": 3469312,
+          "privateWs": 1282048,
+          "cpuSeconds": 0.046875,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865140,
+          "ws": 6328320,
+          "privateBytes": 3506176,
+          "privateWs": 741376,
+          "cpuSeconds": 0.125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1380640,
+          "ws": 19546112,
+          "privateBytes": 21327872,
+          "privateWs": 2371584,
+          "cpuSeconds": 0.140625,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1868604,
+          "ws": 22536192,
+          "privateBytes": 22020096,
+          "privateWs": 5292032,
+          "cpuSeconds": 0.09375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1861124,
+          "ws": 20193280,
+          "privateBytes": 21295104,
+          "privateWs": 3538944,
+          "cpuSeconds": 0.109375,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1865176,
+          "ws": 21217280,
+          "privateBytes": 21409792,
+          "privateWs": 2961408,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1867428,
+          "ws": 5799936,
+          "privateBytes": 3383296,
+          "privateWs": 700416,
+          "cpuSeconds": 0.140625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1873108,
+          "ws": 5943296,
+          "privateBytes": 3399680,
+          "privateWs": 651264,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1871820,
+          "ws": 20893696,
+          "privateBytes": 21458944,
+          "privateWs": 4681728,
+          "cpuSeconds": 0.125,
+          "handles": 193,
+          "threads": 9
+        },
+        {
+          "pid": 1854228,
+          "ws": 7016448,
+          "privateBytes": 3485696,
+          "privateWs": 1064960,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1864696,
+          "ws": 7372800,
+          "privateBytes": 3457024,
+          "privateWs": 651264,
+          "cpuSeconds": 0.109375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1756900,
+          "ws": 6627328,
+          "privateBytes": 3497984,
+          "privateWs": 1507328,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1409316,
+          "ws": 7057408,
+          "privateBytes": 3489792,
+          "privateWs": 1101824,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1876024,
+          "ws": 7499776,
+          "privateBytes": 3477504,
+          "privateWs": 671744,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1875720,
+          "ws": 6131712,
+          "privateBytes": 3461120,
+          "privateWs": 733184,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862896,
+          "ws": 6078464,
+          "privateBytes": 3436544,
+          "privateWs": 651264,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1869512,
+          "ws": 5701632,
+          "privateBytes": 3440640,
+          "privateWs": 704512,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1867132,
+          "ws": 7749632,
+          "privateBytes": 3395584,
+          "privateWs": 638976,
+          "cpuSeconds": 0.078125,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1863572,
+          "ws": 6066176,
+          "privateBytes": 3502080,
+          "privateWs": 954368,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1876996,
+          "ws": 6303744,
+          "privateBytes": 3489792,
+          "privateWs": 634880,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1862964,
+          "ws": 7385088,
+          "privateBytes": 3629056,
+          "privateWs": 1052672,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1846760,
+          "ws": 6029312,
+          "privateBytes": 3448832,
+          "privateWs": 724992,
+          "cpuSeconds": 0.09375,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1829340,
+          "ws": 7708672,
+          "privateBytes": 3522560,
+          "privateWs": 1511424,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1866756,
+          "ws": 6733824,
+          "privateBytes": 3469312,
+          "privateWs": 851968,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 771840,
+          "ws": 6512640,
+          "privateBytes": 3506176,
+          "privateWs": 741376,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1867688,
+          "ws": 6176768,
+          "privateBytes": 3493888,
+          "privateWs": 1413120,
+          "cpuSeconds": 0.0625,
+          "handles": 130,
+          "threads": 28
+        },
+        {
+          "pid": 1865052,
+          "ws": 67805184,
+          "privateBytes": 82923520,
+          "privateWs": 32321536,
+          "cpuSeconds": 6.09375,
+          "handles": 768,
+          "threads": 23
+        },
+        {
+          "pid": 1873312,
+          "ws": 7372800,
+          "privateBytes": 1220608,
+          "privateWs": 835584,
+          "cpuSeconds": 0.078125,
+          "handles": 98,
+          "threads": 3
+        }
+      ]
+    }
+  ],
+  "postcheck": {
+    "utc": "2026-10-11T01:39:43.2143728Z",
+    "loadedThreads": 17,
+    "nextCursor": null,
+    "supervisor": {
+      "pid": 1756524,
+      "roles": {
+        "engine": {
+          "failures": 0,
+          "pid": 1768096
+        },
+        "native": {
+          "failures": 0,
+          "pid": 1808648
+        },
+        "runner": {
+          "failures": 0,
+          "pid": 1866840
+        },
+        "pipe": {
+          "failures": 0,
+          "pid": 1444572
+        }
+      },
+      "restorePending": false,
+      "session": 0,
+      "timestamp": "2026-10-11T01:39:37.3217064Z",
+      "nativeReady": true
+    },
+    "core": [
+      {
+        "pid": 1745940,
+        "created": "2026-10-10T02:13:30.4168638Z",
+        "ws": 7643136,
+        "privateBytes": 83324928
+      },
+      {
+        "pid": 1756524,
+        "created": "2026-10-10T02:13:32.2540158Z",
+        "ws": 62083072,
+        "privateBytes": 94949376
+      },
+      {
+        "pid": 1768096,
+        "created": "2026-10-10T02:13:34.1972888Z",
+        "ws": 13967360,
+        "privateBytes": 45367296
+      },
+      {
+        "pid": 1808648,
+        "created": "2026-10-10T02:13:44.1984170Z",
+        "ws": 9629696,
+        "privateBytes": 42536960
+      },
+      {
+        "pid": 1866840,
+        "created": "2026-10-11T00:58:32.6557398Z",
+        "ws": 36614144,
+        "privateBytes": 37699584
+      },
+      {
+        "pid": 1739952,
+        "created": "2026-10-10T02:13:50.8578190Z",
+        "ws": 159232000,
+        "privateBytes": 641490944
+      },
+      {
+        "pid": 1866236,
+        "created": "2026-10-11T00:58:33.5074793Z",
+        "ws": 64704512,
+        "privateBytes": 326152192
+      },
+      {
+        "pid": 1506000,
+        "created": "2026-10-10T02:13:35.2225665Z",
+        "ws": 522465280,
+        "privateBytes": 1085321216
+      },
+      {
+        "pid": 1799760,
+        "created": "2026-10-10T02:41:56.9821585Z",
+        "ws": 29601792,
+        "privateBytes": 320831488
+      },
+      {
+        "pid": 1746144,
+        "created": "2026-10-10T02:42:02.6081078Z",
+        "ws": 21307392,
+        "privateBytes": 257622016
+      },
+      {
+        "pid": 1813928,
+        "created": "2026-10-10T02:42:01.5737594Z",
+        "ws": 34484224,
+        "privateBytes": 82968576
+      }
+    ],
+    "entrypoints": [
+      {
+        "pid": 1781080,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1542176,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1762696,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1644484,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1745924,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1812228,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1721332,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1778784,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1710980,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1730056,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1812200,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1735736,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1452432,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1362976,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1730916,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1778892,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1726056,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1738920,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1749384,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1814516,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1775332,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1761308,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1753384,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1786540,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1778812,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1736736,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1257304,
+        "name": "codex-code-mode-host.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1607508,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1252676,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1748780,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1861680,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1847516,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1864400,
+        "name": "pwsh.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1851048,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 1868752,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1828604,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1706036,
+        "name": "node.exe",
+        "scripts": [
+          "C:/Users/lixinrui/AppData/Local/WeFlow-MCP/launch.mjs"
+        ]
+      },
+      {
+        "pid": 181316,
+        "name": "node.exe",
+        "scripts": [
+          "./mcp/server.bundle.mjs"
+        ]
+      },
+      {
+        "pid": 1866672,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1860928,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1872880,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1868812,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1862356,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1877632,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1873064,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1871808,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1870876,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1870600,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1866876,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1860752,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1864304,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1870680,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1868448,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1873084,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1869596,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1857732,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1743544,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1874988,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1874472,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1871664,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1865432,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1877496,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1865140,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1380640,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1868604,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1861124,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1865176,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1867428,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1873108,
+        "name": "node_repl.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1871820,
+        "name": "node.exe",
+        "scripts": [
+          "C:\\Users\\lixinrui\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\3dd31cfff853001c\\bin\\node_modules\\@oai\\cua-repl\\bin\\cua-repl.mjs"
+        ]
+      },
+      {
+        "pid": 1861524,
+        "name": "conhost.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1814340,
+        "name": "pwsh.exe",
+        "scripts": []
+      },
+      {
+        "pid": 1878212,
+        "name": "pwsh.exe",
+        "scripts": []
+      }
+    ],
+    "unchangedProcessGenerations": [
+      1745940,
+      1756524,
+      1768096,
+      1506000,
+      1808648,
+      1739952,
+      1799760,
+      1813928,
+      1746144,
+      1866840,
+      1866236
+    ],
+    "generationComparison": "PID and creation time at CIM microsecond precision; Get-Process exposes an additional 100ns digit."
+  },
+  "experiments": {
+    "two_fixture_mcps": {
+      "trial": "D:\\hapi\\temp\\memory-restore-20261011\\d0509805-0a7a-4757-908a-a7dee845c039",
+      "results": [
+        {
+          "stage": "initialized-no-thread",
+          "utc": 1791682563.118591,
+          "server": {
+            "pid": 1771936,
+            "ws": 88612864,
+            "privateBytes": 18620416
+          },
+          "fixtureProcesses": [],
+          "events": []
+        },
+        {
+          "stage": "read-cold-synthetic-history",
+          "utc": 1791682564.1307077,
+          "server": {
+            "pid": 1771936,
+            "ws": 90226688,
+            "privateBytes": 19447808
+          },
+          "fixtureProcesses": [],
+          "events": [],
+          "requestMs": 15.0
+        },
+        {
+          "stage": "resume-exclude-turns",
+          "utc": 1791682565.1725464,
+          "server": {
+            "pid": 1771936,
+            "ws": 102002688,
+            "privateBytes": 26320896
+          },
+          "fixtureProcesses": [
+            {
+              "pid": 1873992,
+              "ws": 56373248,
+              "privateBytes": 20733952
+            },
+            {
+              "pid": 1876528,
+              "ws": 56287232,
+              "privateBytes": 20738048
+            }
+          ],
+          "events": [
+            {
+              "pid": 1873992,
+              "method": "process-start",
+              "utc": "2026-10-11T01:36:04.390Z"
+            },
+            {
+              "pid": 1873992,
+              "method": "initialize",
+              "utc": "2026-10-11T01:36:04.393Z"
+            },
+            {
+              "pid": 1873992,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:36:04.394Z"
+            },
+            {
+              "pid": 1873992,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:36:04.394Z"
+            },
+            {
+              "pid": 1876528,
+              "method": "process-start",
+              "utc": "2026-10-11T01:36:04.413Z"
+            },
+            {
+              "pid": 1876528,
+              "method": "initialize",
+              "utc": "2026-10-11T01:36:04.416Z"
+            },
+            {
+              "pid": 1876528,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:36:04.417Z"
+            },
+            {
+              "pid": 1876528,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:36:04.417Z"
+            }
+          ],
+          "requestMs": 47.0
+        },
+        {
+          "stage": "final-unsubscribe",
+          "utc": 1791682566.17391,
+          "server": {
+            "pid": 1771936,
+            "ws": 102096896,
+            "privateBytes": 26320896
+          },
+          "fixtureProcesses": [
+            {
+              "pid": 1873992,
+              "ws": 56373248,
+              "privateBytes": 20733952
+            },
+            {
+              "pid": 1876528,
+              "ws": 56287232,
+              "privateBytes": 20738048
+            }
+          ],
+          "events": [
+            {
+              "pid": 1873992,
+              "method": "process-start",
+              "utc": "2026-10-11T01:36:04.390Z"
+            },
+            {
+              "pid": 1873992,
+              "method": "initialize",
+              "utc": "2026-10-11T01:36:04.393Z"
+            },
+            {
+              "pid": 1873992,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:36:04.394Z"
+            },
+            {
+              "pid": 1873992,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:36:04.394Z"
+            },
+            {
+              "pid": 1876528,
+              "method": "process-start",
+              "utc": "2026-10-11T01:36:04.413Z"
+            },
+            {
+              "pid": 1876528,
+              "method": "initialize",
+              "utc": "2026-10-11T01:36:04.416Z"
+            },
+            {
+              "pid": 1876528,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:36:04.417Z"
+            },
+            {
+              "pid": 1876528,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:36:04.417Z"
+            }
+          ],
+          "response": {
+            "status": "unsubscribed"
+          }
+        }
+      ],
+      "notifications": [
+        "remoteControl/status/changed",
+        "mcpServer/startupStatus/updated",
+        "mcpServer/startupStatus/updated",
+        "thread/status/changed",
+        "thread/goal/cleared",
+        "mcpServer/startupStatus/updated",
+        "mcpServer/startupStatus/updated"
+      ],
+      "cleanup": {
+        "serverExited": true,
+        "remainingFixtureProcesses": []
+      },
+      "modelRequests": 0
+    },
+    "production_hapi_stdio_bridge": {
+      "trial": "D:\\hapi\\temp\\memory-restore-20261011\\6d285465-6448-4a21-968c-fe6b27215daf",
+      "results": [
+        {
+          "directChildren": [
+            {
+              "pid": 1659456,
+              "ws": 6991872,
+              "privateBytes": 1622016,
+              "name": "git.exe"
+            }
+          ],
+          "stage": "initialized-no-thread",
+          "utc": 1791682779.425456,
+          "server": {
+            "pid": 1866092,
+            "ws": 78725120,
+            "privateBytes": 18497536
+          },
+          "fixtureProcesses": [],
+          "events": []
+        },
+        {
+          "directChildren": [
+            {
+              "pid": 1878604,
+              "ws": 6991872,
+              "privateBytes": 1626112,
+              "name": "git.exe"
+            }
+          ],
+          "stage": "read-cold-synthetic-history",
+          "utc": 1791682780.5696442,
+          "server": {
+            "pid": 1866092,
+            "ws": 79491072,
+            "privateBytes": 18956288
+          },
+          "fixtureProcesses": [],
+          "events": [],
+          "requestMs": 0.0
+        },
+        {
+          "directChildren": [
+            {
+              "pid": 1878604,
+              "ws": 6991872,
+              "privateBytes": 1626112,
+              "name": "git.exe"
+            },
+            {
+              "pid": 1876856,
+              "ws": 130023424,
+              "privateBytes": 277532672,
+              "name": "hapi-20261004.exe"
+            },
+            {
+              "pid": 1878944,
+              "ws": 53280768,
+              "privateBytes": 20705280,
+              "name": "node.exe"
+            }
+          ],
+          "stage": "resume-exclude-turns",
+          "utc": 1791682781.7663662,
+          "server": {
+            "pid": 1866092,
+            "ws": 93007872,
+            "privateBytes": 25432064
+          },
+          "fixtureProcesses": [
+            {
+              "pid": 1878944,
+              "ws": 53280768,
+              "privateBytes": 20705280
+            }
+          ],
+          "events": [
+            {
+              "pid": 1878944,
+              "method": "process-start",
+              "utc": "2026-10-11T01:39:40.973Z"
+            },
+            {
+              "pid": 1878944,
+              "method": "initialize",
+              "utc": "2026-10-11T01:39:40.976Z"
+            },
+            {
+              "pid": 1878944,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:39:40.977Z"
+            },
+            {
+              "pid": 1878944,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:39:40.977Z"
+            }
+          ],
+          "requestMs": 47.0
+        },
+        {
+          "directChildren": [
+            {
+              "pid": 1878604,
+              "ws": 6991872,
+              "privateBytes": 1626112,
+              "name": "git.exe"
+            },
+            {
+              "pid": 1876856,
+              "ws": 129470464,
+              "privateBytes": 277532672,
+              "name": "hapi-20261004.exe"
+            },
+            {
+              "pid": 1878944,
+              "ws": 53280768,
+              "privateBytes": 20705280,
+              "name": "node.exe"
+            }
+          ],
+          "stage": "final-unsubscribe",
+          "utc": 1791682782.9674647,
+          "server": {
+            "pid": 1866092,
+            "ws": 93274112,
+            "privateBytes": 25657344
+          },
+          "fixtureProcesses": [
+            {
+              "pid": 1878944,
+              "ws": 53280768,
+              "privateBytes": 20705280
+            }
+          ],
+          "events": [
+            {
+              "pid": 1878944,
+              "method": "process-start",
+              "utc": "2026-10-11T01:39:40.973Z"
+            },
+            {
+              "pid": 1878944,
+              "method": "initialize",
+              "utc": "2026-10-11T01:39:40.976Z"
+            },
+            {
+              "pid": 1878944,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:39:40.977Z"
+            },
+            {
+              "pid": 1878944,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:39:40.977Z"
+            }
+          ],
+          "response": {
+            "status": "unsubscribed"
+          }
+        },
+        {
+          "directChildren": [
+            {
+              "pid": 1876856,
+              "ws": 129249280,
+              "privateBytes": 277598208,
+              "name": "hapi-20261004.exe"
+            },
+            {
+              "pid": 1878944,
+              "ws": 53280768,
+              "privateBytes": 20705280,
+              "name": "node.exe"
+            }
+          ],
+          "stage": "six-seconds-after-unsubscribe",
+          "utc": 1791682789.0959704,
+          "server": {
+            "pid": 1866092,
+            "ws": 93814784,
+            "privateBytes": 26095616
+          },
+          "fixtureProcesses": [
+            {
+              "pid": 1878944,
+              "ws": 53280768,
+              "privateBytes": 20705280
+            }
+          ],
+          "events": [
+            {
+              "pid": 1878944,
+              "method": "process-start",
+              "utc": "2026-10-11T01:39:40.973Z"
+            },
+            {
+              "pid": 1878944,
+              "method": "initialize",
+              "utc": "2026-10-11T01:39:40.976Z"
+            },
+            {
+              "pid": 1878944,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:39:40.977Z"
+            },
+            {
+              "pid": 1878944,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:39:40.977Z"
+            }
+          ]
+        }
+      ],
+      "notifications": [
+        "remoteControl/status/changed",
+        "mcpServer/startupStatus/updated",
+        "mcpServer/startupStatus/updated",
+        "thread/status/changed",
+        "thread/goal/cleared",
+        "mcpServer/startupStatus/updated",
+        "mcpServer/startupStatus/updated"
+      ],
+      "cleanup": {
+        "serverExited": true,
+        "remainingFixtureProcesses": []
+      },
+      "modelRequests": 0
+    },
+    "empty_thread_not_persisted": {
+      "trial": "D:\\hapi\\temp\\memory-restore-20261011\\0618fdd8-558c-41a7-a37c-ce6e01d18841",
+      "results": [
+        {
+          "stage": "initialized-no-thread",
+          "utc": 1791682461.0464656,
+          "server": {
+            "pid": 1874948,
+            "ws": 81874944,
+            "privateBytes": 18644992
+          },
+          "fixtureProcesses": [],
+          "events": []
+        },
+        {
+          "stage": "started-no-turn",
+          "utc": 1791682462.0732245,
+          "server": {
+            "pid": 1874948,
+            "ws": 88637440,
+            "privateBytes": 22577152
+          },
+          "fixtureProcesses": [
+            {
+              "pid": 1867668,
+              "ws": 56295424,
+              "privateBytes": 20893696
+            },
+            {
+              "pid": 1769724,
+              "ws": 56381440,
+              "privateBytes": 20697088
+            }
+          ],
+          "events": [
+            {
+              "pid": 1769724,
+              "method": "process-start",
+              "utc": "2026-10-11T01:34:21.559Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "initialize",
+              "utc": "2026-10-11T01:34:21.562Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:34:21.563Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:34:21.564Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "process-start",
+              "utc": "2026-10-11T01:34:21.622Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "initialize",
+              "utc": "2026-10-11T01:34:21.625Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:34:21.626Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:34:21.627Z"
+            }
+          ],
+          "requestMs": 31.0,
+          "threadSummary": {
+            "id": "01a12898-bd7b-7390-9afe-ac54317e60ad",
+            "path": "D:\\hapi\\temp\\memory-restore-20261011\\0618fdd8-558c-41a7-a37c-ce6e01d18841\\sessions\\2026\\10\\11\\rollout-2026-10-11T09-34-21-01a12898-bd7b-7390-9afe-ac54317e60ad.jsonl",
+            "cwd": "D:\\hapi\\temp\\memory-restore-20261011\\0618fdd8-558c-41a7-a37c-ce6e01d18841"
+          }
+        },
+        {
+          "stage": "read-loaded-history",
+          "utc": 1791682463.0759711,
+          "server": {
+            "pid": 1874948,
+            "ws": 88670208,
+            "privateBytes": 22704128
+          },
+          "fixtureProcesses": [
+            {
+              "pid": 1867668,
+              "ws": 56295424,
+              "privateBytes": 20893696
+            },
+            {
+              "pid": 1769724,
+              "ws": 56381440,
+              "privateBytes": 20697088
+            }
+          ],
+          "events": [
+            {
+              "pid": 1769724,
+              "method": "process-start",
+              "utc": "2026-10-11T01:34:21.559Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "initialize",
+              "utc": "2026-10-11T01:34:21.562Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:34:21.563Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:34:21.564Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "process-start",
+              "utc": "2026-10-11T01:34:21.622Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "initialize",
+              "utc": "2026-10-11T01:34:21.625Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:34:21.626Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:34:21.627Z"
+            }
+          ],
+          "requestMs": 0.0
+        },
+        {
+          "stage": "unsubscribed",
+          "utc": 1791682464.0770247,
+          "server": {
+            "pid": 1874948,
+            "ws": 88702976,
+            "privateBytes": 22704128
+          },
+          "fixtureProcesses": [
+            {
+              "pid": 1867668,
+              "ws": 56295424,
+              "privateBytes": 20893696
+            },
+            {
+              "pid": 1769724,
+              "ws": 56381440,
+              "privateBytes": 20697088
+            }
+          ],
+          "events": [
+            {
+              "pid": 1769724,
+              "method": "process-start",
+              "utc": "2026-10-11T01:34:21.559Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "initialize",
+              "utc": "2026-10-11T01:34:21.562Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:34:21.563Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:34:21.564Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "process-start",
+              "utc": "2026-10-11T01:34:21.622Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "initialize",
+              "utc": "2026-10-11T01:34:21.625Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:34:21.626Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:34:21.627Z"
+            }
+          ],
+          "response": {
+            "status": "unsubscribed"
+          }
+        },
+        {
+          "stage": "read-unloaded-history",
+          "utc": 1791682465.0785193,
+          "server": {
+            "pid": 1874948,
+            "ws": 88702976,
+            "privateBytes": 22704128
+          },
+          "fixtureProcesses": [
+            {
+              "pid": 1867668,
+              "ws": 56295424,
+              "privateBytes": 20893696
+            },
+            {
+              "pid": 1769724,
+              "ws": 56381440,
+              "privateBytes": 20697088
+            }
+          ],
+          "events": [
+            {
+              "pid": 1769724,
+              "method": "process-start",
+              "utc": "2026-10-11T01:34:21.559Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "initialize",
+              "utc": "2026-10-11T01:34:21.562Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:34:21.563Z"
+            },
+            {
+              "pid": 1769724,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:34:21.564Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "process-start",
+              "utc": "2026-10-11T01:34:21.622Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "initialize",
+              "utc": "2026-10-11T01:34:21.625Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:34:21.626Z"
+            },
+            {
+              "pid": 1867668,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:34:21.627Z"
+            }
+          ],
+          "requestMs": 0.0
+        },
+        {
+          "error": "{\"code\": -32600, \"message\": \"no rollout found for thread id 01a12898-bd7b-7390-9afe-ac54317e60ad\"}"
+        }
+      ],
+      "notifications": [
+        "remoteControl/status/changed",
+        "thread/started",
+        "mcpServer/startupStatus/updated",
+        "mcpServer/startupStatus/updated",
+        "mcpServer/startupStatus/updated",
+        "mcpServer/startupStatus/updated"
+      ],
+      "cleanup": {
+        "serverExited": true,
+        "remainingFixtureProcesses": []
+      },
+      "modelRequests": 0
+    },
+    "full_turn_api_not_supported": {
+      "trial": "D:\\hapi\\temp\\memory-restore-20261011\\b2933256-2cfb-4968-a24c-8698a6dde242",
+      "results": [
+        {
+          "stage": "initialized-no-thread",
+          "utc": 1791682400.3672261,
+          "server": {
+            "pid": 1800468,
+            "ws": 76599296,
+            "privateBytes": 19210240
+          },
+          "fixtureProcesses": [],
+          "events": []
+        },
+        {
+          "stage": "started-no-turn",
+          "utc": 1791682401.397968,
+          "server": {
+            "pid": 1800468,
+            "ws": 85356544,
+            "privateBytes": 22474752
+          },
+          "fixtureProcesses": [
+            {
+              "pid": 1870776,
+              "ws": 56143872,
+              "privateBytes": 20860928
+            },
+            {
+              "pid": 1766640,
+              "ws": 56061952,
+              "privateBytes": 20660224
+            }
+          ],
+          "events": [
+            {
+              "pid": 1870776,
+              "method": "process-start",
+              "utc": "2026-10-11T01:33:20.812Z"
+            },
+            {
+              "pid": 1870776,
+              "method": "initialize",
+              "utc": "2026-10-11T01:33:20.818Z"
+            },
+            {
+              "pid": 1870776,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:33:20.819Z"
+            },
+            {
+              "pid": 1870776,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:33:20.820Z"
+            },
+            {
+              "pid": 1766640,
+              "method": "process-start",
+              "utc": "2026-10-11T01:33:20.914Z"
+            },
+            {
+              "pid": 1766640,
+              "method": "initialize",
+              "utc": "2026-10-11T01:33:20.919Z"
+            },
+            {
+              "pid": 1766640,
+              "method": "notifications/initialized",
+              "utc": "2026-10-11T01:33:20.920Z"
+            },
+            {
+              "pid": 1766640,
+              "method": "tools/list",
+              "utc": "2026-10-11T01:33:20.920Z"
+            }
+          ],
+          "requestMs": 16.0,
+          "threadSummary": {
+            "id": "01a12897-d075-7cb1-96eb-ed3cfe48dba0",
+            "path": "D:\\hapi\\temp\\memory-restore-20261011\\b2933256-2cfb-4968-a24c-8698a6dde242\\sessions\\2026\\10\\11\\rollout-2026-10-11T09-33-20-01a12897-d075-7cb1-96eb-ed3cfe48dba0.jsonl",
+            "cwd": "D:\\hapi\\temp\\memory-restore-20261011\\b2933256-2cfb-4968-a24c-8698a6dde242"
+          }
+        },
+        {
+          "error": "{\"code\": -32601, \"message\": \"list_turns is not supported yet\"}"
+        }
+      ],
+      "notifications": [
+        "remoteControl/status/changed",
+        "thread/started",
+        "mcpServer/startupStatus/updated",
+        "mcpServer/startupStatus/updated",
+        "mcpServer/startupStatus/updated",
+        "mcpServer/startupStatus/updated"
+      ],
+      "cleanup": {
+        "serverExited": true,
+        "remainingFixtureProcesses": [
+          {
+            "pid": 1870776,
+            "ws": 122880,
+            "privateBytes": 167936
+          },
+          {
+            "pid": 1766640,
+            "ws": 110592,
+            "privateBytes": 155648
+          }
+        ]
+      },
+      "modelRequests": 0
+    }
+  },
+  "cleanup": {
+    "activeTestProcessIds": [],
+    "removedTrials": 5,
+    "removedTemporaryFiles": 9
+  }
+}

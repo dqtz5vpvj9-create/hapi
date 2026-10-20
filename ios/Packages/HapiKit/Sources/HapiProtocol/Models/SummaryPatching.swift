@@ -124,6 +124,7 @@ public enum SummaryPatching {
             case .kimi: flavorSessionId = metadata.kimiSessionId
             case .copilot: flavorSessionId = metadata.copilotSessionId
             case .pi: flavorSessionId = metadata.piSessionId
+            case .qoder: flavorSessionId = metadata.qoderSessionId
             case .other: flavorSessionId = nil
             }
             let trimmed = flavorSessionId?.trimmingCharacters(in: .whitespacesAndNewlines)

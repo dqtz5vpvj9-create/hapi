@@ -1,0 +1,57 @@
+--- a/codex-rs/windows-sandbox-rs/src/desktop.rs
++++ b/codex-rs/windows-sandbox-rs/src/desktop.rs
+@@ -62,7 +62,28 @@
+ use windows_sys::Win32::System::StationsAndDesktops::DESKTOP_WRITE_OWNER;
+ use windows_sys::Win32::System::StationsAndDesktops::DESKTOP_WRITEOBJECTS;
+ use windows_sys::Win32::System::StationsAndDesktops::HDESK;
++use windows_sys::Win32::System::StationsAndDesktops::{GetProcessWindowStation, GetUserObjectInformationW, UOI_NAME};
+ use windows_sys::Win32::System::StationsAndDesktops::OpenDesktopW;
++
++// A service logon has its own window station; WinSta0 may be inaccessible.
++fn desktop_startup_name(desktop: &str) -> Result<Vec<u16>> {
++    let station = unsafe { GetProcessWindowStation() };
++    if station.is_null() {
++        anyhow::bail!("GetProcessWindowStation failed: {}", unsafe { GetLastError() });
++    }
++    let mut needed = 0;
++    unsafe { GetUserObjectInformationW(station, UOI_NAME, ptr::null_mut(), 0, &mut needed) };
++    if needed == 0 {
++        anyhow::bail!("read window station name size: {}", unsafe { GetLastError() });
++    }
++    let mut name = vec![0u16; (needed as usize).div_ceil(2)];
++    if unsafe { GetUserObjectInformationW(station, UOI_NAME, name.as_mut_ptr().cast(), needed, &mut needed) } == 0 {
++        anyhow::bail!("read window station name: {}", unsafe { GetLastError() });
++    }
++    let end = name.iter().position(|&c| c == 0).unwrap_or(name.len());
++    let station = String::from_utf16(&name[..end])?;
++    Ok(to_wide(format!("{station}\\{desktop}")))
++}
+ 
+ const PRIVATE_DESKTOP_PREFIX: &str = "CodexSandboxDesktop-";
+ 
+@@ -215,7 +236,7 @@
+ 
+     pub fn prepare(logs_base_dir: Option<&Path>) -> Result<Self> {
+         let private_desktop = PrivateDesktop::create(logs_base_dir)?;
+-        let startup_name = to_wide(format!("Winsta0\\{}", private_desktop.name));
++        let startup_name = desktop_startup_name(&private_desktop.name)?;
+         Ok(Self {
+             _private_desktop: private_desktop,
+             startup_name,
+@@ -234,6 +255,7 @@
+         {
+             anyhow::bail!("invalid private desktop name");
+         }
++        let startup_name = desktop_startup_name(name)?;
+         let name_wide = to_wide(name);
+         let handle = unsafe {
+             OpenDesktopW(
+@@ -251,7 +273,7 @@
+                 handle,
+                 name: name.to_owned(),
+             },
+-            startup_name: to_wide(format!("Winsta0\\{name}")),
++            startup_name,
+         })
+     }
+ 

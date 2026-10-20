@@ -98,6 +98,8 @@ struct CatalogTests {
         #expect(permissionModes(forFlavor: "cursor") == [.default, .plan, .ask, .debug, .autoReview, .yolo])
         // Pi has no runtime permission switching (always auto-approve).
         #expect(permissionModes(forFlavor: "pi") == [])
+        // Qoder CN keeps HAPI's cross-agent ids and translates them at launch.
+        #expect(permissionModes(forFlavor: "qoder") == [.default, .acceptEdits, .plan, .bypassPermissions])
     }
 
     @Test func modeAllowanceFollowsTheFlavorSets() {
@@ -155,12 +157,12 @@ struct CatalogTests {
     @Test func knownFlavorsMatchAgentFlavorsOrder() {
         #expect(AgentFlavor.knownFlavors.map(\.rawValue) == [
             "agy", "claude", "codex", "dsh", "copilot", "cursor",
-            "gemini", "grok", "kimi", "opencode", "pi",
+            "gemini", "grok", "kimi", "opencode", "pi", "qoder",
         ])
     }
 
     @Test func creatableFlavorsExcludeOnlyGemini() {
-        #expect(AgentFlavor.creatableFlavors.count == 10)
+        #expect(AgentFlavor.creatableFlavors.count == 11)
         #expect(!AgentFlavor.creatableFlavors.contains(.gemini))
         #expect(AgentFlavor.creatableFlavors.contains(.claude))
     }
@@ -183,6 +185,7 @@ struct CatalogTests {
         #expect(AgentFlavor.dsh.displayLabel == "DeepSeek Harness")
         #expect(AgentFlavor.other("x").displayLabel == "Unknown")
         #expect(flavorLabel(forFlavor: "pi") == "Pi")
+        #expect(flavorLabel(forFlavor: "qoder") == "Qoder CN")
         #expect(flavorLabel(forFlavor: nil) == "Unknown")
     }
 
@@ -190,6 +193,7 @@ struct CatalogTests {
         #expect(AgentFlavor.claude.supportsEffort)
         #expect(AgentFlavor.grok.supportsEffort)
         #expect(AgentFlavor.pi.supportsEffort)
+        #expect(AgentFlavor.qoder.supportsEffort)
         #expect(!AgentFlavor.codex.supportsEffort)
         #expect(!AgentFlavor.cursor.supportsEffort)
         #expect(supportsEffort(forFlavor: "claude"))

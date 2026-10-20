@@ -127,6 +127,7 @@ public struct SessionMetadata: Codable, Equatable, Sendable {
     public var kimiSessionId: String?
     public var copilotSessionId: String?
     public var piSessionId: String?
+    public var qoderSessionId: String?
 
     public init(
         path: String,
@@ -155,7 +156,8 @@ public struct SessionMetadata: Codable, Equatable, Sendable {
         cursorSessionId: String? = nil,
         kimiSessionId: String? = nil,
         copilotSessionId: String? = nil,
-        piSessionId: String? = nil
+        piSessionId: String? = nil,
+        qoderSessionId: String? = nil
     ) {
         self.path = path
         self.host = host
@@ -184,5 +186,6 @@ public struct SessionMetadata: Codable, Equatable, Sendable {
         self.kimiSessionId = kimiSessionId
         self.copilotSessionId = copilotSessionId
         self.piSessionId = piSessionId
+        self.qoderSessionId = qoderSessionId
     }
 }

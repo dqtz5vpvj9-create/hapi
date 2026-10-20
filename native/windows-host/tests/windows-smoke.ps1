@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory)][string]$HostExecutable,
     [Parameter(Mandatory)][string]$FixtureExecutable,
-    [string]$TemporaryRoot = 'D:\hapi\temp'
+    [string]$TemporaryRoot = 'D:\hapi\temp',
+    [string]$SandboxBootstrapGroupSid
 )
 $ErrorActionPreference = 'Stop'
 $PSStyle.OutputRendering = 'PlainText'
@@ -43,6 +44,7 @@ try {
     }
     # Fake installed Codex directory: never resolve or start the user's engine.
     Copy-Item -LiteralPath $FixtureExecutable -Destination (Join-Path $trial 'codex\fixture-version\codex.exe')
+    Copy-Item -LiteralPath $FixtureExecutable -Destination (Join-Path $trial 'codex\fixture-version\codex-code-mode-host.exe')
     $fakeCodex = Join-Path $trial 'codex\fixture-version\codex.exe'
     $roleExe = Join-Path $trial 'hapi-host-fixture.exe'
     Copy-Item -LiteralPath $FixtureExecutable -Destination $roleExe
@@ -53,6 +55,7 @@ try {
         $roles[$role] = @{ executable=if($role -eq 'engine'){'@codex'}else{$roleExe}; arguments=$roleArguments; directory=$trial }
     }
     $config = @{ root=$trial; codexInstallRoot=(Join-Path $trial 'codex'); socketPath=$socket; pipeName="hapi-rust-$runId"; connectionFile=(Join-Path $trial 'unused.json'); pathPrefix=@(); roles=$roles }
+    if ($SandboxBootstrapGroupSid) { $config.sandboxBootstrapGroupSid = $SandboxBootstrapGroupSid }
     $configFile = Join-Path $trial 'host.json'
     $config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $configFile -Encoding utf8NoBOM
     @{ threadIds=@('restore-root','already-loaded','child-root','archived-root','deleted-root') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $trial 'state\native-loaded-roots.json') -Encoding utf8NoBOM

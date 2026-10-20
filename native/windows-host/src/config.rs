@@ -36,6 +36,8 @@ pub struct Config {
     pub pipe_name: String,
     pub connection_file: PathBuf,
     pub path_prefix: Vec<PathBuf>,
+    #[serde(default)]
+    pub sandbox_bootstrap_group_sid: Option<String>,
     pub roles: Roles,
 }
 
@@ -66,9 +68,13 @@ pub fn resolve_codex(root: &Path) -> Result<PathBuf> {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
             let executable = entry.path().join("codex.exe");
-            if executable.is_file() {
+            // Desktop updates can leave the running executable behind after
+            // removing its companions. Cleanup also bumps the directory mtime.
+            if executable.is_file()
+                && entry.path().join("codex-code-mode-host.exe").is_file()
+            {
                 candidates.push((
-                    entry
+                    executable
                         .metadata()?
                         .modified()
                         .unwrap_or(SystemTime::UNIX_EPOCH),
@@ -82,7 +88,7 @@ pub fn resolve_codex(root: &Path) -> Result<PathBuf> {
         .into_iter()
         .next()
         .map(|(_, path)| path)
-        .context("no installed desktop Codex executable")
+        .context("no complete desktop Codex installation with code-mode host")
 }
 
 #[derive(Deserialize)]
@@ -122,6 +128,34 @@ pub fn quote_windows_argument(argument: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codex_resolution_ignores_cleanup_time_and_incomplete_installs() {
+        let root = std::env::temp_dir().join(format!(
+            "hapi-codex-resolution-{}-{}", std::process::id(),
+            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let make = |name: &str, seconds: u64, complete: bool| {
+            let dir = root.join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = dir.join("codex.exe");
+            let file = std::fs::File::create(&exe).unwrap();
+            file.set_modified(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(seconds)).unwrap();
+            if complete {
+                std::fs::write(dir.join("codex-code-mode-host.exe"), b"host").unwrap();
+            }
+            exe
+        };
+        let newest = make("new", 200, true);
+        make("old", 100, true); // Directory was touched later, executable is older.
+        make("incomplete", 300, false);
+        assert_eq!(resolve_codex(&root).unwrap(), newest);
+        std::fs::remove_file(root.join("new/codex-code-mode-host.exe")).unwrap();
+        assert_eq!(resolve_codex(&root).unwrap(), root.join("old/codex.exe"));
+        std::fs::remove_file(root.join("old/codex-code-mode-host.exe")).unwrap();
+        assert!(resolve_codex(&root).is_err());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn windows_arguments_keep_spaces_quotes_empty_values_and_paths() {
