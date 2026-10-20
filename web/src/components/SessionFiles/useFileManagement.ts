@@ -143,8 +143,10 @@ export function useFileManagement(options: FileManagementOptions) {
             for (const source of armed.sources) {
                 const target = destination === undefined ? undefined
                     : armed.sources.length > 1 ? fileManagerJoin(destination, source.name) : destination
-                if (target !== undefined && (fileManagerContains(source.path, target, scope.caseInsensitive)
-                    || (action === 'rename' && armed.sources.length !== 1))) {
+                if (target !== undefined && fileManagerContains(source.path, target, scope.caseInsensitive)) {
+                    setError(t('files.manage.destinationInsideSource')); return
+                }
+                if (target !== undefined && action === 'rename' && armed.sources.length !== 1) {
                     setError(t('files.manage.sameDestination')); return
                 }
                 const mutation: FileManagerMutation = {

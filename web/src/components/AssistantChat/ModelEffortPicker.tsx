@@ -40,7 +40,7 @@ export function ModelEffortPicker(props: ModelEffortPickerProps) {
     const caption = [modelLabel, effortLabel].filter(Boolean).join(' · ')
     return <Popover.Root modal open={open} onOpenChange={next => { setOpen(next); if (next) setPage('effort') }}>
         <Popover.Trigger asChild>
-            <button type="button" className="model-effort-capsule" aria-label={caption} title={caption}>
+            <button type="button" className="model-effort-capsule" aria-label={caption} title={caption} disabled={props.disabled}>
                 {props.fast ? <span aria-label="Fast" className="model-effort-lightning">ϟ</span> : null}
                 <span className="model-effort-caption">{caption}</span><span aria-hidden="true">⌄</span>
             </button>
