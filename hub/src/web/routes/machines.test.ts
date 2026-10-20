@@ -68,6 +68,57 @@ describe('machines routes', () => {
         })
     })
 
+    it('binds the stop to the URL machine and requested thread before migrating', async () => {
+        const machine = createMachine({ namespace: 'owner' })
+        const stops: unknown[][] = []
+        let migrated = false
+        const engine = {
+            getMachine: () => machine,
+            getMachineByNamespace: () => machine,
+            stopSessionForMigration: async (...args: unknown[]) => { stops.push(args); return { success: true } },
+            beginCodexMigration: async () => ({ success: true, id: 'barrier' }),
+            migrateCodexThread: async () => { migrated = true; return { success: true } },
+            rebindCodexHome: async () => ({ success: true }),
+            endCodexMigration: async () => {},
+        } as unknown as Partial<SyncEngine>
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => { c.set('namespace', 'owner'); await next() })
+        app.route('/api', createMachinesRoutes(() => engine as SyncEngine))
+
+        const response = await app.request('/api/machines/machine-1/codex-thread-migrate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sourceHome: '/source', targetHome: '/target', threadId: 'thread-1', sessionId: 'session-1' }),
+        })
+        expect(response.status).toBe(200)
+        expect(migrated).toBe(true)
+        expect(stops).toEqual([['session-1', 'owner', {
+            machineId: 'machine-1', threadId: 'thread-1', sourceHome: '/source',
+        }]])
+    })
+
+    it('does not migrate when the source session fails the identity checks', async () => {
+        const machine = createMachine({ namespace: 'owner' })
+        let migrated = false
+        const engine = {
+            getMachine: () => machine,
+            getMachineByNamespace: () => machine,
+            stopSessionForMigration: async () => ({ success: false, error: 'Session belongs to another machine' }),
+            migrateCodexThread: async () => { migrated = true; return { success: true } },
+        } as unknown as Partial<SyncEngine>
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => { c.set('namespace', 'owner'); await next() })
+        app.route('/api', createMachinesRoutes(() => engine as SyncEngine))
+
+        const response = await app.request('/api/machines/machine-1/codex-thread-migrate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sourceHome: '/source', targetHome: '/target', threadId: 'thread-1', sessionId: 'session-1' }),
+        })
+        expect(response.status).toBe(409)
+        expect(migrated).toBe(false)
+    })
+
     it('returns Agent availability and complete path boundary results', async () => {
         const machine = createMachine()
         const engine = {

@@ -52,7 +52,7 @@ type TransferState = {
     threadId: string
     sourceHome: string
     targetHome: string
-    status: 'preparing' | 'source-frozen' | 'files-staged' | 'history-imported' | 'published' | 'validated' | 'failed'
+    status: 'preparing' | 'source-frozen' | 'files-staged' | 'history-imported' | 'published' | 'validated' | 'failed' | 'superseded'
     targetRollout: string
     files: string[]
     targetFiles?: string[]
@@ -387,10 +387,11 @@ async function publishThread(plan: NativeThreadPlan, targetRollout: string, targ
         target.exec('BEGIN IMMEDIATE')
         try {
             const row: Record<string, unknown> = { ...plan.threadRow, rollout_path: targetRollout }
-            if (columns(target, 'project_id').includes('project_id')) row.project_id = null
-            if (columns(target, 'thread_section_id').includes('thread_section_id')) row.thread_section_id = null
-            if (targetProvider && columns(target, 'model_provider').includes('model_provider')) row.model_provider = targetProvider
-            if (optionsTargetModel && columns(target, 'model').includes('model')) row.model = optionsTargetModel
+            const threadColumns = columns(target, 'threads')
+            if (threadColumns.includes('project_id')) row.project_id = null
+            if (threadColumns.includes('thread_section_id')) row.thread_section_id = null
+            if (targetProvider && threadColumns.includes('model_provider')) row.model_provider = targetProvider
+            if (optionsTargetModel && threadColumns.includes('model')) row.model = optionsTargetModel
             insertRow(target, 'threads', row)
             if (columns(source, 'thread_dynamic_tools').length) {
                 const tools = source.query('SELECT * FROM thread_dynamic_tools WHERE thread_id = ?').all(plan.threadId) as Array<Record<string, unknown>>
@@ -401,10 +402,13 @@ async function publishThread(plan: NativeThreadPlan, targetRollout: string, targ
     } finally { source.close(); target.close() }
 }
 
-async function cleanupTarget(plan: NativeThreadPlan, publishedFiles: string[] = []): Promise<void> {
+async function cleanupTarget(plan: NativeThreadPlan, publishedFiles: string[] = [], targetRollout = ''): Promise<void> {
     const history = openDatabase(plan.targetHistoryDb)
     const target = openDatabase(plan.targetDb)
     try {
+        const existing = target.query('SELECT rollout_path FROM threads WHERE id = ?').get(plan.threadId) as { rollout_path?: string } | undefined
+        // Never delete a row that a different transfer already published.
+        if (existing && (!targetRollout || existing.rollout_path !== targetRollout)) return
         history.exec('PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE')
         try {
             for (const table of ['thread_turns', 'thread_items', 'thread_realtime_items', 'thread_history_projection_state']) {
@@ -417,7 +421,8 @@ async function cleanupTarget(plan: NativeThreadPlan, publishedFiles: string[] = 
         target.exec('PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE')
         try {
             if (columns(target, 'thread_dynamic_tools').length) target.query('DELETE FROM thread_dynamic_tools WHERE thread_id = ?').run(plan.threadId)
-            target.query('DELETE FROM threads WHERE id = ?').run(plan.threadId)
+            if (targetRollout) target.query('DELETE FROM threads WHERE id = ? AND rollout_path = ?').run(plan.threadId, targetRollout)
+            else target.query('DELETE FROM threads WHERE id = ?').run(plan.threadId)
             target.exec('COMMIT')
         } catch (error) { target.exec('ROLLBACK'); throw error }
     } finally { history.close(); target.close() }
@@ -449,40 +454,84 @@ async function bindProvider(plan: NativeThreadPlan, targetProvider?: string, tar
     try {
         const assignments: string[] = []
         const values: unknown[] = []
-        if (targetProvider && columns(target, 'model_provider').includes('model_provider')) { assignments.push('model_provider = ?'); values.push(targetProvider) }
-        if (targetModel && columns(target, 'model').includes('model')) { assignments.push('model = ?'); values.push(targetModel) }
+        const threadColumns = columns(target, 'threads')
+        if (targetProvider && threadColumns.includes('model_provider')) { assignments.push('model_provider = ?'); values.push(targetProvider) }
+        if (targetModel && threadColumns.includes('model')) { assignments.push('model = ?'); values.push(targetModel) }
         if (!assignments.length) return
         values.push(plan.threadId)
         target.query(`UPDATE threads SET ${assignments.join(', ')} WHERE id = ?`).run(...values)
     } finally { target.close() }
 }
 
-async function verify(plan: NativeThreadPlan): Promise<void> {
+async function verify(plan: NativeThreadPlan, expectedProvider?: string, expectedModel?: string): Promise<void> {
     const target = openDatabase(plan.targetDb, true)
     const history = openDatabase(plan.targetHistoryDb, true)
     try {
-        const row = target.query('SELECT id, rollout_path FROM threads WHERE id = ?').get(plan.threadId) as { id?: string; rollout_path?: string } | undefined
+        const row = target.query('SELECT id, rollout_path, model_provider, model FROM threads WHERE id = ?').get(plan.threadId) as {
+            id?: string; rollout_path?: string; model_provider?: string; model?: string
+        } | undefined
         if (!row?.id || !row.rollout_path || !existsSync(row.rollout_path)) throw new Error('Published thread row or rollout is missing')
+        if (expectedProvider && row.model_provider !== expectedProvider) throw new Error(`Published thread provider is ${String(row.model_provider)} instead of ${expectedProvider}`)
+        if (expectedModel && row.model !== expectedModel) throw new Error(`Published thread model is ${String(row.model)} instead of ${expectedModel}`)
         if (tableCount(history, 'thread_items', plan.historyKeys) !== plan.rowCounts.thread_items) throw new Error('Published thread item count does not match source')
         if (tableCount(history, 'thread_turns', plan.historyKeys) !== plan.rowCounts.thread_turns) throw new Error('Published thread turn count does not match source')
     } finally { target.close(); history.close() }
 }
 
-export async function recoverInterruptedTransfers(journalRoot: string): Promise<number> {
-    let recovered = 0
+type TransferJournal = { path: string; state: TransferState }
+
+async function readTransferJournals(journalRoot: string): Promise<TransferJournal[]> {
     let names: string[]
-    try { names = require('node:fs').readdirSync(journalRoot) as string[] } catch { return 0 }
+    try { names = require('node:fs').readdirSync(journalRoot) as string[] } catch { return [] }
+    const entries: TransferJournal[] = []
     for (const name of names) {
         if (!name.endsWith('.json')) continue
         const path = join(journalRoot, name)
-        let state: TransferState
-        try { state = JSON.parse(await readFile(path, 'utf8')) as TransferState } catch { continue }
+        try { entries.push({ path, state: JSON.parse(await readFile(path, 'utf8')) as TransferState }) } catch { /* skip corrupt or non-journal JSON */ }
+    }
+    return entries
+}
+
+async function supersedePriorTransfers(journalRoot: string, threadId: string, transferId: string): Promise<void> {
+    for (const { path, state } of await readTransferJournals(journalRoot)) {
+        if (state.transferId === transferId || state.threadId !== threadId) continue
+        if (state.published === true || state.status === 'published' || state.status === 'validated' || state.status === 'superseded') continue
+        state.status = 'superseded'
+        state.error = `Superseded by transfer ${transferId}`
+        state.updatedAt = Date.now()
+        await writeJournal(path, state)
+    }
+}
+
+export async function recoverInterruptedTransfers(journalRoot: string): Promise<number> {
+    let recovered = 0
+    const entries = await readTransferJournals(journalRoot)
+    for (const { path, state } of entries) {
         if (!state.targetDb || !state.targetHistoryDb || !state.historyKeys) continue
-        if (state.published === true || state.status === 'published' || state.status === 'validated') continue
+        if (state.published === true || state.status === 'published' || state.status === 'validated' || state.status === 'superseded') continue
         if (Date.now() - state.updatedAt < 5 * 60_000) continue
+        const newerCompletion = entries.some(entry => entry.state.threadId === state.threadId
+            && entry.state.transferId !== state.transferId
+            && entry.state.createdAt > state.createdAt
+            && (entry.state.published === true || entry.state.status === 'published' || entry.state.status === 'validated'))
+        if (newerCompletion) {
+            state.status = 'superseded'
+            state.error = 'A later transfer completed this thread'
+            state.updatedAt = Date.now()
+            await writeJournal(path, state)
+            continue
+        }
         const history = openDatabase(state.targetHistoryDb)
         const target = openDatabase(state.targetDb)
         try {
+            const existing = target.query('SELECT rollout_path FROM threads WHERE id = ?').get(state.threadId) as { rollout_path?: string } | undefined
+            if (existing && (!state.targetRollout || existing.rollout_path !== state.targetRollout)) {
+                state.status = 'superseded'
+                state.error = 'Target thread is owned by another transfer'
+                state.updatedAt = Date.now()
+                await writeJournal(path, state)
+                continue
+            }
             history.exec('PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE')
             try {
                 const placeholders = state.historyKeys.map(() => '?').join(', ')
@@ -494,7 +543,8 @@ export async function recoverInterruptedTransfers(journalRoot: string): Promise<
             target.exec('PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE')
             try {
                 if (columns(target, 'thread_dynamic_tools').length) target.query('DELETE FROM thread_dynamic_tools WHERE thread_id = ?').run(state.threadId)
-                target.query('DELETE FROM threads WHERE id = ? AND rollout_path = ?').run(state.threadId, state.targetRollout)
+                if (state.targetRollout) target.query('DELETE FROM threads WHERE id = ? AND rollout_path = ?').run(state.threadId, state.targetRollout)
+                else target.query('DELETE FROM threads WHERE id = ?').run(state.threadId)
                 target.exec('COMMIT')
             } catch (error) { target.exec('ROLLBACK'); throw error }
         } finally { history.close(); target.close() }
@@ -537,6 +587,7 @@ async function runMigration(plan: NativeThreadPlan, options: NativeThreadMigrati
         version: 1, transferId, threadId: plan.threadId, sourceHome: plan.sourceHome, targetHome: plan.targetHome,
         status: 'preparing', targetRollout: '', files: [], targetFiles: [], historyKeys: [], targetDb: plan.targetDb, targetHistoryDb: plan.targetHistoryDb, createdAt: Date.now(), updatedAt: Date.now(),
     }
+    await supersedePriorTransfers(journalRoot, plan.threadId, transferId)
     const staging = join(plan.targetHome, '.hapi-thread-transfer', transferId)
     let targetRollout = ''
     let publishedFiles: string[] = []
@@ -559,7 +610,7 @@ async function runMigration(plan: NativeThreadPlan, options: NativeThreadMigrati
         await bindProvider(plan, options.targetProvider, options.targetModel)
         published = true
         await update('published', { published: true })
-        await verify(plan)
+        await verify(plan, options.targetProvider, options.targetModel)
         if (options.validate !== false) await validateTarget(plan)
         await bindProvider(plan, options.targetProvider, options.targetModel)
         await update('validated')
@@ -570,7 +621,7 @@ async function runMigration(plan: NativeThreadPlan, options: NativeThreadMigrati
             // delete it automatically; leave the journal for explicit repair.
             await update('failed', { error: error instanceof Error ? error.message : String(error) })
         } else {
-            await cleanupTarget(plan, publishedFiles).catch(cleanupError => {
+            await cleanupTarget(plan, publishedFiles, targetRollout).catch(cleanupError => {
                 error = new Error(`${error instanceof Error ? error.message : String(error)}; cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`)
             })
             await update('failed', { error: error instanceof Error ? error.message : String(error) })

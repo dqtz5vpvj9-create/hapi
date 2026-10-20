@@ -140,6 +140,37 @@ describe('native thread migration', () => {
         check.close()
     })
 
+    it('does not let an old failed journal erase a later successful transfer', async () => {
+        const f = await fixture()
+        const journalRoot = join(f.target, 'journal')
+        await migrateNativeThread({ sourceHome: f.source, targetHome: f.target, threadId: f.threadId, journalRoot, validate: false, useWriterLocks: false, requireWal: false })
+        await writeFile(join(journalRoot, 'old-failed.json'), JSON.stringify({
+            version: 1, transferId: 'old-failed', threadId: f.threadId, sourceHome: f.source, targetHome: f.target,
+            status: 'failed', targetRollout: join(f.target, 'sessions/2026/01/01/rollout-thread-a.jsonl'), files: [],
+            targetFiles: [], historyKeys: [f.threadId], targetDb: f.targetDb, targetHistoryDb: f.targetHistory,
+            createdAt: 1, updatedAt: 0,
+        }))
+        expect(await recoverInterruptedTransfers(journalRoot)).toBe(0)
+        const target = openDb(f.targetDb)
+        expect(target.query('SELECT COUNT(*) AS n FROM threads WHERE id = ?').get(f.threadId)).toEqual({ n: 1 })
+        target.close()
+        const history = openDb(f.targetHistory)
+        expect(history.query('SELECT COUNT(*) AS n FROM thread_items WHERE thread_id = ?').get(f.threadId)).toEqual({ n: 1 })
+        history.close()
+        expect(existsSync(join(f.target, 'sessions/2026/01/01/rollout-thread-a.jsonl'))).toBe(true)
+    })
+
+    it('applies provider and model updates to the published thread row', async () => {
+        const f = await fixture()
+        await migrateNativeThread({ sourceHome: f.source, targetHome: f.target, threadId: f.threadId,
+            targetProvider: 'other', targetModel: 'gpt-6-astra', allowCrossProvider: true,
+            journalRoot: join(f.target, 'journal'), validate: false, useWriterLocks: false, requireWal: false })
+        const target = openDb(f.targetDb)
+        expect(target.query('SELECT model_provider, model FROM threads WHERE id = ?').get(f.threadId))
+            .toEqual({ model_provider: 'other', model: 'gpt-6-astra' })
+        target.close()
+    })
+
     it('refuses an existing target thread id', async () => {
         const f = await fixture()
         const db = openDb(f.targetDb)

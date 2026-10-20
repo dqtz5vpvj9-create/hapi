@@ -195,7 +195,9 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         let barrier = false
         if (parsed.data.sessionId) {
             if (parsed.data.stopSource !== false) {
-                const stopped = await engine.stopSessionForMigration(parsed.data.sessionId, namespace)
+                const stopped = await engine.stopSessionForMigration(parsed.data.sessionId, namespace, {
+                    machineId: c.req.param('id'), threadId: parsed.data.threadId, sourceHome,
+                })
                 if (!stopped.success) return c.json({ success: false, error: stopped.error ?? 'Could not stop source session' }, 409)
             }
             const begun = await engine.beginCodexMigration(parsed.data.sessionId, namespace, sourceHome, targetHome)

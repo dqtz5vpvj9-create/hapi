@@ -1369,7 +1369,6 @@ export class SyncEngine {
         )
         for (let attempt = 0; attempt < 3; attempt += 1) {
             const session = this.sessionCache.getSessionByNamespace(sessionId, namespace)
-                ?? this.sessionCache.refreshSession(sessionId)
             if (!session?.metadata) return
 
             const nextMetadata: Record<string, unknown> = { ...session.metadata }
@@ -1456,7 +1455,6 @@ export class SyncEngine {
     private markConversationHistoryDiverged(sessionId: string, namespace: string): void {
         for (let attempt = 0; attempt < 3; attempt += 1) {
             const session = this.sessionCache.getSessionByNamespace(sessionId, namespace)
-                ?? this.sessionCache.refreshSession(sessionId)
             if (!session?.metadata) return
             if (session.metadata.conversationHistoryDiverged === true) return
 
@@ -4655,17 +4653,28 @@ export class SyncEngine {
         return await this.rpcGateway.migrateCodexThread(machineId, request)
     }
 
-    async stopSessionForMigration(sessionId: string, namespace: string): Promise<{ success: boolean; error?: string }> {
-        let session = this.sessionCache.getSessionByNamespace(sessionId, namespace) ?? this.sessionCache.refreshSession(sessionId)
-        if (!session) return { success: false, error: 'Session not found' }
+    async stopSessionForMigration(
+        sessionId: string,
+        namespace: string,
+        expected: { machineId: string; threadId: string; sourceHome: string },
+    ): Promise<{ success: boolean; error?: string }> {
+        let session = this.sessionCache.getSessionByNamespace(sessionId, namespace)
+        if (!session) return { success: false, error: 'Session not found in this namespace' }
+        const metadata = session.metadata
+        if (!metadata) return { success: false, error: 'Session has no metadata' }
+        if (metadata.machineId !== expected.machineId) return { success: false, error: 'Session belongs to another machine' }
+        if (metadata.flavor !== 'codex') return { success: false, error: 'Only Codex sessions can migrate a native thread' }
+        const boundThread = metadata.codexSessionId
+        if (boundThread !== expected.threadId) return { success: false, error: 'Session is not bound to the requested Codex thread' }
+        if (metadata.codexHome && resolve(metadata.codexHome) !== resolve(expected.sourceHome)) {
+            return { success: false, error: 'Session is not bound to the migration source home' }
+        }
         if (!session.active) return { success: true }
-        const machineId = session.metadata?.machineId
-        if (!machineId) return { success: false, error: 'Session has no machine binding' }
-        try { await this.rpcGateway.stopRunnerSession(machineId, sessionId) }
+        try { await this.rpcGateway.stopRunnerSession(expected.machineId, sessionId) }
         catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Failed to stop session' } }
         for (let attempt = 0; attempt < 50; attempt += 1) {
             await new Promise(resolve => setTimeout(resolve, 100))
-            session = this.sessionCache.getSessionByNamespace(sessionId, namespace) ?? this.sessionCache.refreshSession(sessionId)
+            session = this.sessionCache.getSessionByNamespace(sessionId, namespace)
             if (!session?.active) return { success: true }
         }
         return { success: false, error: 'Source session is still active; stop it manually before migrating' }
@@ -4673,8 +4682,8 @@ export class SyncEngine {
 
     async beginCodexMigration(sessionId: string, namespace: string, sourceHome: string, targetHome: string): Promise<{ success: boolean; id?: string; error?: string }> {
         for (let attempt = 0; attempt < 3; attempt += 1) {
-            const session = this.sessionCache.getSessionByNamespace(sessionId, namespace) ?? this.sessionCache.refreshSession(sessionId)
-            if (!session?.metadata) return { success: false, error: 'Session not found' }
+            const session = this.sessionCache.getSessionByNamespace(sessionId, namespace)
+            if (!session?.metadata) return { success: false, error: 'Session not found in this namespace' }
             if (session.active) return { success: false, error: 'Stop the source session before migrating its thread' }
             if (session.metadata.migrationInProgress) return { success: false, error: 'A migration is already in progress for this session' }
             if (session.metadata.codexHome && resolve(session.metadata.codexHome) !== resolve(sourceHome)) {
@@ -4692,7 +4701,7 @@ export class SyncEngine {
 
     async endCodexMigration(sessionId: string, namespace: string): Promise<void> {
         for (let attempt = 0; attempt < 3; attempt += 1) {
-            const session = this.sessionCache.getSessionByNamespace(sessionId, namespace) ?? this.sessionCache.refreshSession(sessionId)
+            const session = this.sessionCache.getSessionByNamespace(sessionId, namespace)
             if (!session?.metadata?.migrationInProgress) return
             const metadata = { ...session.metadata }
             delete metadata.migrationInProgress
@@ -4705,7 +4714,6 @@ export class SyncEngine {
     async rebindCodexHome(sessionId: string, namespace: string, sourceHome: string, targetHome: string, targetHomeId?: string, targetProvider?: string, targetModel?: string): Promise<{ success: boolean; error?: string }> {
         for (let attempt = 0; attempt < 3; attempt += 1) {
             const session = this.sessionCache.getSessionByNamespace(sessionId, namespace)
-                ?? this.sessionCache.refreshSession(sessionId)
             if (!session?.metadata) return { success: false, error: 'Session not found' }
             if (session.metadata.codexHome && session.metadata.codexHome !== sourceHome) {
                 return { success: false, error: 'Session is not bound to the migration source home' }
