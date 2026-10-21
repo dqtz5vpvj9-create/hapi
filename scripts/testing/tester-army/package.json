@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "e2e": "0.17.0",
+    "e2e": "0.21.2",
     "@e2e-dev/web": "0.12.0"
   }
 }
